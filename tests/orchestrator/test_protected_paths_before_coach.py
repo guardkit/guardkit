@@ -517,3 +517,109 @@ def test_a_task_cancelled_between_player_and_coach_ends_with_paths_restored(
     assert result.final_decision == "cancelled"
     assert (repo / "qa" / "check.sh").read_text() == CHECK
     assert not (repo / "reference" / "extra.txt").exists()
+
+
+# ---------------------------------------------------------------------------
+# The git index and the branch (review R1)
+# ---------------------------------------------------------------------------
+
+
+def _index_of(repo: Path, path: str) -> str:
+    return _git(repo, "ls-files", "-s", "-v", "--", path)
+
+
+@pytest.mark.parametrize("flag", ["--assume-unchanged", "--skip-worktree"])
+def test_a_staged_change_hidden_by_an_index_flag_is_put_back(repo: Path, flag: str) -> None:
+    clean = _index_of(repo, "qa/check.sh")
+    assert clean.startswith("H 100755 ")
+    (repo / "qa" / "check.sh").write_text("exit 0\n")
+    _git(repo, "add", "qa/check.sh")
+    _git(repo, "update-index", flag, "qa/check.sh")
+    (repo / "qa" / "check.sh").write_text(CHECK)  # the working bytes look untouched
+    _assert_note(_restore(repo), "qa/check.sh (changed in the git index)")
+    assert _index_of(repo, "qa/check.sh") == clean
+    # What a checkpoint would commit now holds the committed content.
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "--allow-empty", "-m", "checkpoint")
+    assert _git(repo, "show", "HEAD:qa/check.sh") + "\n" == CHECK
+
+
+def test_an_extra_index_entry_under_a_protected_folder_is_removed(repo: Path) -> None:
+    (repo / "reference" / "extra.txt").write_text("x\n")
+    _git(repo, "add", "reference/extra.txt")
+    (repo / "reference" / "extra.txt").unlink()
+    _assert_note(_restore(repo), "reference (changed in the git index)")
+    assert _index_of(repo, "reference/extra.txt") == ""
+
+
+def test_a_shell_commit_is_undone_by_one_corrective_commit(repo: Path) -> None:
+    (repo / "qa" / "check.sh").write_text("exit 0\n")
+    (repo / "app.txt").write_text("work\n")
+    _git(repo, "commit", "-qam", "a shell commit")
+    _assert_note(_restore(repo), "qa/check.sh (committed on the branch)")
+    assert _git(repo, "log", "-1", "--format=%s").startswith(
+        "[guardkit] put protected paths back as committed: "
+    )
+    assert _git(repo, "diff", "--name-only", "main", "HEAD") == "app.txt"
+    assert _git(repo, "status", "--porcelain") == ""
+    assert _restore(repo) is None
+
+
+def test_a_shell_commit_then_cancellation_leaves_the_branch_as_committed(
+    repo: Path, tmp_path: Path
+) -> None:
+    manager = MagicMock()
+    manager.create.return_value = _worktree(repo)
+    manager.worktrees_dir = tmp_path / "worktrees"
+    invoker = MagicMock()
+    invoker._get_implementation_mode.return_value = "direct"
+    cancel = threading.Event()
+    orch = AutoBuildOrchestrator(
+        repo_root=repo, max_turns=3, worktree_manager=manager, agent_invoker=invoker,
+        progress_display=MagicMock(), pre_loop_gates=MagicMock(), enable_pre_loop=False,
+        enable_checkpoints=False, enable_context=False, cancellation_event=cancel,
+    )
+
+    def player(**_kwargs: Any) -> AgentInvocationResult:
+        (repo / "reference" / "notes.txt").write_text("rewritten\n")
+        _git(repo, "commit", "-qam", "a shell commit")
+        cancel.set()
+        return _result("player", success=False)
+
+    with patch.object(AutoBuildOrchestrator, "_invoke_player_safely", side_effect=player), \
+            patch.object(AutoBuildOrchestrator, "_attempt_state_recovery", return_value=None):
+        result = orch.orchestrate(
+            task_id="TASK-PP-005", requirements="r", acceptance_criteria=["AC-001: x"]
+        )
+    assert result.final_decision == "cancelled"
+    assert _git(repo, "diff", "--name-only", "main", "HEAD") == ""
+    assert (repo / "reference" / "notes.txt").read_text() == "invented notes\n"
+
+
+def test_a_shell_commit_then_a_normal_turn_never_reaches_the_build_branch(
+    repo: Path,
+) -> None:
+    orch = _orchestrator(repo, enable_checkpoints=True, max_turns=1)
+    orch._load_protected_reference(_worktree(repo))
+    coach = _Coach(repo, ["approve"])
+
+    def player(**_kwargs: Any) -> AgentInvocationResult:
+        (repo / "qa" / "check.sh").write_text("exit 0\n")
+        (repo / "app.txt").write_text("work\n")
+        _git(repo, "commit", "-qam", "a shell commit")
+        return _result("player")
+
+    with patch.object(orch, "_invoke_player_safely", side_effect=player), \
+            patch.object(orch, "_invoke_coach_safely", side_effect=coach), \
+            patch.object(orch, "_capture_turn_state"), \
+            patch.object(orch, "_record_honesty"), \
+            patch.object(orch, "_display_criteria_progress"):
+        _history, final = orch._loop_phase(
+            task_id="TASK-PP-001", requirements="r", acceptance_criteria=["AC-001: x"],
+            worktree=_worktree(repo),
+        )
+    assert final == "approved"
+    assert coach.seen[0]["check"] == CHECK
+    _assert_note(coach.seen[0]["concerns"][-1], "qa/check.sh (committed on the branch)")
+    assert _git(repo, "log", "-1", "--format=%s").startswith("[guardkit-checkpoint] Turn 1")
+    assert _git(repo, "diff", "--name-only", "main", "HEAD") == "app.txt"
