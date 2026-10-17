@@ -245,8 +245,11 @@ def blocking_requested(env: Optional[Mapping[str, str]] = None) -> bool:
     return str(source.get(BLOCKING_ENV_VAR, "")).strip().lower() in _TRUTHY
 
 
-def _git(repo: Path, *args: str) -> str:
+def _git(repo: Path, *args: str, raw: bool = False) -> Any:
     """Ask git one read-only question inside ``repo`` and return what it said.
+
+    Text by default; the exact bytes when ``raw`` is set (for NUL-separated file
+    names, which may not be valid text).
 
     Raises ``ValueError`` with a sentence a person can read whenever git is not there,
     does not answer, or answers with an error. Every caller here turns that into "the
@@ -258,6 +261,7 @@ def _git(repo: Path, *args: str) -> str:
         done = run_git(
             ["-C", str(repo), *args],
             check=True,
+            text=not raw,
             timeout=_GIT_TIMEOUT_SECONDS)
     except subprocess.CalledProcessError as exc:
         raise ValueError(
@@ -293,11 +297,17 @@ def files_changed_since(repo: Path, start_commit: str) -> list[str]:
     goes. So the files git is not tracking are asked for separately and added. Missing
     them would let a whole new file pass unread, which is this estate's known failure
     class: a check that runs, looks in the wrong place, and reports success.
+
+    Both answers are asked for NUL-separated (``-z``, 17 October 2026). Without it git
+    quotes and escapes any name holding a non-ASCII character, a quote or a
+    backslash, and the escaped name names no file on disk, so such a file was never
+    read. Names are taken exactly as given, never trimmed.
     """
     repo = Path(repo)
-    changed = _git(repo, "diff", "--name-only", start_commit).splitlines()
-    untracked = _git(repo, "ls-files", "--others", "--exclude-standard").splitlines()
-    return sorted({line.strip() for line in (*changed, *untracked) if line.strip()})
+    changed = _git(repo, "diff", "--name-only", "-z", start_commit, raw=True)
+    untracked = _git(repo, "ls-files", "--others", "--exclude-standard", "-z", raw=True)
+    names = (*changed.split(b"\0"), *untracked.split(b"\0"))
+    return sorted({os.fsdecode(name) for name in names if name})
 
 
 def build_arch_conformance_rule(
