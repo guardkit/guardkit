@@ -66,10 +66,12 @@ class ProtectedPathsError(Exception):
 
 @dataclass(frozen=True)
 class ProtectedReference:
-    """The build's commit and the protected paths it declares."""
+    """The build's commit, the protected paths it declares, and the build branch."""
 
     commit: str
     paths: tuple[str, ...]
+    #: The build branch's full ref name (``refs/heads/...``), fixed at build start.
+    ref: str
 
 
 def _committed(repo: Path, commit: str, path: str) -> dict[str, tuple[str, str, int]]:
@@ -95,8 +97,13 @@ def _object(repo: Path, oid: str) -> bytes:
     return out.stdout
 
 
-def load_protected_reference(repo: Path, commit: str) -> ProtectedReference | None:
-    """The protected paths declared at ``commit``, each present there; None if none."""
+def load_protected_reference(
+    repo: Path, commit: str, branch: str | None
+) -> ProtectedReference | None:
+    """The protected paths declared at ``commit``, each present there; None if none.
+
+    ``branch`` is the build branch every check holds to the commit.
+    """
     from guardkit.orchestrator.harness.selector import _parse_player_project_inputs
 
     config = _committed(repo, commit, ".guardkit/config.yaml").get(".guardkit/config.yaml")
@@ -114,7 +121,12 @@ def load_protected_reference(repo: Path, commit: str) -> ProtectedReference | No
                 f"The project declares the protected path {path!r}, but it is not in "
                 f"the commit this build started from ({commit[:12]}); commit it first."
             )
-    return ProtectedReference(commit, paths) if paths else None
+    if paths and not branch:
+        raise ProtectedPathsError(
+            "The project declares protected paths, but no build branch is known "
+            "to keep them on; the task was not started."
+        )
+    return ProtectedReference(commit, paths, f"refs/heads/{branch}") if paths else None
 
 
 def _real_folders(repo: Path, rel: str) -> bool:
@@ -249,9 +261,9 @@ def _index_info(remove: set[str], entries: dict, zero: str) -> bytes:
     return "\0".join(lines).encode() + b"\0"
 
 
-def _correct_branch(repo: Path, commit: str, roots: list[str]) -> None:
-    """One commit on the branch putting ``roots`` back as they are at ``commit``."""
-    old = _run(repo, "rev-parse", "--verify", "HEAD^{commit}").decode().strip()
+def _correct_branch(repo: Path, commit: str, roots: list[str], ref: str) -> None:
+    """One commit on ``ref`` putting ``roots`` back as they are at ``commit``."""
+    old = _run(repo, "rev-parse", "--verify", f"{ref}^{{commit}}").decode().strip()
     zero = "0" * len(old)
     with tempfile.TemporaryDirectory() as folder:
         index = os.path.join(folder, "index")
@@ -263,7 +275,7 @@ def _correct_branch(repo: Path, commit: str, roots: list[str]) -> None:
         tree = _run(repo, "write-tree", index=index).decode().strip()
     message = "[guardkit] put protected paths back as committed: " + ", ".join(roots)
     new = _run(repo, "commit-tree", tree, "-p", old, "-m", message).decode().strip()
-    _run(repo, "update-ref", "-m", message, "HEAD", new, old)
+    _run(repo, "update-ref", "-m", message, ref, new, old)  # only if it has not moved
 
 
 def restore_protected_paths(repo: Path, reference: ProtectedReference) -> str | None:
@@ -301,18 +313,27 @@ def restore_protected_paths(repo: Path, reference: ProtectedReference) -> str | 
                 f"Protected path {root} is still different after putting it back: "
                 + ", ".join(f"{p} ({w})" for p, w in still[:_MAX_LISTED])
             )
-        if _committed(repo, "HEAD", root) != entries:
+        if _committed(repo, reference.ref, root) != entries:
             committed_roots.append(root)
             found += [(root, "committed on the branch")]
         changes.extend(found)
     if committed_roots:
-        _correct_branch(repo, reference.commit, committed_roots)
-        if any(_committed(repo, "HEAD", r) != _committed(repo, reference.commit, r)
+        # The build branch itself, whatever HEAD points at now.
+        _correct_branch(repo, reference.commit, committed_roots, reference.ref)
+        if any(_committed(repo, reference.ref, r) != _committed(repo, reference.commit, r)
                for r in committed_roots):
             raise ProtectedPathsError(
                 "Protected paths committed on the branch are still different after "
                 "a corrective commit: " + ", ".join(committed_roots)
             )
+    attached = run_git(["-C", str(repo), "symbolic-ref", "-q", "HEAD"], text=False, timeout=60)
+    if attached.returncode != 0 or attached.stdout.decode().strip() != reference.ref:
+        where = attached.stdout.decode().strip() if attached.returncode == 0 else "detached"
+        raise ProtectedPathsError(
+            f"The worktree is not on the build branch {reference.ref[len('refs/heads/'):]} "
+            f"(HEAD is {where}); protected paths were put back on that branch, and "
+            "the task stops because its work is no longer on it."
+        )
     if not changes:
         return None
     ignored = _ignored(repo, [p for p, w in changes if w == "added"])

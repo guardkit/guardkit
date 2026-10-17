@@ -9486,7 +9486,18 @@ class AutoBuildOrchestrator:
                         "was not started."
                     )
                 return None
-            self._protected_reference = load_protected_reference(Path(path), commit)
+            from guardkit.orchestrator.head_identity import expected_checkpoint_branch
+
+            branch = (
+                self._expected_branch
+                if self._expected_branch_pinned
+                else expected_checkpoint_branch(
+                    Path(path), getattr(worktree, "branch_name", None)
+                )
+            )
+            self._protected_reference = load_protected_reference(
+                Path(path), commit, branch
+            )
         except (ProtectedPathsError, AgentInvocationError, CommittedContentError) as exc:
             return str(exc)
         return None
