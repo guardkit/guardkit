@@ -63,7 +63,8 @@ launch:
 # sign-off has been recorded: the files it names exist only after that. Then
 # uncomment the `reference` and `autobuild` blocks and change the test line,
 # so the reference check runs before the normal check.
-# The merge accepts only plain commands: no `!`, `*`, `$` or `[` in `test`.
+# The merge accepts a `test` command made only of letters, digits, spaces and
+# _ . / = : @ % + , - ' " \ & | ; ( ) < >  (so, for example, no ! * $ or [).
 #
 # reference:
 #   paths: ["reference/"]                              # reference material, not product code

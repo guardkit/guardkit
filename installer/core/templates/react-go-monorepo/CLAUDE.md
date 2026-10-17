@@ -11,4 +11,5 @@ A `reference/` folder holds a signed-off prototype, kept for reading only. When 
 - Copy presentational parts (components, layout, styles, design tokens) from `reference/prototype/` into the product's own folders, adapting them to the product's dependencies.
 - Never import from `reference/` or point product code into it.
 - Replace made-up data, mock request functions and pretend sign-in with the real API client and real sign-in. Never copy them.
+- Delete `eslint-disable` comments when copying a component: they are ignored and fail lint.
 - Never edit anything under `reference/`.

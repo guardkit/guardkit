@@ -18,9 +18,20 @@ export default [
       '@typescript-eslint/no-unsafe-assignment': 'error',
       '@typescript-eslint/no-unsafe-member-access': 'error',
       '@typescript-eslint/no-unsafe-call': 'error',
-      // `reference/` holds a signed-off prototype kept for reading only. Copy
-      // what you need into the product's own folders; never import from it.
-      // `reference` is reserved: do not name a product folder or alias that.
+    },
+  },
+  {
+    // Plain JavaScript has no type information, so typed rules are switched
+    // off for it; the ts/tsx rules above are unchanged.
+    files: ['src/**/*.{js,jsx,mjs,cjs}'],
+    ...tseslint.configs.disableTypeChecked,
+  },
+  {
+    // `reference/` holds a signed-off prototype kept for reading only. Copy
+    // what you need into the product's own folders; never import from it.
+    // `reference` is reserved: do not name a product folder or alias that.
+    files: ['src/**/*.{ts,tsx,js,jsx,mjs,cjs}'],
+    rules: {
       'no-restricted-imports': [
         'error',
         {

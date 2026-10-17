@@ -673,6 +673,8 @@ def test_reference_folder_fence_and_reuse_rules(
     assert "linterOptions: { noInlineConfig: true }" in eslint
     assert "'no-restricted-imports'" in eslint
     assert "'**/reference/**'" in eslint
+    assert "files: ['src/**/*.{ts,tsx,js,jsx,mjs,cjs}']" in eslint
+    assert "...tseslint.configs.disableTypeChecked" in eslint
     assert "eslint-disable" not in "".join(
         path.read_text(encoding="utf-8")
         for path in (template_dir / "templates").rglob("*.template")
@@ -684,6 +686,7 @@ def test_reference_folder_fence_and_reuse_rules(
         assert "`reference/` folder" in text, name
         assert "never copy them" in text.lower(), name
         assert "never edit" in text.lower(), name
+        assert "Delete `eslint-disable` comments when copying" in text, name
     assert "## Taking in a signed-off prototype" in (
         template_dir / "README.md"
     ).read_text(encoding="utf-8")
