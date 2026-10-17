@@ -14,9 +14,12 @@ the architecture rules check. It is frozen before the first turn, so the Player 
 change it, and a failure reaches the Player through the Coach as one must-fix issue on the
 next turn.
 
-The check runs whenever the build image holds Gitleaks or OSV-Scanner. There is no switch
-and no project setting. With neither tool installed, no rule is added and a build is
-unchanged.
+The check is added only when the switch `GUARDKIT_SECURITY_CHECK_BLOCKING` is set (`1`,
+`true`, `yes` or `on`) in the build runner's environment, and the build image holds
+Gitleaks or OSV-Scanner. It is **off by default** (17 October 2026: it stays off until
+the problems already in the projects are fixed, so switching it on does not break builds
+that are under way). With the switch unset, or neither tool installed, no rule is added
+and a build is unchanged. There is no project setting.
 
 It reads only the files the task changed since it started (`git diff --name-only -z <start>`
 plus files git is not yet tracking, with `.guardkit/` left out). Each changed file is read
