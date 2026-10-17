@@ -88,6 +88,11 @@ def pytest_configure(config):
         "command whose work folder is not a git checkout, so it opts out of "
         "the scratch folder the suite gives plain temporary folders.",
     )
+    config.addinivalue_line(
+        "markers",
+        "security_scanners: this test lets the security check find Gitleaks and "
+        "OSV-Scanner on PATH (or its own stubs); every other test sees neither.",
+    )
 
 
 def pytest_collection_modifyitems(config, items):
@@ -449,3 +454,71 @@ def project_commands_follow_a_replaced_subprocess_run(monkeypatch):
         return real_runner(args, **kwargs)
 
     monkeypatch.setattr(process_group, "run_project_command", _runner)
+
+
+# ---------------------------------------------------------------------------
+# The per-change security check (17 October 2026)
+# ---------------------------------------------------------------------------
+# ``security_check.build_security_rule`` adds a rule to every task's frozen checks
+# whenever Gitleaks or OSV-Scanner is on PATH. On a machine that has them installed,
+# that would change what every existing conformance test sees, so the scanners are
+# hidden from every test unless it carries the ``security_scanners`` marker.
+
+
+@pytest.fixture(autouse=True)
+def security_scanners_hidden_unless_asked(monkeypatch, request):
+    if request.node.get_closest_marker("security_scanners"):
+        return
+    try:
+        from guardkit.orchestrator import security_check
+    except Exception:  # noqa: BLE001 -- a test without the package is unaffected
+        return
+    monkeypatch.setattr(security_check, "_find_tool", lambda _name: None)
+
+
+_CHECKOUT = Path(__file__).resolve().parents[1]
+
+
+@pytest.fixture(scope="session")
+def checkout_isolated_python(tmp_path_factory) -> str:
+    """An interpreter whose isolated (``-I``) import of ``guardkit`` is THIS checkout.
+
+    The architecture and security checks run as ``<interpreter> -I -m ...``. ``-I``
+    ignores PYTHONPATH and the current folder, so the command imports whichever
+    guardkit the interpreter's own site-packages name. In a git worktree that is
+    usually the MAIN checkout (an editable install), so a test would run the main
+    checkout's code, or fail to find a module that exists only here. When that is
+    the case, a small virtual environment is made whose site-packages name this
+    checkout first, then the running interpreter's own site-packages (for the
+    dependencies). Nothing outside the test's temporary folder is changed.
+    """
+    import site
+    import subprocess
+    import venv
+
+    probe = subprocess.run(
+        [sys.executable, "-I", "-c", "import guardkit; print(guardkit.__file__)"],
+        capture_output=True, text=True, timeout=60)
+    if probe.returncode == 0 and Path(probe.stdout.strip()).resolve().parents[1] == _CHECKOUT:
+        return sys.executable
+    root = tmp_path_factory.mktemp("checkout-python")
+    venv.EnvBuilder(with_pip=False, symlinks=True).create(root)
+    python = root / "bin" / "python"
+    purelib = subprocess.run(
+        [str(python), "-I", "-c", "import sysconfig; print(sysconfig.get_paths()['purelib'])"],
+        capture_output=True, text=True, check=True, timeout=60).stdout.strip()
+    lines = [str(_CHECKOUT)]
+    lines += [f"import site; site.addsitedir({p!r})" for p in site.getsitepackages()]
+    Path(purelib, "zz_guardkit_checkout.pth").write_text("\n".join(lines) + "\n")
+    check = subprocess.run(
+        [str(python), "-I", "-c", "import guardkit; print(guardkit.__file__)"],
+        capture_output=True, text=True, check=True, timeout=60)
+    assert Path(check.stdout.strip()).resolve().parents[1] == _CHECKOUT, check.stdout
+    return str(python)
+
+
+@pytest.fixture
+def checkout_python(monkeypatch, checkout_isolated_python) -> str:
+    """Make the rule builders name the interpreter that imports this checkout."""
+    monkeypatch.setattr(sys, "executable", checkout_isolated_python)
+    return checkout_isolated_python
