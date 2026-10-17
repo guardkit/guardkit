@@ -1126,8 +1126,11 @@ class WorktreeCheckpointManager:
         self.checkpoints: List[Checkpoint] = []
         # Run under the checkpoint lock just before ``git add`` (17 October
         # 2026: protected paths put back as committed; see autobuild). It
-        # raises ``CheckpointRefused`` to stop the commit.
+        # raises ``CheckpointRefused`` to stop the commit. ``after_stage``
+        # runs after the add and before the commit (``git add`` can convert
+        # bytes through attributes), with the same contract.
         self.before_commit = None
+        self.after_stage = None
 
         # Checkpoint persistence path
         self._autobuild_dir = (
@@ -1304,6 +1307,8 @@ class WorktreeCheckpointManager:
         # staged before the add above or moved out of its folder (13 and 14
         # October 2026).
         unstage_private_records(self.git_executor, self.worktree_path)
+        if self.after_stage is not None:
+            self.after_stage()
 
         # Create checkpoint commit message
         status = format_test_status(tests_passed)
