@@ -43,7 +43,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from guardkit.orchestrator.run_evidence import EvidenceRequest, start_command_evidence
 from guardkit.orchestrator.process_group import run_in_own_group
@@ -319,6 +319,10 @@ class FeatureCheckOutcome:
     observations_total: int = 0
     could_not_run_reason: Optional[str] = None
     notes: List[str] = field(default_factory=list)
+    #: One plain sentence, set only when a repair round stopped early because
+    #: the plan contradicts the project's own check (18 October 2026). It is
+    #: also the receipt's ``reason``. Written to the receipt only when set.
+    stopped_because: Optional[str] = None
 
     @property
     def passed(self) -> bool:
@@ -387,6 +391,13 @@ class FeatureCheckOutcome:
             # not-checked list as well as its own, so the two lists never
             # both claim the same example anywhere in the record.
             "attempts": [a.to_dict(self.not_checked) for a in self.attempts],
+            # Only when the repair round stopped early: every other receipt
+            # keeps exactly the keys it had before this field existed.
+            **(
+                {"stopped_because": self.stopped_because}
+                if self.stopped_because
+                else {}
+            ),
         }
 
 
@@ -482,6 +493,152 @@ def read_feature_check_receipt(root: Path) -> Optional[Dict[str, Any]]:
         logger.warning("feature check: could not read %s: %s", path, exc)
         return None
     return data if isinstance(data, dict) else None
+
+
+# =========================================================================
+# The repair round: what the Coach is shown, and the early stop's line
+# (18 October 2026, design "GuardKit stops early when the plan contradicts
+# the project's check")
+# =========================================================================
+
+#: The line GuardKit prints to its own stdout when a repair round stopped
+#: early. Forge reads the sentence from this line of the run it started, and
+#: never from a file. The rest of the line is one JSON object, so a newline
+#: inside the sentence is escaped and the line is always one line.
+STOPPED_BECAUSE_MARKER = "GUARDKIT_STOPPED_BECAUSE"
+
+#: How much of one run's output the Coach is shown (stdout and stderr
+#: together). Two runs at most, so the section stays under about 8,000
+#: characters of output.
+COACH_OUTPUT_LIMIT = 4000
+
+#: How much of the request's words the Coach section carries.
+COACH_REQUEST_WORDS_LIMIT = 2000
+
+
+def stopped_because_line(feature_id: str, sentence: str) -> str:
+    """The one machine-readable stdout line for an early stop."""
+    payload = json.dumps(
+        {"feature_id": str(feature_id), "sentence": str(sentence)},
+        ensure_ascii=True,
+    )
+    return f"{STOPPED_BECAUSE_MARKER} {payload}"
+
+
+def cut_tail(text: Any, limit: int) -> str:
+    """The END of ``text``, at most ``limit`` characters, marked when cut.
+
+    The end is kept because a check's failing lines and its last word come
+    last. Nothing is read or parsed from the text.
+    """
+    text = "" if text is None else str(text)
+    if limit <= 0 or len(text) <= limit:
+        return text
+    marker = "[cut] … "
+    keep = max(limit - len(marker), 0)
+    return marker + text[len(text) - keep:]
+
+
+def attempt_facts(attempt: "FeatureCheckAttempt") -> Dict[str, Any]:
+    """The facts of one run for the Coach and its record.
+
+    Command, exit code, outcome and the 40-line tails the attempt already
+    keeps. No output is parsed: the text is carried, never judged.
+    """
+    return {
+        "attempt": attempt.attempt,
+        "command": attempt.command,
+        "candidate_sha": attempt.candidate_sha,
+        "outcome": attempt.resolved_outcome,
+        "exit_code": attempt.exit_code,
+        "timed_out": bool(attempt.timed_out),
+        "failure_reason": attempt.failure_reason,
+        "stdout_tail": attempt.stdout_tail or "",
+        "stderr_tail": attempt.stderr_tail or "",
+    }
+
+
+@dataclass
+class FeatureCheckRepair:
+    """What a whole-feature repair round hands each task it re-opens.
+
+    ``failed_attempt`` is the attempt that started the round. ``run`` runs the
+    project's declared check once on the worktree as it stands, through the
+    feature orchestrator's own ``_one_feature_check_attempt`` (the same
+    runner, environment and outcome rules as a real attempt). The Coach's
+    evidence calls it at most once per Coach turn, on a single-task wave only.
+    Only the whole-feature repair round builds one; every other wave gets
+    ``None`` and runs exactly as before.
+    """
+
+    failed_attempt: FeatureCheckAttempt
+    request_words: str = ""
+    run: Optional[Callable[[], FeatureCheckAttempt]] = None
+
+
+def whole_feature_check_record(
+    repair: FeatureCheckRepair,
+    *,
+    wave_size: int = 1,
+    skip_reason: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Run the check for one Coach turn, when allowed, and record what happened.
+
+    Returns the bundle's ``whole_feature_check`` value: this turn's run
+    (``ran`` with command, exit code, outcome and tails, or ``ran: False``
+    with ``skipped_reason``) beside ``previous_failed_attempt``, which is
+    always present. A run that is skipped, cannot run, or raises is said so
+    and nothing is inferred from it. Never raises.
+
+    ``skip_reason``, when given, records the check as not run for that reason
+    without running it (the Coach's evidence stopped early, for example).
+    """
+    failed = repair.failed_attempt
+    record: Dict[str, Any] = {
+        "command": getattr(failed, "command", None),
+        "ran": False,
+        "outcome": None,
+        "exit_code": None,
+        "timed_out": False,
+        "failure_reason": None,
+        "stdout_tail": "",
+        "stderr_tail": "",
+        "candidate_sha": None,
+        "skipped_reason": None,
+        "previous_failed_attempt": attempt_facts(failed),
+        "request_words": cut(repair.request_words or "", COACH_REQUEST_WORDS_LIMIT),
+    }
+    if skip_reason:
+        record["skipped_reason"] = str(skip_reason)
+        return record
+    if wave_size > 1:
+        record["skipped_reason"] = "parallel_wave"
+        return record
+    if repair.run is None:
+        record["skipped_reason"] = "no_runner"
+        return record
+    try:
+        attempt = repair.run()
+    except Exception as exc:  # noqa: BLE001 — a failed run is absent, never a pass
+        logger.warning(
+            "The whole-feature check could not be run for the Coach: %s",
+            type(exc).__name__,
+        )
+        record["skipped_reason"] = f"runner_error: {type(exc).__name__}"
+        return record
+    facts = attempt_facts(attempt)
+    record.update(
+        ran=True,
+        outcome=facts["outcome"],
+        exit_code=facts["exit_code"],
+        timed_out=facts["timed_out"],
+        stdout_tail=facts["stdout_tail"],
+        stderr_tail=facts["stderr_tail"],
+        candidate_sha=facts["candidate_sha"],
+        command=facts["command"],
+        failure_reason=facts["failure_reason"],
+    )
+    return record
 
 
 # =========================================================================

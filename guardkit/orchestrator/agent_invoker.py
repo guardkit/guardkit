@@ -4253,6 +4253,13 @@ that criterion is NOT satisfied for approval purposes.
         project_documents_section = self._render_project_documents_section(
             project_documents
         )
+        # 18 October 2026: in a whole-feature repair round only, the project's
+        # whole-feature check, with what it printed on this turn's code and on
+        # the code that failed before. "" on every other turn, so the prompt
+        # outside a repair round is byte-identical to before.
+        whole_feature_check_section = self._render_whole_feature_check_section(
+            evidence_bundle
+        )
 
         # Build criteria verification example (legacy only — v4 uses findings[])
         verification_example = ""
@@ -4482,7 +4489,7 @@ Turn: {turn}
 {synthesis_banner}## Original Requirements
 
 {requirements}
-{criteria_section}{project_documents_section}
+{criteria_section}{project_documents_section}{whole_feature_check_section}
 ## Player's Report
 
 {json.dumps(player_report, indent=2)}
@@ -4493,8 +4500,13 @@ Turn: {turn}
         # TASK-SELFFIX-003: enforce the overall synthesis-prompt budget.
         # Only applies to the synthesis path (toolless Coach verdict).
         if synthesis:
+            # The whole-feature check section sits right after the project
+            # documents and is protected with them: never trimmed.
             prompt = self._trim_synthesis_prompt(
-                prompt, protected_section=project_documents_section
+                prompt,
+                protected_section=(
+                    project_documents_section + whole_feature_check_section
+                ),
             )
 
         return prompt
@@ -4504,6 +4516,104 @@ Turn: {turn}
     # 4 October 2026). The Player reads the project's binding documents with
     # its tools; the synthesis Coach has no tools, so it is given their text.
     # ------------------------------------------------------------------
+
+    # 18 October 2026: how much of one run's output (stdout and stderr
+    # together) the whole-feature check section shows.
+    _COACH_WHOLE_FEATURE_OUTPUT_LIMIT = 4000
+
+    @classmethod
+    def _render_whole_feature_check_section(
+        cls,
+        evidence_bundle: Optional["CoachEvidenceBundle"],
+    ) -> str:
+        """Render ``## The project's whole-feature check``, or ``""``.
+
+        Present only when the bundle carries ``whole_feature_check`` (a
+        whole-feature repair round). It shows the declared command, and for
+        this turn's run and the attempt that failed before: the outcome, the
+        exit code and the end of the output, each run cut to 4,000
+        characters. Nothing is parsed from the output. The instructions say
+        the committed check decides the build and how to apply the
+        request-first rule; the decision grammar is unchanged.
+        """
+        record = getattr(evidence_bundle, "whole_feature_check", None)
+        if not isinstance(record, dict):
+            return ""
+        from guardkit.orchestrator.feature_check import cut_tail
+
+        limit = cls._COACH_WHOLE_FEATURE_OUTPUT_LIMIT
+
+        def _run_block(run: Dict[str, Any]) -> List[str]:
+            stdout = str(run.get("stdout_tail") or "")
+            stderr = str(run.get("stderr_tail") or "")
+            # The end of each stream matters most; stderr gets at most a
+            # third of the room, stdout the rest, together never over limit.
+            stderr = cut_tail(stderr, limit // 3) if stderr else ""
+            stdout = cut_tail(stdout, max(limit - len(stderr), 0)) if stdout else ""
+            exit_code = run.get("exit_code")
+            outcome = run.get("outcome") or "unknown"
+            lines = [
+                f"- outcome: {outcome}",
+                f"- exit code: {exit_code if exit_code is not None else 'none'}"
+                + (" (timed out)" if run.get("timed_out") else ""),
+                "- standard output (the end of it):",
+                "~~~text",
+                stdout or "(nothing)",
+                "~~~",
+                "- standard error (the end of it):",
+                "~~~text",
+                stderr or "(nothing)",
+                "~~~",
+            ]
+            return lines
+
+        previous = record.get("previous_failed_attempt")
+        previous = previous if isinstance(previous, dict) else {}
+        command = record.get("command") or previous.get("command") or "(not recorded)"
+        lines: List[str] = [
+            "",
+            "## The project's whole-feature check",
+            "",
+            f"The project committed this check for the finished feature: `{command}`.",
+            "It decides whether the build is accepted, whatever the task's own "
+            "test command covers. Never call its failure out of scope, and never "
+            "dismiss it as not run by the task's own test command.",
+            "",
+            "Below is what it printed on this turn's code and on the code that "
+            "failed before.",
+            "",
+            "If a plan criterion and this check cannot both hold, do not send the "
+            "Player to break the check. Reject that criterion, with notes that "
+            "name the check's failing lines, and say in the rationale that the "
+            "plan contradicts the project's check.",
+            "",
+            "The request decides which one should change. If the request asked "
+            "for the criterion's behaviour, the check has to change. If it did "
+            "not, the criterion should go. You do not approve a plan criterion "
+            "away: only a person or the planner can drop it.",
+            "",
+            "### On this turn's code",
+            "",
+        ]
+        if record.get("ran") is True:
+            lines.extend(_run_block(record))
+        else:
+            reason = record.get("skipped_reason") or "not recorded"
+            lines.append(
+                f"- not run on this turn's code ({reason}). Nothing is known "
+                "about this turn from the check; do not read its absence as "
+                "a pass or a failure."
+            )
+        lines.extend(["", "### On the code that failed before", ""])
+        if previous:
+            lines.extend(_run_block(previous))
+        else:
+            lines.append("- not recorded")
+        request_words = str(record.get("request_words") or "").strip()
+        if request_words:
+            lines.extend(["", "### The words of the request", "", request_words])
+        lines.append("")
+        return "\n".join(lines)
 
     @staticmethod
     def _render_project_documents_section(
@@ -5073,6 +5183,10 @@ Turn: {turn}
             leg = bundle_dict.get(leg_for_prompt)
             if isinstance(leg, dict):
                 leg.pop("run_evidence", None)
+
+        # The whole-feature check (repair rounds only) has its own protected
+        # section in the prompt; it is not repeated inside this JSON.
+        bundle_dict.pop("whole_feature_check", None)
 
         # Truncate bdd.discoveries / bdd.errors.
         bdd = bundle_dict.get("bdd")

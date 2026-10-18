@@ -91,6 +91,8 @@ from guardkit.orchestrator.feature_check import (
     claimed_machine_criteria,
     FeatureCheckAttempt,
     FeatureCheckOutcome,
+    FeatureCheckRepair,
+    stopped_because_line,
     build_feature_check_feedback,
     candidate_sha as feature_check_candidate_sha,
     completion_verdict as feature_check_completion_verdict,
@@ -472,6 +474,10 @@ class TaskExecutionResult:
     # operator_handoff). Populated only when ``final_decision == "deferred"``;
     # surfaced in the wave-summary banner so the operator knows what to do.
     deferred_reason: Optional[str] = None
+    # 18 October 2026: the early stop's one plain sentence, when a
+    # whole-feature repair round stopped because the plan contradicts the
+    # project's check. None on every other outcome.
+    stopped_because: Optional[str] = None
 
 
 @dataclass
@@ -1076,6 +1082,11 @@ class FeatureOrchestrator:
         # feedback, up to this many extra rounds. Default 1; 0 means the first
         # failure is final. Same shape as the smoke gate's budget above.
         self._feature_check_max_retries = feature_check_max_retries()
+        # The whole-feature repair round's FeatureCheckRepair, set only for the
+        # length of that round's ``_execute_wave`` call (18 October 2026).
+        # ``_execute_wave`` threads it to each task beside ``smoke_command``;
+        # every other wave sees None.
+        self._feature_check_repair_for_wave: Optional[FeatureCheckRepair] = None
         # 21 September 2026. What the check after each group of tasks found, or
         # could not look at. Until today its result was printed and dropped, so
         # by merge time nobody could tell "found nothing" from "never looked".
@@ -3111,14 +3122,29 @@ The detailed specifications are in the task markdown file.
                 f"{self._feature_check_max_retries}).",
                 markup=True,
             )
-            wave_result = self._execute_wave(
-                wave_number,
-                task_ids,
-                feature,
-                worktree,
-                seed_feedback=feedback,
-                attempt=attempt_number,
+            # The Coach of each repair turn sees the project's check: the
+            # attempt that failed and, on a single-task wave, its own run of
+            # the check on the turn's code through this same attempt runner
+            # (18 October 2026). Only this round gets it.
+            failed_attempt_number = attempt_number
+            self._feature_check_repair_for_wave = FeatureCheckRepair(
+                failed_attempt=attempt,
+                request_words=request_words,
+                run=lambda: self._one_feature_check_attempt(
+                    failed_attempt_number, declaration, feature, worktree
+                ),
             )
+            try:
+                wave_result = self._execute_wave(
+                    wave_number,
+                    task_ids,
+                    feature,
+                    worktree,
+                    seed_feedback=feedback,
+                    attempt=attempt_number,
+                )
+            finally:
+                self._feature_check_repair_for_wave = None
             wave_results[-1] = wave_result
             last_wave = wave_result
             if self._wave_display:
@@ -3142,9 +3168,22 @@ The detailed specifications are in the task markdown file.
                     "The repair round for the whole-feature check did not "
                     "pass its own checks, so this feature is failed."
                 )
+                # When a task stopped early because the plan contradicts the
+                # project's check, its sentence is the reason (18 October
+                # 2026). No further attempt runs, whatever the budget.
+                stopped_because = next(
+                    (
+                        r.stopped_because
+                        for r in wave_result.results
+                        if isinstance(getattr(r, "stopped_because", None), str)
+                        and r.stopped_because
+                    ),
+                    None,
+                )
                 return self._finish_feature_check(
                     feature, worktree, declaration, attempts, wave_results,
                     status=FEATURE_CHECK_FAILED,
+                    stopped_because=stopped_because,
                 )
 
     def _one_feature_check_attempt(
@@ -3407,8 +3446,16 @@ The detailed specifications are in the task markdown file.
         wave_results: List[WaveExecutionResult],
         *,
         status: str,
+        stopped_because: Optional[str] = None,
     ) -> FeatureCheckOutcome:
         """Write the receipt and, on a FAILURE only, fail the feature.
+
+        ``stopped_because`` (18 October 2026) is the early stop's one plain
+        sentence, given only when the repair round stopped because the plan
+        contradicts the project's check. It becomes the receipt's ``reason``
+        and ``stopped_because``, the console summary, and one
+        ``GUARDKIT_STOPPED_BECAUSE`` line on stdout, the only place Forge
+        reads it from.
 
         The failure rail is the start-up checks' rail, deliberately: a failed
         gate result on the last wave (which the finaliser already reads as a
@@ -3432,6 +3479,10 @@ The detailed specifications are in the task markdown file.
             )
         else:
             reason = last_attempt.failure_reason
+        if stopped_because and status == FEATURE_CHECK_FAILED:
+            reason = stopped_because
+        else:
+            stopped_because = None
         not_checked = list(last_attempt.not_checked)
         not_checked_total = last_attempt.not_checked_total
         if could_not_run:
@@ -3474,6 +3525,7 @@ The detailed specifications are in the task markdown file.
             claimed_machine_criteria=claimed_machine_criteria(
                 Path(worktree.path), [t.id for t in feature.tasks]
             ),
+            stopped_because=stopped_because,
         )
         try:
             receipt_path = write_feature_check_receipt(
@@ -3492,6 +3544,19 @@ The detailed specifications are in the task markdown file.
             f"the whole-feature check failed ({last_attempt.failure_reason}) "
             f"after {len(attempts)} attempt(s): {FEATURE_CHECK_LABEL}"
         )
+        if stopped_because:
+            # The plain early stop (18 October 2026): its sentence IS the
+            # summary. One machine-readable line goes to stdout with a plain
+            # print — never the rich console, which wraps long lines — for
+            # Forge, which reads it from this run's own output only.
+            summary = stopped_because
+            try:
+                print(stopped_because_line(feature.id, stopped_because), flush=True)
+            except Exception as exc:  # noqa: BLE001 — a line never fails a build
+                logger.warning(
+                    "The early stop's stdout line could not be written: %s",
+                    type(exc).__name__,
+                )
         if last_attempt.missing_twins:
             summary += (
                 " — scenarios with no twin: "
@@ -4494,6 +4559,7 @@ The detailed specifications are in the task markdown file.
         seed_feedback: Optional[str] = None,
         smoke_command: Optional[str] = None,
         smoke_expected_exit: int = 0,
+        feature_check_repair: Optional[FeatureCheckRepair] = None,
     ) -> List[TaskExecutionResult]:
         """
         Execute all tasks in a wave in parallel using asyncio.
@@ -4569,6 +4635,10 @@ The detailed specifications are in the task markdown file.
                     task_id, wave_number,
                 )
                 task.status = "in_progress"
+                # The repair round writes the same turn file names again, so
+                # the round that was just approved is moved aside first, names
+                # unchanged, into round-<N>/ (18 October 2026). Never fails.
+                self._archive_previous_round(task_id, worktree)
             if task.status == "completed":
                 if self._wave_display:
                     self._wave_display.update_task_status(
@@ -4680,6 +4750,13 @@ The detailed specifications are in the task markdown file.
                     seed_feedback=seed_feedback,  # TASK-AB-COACHRUNPARITY01 (arm a)
                     smoke_command=smoke_command,  # TASK-AB-COACHRUNPARITY01 (arm b)
                     smoke_expected_exit=smoke_expected_exit,  # TASK-AB-COACHRUNPARITY01 (arm b)
+                    # Whole-feature repair round only; absent otherwise, so
+                    # every other wave's call is exactly as before.
+                    **(
+                        {"feature_check_repair": feature_check_repair}
+                        if feature_check_repair is not None
+                        else {}
+                    ),
                 ),
             ))
             task_id_mapping.append(task_id)
@@ -5077,6 +5154,11 @@ The detailed specifications are in the task markdown file.
         smoke_command, smoke_expected_exit = self._per_task_smoke_command(
             feature, wave_number
         )
+        # Whole-feature repair round only (18 October 2026): set by
+        # _run_feature_check for the length of this call, None otherwise.
+        feature_check_repair = getattr(
+            self, "_feature_check_repair_for_wave", None
+        )
 
         # Execute tasks in parallel
         results = asyncio.run(
@@ -5085,6 +5167,11 @@ The detailed specifications are in the task markdown file.
                 seed_feedback=seed_feedback,
                 smoke_command=smoke_command,
                 smoke_expected_exit=smoke_expected_exit,
+                **(
+                    {"feature_check_repair": feature_check_repair}
+                    if feature_check_repair is not None
+                    else {}
+                ),
             )
         )
 
@@ -6019,6 +6106,7 @@ The detailed specifications are in the task markdown file.
         smoke_command: Optional[str] = None,
         smoke_expected_exit: int = 0,
         shares_working_copy: bool = False,
+        feature_check_repair: Optional[FeatureCheckRepair] = None,
     ) -> TaskExecutionResult:
         """
         Execute single task using AutoBuildOrchestrator with shared worktree.
@@ -6143,6 +6231,10 @@ The detailed specifications are in the task markdown file.
                 # CoachValidator.gather_evidence.
                 smoke_command=smoke_command,
                 smoke_expected_exit=smoke_expected_exit,
+                # Whole-feature repair round (18 October 2026): the project's
+                # check for the per-task Coach, beside smoke_command; the
+                # single-task-wave guard lives in CoachValidator.
+                feature_check_repair=feature_check_repair,
             )
 
             # Execute task orchestration
@@ -6205,6 +6297,11 @@ The detailed specifications are in the task markdown file.
                 sdk_turns_per_invocation=sdk_turns_list,
                 decision_subtype=decision_subtype,
                 decision_subtype_co_fires=decision_co_fires,
+                stopped_because=(
+                    result.stopped_because
+                    if isinstance(getattr(result, "stopped_because", None), str)
+                    else None
+                ),
             )
 
         except (Exception, asyncio.CancelledError) as e:
@@ -6295,6 +6392,28 @@ The detailed specifications are in the task markdown file.
     # ------------------------------------------------------------------
     # Late-approval reconciliation helpers (TASK-ATR-003)
     # ------------------------------------------------------------------
+
+    def _archive_previous_round(self, task_id: str, worktree: Worktree) -> None:
+        """Move a re-opened task's turn files into ``round-<N>/`` (18 Oct 2026).
+
+        Covers the task's public and private folders: the ones
+        ``_autobuild_candidate_dirs`` lists, plus this worktree's own public
+        folder and ``task_private_dir``. See ``turn_rounds``. Never raises.
+        """
+        try:
+            from guardkit.orchestrator.paths import TaskArtifactPaths
+            from guardkit.orchestrator.turn_rounds import archive_turn_files
+
+            folders = list(self._autobuild_candidate_dirs(task_id))
+            worktree_path = Path(worktree.path)
+            folders.append(TaskArtifactPaths.autobuild_dir(task_id, worktree_path))
+            folders.append(TaskArtifactPaths.task_private_dir(task_id, worktree_path))
+            archive_turn_files(task_id, folders)
+        except Exception as exc:  # noqa: BLE001 — a record never fails a build
+            logger.warning(
+                "[%s] The earlier round's turn files could not be kept: %s",
+                task_id, exc,
+            )
 
     def _autobuild_candidate_dirs(self, task_id: str) -> list[Path]:
         """

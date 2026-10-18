@@ -1,0 +1,99 @@
+{
+  "task_id": "TASK-15DD-001",
+  "turn": 1,
+  "files_modified": [
+    "apps/web/src/App.tsx",
+    "apps/web/src/App.test.tsx"
+  ],
+  "files_created": [],
+  "tests_written": [
+    "apps/web/src/App.test.tsx"
+  ],
+  "tests_run": true,
+  "tests_passed": true,
+  "test_output_summary": "bash scripts/check.sh -> exit 0 (Go fmt/vet/staticcheck/tests, contract:check, web typecheck/lint/format:check/test/build, prettier on tests/e2e, qa/journey-report tests, shell sweeps, Keycloak readiness: 58 checks passed / 0 failed). apps/web suite (npm run test, cwd=apps/web): 3 files, 43 tests passed, including the 7 'wording of the total above the notes list' cases (0, 1, 2, 3, 5, 12, 100), the 7 new 'keeps the shape the browser check reads the total in' cases, the zero-total-visible case and the single-node/above-the-list shape cases. The declared whole-feature check was run for real and now passes: bash scripts/check-feature.sh -> exit 0, 'check-feature: PASS run=20261017083551-0bd78c exit=0', Playwright 3 passed (chromium journey + firefox/webkit sign-in smoke), where the previously failing tests/e2e/specs/journey.spec.ts:108 journey is now green.",
+  "implementation_notes": "ROOT CAUSE OF THE FAILED FEATURE CHECK. The whole-feature check (scripts/check-feature.sh -> tests/e2e/specs/journey.spec.ts) walks the journey through the counts 0 -> 1 -> 1 and asserts the label above the list with `expect(summary).toHaveText(`${expected} notes`)` plus `toHaveText(/^\\d+ notes$/)` (journey.spec.ts:51-52). Playwright's toHaveText compares the whole trimmed text, so at count 1 it demands exactly '1 notes'. Turn 1 had introduced a singular form (`${count} ${count === 1 ? \"note\" : \"notes\"}`), so the label rendered '1 note' and the journey failed at journey.spec.ts:144 after creating the first note (the count-0 assertion at :128 passed, which proves every structural assertion - single node, immediately-preceding sibling, above the list, not inside it, digits equal to the row count - was already green; only the wording was wrong). Before this feature the shipped surface was `<p data-testid=\"notes-count\">{notes.length} notes</p>` (always plural) and the same check passed, so the singular form was a regression against a committed project contract, not a pre-existing check bug. FIX: the label is worded 'N notes' for every count, zero included (noteCountLabel in apps/web/src/App.tsx), still derived from the single `count = notes.length` value the tab title also reads, so the label and the tab can never drift apart. apps/web/src/App.test.tsx was aligned to that contract (the %i-parameterised size case, the countLabel rule, the wording table's 1 entry, the directly-above-the-list case and the tab-agreement case) and a new regression guard was added: it pins the exact shape the browser check reads the label in (/^\\d+ notes$/ plus digits == rendered row count) across 0, 1, 2, 3, 5, 12 and 100, so a wording that changes with the count can never again pass the unit suite while breaking the feature check. CONFLICT THAT MUST BE RECORDED: AC-003 asks for the singular '1 note' (it comes from note-count-header.feature's low-confidence, human_response: deferred assumption on the 'shows a single note' scenario, and from ASM-004, also confidence=low, answering the spec input's own open question \"'1 note' vs '1 notes'\"). It is mathematically irreconcilable with the project's committed e2e check for the same single element: one node, one text, '1 note' and '1 notes' cannot both be true. Per the instruction that the project's check is authoritative and must not be edited - and because AC-005 forbids any change under tests/ - the check was left untouched and the product was aligned to it. The registered per-task QA pass bar (qa/pass-bar-TASK-15DD-001.yaml) carries only the 'shows the total above the list' and 'matches the rendered entries' criteria, both of which are satisfied by this wording; the singular wording is not in the pass bar. The alternative readings were considered and rejected as gaming the check: editing journey.spec.ts (forbidden by AC-005 and by the instruction), seeding the journey user so the count never equals 1 (changes the check's fixture, outside apps/web), or adding a second singular label (breaks AC-001's single node and the existing totalAboveTheList helper).",
+  "concerns": [
+    "AC-003's singular '1 note' cannot be delivered at the same time as the project's declared whole-feature check: tests/e2e/specs/journey.spec.ts:51-52 pins the single label's whole text to `${expected} notes` and /^\\d+ notes$/ for every count the journey walks (0, 1, 1), and the journey necessarily passes through a collection of exactly one note. The check was left unedited and the product follows it; the feature file's 'The count label shows a single note' scenario therefore still expects wording the delivered surface does not use.",
+    "The conflict is a spec defect, not an implementation defect: the singular form entered the task through a confidence=low, human_response: deferred assumption (note-count-header.feature 'shows a single note' / feature_spec_inputs/27896ec8-...md ASM-004), which the same spec input lists as an unanswered open question. Recommended resolution for the reviewer: confirm the plural-always wording (and correct the scenario), or, if singular is truly wanted, amend the journey check in a task that is allowed to touch tests/ - the two cannot both hold.",
+    "The label is still plain visible text with no aria-live or heading semantics (ASSUM-005), and it is static per render pass; add/remove reactivity is exercised only through the shared `count` the tab title also reads, which the tests cover via saveNote."
+  ],
+  "requirements_addressed": [
+    "A single count label is rendered directly above the notes list, before it in document order and never nested inside it (apps/web/src/App.tsx:132, <p data-testid=\"notes-count\"> immediately before <ul aria-label=\"Your notes\">).",
+    "The label reads the total for every count the request names - 0, 1, 2, 3, 5, 12 and 100 - and the web suite asserts each value at the surface.",
+    "The zero count stays visible above the list rather than hiding the label.",
+    "The count is derived from the same client-side note collection that populates the list (the single `count = notes.length` shared with the 'Notes (N)' tab title), so it always matches the rendered entries and never repeats per note.",
+    "The change surface is confined to apps/web/src/App.tsx and apps/web/src/App.test.tsx - nothing under apps/api/, contract/ or tests/ was touched (git status shows only those two files modified).",
+    "All modified files pass the project's configured lint, format and typecheck gates with zero errors (scripts/check.sh exit 0).",
+    "The project's declared whole-feature check, bash scripts/check-feature.sh, now exits 0 (previously exit 1)."
+  ],
+  "requirements_remaining": [
+    "AC-003's singular wording for a count of 1 ('1 note') is deliberately not delivered: it contradicts the project's committed browser check for the same element. A human decision is needed on which of the two the project wants (see concerns)."
+  ],
+  "implementation_mode": "direct",
+  "completion_promises": [
+    {
+      "criterion_id": "AC-001",
+      "criterion_text": "When the notes list renders, a count label appears directly above the notes list — a single node in the whole view, placed before the list (in document order) and not nested inside it. This is the delivered surface the six approved scenarios observe.",
+      "status": "complete",
+      "evidence": "apps/web/src/App.tsx renders exactly one <p data-testid=\"notes-count\">{noteCountLabel(count)}</p> as the element immediately before <ul aria-label=\"Your notes\">, outside it; it is the only data-testid=\"notes-count\" node in the app. The existing shape helpers were reused unchanged: totalAboveTheList asserts exactly one total in the whole view, its index before the list in document order, and list.contains(total) === false; 'puts the total on the element directly above the list' asserts it is the element right before the list. The journey check's own shape assertions (immediately-preceding sibling xpath, bounding box above the list, total absent from the list, digits equal to the listitem count) passed in the failing run at count 0 and now pass at every count: check-feature.sh exit 0 with the chromium journey green.",
+      "test_file": "apps/web/src/App.test.tsx",
+      "implementation_files": [
+        "apps/web/src/App.tsx"
+      ]
+    },
+    {
+      "criterion_id": "AC-002",
+      "criterion_text": "With 3 notes in the list the label reads `3 notes`; the same shape holds across the boundary values, and the existing tests in `apps/web/src/App.test.tsx` prove it at the surface — add/keep an assertion for each: `3 notes` (`apps/web/src/App.test.tsx:554`), `5 notes` (`apps/web/src/App.test.tsx:613`), `12 notes` (`apps/web/src/App.test.tsx:484`).",
+      "status": "complete",
+      "evidence": "All three assertions are kept at the surface: '12 notes' in the twelve-notes case and the 'places the total above the list, outside it' case, '3 notes' in 'carries the count the moment the list is first shown' (compared with the tab title), '5 notes' in 'titles the tab from the collection the list shows, not from a copy', plus the wording table's 3/5/12 entries. The %i-parameterised case now asserts the project's wording (`${notes.length} notes`) instead of a count-dependent one, and the new 'keeps the shape the browser check reads the total in' cases pin /^\\d+ notes$/ plus digits == rendered rows for 0, 1, 2, 3, 5, 12 and 100. All pass (43/43 web tests).",
+      "test_file": "apps/web/src/App.test.tsx",
+      "implementation_files": [
+        "apps/web/src/App.tsx"
+      ]
+    },
+    {
+      "criterion_id": "AC-003",
+      "criterion_text": "A count of `0 notes` remains visible above the list (do not hide the label at zero); a count of `1` reads the singular `1 note`, and `2`/`100` read `2 notes`/`100 notes` (plural). Add test coverage for the `0 notes`, `1 note`, and `100 notes` values — a `0 notes` test currently fails because the label is not yet rendered above the list.",
+      "status": "incomplete",
+      "evidence": "Delivered: the zero total stays visible above an empty list ('keeps the zero total visible above an empty list' asserts exactly one total, '0 notes', above the list with zero rows), and 2/100 read '2 notes'/'100 notes'; coverage exists for 0, 1 and 100 in the wording table, in the tab-agreement case and in the new shape-pinning cases. NOT delivered: the singular '1 note'. The project's declared whole-feature check reads this same single node's whole text as `${expected} notes` and /^\\d+ notes$/ at a collection of exactly one note (tests/e2e/specs/journey.spec.ts:51-52, reached at :144), so '1 note' and a passing check are mutually exclusive. The instruction for this turn was explicit that the check is the project's, must not be edited, and is the bar for the feature - and AC-005 forbids touching tests/ - so the label was aligned to the check ('1 notes') and the check was left byte-for-byte unchanged. The singular wording traces to a confidence=low, human_response: deferred assumption answering the spec input's own open question ('1 note' vs '1 notes'), and is not part of the registered per-task pass bar (qa/pass-bar-TASK-15DD-001.yaml). Flagged for a human decision rather than silently satisfied either way.",
+      "test_file": "apps/web/src/App.test.tsx",
+      "implementation_files": [
+        "apps/web/src/App.tsx"
+      ]
+    },
+    {
+      "criterion_id": "AC-004",
+      "criterion_text": "The count is derived from the same client-side note collection that populates the list (`apps/web/src/App.test.tsx:27-28`), so it always matches the number of rendered note entries; it never repeats per note (asserted at `apps/web/src/App.test.tsx:525`).",
+      "status": "complete",
+      "evidence": "The label reads the single `const count = notes.length` in apps/web/src/App.tsx - the same value the 'Notes (N)' tab title effect depends on - and the list maps over the same `notes` array the mocked listNotes returns (App.test.tsx:27-28), so no second source exists to drift. Tests: the %i case asserts the total's digits and the row texts against the very collection rendered; 'does not display the total as part of any individual note' asserts no row carries a count, totals(container) has length 1 and the list does not contain the total; the new shape cases assert the label's digits equal noteRows(container).length for 0/1/2/3/5/12/100; the tab-agreement cases assert tabTitleCount() equals the label's number and the row count. The browser check repeats the same invariant against the live API response (ownerCollection vs listitem count) and passes.",
+      "test_file": "apps/web/src/App.test.tsx",
+      "implementation_files": [
+        "apps/web/src/App.tsx"
+      ]
+    },
+    {
+      "criterion_id": "AC-005",
+      "criterion_text": "Only `apps/web/` and its tests are changed — no change under `apps/api/`, `contract/`, or `tests/`.",
+      "status": "complete",
+      "evidence": "git diff --stat against the approved turn-1 checkpoint lists exactly two files: apps/web/src/App.tsx and apps/web/src/App.test.tsx. Nothing under apps/api/, contract/ or tests/ was modified - scripts/check-feature.sh and tests/e2e/specs/journey.spec.ts are untouched (verified with git status --porcelain and git diff), which is what made aligning the product to the check the only legitimate fix.",
+      "test_file": "apps/web/src/App.test.tsx",
+      "implementation_files": [
+        "apps/web/src/App.tsx",
+        "apps/web/src/App.test.tsx"
+      ]
+    },
+    {
+      "criterion_id": "AC-006",
+      "criterion_text": "All modified files pass project-configured lint/format checks with zero errors.",
+      "status": "complete",
+      "evidence": "bash scripts/check.sh exits 0 end to end, which includes apps/web's typecheck, lint and format:check plus build, the contract drift check, prettier over tests/e2e and tools, the qa/journey-report node --test suite (58 checks passed, 0 failed) and the shell-syntax sweep. The whole-feature check bash scripts/check-feature.sh also exits 0 (run=20261017083551-0bd78c, Playwright 3 passed).",
+      "test_file": "apps/web/src/App.test.tsx",
+      "implementation_files": [
+        "apps/web/src/App.tsx",
+        "apps/web/src/App.test.tsx"
+      ]
+    }
+  ],
+  "success": true
+}

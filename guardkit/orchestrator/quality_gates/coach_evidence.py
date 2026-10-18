@@ -394,6 +394,16 @@ class CoachEvidenceBundle:
     # blocks the turn via ``AgentInvoker._apply_runtime_parity_guard``.
     runtime_parity: Optional["RuntimeParityResult"] = None
 
+    # The project's whole-feature check, in a whole-feature repair round only
+    # (18 October 2026). A dict: this Coach turn's own run of the declared
+    # check (``ran`` with command, exit code, outcome and output tails, or
+    # ``ran: False`` with ``skipped_reason``) and ``previous_failed_attempt``,
+    # the attempt that started the round. Built by
+    # ``feature_check.whole_feature_check_record``. ``None`` on every other
+    # turn, and then left out of ``to_dict`` entirely, so records and the
+    # Coach prompt outside a repair round are byte-identical to before.
+    whole_feature_check: Optional[Dict[str, Any]] = None
+
     # TASK-AB-XREPOEV01 (AC-002): Coach's independent test runs in declared
     # sibling repos (``evidence_repos``). Each entry is an
     # ``EvidenceTestResult.to_dict()``. Empty when no sibling repos are
@@ -419,4 +429,8 @@ class CoachEvidenceBundle:
         """
         from dataclasses import asdict
 
-        return asdict(self)
+        data = asdict(self)
+        # Present only in a whole-feature repair round (see the field).
+        if data.get("whole_feature_check") is None:
+            data.pop("whole_feature_check", None)
+        return data

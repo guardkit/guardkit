@@ -666,6 +666,17 @@ the symptom, not the cause, at about 25 minutes of wall clock apiece.
 When no file changed for N turns running, no later turn can change that, so the
 loop stops here and says which of the two things it is likely to be. TASK-AB-NOCHANGE01."""
 
+STALL_PLAN_CONTRADICTS_CHECK = "plan_contradicts_project_check"
+"""Stall sub-type: inside a whole-feature repair round, the turn was sent back
+only over acceptance criteria that the coder itself marked as not delivered,
+while GuardKit's own run of the project's declared whole-feature check passed
+on that turn's code. Those criteria were approved as met on the code that
+failed the check, so the plan and the project's check cannot both hold, and
+no later turn can fix that: the task stops at once with one plain sentence
+(``plan_contradicts_check_sentence``). Checked first so it takes the primary
+label. Design of 18 October 2026, "GuardKit stops early when the plan
+contradicts the project's check"."""
+
 STALL_CLASSIFICATION_THRESHOLD = 3
 """Single source of truth for the trailing-turn window every stall scan uses
 (2026-07-04 code review, FIX 2). ``classify_stall``'s call sites and the
@@ -976,6 +987,258 @@ def _coach_first_issue_description(
         if text is not None:
             return text
     return None
+
+
+# ----------------------------------------------------------------------------
+# The plain early stop in a whole-feature repair round (18 October 2026)
+# ----------------------------------------------------------------------------
+
+#: The criterion text in the stop sentence is cut to this many characters.
+_STOP_CRITERION_TEXT_LIMIT = 160
+
+#: The one gate blocker the early stop accepts: criteria the coder's own
+#: completion promise did not deliver.
+_GATE_AC_BLOCKER = "direct_mode_ac_unverified"
+
+
+def _direct_mode_gate_blockers(
+    leading_issues: Optional[List[Dict[str, Any]]],
+    must_fix: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """The direct-mode gate's blockers as data: ``[{category, unmet_ids}]``.
+
+    One entry per leading issue and per must-fix item, in that order. Only a
+    ``direct_mode_ac_unverified`` item carries ids (its ``details.unmet_ids``,
+    the whole list, never the shortened one in the prose).
+    """
+    blockers: List[Dict[str, Any]] = []
+    for issue in list(leading_issues or []) + list(must_fix or []):
+        if not isinstance(issue, dict):
+            continue
+        category = str(issue.get("category") or "")
+        unmet_ids: List[str] = []
+        details = issue.get("details")
+        if category == _GATE_AC_BLOCKER and isinstance(details, dict):
+            raw = details.get("unmet_ids")
+            if isinstance(raw, list):
+                unmet_ids = [str(item) for item in raw]
+        blockers.append({"category": category, "unmet_ids": unmet_ids})
+    return blockers
+
+
+def _coach_report(turn_record: "TurnRecord") -> Optional[Dict[str, Any]]:
+    """The turn's Coach report as a dict, or ``None``. Never raises."""
+    coach_result = getattr(turn_record, "coach_result", None)
+    if coach_result is None:
+        return None
+    try:
+        report = getattr(coach_result, "report", None)
+    except (AttributeError, TypeError):
+        return None
+    return report if isinstance(report, dict) else None
+
+
+def _extract_direct_mode_blockers(
+    turn_record: "TurnRecord",
+) -> Optional[List[Dict[str, Any]]]:
+    """Read the gate's TOP-LEVEL ``direct_mode_blockers`` key, by schema only.
+
+    Built like ``_extract_absent_evidence_repo_signal``: it reads
+    ``turn_record.coach_result.report`` and never any text. Returns ``None``
+    when the key is missing or any entry is malformed (each entry must be a
+    dict with a string ``category`` and a list of strings ``unmet_ids``), so a
+    missing or unreadable record leaves today's behaviour.
+    """
+    report = _coach_report(turn_record)
+    if report is None:
+        return None
+    blockers = report.get("direct_mode_blockers")
+    if not isinstance(blockers, list):
+        return None
+    clean: List[Dict[str, Any]] = []
+    for entry in blockers:
+        if not isinstance(entry, dict):
+            return None
+        category = entry.get("category")
+        unmet_ids = entry.get("unmet_ids")
+        if not isinstance(category, str) or not isinstance(unmet_ids, list):
+            return None
+        if not all(isinstance(item, str) for item in unmet_ids):
+            return None
+        clean.append({"category": category, "unmet_ids": list(unmet_ids)})
+    return clean
+
+
+def _criteria_only_rejection(turn_record: "TurnRecord") -> Optional[List[str]]:
+    """The criteria a turn was sent back over, when NOTHING else sent it back.
+
+    Read as structured data, never from text. Two shapes count:
+
+    * the direct-mode gate: every blocker in ``direct_mode_blockers`` is
+      ``direct_mode_ac_unverified`` (so there is no leading issue and no other
+      gate blocker) and their ``unmet_ids`` name at least one criterion;
+    * the model Coach: every issue has type ``missing_requirement``, at least
+      one criterion is ``rejected``, and the Coach's independent tests ran and
+      passed.
+
+    Any other blocker, a missing or malformed record, or any other shape
+    returns ``None``: the turn is sent back exactly as today.
+    """
+    report = _coach_report(turn_record)
+    if report is None or report.get("decision") != "feedback":
+        return None
+    if getattr(turn_record, "decision", None) != "feedback":
+        return None
+
+    if "direct_mode_blockers" in report:
+        if report.get("coach_primary_synthetic_feedback") is not True:
+            return None
+        blockers = _extract_direct_mode_blockers(turn_record)
+        if not blockers:
+            return None
+        ids: List[str] = []
+        for blocker in blockers:
+            if blocker["category"] != _GATE_AC_BLOCKER:
+                return None
+            for criterion_id in blocker["unmet_ids"]:
+                if criterion_id not in ids:
+                    ids.append(criterion_id)
+        return ids or None
+
+    # Any other synthetic report (another gate, or an exception) is not the
+    # model's verdict; only the direct-mode gate's structured blockers count.
+    if report.get("coach_primary_synthetic_feedback") is True:
+        return None
+    issues = report.get("issues")
+    if not isinstance(issues, list) or not issues:
+        return None
+    for issue in issues:
+        if not isinstance(issue, dict) or issue.get("type") != "missing_requirement":
+            return None
+    rows = report.get("criteria_verification")
+    if not isinstance(rows, list):
+        return None
+    rejected: List[str] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            return None
+        if row.get("result") == "rejected":
+            criterion_id = row.get("criterion_id")
+            if not isinstance(criterion_id, str) or not criterion_id:
+                return None
+            if criterion_id not in rejected:
+                rejected.append(criterion_id)
+    if not rejected:
+        return None
+    validation = report.get("validation_results")
+    independent = (
+        validation.get("independent_tests") if isinstance(validation, dict) else None
+    )
+    if not (
+        isinstance(independent, dict)
+        and independent.get("tests_passed") is True
+        and independent.get("signal_absent") is False
+    ):
+        return None
+    return rejected
+
+
+def _player_left_out(turn_record: "TurnRecord", criterion_ids: List[str]) -> bool:
+    """True when the coder's own completion promise marks EVERY one of
+    ``criterion_ids`` as not delivered (``status: "incomplete"``).
+
+    Read from the turn's Player report. A criterion with no promise, a
+    promise marked anything else, or an unreadable report returns False.
+    """
+    player_result = getattr(turn_record, "player_result", None)
+    report = getattr(player_result, "report", None) if player_result else None
+    if not isinstance(report, dict) or not criterion_ids:
+        return False
+    promises = report.get("completion_promises")
+    if not isinstance(promises, list):
+        return False
+    status_by_id: Dict[str, Any] = {}
+    for promise in promises:
+        if isinstance(promise, dict) and isinstance(promise.get("criterion_id"), str):
+            status_by_id[promise["criterion_id"]] = promise.get("status")
+    return all(status_by_id.get(cid) == "incomplete" for cid in criterion_ids)
+
+
+def _criterion_texts(
+    turn_record: "TurnRecord", criterion_ids: List[str]
+) -> Dict[str, str]:
+    """Each criterion's text: GuardKit's own record first, then the promise."""
+    texts: Dict[str, str] = {}
+    report = _coach_report(turn_record) or {}
+    verification = report.get("acceptance_criteria_verification")
+    rows = (
+        verification.get("criteria_results")
+        if isinstance(verification, dict)
+        else None
+    )
+    for row in rows if isinstance(rows, list) else []:
+        if isinstance(row, dict) and row.get("criterion_id") in criterion_ids:
+            text = row.get("criterion_text")
+            if isinstance(text, str) and text.strip():
+                texts.setdefault(row["criterion_id"], text)
+    player_result = getattr(turn_record, "player_result", None)
+    player_report = getattr(player_result, "report", None) if player_result else None
+    promises = (
+        player_report.get("completion_promises")
+        if isinstance(player_report, dict)
+        else None
+    )
+    for promise in promises if isinstance(promises, list) else []:
+        if isinstance(promise, dict) and promise.get("criterion_id") in criterion_ids:
+            text = promise.get("criterion_text")
+            if isinstance(text, str) and text.strip():
+                texts.setdefault(promise["criterion_id"], text)
+    return texts
+
+
+def plan_contradicts_check_sentence(
+    criterion_ids: List[str],
+    criterion_texts: Dict[str, str],
+    checkpoint_sha: Optional[str] = None,
+) -> str:
+    """The one plain sentence the early stop gives.
+
+    It states two facts, both from GuardKit's own runs: the declared check
+    failed while these criteria were met (they were approved before the check
+    ran), and it passes on the coder's version that leaves them out. The check
+    is named by its fixed public label, never by its command, because this
+    sentence is published (the console, the receipt's reason, Forge's failure
+    reason) and a declared command can carry a credential (13 October 2026).
+    The check's failing lines are not parsed into it.
+    """
+    from guardkit.orchestrator.feature_check import PUBLIC_LABEL
+
+    def _short(text: str) -> str:
+        flat = " ".join(str(text).split())
+        if len(flat) <= _STOP_CRITERION_TEXT_LIMIT:
+            return flat
+        return flat[: _STOP_CRITERION_TEXT_LIMIT - 1].rstrip() + "\u2026"
+
+    named = [
+        f'{cid} ("{_short(criterion_texts[cid])}")'
+        if criterion_texts.get(cid)
+        else cid
+        for cid in criterion_ids
+    ]
+    if len(named) == 1:
+        names = named[0]
+    else:
+        names = ", ".join(named[:-1]) + " and " + named[-1]
+    single = len(named) == 1
+    where = "kept in the build's worktree"
+    if checkpoint_sha:
+        where += f", commit `{str(checkpoint_sha)[:12]}`"
+    return (
+        "The plan contradicts the project's own check: "
+        f"{PUBLIC_LABEL} failed while {names} {'was' if single else 'were'} "
+        "met, and passes on the coder's version that leaves "
+        f"{'it' if single else 'them'} out ({where})."
+    )
 
 
 def _extract_absent_evidence_repo_signal(
@@ -1735,6 +1998,7 @@ def classify_stall(
     final_decision: str,
     threshold: int = STALL_CLASSIFICATION_THRESHOLD,
     context_pollution_fired: bool = False,
+    plan_contradicts_check_fired: bool = False,
 ) -> Optional[StallClassification]:
     """Classify the sub-type of an ``unrecoverable_stall`` exit (TASK-FIX-7A07).
 
@@ -1799,6 +2063,13 @@ def classify_stall(
     missing_phases: List[str] = []
     expected_phases: Optional[int] = None
     actual_invocations: Optional[int] = None
+
+    # 18 October 2026: the plain early stop in a whole-feature repair round.
+    # Signalled by the loop (like context pollution), never read from report
+    # text, and the primary label whenever it fired: it is the one true
+    # statement of why this task stopped.
+    if plan_contradicts_check_fired:
+        co_fires.append(STALL_PLAN_CONTRADICTS_CHECK)
 
     # Check no_file_changes_stall FIRST so it takes the primary label
     # (TASK-AB-NOCHANGE01). When the generator wrote nothing at all for the
@@ -2360,6 +2631,10 @@ class OrchestrationResult:
     # TASK-FIX-7A07: Sub-classification of ``unrecoverable_stall`` exits.
     # None when final_decision is something other than unrecoverable_stall.
     stall_classification: Optional["StallClassification"] = None
+    # 18 October 2026: the early stop's one plain sentence, set only when a
+    # whole-feature repair round stopped because the plan contradicts the
+    # project's check. The feature orchestrator hands it to the receipt.
+    stopped_because: Optional[str] = None
 
 
 # ============================================================================
@@ -2483,6 +2758,7 @@ class AutoBuildOrchestrator:
         seed_feedback: Optional[str] = None,  # TASK-AB-COACHRUNPARITY01 (arm a)
         smoke_command: Optional[str] = None,  # TASK-AB-COACHRUNPARITY01 (arm b)
         smoke_expected_exit: int = 0,  # TASK-AB-COACHRUNPARITY01 (arm b)
+        feature_check_repair: Optional[Any] = None,  # whole-feature repair round
         sdk_timeout_is_override: Optional[bool] = None,
         expected_branch: Optional[str] = None,
         expected_branch_pinned: bool = False,
@@ -2709,6 +2985,19 @@ class AutoBuildOrchestrator:
         # Exit code that counts as a clean standalone run (feature's
         # smoke_gates.expected_exit; default 0).
         self._smoke_expected_exit: int = smoke_expected_exit
+        # Whole-feature repair round (18 October 2026): the feature
+        # orchestrator's ``FeatureCheckRepair`` when this task was re-opened
+        # because the project's whole-feature check failed, else None. Threaded
+        # beside ``smoke_command`` into the primary Coach's validator, which
+        # runs the check once per Coach turn; the loop reads that run for the
+        # plain early stop (``_plan_contradicts_check_stop``). None -> every
+        # turn runs exactly as before.
+        self._feature_check_repair: Optional[Any] = feature_check_repair
+        # This task's whole-feature check record per Coach turn, read by the
+        # early stop. Reset per _loop_phase invocation.
+        self._whole_feature_check_by_turn: Dict[int, Dict[str, Any]] = {}
+        # The early stop's sentence, when it fired. Reset per _loop_phase.
+        self._plan_contradicts_check_sentence: Optional[str] = None
         self._cancellation_event: Optional[threading.Event] = cancellation_event  # Cooperative cancellation (TASK-ASF-007)
         self._timeout_event: Optional[threading.Event] = timeout_event  # Feature-level timeout signal (TASK-ABFIX-006)
         self._progress_logger = progress_logger  # TASK-FIX-OBS2: Per-task progress logging
@@ -3382,6 +3671,10 @@ class AutoBuildOrchestrator:
                 final_decision,
                 threshold=STALL_CLASSIFICATION_THRESHOLD,
                 context_pollution_fired=self._context_pollution_no_checkpoint_fired,
+                plan_contradicts_check_fired=(
+                    getattr(self, "_plan_contradicts_check_sentence", None)
+                    is not None
+                ),
             )
             result = OrchestrationResult(
                 task_id=task_id,
@@ -3397,6 +3690,11 @@ class AutoBuildOrchestrator:
                 ablation_mode=self.ablation_mode,
                 recovery_count=self.recovery_count,
                 stall_classification=stall_classification,
+                stopped_because=(
+                    None
+                    if success
+                    else getattr(self, "_plan_contradicts_check_sentence", None)
+                ),
             )
 
             # Emit lifecycle event based on outcome (TASK-INST-004)
@@ -4466,6 +4764,9 @@ class AutoBuildOrchestrator:
         # TASK-FIX-7A07: Reset stall-classification signals at loop entry so
         # classify_stall() sees fresh state per task.
         self._context_pollution_no_checkpoint_fired = False
+        # The plain early stop (18 October 2026): fresh per task loop.
+        self._plan_contradicts_check_sentence = None
+        self._whole_feature_check_by_turn = {}
         # Why a checkpoint was refused, when one was (build 0D7C).
         self._checkpoint_refusal: Optional[str] = None
         # Why protected paths could not be put back, when they could not.
@@ -4573,6 +4874,8 @@ class AutoBuildOrchestrator:
                 # Reset every turn: only the turn that made the claim carries
                 # its refusal.
                 refusal_to_carry: Optional[str] = None
+                # This turn's checkpoint commit, named by the early stop.
+                turn_checkpoint_sha: Optional[str] = None
 
                 # Cooperative cancellation check at TOP of loop (TASK-ASF-007)
                 # Check timeout_event first — feature-level timeout takes priority (TASK-ABFIX-006)
@@ -4896,6 +5199,7 @@ class AutoBuildOrchestrator:
                         f"Checkpoint created: {checkpoint.commit_hash[:8]} "
                         f"for turn {turn}"
                     )
+                    turn_checkpoint_sha = getattr(checkpoint, "commit_hash", None)
 
                     # Check for context pollution and rollback if needed
                     if self.rollback_on_pollution:
@@ -4977,6 +5281,17 @@ class AutoBuildOrchestrator:
                     )
                     return turn_history, "unrecoverable_stall"
 
+                # 18 October 2026: the plain early stop in a whole-feature
+                # repair round. All four conditions must hold (see
+                # _plan_contradicts_check_stop); otherwise nothing changes.
+                stop_sentence = self._plan_contradicts_check_stop(
+                    turn_record, turn_checkpoint_sha
+                )
+                if stop_sentence is not None:
+                    self._plan_contradicts_check_sentence = stop_sentence
+                    logger.error("[%s] %s", task_id, stop_sentence)
+                    return turn_history, "unrecoverable_stall"
+
                 # Check for repeated feedback stall (TASK-AB-SD01 Mechanism 2)
                 if turn_record.decision == "feedback" and turn_record.feedback:
                     criteria_passed = self._count_criteria_passed(turn_record)
@@ -5024,6 +5339,56 @@ class AutoBuildOrchestrator:
             # Reached max turns without approval
             logger.warning(f"Max turns ({self.max_turns}) exceeded for {task_id}")
             return turn_history, "max_turns_exceeded"
+
+    def _plan_contradicts_check_stop(
+        self,
+        turn_record: TurnRecord,
+        checkpoint_sha: Optional[str] = None,
+    ) -> Optional[str]:
+        """The early stop's sentence when ALL FOUR conditions hold, else None.
+
+        1. This task is in a whole-feature repair round (it was given a
+           ``FeatureCheckRepair``).
+        2. GuardKit's own run of the project's check on this turn's code
+           PASSED. The Player's word is never enough: the stop rests on the
+           run recorded in this turn's evidence.
+        3. The turn was sent back ONLY over acceptance criteria, at least one
+           named, read as structured data (``_criteria_only_rejection``).
+        4. The coder's own completion promise marks each of those criteria as
+           not delivered: it chose the check over them.
+
+        Those criteria were approved as met on the code that failed the check
+        (the check runs only once every task is approved), so both facts in
+        the sentence come from GuardKit's own runs. No timer, no setting, no
+        extra attempt. Anything missing or unreadable returns None and the
+        turn goes on exactly as today. Never raises.
+        """
+        try:
+            if getattr(self, "_feature_check_repair", None) is None:
+                return None
+            record = self._whole_feature_check_by_turn.get(turn_record.turn)
+            if not (
+                isinstance(record, dict)
+                and record.get("ran") is True
+                and record.get("outcome") == "passed"
+            ):
+                return None
+            criterion_ids = _criteria_only_rejection(turn_record)
+            if not criterion_ids:
+                return None
+            if not _player_left_out(turn_record, criterion_ids):
+                return None
+            return plan_contradicts_check_sentence(
+                criterion_ids,
+                _criterion_texts(turn_record, criterion_ids),
+                checkpoint_sha,
+            )
+        except Exception as exc:  # noqa: BLE001 — the stop never fails a turn
+            logger.warning(
+                "The plan-contradicts-check stop could not be evaluated: %s",
+                type(exc).__name__,
+            )
+            return None
 
     def _cap_specialist_timeout(
         self,
@@ -9998,6 +10363,8 @@ class AutoBuildOrchestrator:
             evidence_repos=self._evidence_repos,  # TASK-AB-XREPOEV01 (AC-002)
             smoke_command=self._smoke_command,  # TASK-AB-COACHRUNPARITY01 (arm b)
             smoke_expected_exit=self._smoke_expected_exit,  # TASK-AB-COACHRUNPARITY01 (arm b)
+            # Whole-feature repair round only; None everywhere else.
+            feature_check_repair=self._feature_check_repair,
             in_autobuild_context=True,  # WS3-S1 Q1 SPLIT (hard-abort)
             component=component,  # per-component seam
         )
@@ -10070,6 +10437,14 @@ class AutoBuildOrchestrator:
         evidence_bundle.spec_conformance = self._produce_spec_conformance_leg(
             task_id, turn, worktree
         )
+
+        # Whole-feature repair round (18 October 2026): the bundle carries the
+        # project's check — this turn's run, made in gather_evidence, and the
+        # attempt that started the round. When gathering stopped early the
+        # check was not run, and the record says so; the failed attempt is
+        # still shown. Remembered per turn for the loop's early stop, which
+        # rests on GuardKit's own run and never on the Player's word.
+        self._attach_whole_feature_check(evidence_bundle, turn)
 
         # Coach v3 Step 1 (coach-finetune training-data enabler): persist the
         # INPUT evidence bundle in the orchestrator-private directory.
@@ -10412,6 +10787,44 @@ class AutoBuildOrchestrator:
             evidence_repo_signal_absent=(not has_ran_and_failed),
         )
 
+    def _attach_whole_feature_check(
+        self, evidence_bundle: Any, turn: int
+    ) -> None:
+        """Give a repair-round bundle its whole-feature check record.
+
+        Outside a whole-feature repair round this does nothing at all. Inside
+        one, ``gather_evidence`` has already run the check on a complete
+        gathering; when it did not (gathering stopped early, or the record
+        could not be built) the record says the check was not run, with the
+        attempt that started the round. The record is remembered for this
+        turn so the loop's early stop reads GuardKit's own run. Never raises.
+        """
+        repair = getattr(self, "_feature_check_repair", None)
+        if repair is None or evidence_bundle is None:
+            return
+        try:
+            record = getattr(evidence_bundle, "whole_feature_check", None)
+            if not isinstance(record, dict):
+                from guardkit.orchestrator.feature_check import (
+                    whole_feature_check_record,
+                )
+
+                status = getattr(evidence_bundle, "gathering_status", None)
+                reason = (
+                    f"the Coach's evidence stopped early ({status}), so the "
+                    "check was not run on this turn's code"
+                    if status != "complete"
+                    else "the check's record could not be built for this turn"
+                )
+                record = whole_feature_check_record(repair, skip_reason=reason)
+                evidence_bundle.whole_feature_check = record
+            self._whole_feature_check_by_turn[turn] = record
+        except Exception as exc:  # noqa: BLE001 — evidence never fails a turn
+            logger.warning(
+                "Whole-feature check record not attached for turn %s: %s",
+                turn, type(exc).__name__,
+            )
+
     def _direct_mode_evidence_gate(
         self,
         validator: "CoachValidator",
@@ -10700,6 +11113,10 @@ class AutoBuildOrchestrator:
                 if "direct_mode_ac_unverified" in categories
                 else None
             ),
+            # 18 October 2026 (design review R1): the gate's blockers as data,
+            # one entry per leading issue and per must-fix item, so the loop
+            # reads them by schema and never from the prose above.
+            gate_blockers=_direct_mode_gate_blockers(leading_issues, must_fix),
         )
 
     @staticmethod
@@ -10829,6 +11246,10 @@ class AutoBuildOrchestrator:
         leading_issues: Optional[List[Dict[str, Any]]] = None,
         # FEAT-2C42: how to fix the blocking issue, when the caller knows.
         suggestion: Optional[str] = None,
+        # 18 October 2026: the direct-mode gate's blockers as structured data,
+        # ``[{category, unmet_ids}]``. Only ``_direct_mode_evidence_gate``
+        # passes it; every other caller's report stays byte-identical.
+        gate_blockers: Optional[List[Dict[str, Any]]] = None,
     ) -> AgentInvocationResult:
         """Write a synthetic feedback coach_turn_N.json and return its result.
 
@@ -10925,6 +11346,13 @@ class AutoBuildOrchestrator:
             # never fire on a nested placement.
             "evidence_repo_signal_absent": evidence_repo_signal_absent,
         }
+        if gate_blockers is not None:
+            # A TOP-LEVEL key, like evidence_repo_signal_absent: the loop's
+            # schema-only reader (_extract_direct_mode_blockers) reads it
+            # from here and nowhere else.
+            synthetic["direct_mode_blockers"] = [
+                dict(blocker) for blocker in gate_blockers
+            ]
         try:
             with open(decision_path, "w") as f:
                 json.dump(synthetic, f, indent=2)
@@ -11727,6 +12155,11 @@ class AutoBuildOrchestrator:
             # and the generic task-blaming hint \u2014 it names the specific
             # sub-agents the Player should invoke via the Task tool rather
             # than blaming the task's acceptance criteria.
+            # 18 October 2026: the plain early stop says one sentence, and
+            # that sentence is the whole message.
+            stop_sentence = getattr(self, "_plan_contradicts_check_sentence", None)
+            if stop_sentence:
+                return stop_sentence
             classification = classify_stall(
                 turn_history,
                 final_decision,
@@ -12074,6 +12507,10 @@ class AutoBuildOrchestrator:
             )
 
         elif final_decision == "unrecoverable_stall":
+            # 18 October 2026: the plain early stop's sentence is the error.
+            stop_sentence = getattr(self, "_plan_contradicts_check_sentence", None)
+            if stop_sentence:
+                return stop_sentence
             return (
                 f"Unrecoverable stall detected after {len(turn_history)} turn(s). "
                 f"AutoBuild cannot make forward progress."

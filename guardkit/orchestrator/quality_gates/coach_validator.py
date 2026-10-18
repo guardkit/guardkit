@@ -1810,6 +1810,7 @@ class CoachValidator:
         evidence_repos: Optional[List["EvidenceRepo"]] = None,  # TASK-AB-XREPOEV01
         smoke_command: Optional[str] = None,  # TASK-AB-COACHRUNPARITY01 (arm b)
         smoke_expected_exit: int = 0,  # TASK-AB-COACHRUNPARITY01 (arm b)
+        feature_check_repair: Optional[Any] = None,  # whole-feature repair round
         basetemp_context: Optional[str] = None,  # TASK-AB-BASETEMP01
         in_autobuild_context: bool = False,  # WS3-S1 Q1 SPLIT (hard-abort)
         toolchain: Optional["ToolchainDeclaration"] = None,  # TS-lane D.1b
@@ -2089,6 +2090,12 @@ class CoachValidator:
         # Threaded from the feature's smoke_gates.expected_exit so the per-task
         # check agrees with the post-wave gate (default 0).
         self.smoke_expected_exit: int = smoke_expected_exit
+        # A whole-feature repair round's ``FeatureCheckRepair`` (18 October
+        # 2026), threaded beside ``smoke_command``. When set, gather_evidence
+        # runs the project's declared whole-feature check once on this turn's
+        # code (single-task waves only) and records it with the attempt that
+        # started the round. None on every other turn -> nothing runs.
+        self.feature_check_repair: Optional[Any] = feature_check_repair
         # TASK-AB-BASETEMP01: caller-supplied attribution label for the per-run
         # pytest --basetemp; None -> per-path defaults (see _basetemp_context).
         self._basetemp_context: Optional[str] = basetemp_context
@@ -3919,6 +3926,16 @@ class CoachValidator:
         runtime_parity = self._gather_runtime_parity()
 
         # ------------------------------------------------------------------
+        # 8b. The project's whole-feature check (18 October 2026). In a
+        # whole-feature repair round only: run the declared check once on
+        # this turn's code, with the same single-task-wave guard as runtime
+        # parity, and carry it beside the attempt that started the round. A
+        # skipped, unrunnable or raising run is recorded as such and nothing
+        # is inferred from it. ``None`` on every other turn.
+        # ------------------------------------------------------------------
+        whole_feature_check = self._gather_whole_feature_check()
+
+        # ------------------------------------------------------------------
         # 8. L4 behavioural-oracle producer (TASK-QAV-006).
         # Populates behavioural_oracle at the complete-path return only.
         # Partial returns (honesty_abort, gate_abort, exception) keep None.
@@ -4061,7 +4078,32 @@ class CoachValidator:
             coverage=coverage_dict,     # Wave-3 (TASK-QAV-003)
             behavioural_oracle=behavioural_oracle_dict,  # Wave-4 (TASK-QAV-006)
             runtime_parity=runtime_parity,
+            whole_feature_check=whole_feature_check,
         )
+
+    def _gather_whole_feature_check(self) -> Optional[Dict[str, Any]]:
+        """This Coach turn's run of the whole-feature check, or ``None``.
+
+        ``None`` outside a whole-feature repair round. Otherwise the record
+        from ``feature_check.whole_feature_check_record``: the check is run at
+        most once here, through the feature orchestrator's own attempt runner,
+        and only on a single-task wave. Never raises.
+        """
+        repair = self.feature_check_repair
+        if repair is None:
+            return None
+        try:
+            from guardkit.orchestrator.feature_check import (
+                whole_feature_check_record,
+            )
+
+            return whole_feature_check_record(repair, wave_size=self.wave_size)
+        except Exception as exc:  # noqa: BLE001 — evidence never breaks gathering
+            logger.warning(
+                "gather_evidence: the whole-feature check record failed: %s",
+                type(exc).__name__,
+            )
+            return None
 
     def _gather_runtime_parity(self) -> Optional["RuntimeParityResult"]:
         """Run the deliverable's runtime entry point (TASK-AB-COACHRUNPARITY01, arm b).

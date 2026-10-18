@@ -1,0 +1,96 @@
+{
+  "task_id": "TASK-15DD-001",
+  "turn": 2,
+  "files_modified": [
+    "apps/web/src/App.tsx",
+    "apps/web/src/App.test.tsx"
+  ],
+  "files_created": [],
+  "tests_written": [
+    "apps/web/src/App.test.tsx"
+  ],
+  "tests_run": true,
+  "tests_passed": true,
+  "test_output_summary": "apps/web: `npm run test` (vitest run) -> 3 test files passed, 46/46 tests passed, 0 failed (App.test.tsx 39 tests). Full project gate `bash scripts/check.sh` passed end to end with exit code 0: gofmt/go mod verify/go vet/staticcheck/go test -race (api), contract drift check, `npm run typecheck`, `npm run lint` (eslint --max-warnings 0, zero errors), `npm run format:check` (prettier --check src: 'All matched files use Prettier code style!'), `npm run test`, `npm run build`, e2e typecheck + prettier on tests/e2e, qa/journey-report.test.mjs, shell-syntax sweep and the Keycloak readiness suite.",
+  "implementation_notes": "Turn 1 had already placed the single count node above the list, but worded it `${count} notes` for every count and had the suite pin \"1 notes\". That contradicts the delivered spec (features/note-count-header/note-count-header.feature: 'The count label shows a single note' -> reads \"1 note\"; ASSUM-004 in feature_spec_inputs/27896ec8-...md: \"'3 notes', '1 note', '0 notes'\") and AC-003. This turn corrected the wording to the specified singular/plural rule and re-anchored the tests to it.\n\n1. apps/web/src/App.tsx:18-20 - noteCountLabel(count) now returns `${count} ${count === 1 ? 'note' : 'notes'}`, exactly the format the implementation notes prescribe. It is the only place in the web app that renders a notes total (grep for noteCountLabel / notes-count returns one call site, App.tsx:131), so the label is not duplicated. It sits as `<p data-testid=\"notes-count\">` immediately before `<ul aria-label=\"Your notes\">` (App.tsx:131-132), outside the list, and is rendered unconditionally - including at zero. Its text is computed from `count = notes.length` (App.tsx:32), the same value the tab title effect reads (`Notes (${count})`, App.tsx:57), and `notes` is the state populated only by the client-side `listNotes` response (App.tsx:34-51) that the `<ul>` maps over, so label, tab title and rows can never drift.\n2. apps/web/src/App.test.tsx - reused the existing shape helpers untouched (totalAboveTheList at :441-451, notesList at :413-420, totals at :422-427, documentOrder, noteRows). Changes: the shared `countLabel` wording helper now encodes the singular rule; the `it.each([0,1,5,12,37])` collection-size case asserts `countLabel(notes.length)` instead of hard-coding the plural; the wording table reads [1, \"1 note\"]; the shape case was re-pinned from `/^\\d+ notes$/` to `/^\\d+ notes?$/` plus `countLabel(size)` plus digit-vs-rows equality; the two single-note expectations now read \"1 note\"; and a new explicit `it.each([[0, \"0 notes\"], [1, \"1 note\"], [100, \"100 notes\"]])` case states the three AC-003 values by name as exact text (not just a pattern), each also asserting the row count matches.\n3. Scope: `git diff --stat HEAD` shows only apps/web/src/App.tsx and apps/web/src/App.test.tsx. Nothing under apps/api/, contract/ or tests/ was touched.\n\nDeliberate non-change: the pre-existing browser check tests/e2e/specs/journey.spec.ts (authored for TASK-NLTC-001) reads this label as `/^\\d+ notes$/` and `${expected} notes`, so it would disagree with the spec's \"1 note\" at a count of one. AC-005 forbids editing tests/, and the ACs plus the feature file are the contract for this task, so the web app follows the spec and the drift is reported under `concerns` rather than fixed here. That spec is not part of the registered producers: scripts/check.sh only typechecks and prettier-formats tests/e2e; the Playwright run lives in scripts/check-feature.sh behind the live-gate driver and needs the Keycloak/Postgres stack.",
+  "concerns": [
+    "Pre-existing contract drift, out of this task's scope: tests/e2e/specs/journey.spec.ts:51-52 asserts the summary text as `${expected} notes` and /^\\d+ notes$/ (plural-only) for every count it walks through, including `seeded + 1`, i.e. a count of one. Under the spec-correct \"1 note\" wording that live-gate check would fail at exactly one note. It cannot be reconciled inside this task because AC-005 forbids any change under tests/. It is owned by the TASK-NLTC-001 journey artifact / the live-gate flow (scripts/check-feature.sh), not by TASK-15DD-001, and it is not run by the registered `test` producer (bash scripts/check.sh). Recommend the reviewer route the regex update to that owner.",
+    "The label is static at initial render for this iteration (per the implementation notes: dynamic add/remove updates are out of scope), although the existing tests 'follows the collection when the view itself adds a note' and the tab-title add/removal cases already demonstrate it re-derives from the same collection on re-render."
+  ],
+  "requirements_addressed": [
+    "Render a single count label directly above the notes list stating how many notes there are, in grammatically correct singular/plural form",
+    "Compute the count client-side from the same note collection that populates the list",
+    "Cover every specified count value in the web app's own tests (0, 1, 2, 3, 5, 12, 100)",
+    "Change only the web app and its tests",
+    "Pass project-configured lint/format/typecheck checks with zero errors"
+  ],
+  "requirements_remaining": [],
+  "implementation_mode": "direct",
+  "completion_promises": [
+    {
+      "criterion_id": "AC-001",
+      "criterion_text": "When the notes list renders, a count label appears directly above the notes list — a single node in the whole view, placed before the list (in document order) and not nested inside it. This is the delivered surface the six approved scenarios observe.",
+      "status": "complete",
+      "evidence": "apps/web/src/App.tsx:131 renders exactly one `<p data-testid=\"notes-count\">{noteCountLabel(count)}</p>` immediately before `<ul aria-label=\"Your notes\">` (App.tsx:132), outside the list and unconditionally. A grep for noteCountLabel/notes-count across apps/web/src returns that single call site, so no second total exists. The reused helper totalAboveTheList (apps/web/src/App.test.tsx:441-451) asserts the shape on every count: expect(totals(container)).toHaveLength(1) (one node in the whole view), documentOrder index of the total < index of the list (before it in document order), and notesList(container).contains(total) === false (not nested inside). It is exercised by the wording, collection-size and placement cases, all passing.",
+      "test_file": "apps/web/src/App.test.tsx",
+      "implementation_files": [
+        "apps/web/src/App.tsx"
+      ]
+    },
+    {
+      "criterion_id": "AC-002",
+      "criterion_text": "With 3 notes in the list the label reads `3 notes`; the same shape holds across the boundary values, and the existing tests in `apps/web/src/App.test.tsx` prove it at the surface — add/keep an assertion for each: `3 notes` (`apps/web/src/App.test.tsx:554`), `5 notes` (`apps/web/src/App.test.tsx:613`), `12 notes` (`apps/web/src/App.test.tsx:484`).",
+      "status": "complete",
+      "evidence": "All three assertions are kept at the exact cited lines: apps/web/src/App.test.tsx:484 `expect(total.textContent).toBe(\"12 notes\")`, :554 `expect(totalAboveTheList(container).textContent).toBe(\"3 notes\")`, :613 `expect(totalAboveTheList(container).textContent).toBe(\"5 notes\")` (verified with grep -n after the edits). The same shape is held across the boundary values by the wording table [0,1,2,3,5,12,100] and by the 'shows the size of the collection it renders' it.each over [0,1,5,12,37], each asserting the label text against countLabel(size) and the row count against the collection. All pass.",
+      "test_file": "apps/web/src/App.test.tsx",
+      "implementation_files": [
+        "apps/web/src/App.tsx",
+        "apps/web/src/App.test.tsx"
+      ]
+    },
+    {
+      "criterion_id": "AC-003",
+      "criterion_text": "A count of `0 notes` remains visible above the list (do not hide the label at zero); a count of `1` reads the singular `1 note`, and `2`/`100` read `2 notes`/`100 notes` (plural). Add test coverage for the `0 notes`, `1 note`, and `100 notes` values — a `0 notes` test currently fails because the label is not yet rendered above the list.",
+      "status": "complete",
+      "evidence": "This is what turn 1 got wrong and turn 2 fixed. apps/web/src/App.tsx:18-20 now returns `${count} ${count === 1 ? \"note\" : \"notes\"}`, so 1 reads \"1 note\" while 0/2/100 read \"0 notes\"/\"2 notes\"/\"100 notes\". The label is rendered unconditionally (no `count > 0 &&` guard), so zero stays visible. New test coverage: an explicit `it.each([[0, \"0 notes\"], [1, \"1 note\"], [100, \"100 notes\"]])` case ('states the count for %i as the single total %s') asserting exact text plus row-count agreement; the 'keeps the zero total visible above an empty list' case asserting totals(container) has length 1 and the text is \"0 notes\" over an empty collection; the wording table entry corrected to [1, \"1 note\"]; the two single-note placement/tab-title cases corrected to \"1 note\"; and the shape case re-pinned to /^\\d+ notes?$/ with countLabel(size) for [0,1,2,3,5,12,100]. vitest reports all three new named cases passing (0 notes, 1 note, 100 notes).",
+      "test_file": "apps/web/src/App.test.tsx",
+      "implementation_files": [
+        "apps/web/src/App.tsx",
+        "apps/web/src/App.test.tsx"
+      ]
+    },
+    {
+      "criterion_id": "AC-004",
+      "criterion_text": "The count is derived from the same client-side note collection that populates the list (`apps/web/src/App.test.tsx:27-28`), so it always matches the number of rendered note entries; it never repeats per note (asserted at `apps/web/src/App.test.tsx:525`).",
+      "status": "complete",
+      "evidence": "apps/web/src/App.tsx:32 defines the single `const count = notes.length`, read by both the label (App.tsx:131) and the tab-title effect (App.tsx:57), and `notes` is filled only from the client-side `listNotes(token)` response (App.tsx:34-51) - the same state the `<ul aria-label=\"Your notes\">` maps over. No separate count source, no server-supplied total. In the tests the collection reaches the view only through the stubbed `listNotes` (apps/web/src/App.test.tsx:27-28); nothing is seeded into the component. The 'does not display the total as part of any individual note' case (asserting at :525 that no row text matches /\\d+\\s+notes/, totals(row) is empty for every row, and totals(container) has length 1) passes, as do the collection-size cases that compare the label's digits with noteRows(container).length, and the add-a-note case where the label moves 12 -> 13 with the rows.",
+      "test_file": "apps/web/src/App.test.tsx",
+      "implementation_files": [
+        "apps/web/src/App.tsx"
+      ]
+    },
+    {
+      "criterion_id": "AC-005",
+      "criterion_text": "Only `apps/web/` and its tests are changed — no change under `apps/api/`, `contract/`, or `tests/`.",
+      "status": "complete",
+      "evidence": "`git status --porcelain` and `git diff --stat HEAD` show exactly two modified files: apps/web/src/App.tsx and apps/web/src/App.test.tsx. Nothing under apps/api/, contract/ or tests/ was edited, added or deleted; the only other untracked paths (.guardkit/, .guardkit-git.lock, .tmp/) are factory runtime state, not source. The cumulative feature diff against the pre-planning baseline touches only apps/web/src/App.tsx, apps/web/src/App.test.tsx and the factory-registered qa/pass-bar-TASK-15DD-001.yaml (planning commit 32f73a9, not this turn).",
+      "test_file": "apps/web/src/App.test.tsx",
+      "implementation_files": [
+        "apps/web/src/App.tsx",
+        "apps/web/src/App.test.tsx"
+      ]
+    },
+    {
+      "criterion_id": "AC-006",
+      "criterion_text": "All modified files pass project-configured lint/format checks with zero errors.",
+      "status": "complete",
+      "evidence": "From apps/web: `npm run lint` (eslint src --max-warnings 0) exited clean with no errors or warnings, `npm run format:check` (prettier --check src) printed 'All matched files use Prettier code style!', `npm run typecheck` (tsc --noEmit) clean, and `npm run build` succeeded. The whole project gate `bash scripts/check.sh` also completed with exit code 0, which includes those three web checks plus the api gate, the contract-drift check, the e2e typecheck/prettier pass, qa/journey-report.test.mjs and the shell sweep.",
+      "test_file": "apps/web/src/App.test.tsx",
+      "implementation_files": [
+        "apps/web/src/App.tsx",
+        "apps/web/src/App.test.tsx"
+      ]
+    }
+  ],
+  "success": true
+}
