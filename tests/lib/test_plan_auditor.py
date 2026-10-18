@@ -585,6 +585,50 @@ class TestFilesNamedAfterAPlannedFile:
         counted = [d for d in discrepancies if d.severity == "high"]
         assert len(counted[0].actual) == 8
 
+    @pytest.mark.parametrize("extra,planned", [
+        ("api/notes/handler_test.go", "api/notes/handler.go"),
+        ("tests/test_feature.py", "src/feature.py"),
+        ("spec/models/user_spec.rb", "app/models/user.rb"),
+    ])
+    def test_a_test_named_after_a_planned_file_is_low(self, auditor, extra, planned):
+        from plan_audit import _beside_the_plan
+
+        assert _beside_the_plan({extra}, {planned}) == {extra}
+        discrepancies = auditor._compare_files(
+            {"files_to_create": [planned]},
+            {"files_created": [planned, extra]},
+        )
+        assert [d.severity for d in discrepancies] == ["low"]
+        assert discrepancies[0].actual == [extra]
+
+    @pytest.mark.parametrize("extra,planned", [
+        ("api/notes/handler_test_test.go", "api/notes/handler.go"),
+        ("tests/test_test_feature.py", "src/feature.py"),
+        ("api/notes/test_handler_test.go", "api/notes/handler.go"),
+    ])
+    def test_the_test_word_is_dropped_once_only(self, auditor, extra, planned):
+        from plan_audit import _beside_the_plan
+
+        assert _beside_the_plan({extra}, {planned}) == set()
+        discrepancies = auditor._compare_files(
+            {"files_to_create": [planned]},
+            {"files_created": [planned, extra]},
+        )
+        assert [d.severity for d in discrepancies] == ["medium"]
+
+    def test_a_protected_file_named_like_a_test_of_a_planned_file_counts(
+        self,
+    ):
+        from plan_audit import _beside_the_plan
+
+        planned = {"api/notes/handler.go"}
+        for extra in (
+            "api/notes/migrations/handler_test.go",
+            "deploy/test_handler.sh",
+            "api/notes/handler_test.sql",
+        ):
+            assert _beside_the_plan({extra}, planned) == set(), extra
+
     @pytest.mark.parametrize("path", [
         "Dockerfile", "web/Dockerfile.dev", "web/src/ShelfPage.Dockerfile",
         "Containerfile", "compose.yaml", "docker-compose.override.yml",

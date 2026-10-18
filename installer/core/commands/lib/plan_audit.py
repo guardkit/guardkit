@@ -104,6 +104,10 @@ _NEVER_COUNTED_PATH_PREFIXES = (".guardkit/", "docs/state/")
 # name up to its first dot is the name up to the first dot of a file the plan
 # names - ``NotesPage.test.tsx`` or ``NotesPage.module.css`` beside a planned
 # ``NotesPage.tsx`` - is the ordinary by-product of building that planned file.
+# Before matching, one trailing ``_test`` or ``_spec``, or one leading
+# ``test_``, is dropped from the extra file's name, once only, so
+# ``handler_test.go`` goes with ``handler.go`` and ``test_feature.py`` with
+# ``feature.py`` (``handler_test_test.go`` does not go with ``handler.go``).
 # It is recorded in a low discrepancy of its own and does not count towards the
 # "three extra files is high" line. Nothing else is: not a file in the same
 # folder, not a helper, not everything under a test directory.
@@ -154,6 +158,20 @@ def _stem(path: str) -> str:
     return path.rsplit("/", 1)[-1].split(".", 1)[0].lower()
 
 
+def _companion_name(path: str) -> str:
+    """The extra file's name for matching: its name up to the first dot, with
+    one trailing ``_test`` or ``_spec``, or else one leading ``test_``, dropped
+    (once only): ``handler_test.go`` → ``handler``, ``test_feature.py`` →
+    ``feature``, ``handler_test_test.go`` → ``handler_test``."""
+    stem = _stem(path)
+    for suffix in ("_test", "_spec"):
+        if stem.endswith(suffix) and len(stem) > len(suffix):
+            return stem[: -len(suffix)]
+    if stem.startswith("test_") and len(stem) > len("test_"):
+        return stem[len("test_"):]
+    return stem
+
+
 def _is_protected(path: str) -> bool:
     """Whether ``path`` is a file that is never a companion of planned work."""
     parts = path.split("/")
@@ -189,7 +207,7 @@ def _beside_the_plan(extra: Set[str], planned: Set[str]) -> Set[str]:
     return {
         path
         for path in extra
-        if _stem(path) in planned_stems and not _is_protected(path)
+        if _companion_name(path) in planned_stems and not _is_protected(path)
     }
 
 
