@@ -99,27 +99,34 @@ _NEVER_COUNTED_SUFFIXES = frozenset({".pyc", ".pyo"})
 _NEVER_COUNTED_PATH_PREFIXES = (".guardkit/", "docs/state/")
 
 
-# FILES NAMED AFTER A PLANNED FILE (18 October 2026, made blunt 19 October
-# after review). An extra file is still counted and still named, but one whose
-# name up to its first dot is the name up to the first dot of a file the plan
-# names - ``NotesPage.test.tsx`` or ``NotesPage.module.css`` beside a planned
-# ``NotesPage.tsx`` - is the ordinary by-product of building that planned file.
-# Before matching, one trailing ``_test`` or ``_spec``, or one leading
-# ``test_``, is dropped from the extra file's name, once only, so
-# ``handler_test.go`` goes with ``handler.go`` and ``test_feature.py`` with
-# ``feature.py`` (``handler_test_test.go`` does not go with ``handler.go``).
-# It is recorded in a low discrepancy of its own and does not count towards the
-# "three extra files is high" line. Nothing else is: not a file in the same
-# folder, not a helper, not everything under a test directory.
+# A PLANNED FILE'S OWN TEST OR STYLESHEET (18 October 2026, made blunt 19
+# October after two rounds of review). An extra file is still counted and still
+# named, but it is recorded in a low discrepancy of its own, and does not count
+# towards the "three extra files is high" line, only when ALL of these hold:
+#
+#   1. it is in the same directory as a planned file;
+#   2. its name up to the first dot - after dropping one trailing ``_test`` or
+#      ``_spec``, or else one leading ``test_``, once only - equals that
+#      planned file's name up to its first dot;
+#   3. it is a test by GuardKit's generic test-name patterns (``x.test.tsx``,
+#      ``x.spec.ts``, ``x_test.go``, ``test_x.py``, ``x_spec.rb``), or a style
+#      or image file (css, scss, sass, less, svg, png, jpg, gif, webp, ico) -
+#      never production code;
+#   4. it is not a protected file (below).
+#
+# So ``components/EmptyState.module.css`` beside a planned
+# ``components/EmptyState.tsx`` is low, and ``handler_test.go`` beside a
+# planned ``handler.go``. A same-named test in another directory, a same-named
+# production file (``NotesPage.utils.ts``), a helper, or anything under a test
+# directory counts in full. Anything ambiguous counts in full.
 #
 # A protected file is never a companion, whatever it is called or wherever it
 # sits: container and compose files, READMEs, migrations, lockfiles and
 # dependency manifests (the files this audit reads dependencies from), CI and
-# workflow files, environment files, and infrastructure and deploy files. So
-# ``NotesPage.Dockerfile`` or ``NotesPage.README.md`` still counts in full.
+# workflow files, environment files, and infrastructure and deploy files.
 #
 # Build FEAT-86FD (18 October 2026) stalled three turns on a plan audit that
-# called a planned page's own test and a planned component's stylesheet "high".
+# called a planned component's stylesheet, a page test and a helper "high".
 # GuardKit had no path-based infrastructure list to reuse, so the list is here.
 _PROTECTED_NAMES = frozenset({
     # lockfiles
@@ -197,17 +204,51 @@ def _is_protected(path: str) -> bool:
     return any(part.lower() in _PROTECTED_DIRECTORY_NAMES for part in parts[:-1])
 
 
-def _beside_the_plan(extra: Set[str], planned: Set[str]) -> Set[str]:
-    """The extra files named after a planned file, and not protected.
+_TEST_NAME_SUFFIXES = ("_test", "_spec")
+_TEST_NAME_MIDDLES = (".test.", ".spec.")
+_STYLE_AND_IMAGE_SUFFIXES = (
+    ".css", ".scss", ".sass", ".less",
+    ".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico",
+)
 
-    ``planned`` is every file the plan names (to create or to change). Nothing
-    is removed from the audit by this: the caller still names every one.
+
+def _is_test_or_style_file(path: str) -> bool:
+    """A test by the generic test-name patterns, or a style or image file.
+
+    Decided from the file's own name only - never from the directory it sits
+    in, so nothing under a ``tests`` folder qualifies just by being there.
     """
-    planned_stems = {_stem(p) for p in planned}
+    name = path.rsplit("/", 1)[-1].lower()
+    if name.endswith(_STYLE_AND_IMAGE_SUFFIXES):
+        return True
+    stem = name.split(".", 1)[0]
+    if stem.startswith("test_") and len(stem) > len("test_") and "." in name:
+        return True
+    if any(
+        stem.endswith(s) and len(stem) > len(s) for s in _TEST_NAME_SUFFIXES
+    ) and "." in name:
+        return True
+    return any(m in name and not name.startswith(m) for m in _TEST_NAME_MIDDLES)
+
+
+def _folder(path: str) -> str:
+    return path.rsplit("/", 1)[0] if "/" in path else ""
+
+
+def _beside_the_plan(extra: Set[str], planned: Set[str]) -> Set[str]:
+    """The extra files that are a planned file's own test or stylesheet.
+
+    ``planned`` is every file the plan names (to create or to change). See the
+    four conditions at the top of this file. Nothing is removed from the audit
+    by this: the caller still names every one.
+    """
+    planned_by_folder_and_name = {(_folder(p), _stem(p)) for p in planned}
     return {
         path
         for path in extra
-        if _companion_name(path) in planned_stems and not _is_protected(path)
+        if (_folder(path), _companion_name(path)) in planned_by_folder_and_name
+        and _is_test_or_style_file(path)
+        and not _is_protected(path)
     }
 
 
@@ -816,7 +857,7 @@ class PlanAuditor:
         )
         missing_files = planned_files - actual_files
 
-        # Extra files named after a planned file (and not protected) are
+        # Extra files that are a planned file's own test or stylesheet are
         # named in a low discrepancy of their own and do not count towards
         # the line below (see _beside_the_plan at the top of this file).
         planned_anywhere = planned_files | set(plan_data.get("files_to_modify", []))
@@ -841,8 +882,8 @@ class PlanAuditor:
                 category="files",
                 severity="low",
                 message=(
-                    f"{len(beside)} extra file(s) not in plan, named after "
-                    f"a planned file"
+                    f"{len(beside)} extra file(s) not in plan, each a planned "
+                    f"file's own test or stylesheet"
                 ),
                 planned=sorted(list(planned_files)),
                 actual=sorted(list(beside)),

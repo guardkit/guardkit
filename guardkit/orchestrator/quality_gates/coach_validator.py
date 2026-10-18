@@ -12552,7 +12552,7 @@ class CoachValidator:
             if severity:
                 parts.append(f"{severity}-severity")
             parts.append("discrepancies")
-            # Extra files named after a planned file are recorded as low by
+            # A planned file's own tests and stylesheets are recorded as low by
             # the auditor; name the counted ones first so the Player is not
             # sent after its own tests and stylesheets.
             beside = set(plan_audit.get("extra_files_beside_the_plan") or [])
@@ -12564,16 +12564,16 @@ class CoachValidator:
                 parts.append(f"— {len(counted_extra)} extra file(s): {preview}")
             if beside and len(beside) < len(extra_files):
                 parts.append(
-                    f"— and {len(beside)} file(s) named after a planned "
-                    f"file (recorded, low)"
+                    f"— and {len(beside)} planned file(s)' own test or "
+                    f"stylesheet (recorded, low)"
                 )
             elif beside:
                 preview = ", ".join(extra_files[:3])
                 if len(extra_files) > 3:
                     preview += f", ... (+{len(extra_files) - 3} more)"
                 parts.append(
-                    f"— {len(extra_files)} extra file(s) named after a "
-                    f"planned file (recorded, low): {preview}"
+                    f"— {len(extra_files)} extra file(s), each a planned "
+                    f"file's own test or stylesheet (recorded, low): {preview}"
                 )
             if missing_files:
                 preview = ", ".join(missing_files[:3])

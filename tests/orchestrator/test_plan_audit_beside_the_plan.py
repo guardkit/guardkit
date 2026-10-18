@@ -7,9 +7,12 @@ test, a stylesheet for a planned component and a small test helper, and
 changed an existing test. The audit counted three extra files, called that
 high, and the Coach refused every turn although the tests passed.
 
-An extra file whose name up to its first dot is the name of a file the plan
-names (and which is not a protected type) is now recorded as low and does not
-count towards the three-is-high line. The helper still counts.
+An extra file is now recorded as low, and does not count towards the
+three-is-high line, only when it is a planned file's own test or stylesheet:
+same directory, same name (one test word dropped), a test or style/image file,
+and not a protected type. In the live shape only the component's stylesheet
+qualifies; the page test (one directory away from the page) and the helper
+count, which is two extra files: medium, and medium passes.
 
 These tests drive the normal caller - ``AgentInvoker._compute_plan_audit_verdict``
 over a real git repository and a real task document - and hand its block to
@@ -34,14 +37,14 @@ from guardkit.orchestrator.quality_gates.coach_validator import CoachValidator
 TASK_ID = "TASK-PAGE-001"
 
 PLANNED_CREATE = [
-    "web/src/pages/ShelfPage.tsx",
-    "web/src/pages/ShelfPage.module.css",
-    "web/src/components/EmptyShelf.tsx",
-    "web/src/components/BookCard.tsx",
-    "web/src/components/BookCard.module.css",
-    "web/src/lib/bookFormatting.ts",
+    "apps/web/src/pages/ShelfPage.tsx",
+    "apps/web/src/pages/ShelfPage.module.css",
+    "apps/web/src/components/EmptyShelf.tsx",
+    "apps/web/src/components/BookCard.tsx",
+    "apps/web/src/components/BookCard.module.css",
+    "apps/web/src/lib/bookFormatting.ts",
 ]
-PLANNED_MODIFY = ["web/src/App.tsx"]
+PLANNED_MODIFY = ["apps/web/src/App.tsx"]
 
 
 def _git(root: Path, *args: str) -> None:
@@ -90,9 +93,9 @@ def repo(tmp_path: Path) -> Path:
     _git(root, "config", "user.email", "test@example.com")
     _git(root, "config", "user.name", "Test")
     _git(root, "config", "commit.gpgsign", "false")
-    _write(root, "web/src/App.tsx", "export const App = () => null;\n")
-    _write(root, "web/src/App.test.tsx", "test('renders', () => {});\n")
-    _write(root, "web/Dockerfile", "FROM scratch\n")
+    _write(root, "apps/web/src/App.tsx", "export const App = () => null;\n")
+    _write(root, "apps/web/src/App.test.tsx", "test('renders', () => {});\n")
+    _write(root, "apps/web/Dockerfile", "FROM scratch\n")
     _write(root, "compose.yaml", "services: {}\n")
     _write(root, "README.md", "# Invented app\n")
     _write(
@@ -108,7 +111,7 @@ def repo(tmp_path: Path) -> Path:
 def _build_the_planned_work(root: Path) -> None:
     for path in PLANNED_CREATE:
         _write(root, path)
-    _write(root, "web/src/App.tsx", "export const App = () => 'shelf';\n")
+    _write(root, "apps/web/src/App.tsx", "export const App = () => 'shelf';\n")
 
 
 def _verdict(root: Path) -> Dict:
@@ -137,33 +140,32 @@ def _gate_passes(root: Path, plan_audit: Dict) -> bool:
 
 
 class TestTheLiveShape:
-    def test_page_test_and_component_stylesheet_are_low_the_helper_counts(
+    def test_component_stylesheet_is_low_page_test_and_helper_count(
         self, repo: Path
     ) -> None:
         _build_the_planned_work(repo)
-        # The by-products of building exactly what was planned.
-        _write(repo, "web/src/ShelfPage.test.tsx", "test('lists', () => {});\n")
-        _write(repo, "web/src/components/EmptyShelf.module.css", ".x {}\n")
-        _write(repo, "web/src/test-harness.tsx", "export const wrap = 1;\n")
-        _write(repo, "web/src/App.test.tsx", "test('renders shelf', () => {});\n")
+        # The page lives in pages/; its test was written one level up.
+        _write(repo, "apps/web/src/ShelfPage.test.tsx", "test('lists', () => {});\n")
+        _write(repo, "apps/web/src/components/EmptyShelf.module.css", ".x {}\n")
+        _write(repo, "apps/web/src/test-harness.tsx", "export const wrap = 1;\n")
+        _write(repo, "apps/web/src/App.test.tsx", "test('renders shelf', () => {});\n")
 
         verdict = _verdict(repo)
 
-        # One counted extra file (the helper) is medium, and medium passes.
+        # Two counted extra files is medium, and medium passes.
         assert verdict["severity"] == "medium", verdict
         assert verdict["status"] == "passed", verdict
         assert verdict["violations"] == 0
         # Recorded and shown, never hidden.
         assert verdict["extra_files"] == [
-            "web/src/ShelfPage.test.tsx",
-            "web/src/components/EmptyShelf.module.css",
-            "web/src/test-harness.tsx",
+            "apps/web/src/ShelfPage.test.tsx",
+            "apps/web/src/components/EmptyShelf.module.css",
+            "apps/web/src/test-harness.tsx",
         ]
         assert verdict["extra_files_beside_the_plan"] == [
-            "web/src/ShelfPage.test.tsx",
-            "web/src/components/EmptyShelf.module.css",
+            "apps/web/src/components/EmptyShelf.module.css",
         ]
-        assert verdict["extra_modifications"] == ["web/src/App.test.tsx"]
+        assert verdict["extra_modifications"] == ["apps/web/src/App.test.tsx"]
         assert _gate_passes(repo, verdict)
 
 
@@ -176,7 +178,7 @@ class TestScopeCreepStillHigh:
         _write(repo, "deploy/compose.yaml", "services: {}\n")
         _write(repo, "deploy/README.md", "# How to deploy\n")
         # A planned component's own test rides along; it does not hide the rest.
-        _write(repo, "web/src/pages/ShelfPage.test.tsx", "test('x', () => {});\n")
+        _write(repo, "apps/web/src/pages/ShelfPage.test.tsx", "test('x', () => {});\n")
 
         verdict = _verdict(repo)
 
@@ -187,7 +189,7 @@ class TestScopeCreepStillHigh:
             assert path in verdict["extra_files"]
             assert path not in verdict["extra_files_beside_the_plan"]
         assert verdict["extra_files_beside_the_plan"] == [
-            "web/src/pages/ShelfPage.test.tsx"
+            "apps/web/src/pages/ShelfPage.test.tsx"
         ]
         assert not _gate_passes(repo, verdict)
 
@@ -195,9 +197,9 @@ class TestScopeCreepStillHigh:
         self, repo: Path
     ) -> None:
         _build_the_planned_work(repo)
-        _write(repo, "web/src/billing/invoice.ts", "export const i = 1;\n")
-        _write(repo, "web/src/billing/invoice.test.ts", "test('i', () => {});\n")
-        _write(repo, "web/src/billing/fixtures.ts", "export const f = 1;\n")
+        _write(repo, "apps/web/src/billing/invoice.ts", "export const i = 1;\n")
+        _write(repo, "apps/web/src/billing/invoice.test.ts", "test('i', () => {});\n")
+        _write(repo, "apps/web/src/billing/fixtures.ts", "export const f = 1;\n")
 
         verdict = _verdict(repo)
 
@@ -209,9 +211,9 @@ class TestScopeCreepStillHigh:
         self, repo: Path
     ) -> None:
         _build_the_planned_work(repo)
-        _write(repo, "web/src/components/OtherThing.test.tsx", "test('o', () => {});\n")
-        _write(repo, "web/src/components/renderHelpers.tsx", "export const r = 1;\n")
-        _write(repo, "web/src/components/logo.svg", "<svg/>\n")
+        _write(repo, "apps/web/src/components/OtherThing.test.tsx", "test('o', () => {});\n")
+        _write(repo, "apps/web/src/components/renderHelpers.tsx", "export const r = 1;\n")
+        _write(repo, "apps/web/src/components/logo.svg", "<svg/>\n")
 
         verdict = _verdict(repo)
 
@@ -223,18 +225,32 @@ class TestScopeCreepStillHigh:
         self, repo: Path
     ) -> None:
         _build_the_planned_work(repo)
-        _write(repo, "web/src/pages/ShelfPage.test.tsx", "test('x', () => {});\n")
-        _write(repo, "web/src/pages/ShelfPage.Dockerfile", "FROM scratch\n")
-        _write(repo, "web/src/pages/ShelfPage.README.md", "# Shelf\n")
-        _write(repo, "web/src/pages/compose.yaml", "services: {}\n")
-        _write(repo, "web/src/pages/migrations/ShelfPage.sql", "SELECT 1;\n")
+        _write(repo, "apps/web/src/pages/ShelfPage.test.tsx", "test('x', () => {});\n")
+        _write(repo, "apps/web/src/pages/ShelfPage.Dockerfile", "FROM scratch\n")
+        _write(repo, "apps/web/src/pages/ShelfPage.README.md", "# Shelf\n")
+        _write(repo, "apps/web/src/pages/compose.yaml", "services: {}\n")
+        _write(repo, "apps/web/src/pages/migrations/ShelfPage.sql", "SELECT 1;\n")
 
         verdict = _verdict(repo)
 
         assert verdict["severity"] == "high", verdict
         assert verdict["extra_files_beside_the_plan"] == [
-            "web/src/pages/ShelfPage.test.tsx"
+            "apps/web/src/pages/ShelfPage.test.tsx"
         ]
+        assert not _gate_passes(repo, verdict)
+
+    def test_same_name_production_files_and_a_test_elsewhere_count(
+        self, repo: Path
+    ) -> None:
+        _build_the_planned_work(repo)
+        _write(repo, "apps/web/src/components/ShelfPage.ts", "export const s = 1;\n")
+        _write(repo, "apps/web/src/pages/ShelfPage.utils.ts", "export const u = 1;\n")
+        _write(repo, "packages/shelf/ShelfPage.test.tsx", "test('p', () => {});\n")
+
+        verdict = _verdict(repo)
+
+        assert verdict["severity"] == "high", verdict
+        assert verdict["extra_files_beside_the_plan"] == []
         assert not _gate_passes(repo, verdict)
 
     def test_changed_dockerfile_compose_and_readme_are_named(
@@ -245,7 +261,7 @@ class TestScopeCreepStillHigh:
         (low, as before); the audit names them so the Coach and the merge
         card can see them."""
         _build_the_planned_work(repo)
-        _write(repo, "web/Dockerfile", "FROM scratch\nEXPOSE 1\n")
+        _write(repo, "apps/web/Dockerfile", "FROM scratch\nEXPOSE 1\n")
         _write(repo, "compose.yaml", "services: {web: {}}\n")
         _write(repo, "README.md", "# Invented app, changed\n")
 
@@ -253,8 +269,8 @@ class TestScopeCreepStillHigh:
 
         assert verdict["extra_modifications"] == [
             "README.md",
+            "apps/web/Dockerfile",
             "compose.yaml",
-            "web/Dockerfile",
         ]
 
 
@@ -266,7 +282,7 @@ class TestTheCoachFeedbackWording:
         _write(repo, "api/Dockerfile", "FROM scratch\n")
         _write(repo, "deploy/compose.yaml", "services: {}\n")
         _write(repo, "deploy/README.md", "# How to deploy\n")
-        _write(repo, "web/src/pages/ShelfPage.test.tsx", "test('x', () => {});\n")
+        _write(repo, "apps/web/src/pages/ShelfPage.test.tsx", "test('x', () => {});\n")
         verdict = _verdict(repo)
 
         validator = CoachValidator(str(repo), task_id=TASK_ID)
@@ -293,5 +309,5 @@ class TestTheCoachFeedbackWording:
             "3 extra file(s): api/Dockerfile, deploy/README.md, "
             "deploy/compose.yaml" in text
         )
-        assert "1 file(s) named after a planned file" in text
+        assert "1 planned file(s)' own test or stylesheet" in text
         assert "ShelfPage.test.tsx" not in text.split("— and")[0]
