@@ -3,7 +3,7 @@
   "name": "react-rust-monorepo",
   "display_name": "React + Rust Monorepo",
   "description": "Guidance and compatible patterns for a React/Vite web app and a Rust Axum API in one repository.",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "author": "GuardKit",
   "language": "TypeScript, Rust",
   "language_version": "TypeScript 6.0.3, Rust 1.99.0",
