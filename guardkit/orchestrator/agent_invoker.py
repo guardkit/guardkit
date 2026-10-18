@@ -14389,6 +14389,7 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
         player what to put right instead of handing it a number.
         """
         extra_files: List[str] = []
+        extra_beside_the_plan: List[str] = []
         missing_files: List[str] = []
         extra_modifications: List[str] = []
         missing_modifications: List[str] = []
@@ -14414,7 +14415,13 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                     list(disc.planned) if isinstance(disc.planned, list) else []
                 )
             elif disc.category == "files" and "extra" in disc.message:
-                extra_files = list(disc.actual) if isinstance(disc.actual, list) else []
+                # Two discrepancies can name extra files: the counted ones and
+                # the low one for a planned file's own tests and stylesheets
+                # (plan_audit._beside_the_plan). Every one is named.
+                named = list(disc.actual) if isinstance(disc.actual, list) else []
+                extra_files = sorted(set(extra_files) | set(named))
+                if disc.severity == "low":
+                    extra_beside_the_plan = named
             elif disc.category == "files" and (
                 "missing" in disc.message or "not created" in disc.message
             ):
@@ -14445,6 +14452,9 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
             "severity": severity,
             "violations": violations,
             "extra_files": extra_files,
+            # The extra files recorded as low because each is a planned
+            # file's own test or stylesheet; they are in extra_files too.
+            "extra_files_beside_the_plan": extra_beside_the_plan,
             "missing_files": missing_files,
             "extra_modifications": extra_modifications,
             "missing_modifications": missing_modifications,

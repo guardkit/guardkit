@@ -171,6 +171,45 @@ class TestCoverageUnknown:
         assert "toolchain.coverage" in text  # the project declaration
         assert issue["details"]["coverage_met"] is None
 
+    def test_declared_but_not_run_says_so_and_names_the_failed_gate(
+        self, tmp_path
+    ):
+        """Build FEAT-86FD (18 October 2026): the project declared a coverage
+        command, the plan audit failed first so it never ran, and the feedback
+        said the project declared nothing. It must say what happened."""
+        worktree = _make_shell_project(tmp_path, exit_code=0)
+        v = _validator(worktree)
+        results = _results(
+            plan_audit={"status": "violation", "severity": "high", "violations": 1}
+        )
+        gates = v.verify_quality_gates(
+            results, profile=get_profile(TaskType.FEATURE)
+        )
+        assert gates.coverage_met is None
+        assert gates.plan_audit_passed is False
+        assert v._coverage_resolution_pending(gates) is False
+
+        result = v._feedback_from_gates(
+            "TASK-B9C", 1, gates, results, task_type="feature"
+        )
+        issue = next(
+            i for i in result.issues if i["category"] == "coverage_unknown"
+        )
+        text = issue["description"]
+        assert "UNKNOWN" in text
+        assert "declares a coverage command" in text
+        assert "./coverage.sh" in text
+        assert "not run this turn" in text
+        assert "plan audit" in text
+        assert "neither the Player's report" not in text
+        assert issue["details"]["provenance"] == (
+            "declared_coverage_command_not_run"
+        )
+        assert issue["details"]["declared_coverage_command"] == "./coverage.sh"
+        assert issue["details"]["waiting_on_gates"] == ["plan audit"]
+        # The verdict is unchanged: still feedback, coverage still UNKNOWN.
+        assert result.decision == "feedback"
+
 
 class TestDirectModeRelaxation:
     def test_direct_mode_relaxes_without_inventing_a_measurement(self, tmp_path):

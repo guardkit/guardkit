@@ -99,6 +99,165 @@ _NEVER_COUNTED_SUFFIXES = frozenset({".pyc", ".pyo"})
 _NEVER_COUNTED_PATH_PREFIXES = (".guardkit/", "docs/state/")
 
 
+# A PLANNED FILE'S OWN TEST OR STYLESHEET (18 October 2026, made blunt 19
+# October after two rounds of review). An extra file is still counted and still
+# named, but it is recorded in a low discrepancy of its own, and does not count
+# towards the "three extra files is high" line, only when ALL of these hold:
+#
+#   1. it is in the same directory as a planned file;
+#   2. it is a test or a style/image file, never production code, and its
+#      derived name equals that planned file's derived name:
+#        - a planned file: its name with the last extension removed
+#          (``user.service.ts`` → ``user.service``, ``handler.go`` → ``handler``);
+#        - a test: its name with the last extension removed, then exactly one
+#          test marker removed - a trailing ``.test``/``.spec`` segment, or
+#          else a ``_test``/``_spec`` suffix, or else a ``test_`` prefix
+#          (``user.service.test.ts`` → ``user.service``, ``handler_test.go`` →
+#          ``handler``, ``test_feature.py`` → ``feature``). A name with no
+#          marker is not a test;
+#        - a style or image file (css, scss, sass, less, svg, png, jpg, gif,
+#          webp, ico): its name with the last extension removed, then one
+#          trailing ``.module`` removed (``EmptyState.module.css`` →
+#          ``EmptyState``, ``logo.svg`` → ``logo``);
+#   3. it is not a protected file (below).
+#
+# So ``components/EmptyState.module.css`` beside a planned
+# ``components/EmptyState.tsx`` is low, and ``handler_test.go`` beside a
+# planned ``handler.go``; ``user.repository.test.ts`` beside a planned
+# ``user.service.ts`` is not. A same-named test in another directory, a same-named
+# production file (``NotesPage.utils.ts``), a helper, or anything under a test
+# directory counts in full. Anything ambiguous counts in full.
+#
+# A protected file is never a companion, whatever it is called or wherever it
+# sits: container and compose files, READMEs, migrations, lockfiles and
+# dependency manifests (the files this audit reads dependencies from), CI and
+# workflow files, environment files, and infrastructure and deploy files.
+#
+# Build FEAT-86FD (18 October 2026) stalled three turns on a plan audit that
+# called a planned component's stylesheet, a page test and a helper "high".
+# GuardKit had no path-based infrastructure list to reuse, so the list is here.
+_PROTECTED_NAMES = frozenset({
+    # lockfiles
+    "package-lock.json", "npm-shrinkwrap.json", "yarn.lock", "pnpm-lock.yaml",
+    "bun.lockb", "bun.lock", "poetry.lock", "uv.lock", "pipfile.lock",
+    "cargo.lock", "gemfile.lock", "composer.lock", "go.sum",
+    "packages.lock.json", "pubspec.lock", "mix.lock",
+    # dependency manifests (what _extract_dependencies reads, and their kin)
+    "package.json", "pyproject.toml", "requirements.txt", "pipfile",
+    "setup.py", "setup.cfg", "go.mod", "cargo.toml", "gemfile",
+    "composer.json", "pubspec.yaml", "directory.packages.props",
+    # build, deploy and CI entry points
+    "makefile", "procfile", "jenkinsfile", ".gitlab-ci.yml",
+    "azure-pipelines.yml", "bitbucket-pipelines.yml", "skaffold.yaml",
+    "chart.yaml", "values.yaml", "kustomization.yaml",
+})
+# Any dot-separated part of the name starting with one of these protects it,
+# so ``Dockerfile.dev``, ``NotesPage.Dockerfile`` and ``README.md`` all count.
+_PROTECTED_NAME_PART_PREFIXES = (
+    "dockerfile", "containerfile", "readme",
+)
+_PROTECTED_SUFFIXES = (
+    ".lock", ".csproj", ".fsproj", ".vbproj", ".sln", ".tf", ".tfvars",
+    ".dockerignore", ".sql",
+)
+_PROTECTED_DIRECTORY_NAMES = frozenset({
+    "migrations", "migration", "migrate", "alembic", ".github", ".circleci",
+    ".buildkite", ".gitlab", ".woodpecker", ".devcontainer", "deploy",
+    "deployment", "deployments", "infra", "infrastructure", "terraform",
+    "helm", "k8s", "kubernetes", "ansible",
+})
+
+
+def _without_last_extension(path: str) -> str:
+    """The file's name, lower-cased, with its last extension removed."""
+    name = path.rsplit("/", 1)[-1].lower()
+    head, dot, _ = name.rpartition(".")
+    return head if dot and head else name
+
+
+def _planned_name(path: str) -> str:
+    """A planned file's name for matching: ``user.service.ts`` → ``user.service``."""
+    return _without_last_extension(path)
+
+
+_STYLE_AND_IMAGE_SUFFIXES = (
+    ".css", ".scss", ".sass", ".less",
+    ".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico",
+)
+
+
+def _companion_name(path: str) -> Optional[str]:
+    """An extra file's name for matching, or ``None`` when it is neither a
+    test nor a style or image file (production code is never a companion).
+
+    A style or image file drops its last extension and then one trailing
+    ``.module``. A test drops its last extension and then exactly one test
+    marker: a trailing ``.test``/``.spec`` segment, or else a ``_test``/
+    ``_spec`` suffix, or else a ``test_`` prefix.
+    """
+    name = path.rsplit("/", 1)[-1].lower()
+    base = _without_last_extension(path)
+    if base == name:
+        return None  # no extension at all: ambiguous, counts in full
+    if name.endswith(_STYLE_AND_IMAGE_SUFFIXES):
+        return base[: -len(".module")] if base.endswith(".module") else base
+    for marker in (".test", ".spec", "_test", "_spec"):
+        if base.endswith(marker) and len(base) > len(marker):
+            return base[: -len(marker)]
+    if base.startswith("test_") and len(base) > len("test_"):
+        return base[len("test_"):]
+    return None
+
+
+def _is_protected(path: str) -> bool:
+    """Whether ``path`` is a file that is never a companion of planned work."""
+    parts = path.split("/")
+    name = parts[-1].lower()
+    if name in _PROTECTED_NAMES or name.endswith(_PROTECTED_SUFFIXES):
+        return True
+    if name.startswith(".env") or name.startswith("."):
+        # .env*, and every other dotfile (.gitlab-ci.yml, .npmrc, ...)
+        return True
+    name_parts = name.split(".")
+    if any(
+        p.startswith(_PROTECTED_NAME_PART_PREFIXES) or p == "env"
+        for p in name_parts
+    ):
+        return True
+    if "migration" in name:
+        return True
+    # compose*.y*ml and docker-compose*.y*ml, under any prefix
+    if name.endswith((".yml", ".yaml")) and any(
+        p.startswith(("compose", "docker-compose")) for p in name_parts
+    ):
+        return True
+    return any(part.lower() in _PROTECTED_DIRECTORY_NAMES for part in parts[:-1])
+
+
+def _folder(path: str) -> str:
+    return path.rsplit("/", 1)[0] if "/" in path else ""
+
+
+def _beside_the_plan(extra: Set[str], planned: Set[str]) -> Set[str]:
+    """The extra files that are a planned file's own test or stylesheet.
+
+    ``planned`` is every file the plan names (to create or to change). See the
+    conditions at the top of this file. Nothing is removed from the audit by
+    this: the caller still names every one.
+    """
+    planned_by_folder_and_name = {(_folder(p), _planned_name(p)) for p in planned}
+    beside: Set[str] = set()
+    for path in extra:
+        name = _companion_name(path)
+        if (
+            name is not None
+            and (_folder(path), name) in planned_by_folder_and_name
+            and not _is_protected(path)
+        ):
+            beside.add(path)
+    return beside
+
+
 class PlanAuditor:
     """Main auditor class that compares planned vs actual implementation."""
 
@@ -704,17 +863,37 @@ class PlanAuditor:
         )
         missing_files = planned_files - actual_files
 
-        if extra_files:
-            severity = "medium" if len(extra_files) <= 2 else "high"
-            variance = (len(extra_files) / max(len(planned_files), 1)) * 100
+        # Extra files that are a planned file's own test or stylesheet are
+        # named in a low discrepancy of their own and do not count towards
+        # the line below (see _beside_the_plan at the top of this file).
+        planned_anywhere = planned_files | set(plan_data.get("files_to_modify", []))
+        beside = _beside_the_plan(extra_files, planned_anywhere)
+        counted_extra = extra_files - beside
+
+        if counted_extra:
+            severity = "medium" if len(counted_extra) <= 2 else "high"
+            variance = (len(counted_extra) / max(len(planned_files), 1)) * 100
 
             discrepancies.append(Discrepancy(
                 category="files",
                 severity=severity,
-                message=f"{len(extra_files)} extra file(s) not in plan",
+                message=f"{len(counted_extra)} extra file(s) not in plan",
                 planned=sorted(list(planned_files)),
-                actual=sorted(list(extra_files)),
+                actual=sorted(list(counted_extra)),
                 variance=variance
+            ))
+
+        if beside:
+            discrepancies.append(Discrepancy(
+                category="files",
+                severity="low",
+                message=(
+                    f"{len(beside)} extra file(s) not in plan, each a planned "
+                    f"file's own test or stylesheet"
+                ),
+                planned=sorted(list(planned_files)),
+                actual=sorted(list(beside)),
+                variance=(len(beside) / max(len(planned_files), 1)) * 100,
             ))
 
         if missing_files:

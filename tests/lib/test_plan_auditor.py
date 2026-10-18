@@ -479,6 +479,198 @@ class TestPlanAuditor:
         assert discrepancies == []
 
 
+class TestAPlannedFilesOwnTestOrStylesheet:
+    """An extra file is low only when it is in the same directory as a planned
+    file, has its name (one test word dropped), is a test or a style/image
+    file, and is not protected. Anything else counts in full.
+    """
+
+    PLANNED = [
+        "apps/web/src/pages/ShelfPage.tsx",
+        "apps/web/src/pages/ShelfPage.module.css",
+        "apps/web/src/components/EmptyShelf.tsx",
+        "apps/web/src/components/BookCard.tsx",
+        "apps/web/src/components/BookCard.module.css",
+        "apps/web/src/lib/bookFormatting.ts",
+    ]
+
+    @pytest.fixture
+    def auditor(self, tmp_path):
+        return PlanAuditor(workspace_root=tmp_path)
+
+    def _plan(self):
+        return {
+            "files_to_create": list(self.PLANNED),
+            "files_to_modify": ["apps/web/src/App.tsx"],
+        }
+
+    def _beside(self, extra, planned):
+        from plan_audit import _beside_the_plan
+
+        return _beside_the_plan(set(extra), set(planned))
+
+    def test_live_shape_is_medium_with_two_counted_extras(self, auditor):
+        actual = {
+            "files_created": self.PLANNED + [
+                # The page lives in pages/; this test sits one level up.
+                "apps/web/src/ShelfPage.test.tsx",
+                "apps/web/src/components/EmptyShelf.module.css",
+                "apps/web/src/test-harness.tsx",
+            ],
+            "files_modified": ["apps/web/src/App.tsx", "apps/web/src/App.test.tsx"],
+        }
+
+        discrepancies = auditor._compare_files(self._plan(), actual)
+
+        assert auditor._calculate_severity(discrepancies) == "medium"
+        counted = [d for d in discrepancies if d.severity == "medium"]
+        assert len(counted) == 1
+        assert counted[0].actual == [
+            "apps/web/src/ShelfPage.test.tsx",
+            "apps/web/src/test-harness.tsx",
+        ]
+        low_extra = [
+            d for d in discrepancies
+            if d.severity == "low" and "extra" in d.message
+        ]
+        assert len(low_extra) == 1
+        assert low_extra[0].actual == [
+            "apps/web/src/components/EmptyShelf.module.css"
+        ]
+
+    @pytest.mark.parametrize("extra,planned", [
+        ("apps/web/src/components/EmptyShelf.module.css",
+         "apps/web/src/components/EmptyShelf.tsx"),
+        ("apps/web/src/pages/ShelfPage.test.tsx", "apps/web/src/pages/ShelfPage.tsx"),
+        ("apps/web/src/pages/ShelfPage.spec.ts", "apps/web/src/pages/ShelfPage.tsx"),
+        ("apps/web/src/pages/ShelfPage.svg", "apps/web/src/pages/ShelfPage.tsx"),
+        ("api/notes/handler_test.go", "api/notes/handler.go"),
+        ("src/test_feature.py", "src/feature.py"),
+        ("app/models/user_spec.rb", "app/models/user.rb"),
+        # dotted module names keep everything before the last extension
+        ("src/user/user.service.test.ts", "src/user/user.service.ts"),
+        ("src/user/user.service.spec.ts", "src/user/user.service.ts"),
+        ("apps/web/src/components/EmptyState.module.css",
+         "apps/web/src/components/EmptyState.tsx"),
+    ])
+    def test_a_planned_files_own_test_or_stylesheet_is_low(
+        self, auditor, extra, planned
+    ):
+        assert self._beside([extra], [planned]) == {extra}
+        discrepancies = auditor._compare_files(
+            {"files_to_create": [planned]},
+            {"files_created": [planned, extra]},
+        )
+        assert [d.severity for d in discrepancies] == ["low"]
+
+    @pytest.mark.parametrize("extra,planned", [
+        # same name, another directory (an unrelated package's test)
+        ("apps/web/src/ShelfPage.test.tsx", "apps/web/src/pages/ShelfPage.tsx"),
+        ("tests/test_feature.py", "src/feature.py"),
+        ("api/billing/handler_test.go", "api/notes/handler.go"),
+        # same-name production files
+        ("apps/web/src/components/ShelfPage.ts", "apps/web/src/pages/ShelfPage.tsx"),
+        ("apps/web/src/pages/ShelfPage.utils.ts", "apps/web/src/pages/ShelfPage.tsx"),
+        ("apps/web/src/pages/ShelfPage.ts", "apps/web/src/pages/ShelfPage.tsx"),
+        # unrelated test, helper and asset in the planned folder
+        ("apps/web/src/pages/OtherThing.test.tsx", "apps/web/src/pages/ShelfPage.tsx"),
+        ("apps/web/src/pages/test-harness.tsx", "apps/web/src/pages/ShelfPage.tsx"),
+        ("apps/web/src/pages/logo.svg", "apps/web/src/pages/ShelfPage.tsx"),
+        # the test word is dropped once only
+        ("api/notes/handler_test_test.go", "api/notes/handler.go"),
+        ("src/test_test_feature.py", "src/feature.py"),
+        ("api/notes/test_handler_test.go", "api/notes/handler.go"),
+        # distinct dotted modules in one directory are not merged
+        ("src/user/user.repository.test.ts", "src/user/user.service.ts"),
+        ("src/user/user.test.ts", "src/user/user.service.ts"),
+        ("src/user/user.service.module.css", "src/user/user.tsx"),
+        # a file with no extension is ambiguous and counts
+        ("src/user/user_test", "src/user/user.ts"),
+    ])
+    def test_everything_else_counts_in_full(self, auditor, extra, planned):
+        assert self._beside([extra], [planned]) == set()
+        discrepancies = auditor._compare_files(
+            {"files_to_create": [planned]},
+            {"files_created": [planned, extra]},
+        )
+        assert [d.severity for d in discrepancies] == ["medium"]
+
+    def test_everything_under_a_test_directory_is_not_exempt(self, auditor):
+        plan = {"files_to_create": ["src/feature.py", "tests/test_feature.py"]}
+        actual = {
+            "files_created": [
+                "src/feature.py", "tests/test_feature.py",
+                "tests/test_billing.py", "tests/conftest.py", "tests/data.json",
+            ],
+        }
+
+        discrepancies = auditor._compare_files(plan, actual)
+
+        assert auditor._calculate_severity(discrepancies) == "high"
+
+    def test_protected_files_beside_a_planned_test_count_even_when_named_after_it(
+        self, auditor
+    ):
+        plan = {
+            "files_to_create": [
+                "api/notes/handler.go", "api/notes/handler_test.go",
+            ],
+        }
+        actual = {
+            "files_created": plan["files_to_create"] + [
+                "api/notes/Dockerfile",
+                "api/notes/compose.yaml",
+                "api/notes/README.md",
+                "api/notes/migrations/0001_notes.sql",
+                "api/notes/handler.Dockerfile",
+                "api/notes/handler.README.md",
+                "api/notes/handler.compose.yaml",
+                "api/notes/handler_test.sql",
+            ],
+        }
+
+        discrepancies = auditor._compare_files(plan, actual)
+
+        assert auditor._calculate_severity(discrepancies) == "high"
+        counted = [d for d in discrepancies if d.severity == "high"]
+        assert len(counted[0].actual) == 8
+        assert not [
+            d for d in discrepancies if d.severity == "low" and "extra" in d.message
+        ]
+
+    @pytest.mark.parametrize("path", [
+        "Dockerfile", "web/Dockerfile.dev", "web/src/ShelfPage.Dockerfile",
+        "Containerfile", "compose.yaml", "docker-compose.override.yml",
+        "web/ShelfPage.compose.yaml", "README.md", "web/src/ShelfPage.README.md",
+        "db/migrations/0001_add.py", "alembic/versions/0002.py",
+        "web/src/ShelfPage.migration.ts", "schema/ShelfPage.sql",
+        "package-lock.json", "yarn.lock", "web/pnpm-lock.yaml", "go.sum",
+        "uv.lock", "web/package.json", "pyproject.toml", "go.mod",
+        ".github/workflows/ci.yml", ".gitlab-ci.yml", "Jenkinsfile",
+        ".env", ".env.local", "web/ShelfPage.env", "deploy/ShelfPage.sh",
+        "infra/ShelfPage.ts", "main.tf", "Makefile", "api/Api.csproj",
+        "db/migrations/handler_test.go", "deploy/ShelfPage.test.ts",
+    ])
+    def test_protected_types_are_never_companions(self, path):
+        from plan_audit import _is_protected
+
+        assert _is_protected(path)
+        folder = path.rsplit("/", 1)[0] if "/" in path else ""
+        stem = path.rsplit("/", 1)[-1].split(".", 1)[0]
+        planned = f"{folder}/{stem}.tsx" if folder else f"{stem}.tsx"
+        assert self._beside([path], [planned]) == set()
+
+    @pytest.mark.parametrize("path", [
+        "web/src/ShelfPage.test.tsx", "web/src/ShelfPage.module.css",
+        "web/src/components/EmptyShelf.module.css", "api/handler_test.go",
+        "web/src/Envelope.test.tsx",
+    ])
+    def test_ordinary_tests_and_styles_are_not_protected(self, path):
+        from plan_audit import _is_protected
+
+        assert not _is_protected(path)
+
+
 class TestAuditAgainstARealGitHistory:
     """Drive the auditor over a real repository with real turns of commits.
 
