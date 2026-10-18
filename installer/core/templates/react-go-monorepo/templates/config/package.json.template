@@ -3,5 +3,6 @@
   "private": true,
   "workspaces": ["apps/web"],
   "scripts": {"check": "bash scripts/check.sh"},
-  "engines": {"node": "22.23.2"}
+  "engines": {"node": "22.23.2"},
+  "overrides": {"@vitejs/devtools-vitest": {"vitest": "4.1.11"}}
 }
