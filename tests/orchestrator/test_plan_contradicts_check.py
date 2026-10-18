@@ -942,6 +942,54 @@ class TestTheCoachsInputs:
         assert "[cut]" in section
         assert long_out.splitlines()[-1] in section, "the END of the output is kept"
 
+    @staticmethod
+    def _blocks(section: str) -> List[str]:
+        return [b.split("\n~~~", 1)[0] for b in section.split("~~~text\n")[1:]]
+
+    def test_a_stdout_that_fits_is_kept_whole(self) -> None:
+        """Coach review F2: stdout is cut first, so a short stdout is never
+        shortened to make room for stderr."""
+        stdout = "\n".join(f"stdout line {i}" for i in range(100))  # ~1,500 chars
+        stderr = "\n".join(f"stderr line {i} " + "y" * 60 for i in range(200))
+        prompt = _prompt(_bundle(self._record(stdout=stdout, stderr=stderr)))
+        section = prompt.split("### On this turn's code", 1)[1].split(
+            "### On the code that failed before", 1
+        )[0]
+        shown_stdout, shown_stderr = self._blocks(section)
+        assert shown_stdout == stdout
+        assert len(shown_stdout) + len(shown_stderr) <= 4000
+        assert shown_stderr.startswith("[cut]")
+        assert stderr.splitlines()[-1] in shown_stderr
+
+    def test_feat_15dd_failing_lines_survive(self) -> None:
+        """FEAT-15DD's real output shape: Playwright's stdout tail (the
+        assertion's ``unexpected value "1 note"``) beside a long stderr of
+        container start-up noise. The failing lines must reach the Coach."""
+        data = _load("failed_attempt_1.json")
+        # The fixture's scrubbed paths are put back at their recorded length,
+        # so stdout is the real 2,980 characters beside 2,347 of stderr.
+        scrubbed = data["stdout_tail"].count("<path>")
+        real_path = "/" + "p" * (
+            (2980 - len(data["stdout_tail"])) // scrubbed + len("<path>") - 1
+        )
+        data["stdout_tail"] = data["stdout_tail"].replace("<path>", real_path)
+        assert len(data["stdout_tail"]) == 2980 and len(data["stderr_tail"]) == 2347
+        assert 'unexpected value "1 note"' in data["stdout_tail"]
+        turn_run = failed_attempt()  # attempt 2 printed the same shape
+        turn_run.stdout_tail = data["stdout_tail"]
+        repair = repair_with(lambda: turn_run)
+        repair.failed_attempt.stdout_tail = data["stdout_tail"]
+        record = whole_feature_check_record(repair, wave_size=1)
+        section = AgentInvoker._render_whole_feature_check_section(_bundle(record))
+        on_turn, before = section.split("### On the code that failed before", 1)
+        for part in (on_turn, before):
+            shown_stdout, shown_stderr = self._blocks(part)
+            assert 'unexpected value "1 note"' in shown_stdout
+            assert "toHaveText(`${expected} notes`)" in shown_stdout
+            assert shown_stdout == data["stdout_tail"], "stdout kept whole"
+            assert len(shown_stdout) + len(shown_stderr) <= 4000
+            assert data["stderr_tail"].splitlines()[-1] in shown_stderr
+
     def test_the_section_survives_trimming(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(AgentInvoker, "_COACH_SYNTHESIS_MAX_CHARS", 9000)
         bundle = _bundle(self._record())

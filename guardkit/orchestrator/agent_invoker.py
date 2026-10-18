@@ -4520,6 +4520,8 @@ Turn: {turn}
     # 18 October 2026: how much of one run's output (stdout and stderr
     # together) the whole-feature check section shows.
     _COACH_WHOLE_FEATURE_OUTPUT_LIMIT = 4000
+    # The least room stderr keeps when it has output and stdout is long.
+    _COACH_WHOLE_FEATURE_STDERR_FLOOR = 500
 
     @classmethod
     def _render_whole_feature_check_section(
@@ -4546,10 +4548,14 @@ Turn: {turn}
         def _run_block(run: Dict[str, Any]) -> List[str]:
             stdout = str(run.get("stdout_tail") or "")
             stderr = str(run.get("stderr_tail") or "")
-            # The end of each stream matters most; stderr gets at most a
-            # third of the room, stdout the rest, together never over limit.
-            stderr = cut_tail(stderr, limit // 3) if stderr else ""
-            stdout = cut_tail(stdout, max(limit - len(stderr), 0)) if stdout else ""
+            # stdout first (coach review F2, 19 October 2026): a check's
+            # failing lines are usually there, so a stdout that fits is kept
+            # whole. stderr keeps a small floor when it has anything, and
+            # otherwise only the room stdout left. The end of each stream is
+            # kept when cut; together they never pass the limit.
+            stderr_floor = min(len(stderr), cls._COACH_WHOLE_FEATURE_STDERR_FLOOR)
+            stdout = cut_tail(stdout, limit - stderr_floor) if stdout else ""
+            stderr = cut_tail(stderr, limit - len(stdout)) if stderr else ""
             exit_code = run.get("exit_code")
             outcome = run.get("outcome") or "unknown"
             lines = [
