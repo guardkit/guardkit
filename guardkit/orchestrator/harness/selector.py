@@ -272,6 +272,36 @@ _AUTO_DCODE_PROFILE: Path | None = None
 _DCODE_TRACE_VARS = ("LANGCHAIN_TRACING", "LANGCHAIN_TRACING_V2", "LANGSMITH_TRACING")
 
 
+def _reset_auto_dcode_profile(profile: Path) -> None:
+    """Restore this process's own dcode profile to its clean launch state.
+
+    18 October 2026 (build FEAT-05EE, and FEAT-B463 on 11 October): the
+    profile is reused for every Player turn of every task in this process, and
+    one stray file left there (a model's shell command wrote ``full.log``)
+    refused every later launch and failed the whole build. guardkitfactory
+    knows the clean shape, removes the rest and logs what it removed; it does
+    nothing while another Player invocation in this process is using the
+    profile. The launch check that follows is unchanged, so anything not
+    removed is still refused. An installed guardkitfactory without the reset
+    leaves today's behaviour.
+    """
+
+    try:
+        from guardkitfactory.harness import (  # type: ignore[import-not-found]
+            reset_run_profile,
+        )
+    except ImportError:
+        return
+    try:
+        reset_run_profile(profile)
+    except Exception as exc:  # noqa: BLE001 - the launch check still decides
+        logger.warning(
+            "dcode profile reset failed (%s); the launch check decides as before: %s",
+            type(exc).__name__,
+            profile,
+        )
+
+
 def _configure_dcode_launch(worktree: Path) -> Path:
     """Install one safe dcode profile and offline policy for this process."""
 
@@ -321,6 +351,11 @@ def _configure_dcode_launch(worktree: Path) -> Path:
             raise AgentInvocationError(
                 "DEEPAGENTS_HOME changed after the process-scoped dcode profile was selected."
             )
+        if _AUTO_DCODE_PROFILE is not None:
+            # The profile this process made itself (never one supplied from
+            # outside), so it is restored to the clean state before each
+            # Player launch.
+            _reset_auto_dcode_profile(profile)
 
         os.environ["DEEPAGENTS_HOME"] = str(profile)
         os.environ["DEEPAGENTS_CODE_OFFLINE"] = "1"

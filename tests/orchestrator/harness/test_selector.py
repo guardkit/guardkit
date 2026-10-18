@@ -1821,3 +1821,239 @@ class TestLaunchDeclarationReachesTheBackend:
                 {"settings": [], "scratch": ["TOOL_CACHE"]},
                 Path("/tmp/git/scratch"),
             )
+
+
+# ----------------------------------------------------------------------
+# 18 October 2026 (build FEAT-05EE, FEAT-B463): the process's own dcode profile
+# is restored to its clean state before each Player launch.
+# ----------------------------------------------------------------------
+
+
+def _has_dcode_reset() -> bool:
+    if not _has_guardkitfactory():
+        return False
+    try:
+        from guardkitfactory.harness import reset_run_profile  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
+_requires_dcode_reset = pytest.mark.skipif(
+    not _has_dcode_reset(),
+    reason="needs a guardkitfactory that can reset the dcode run profile",
+)
+
+_DCODE_LAUNCH_VARS = (
+    "DEEPAGENTS_HOME",
+    "DEEPAGENTS_CODE_OFFLINE",
+    "LANGCHAIN_TRACING",
+    "LANGCHAIN_TRACING_V2",
+    "LANGSMITH_TRACING",
+)
+
+
+@_requires_dcode_reset
+class TestAutoDcodeProfileReset:
+    """A stray file in the process's own profile no longer refuses later turns."""
+
+    @pytest.fixture(autouse=True)
+    def _fresh_process(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(selector_module, "_AUTO_DCODE_PROFILE", None)
+        for name in _DCODE_LAUNCH_VARS:
+            monkeypatch.delenv(name, raising=False)
+
+    @staticmethod
+    def _auto_profile(
+        monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> tuple[Path, Path]:
+        """Launch once as a fresh process does: GuardKit makes the profile."""
+
+        worktree = tmp_path / "worktree"
+        worktree.mkdir()
+        made = tmp_path / "guardkit-dcode-auto"
+        monkeypatch.setattr(
+            selector_module.tempfile,
+            "mkdtemp",
+            lambda **_kwargs: str(made.mkdir() or made),
+        )
+        profile = selector_module._configure_dcode_launch(worktree)
+        assert profile == made.resolve()
+        # What dcode itself leaves there after a clean turn.
+        (profile / "guardkit-player" / "skills").mkdir(parents=True)
+        return worktree, profile
+
+    @staticmethod
+    def _launch_check(worktree: Path, profile: Path) -> None:
+        """The factory's own, unchanged launch check for the next Player turn."""
+
+        from guardkitfactory.harness import build_player_config
+        from guardkitfactory.harness.dcode_harness import _validate_launch
+
+        _validate_launch(build_player_config(cwd=worktree, dcode_home=profile))
+
+    def test_stray_file_and_directory_are_removed_logged_and_the_launch_passes(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        import hashlib
+
+        worktree, profile = self._auto_profile(monkeypatch, tmp_path)
+        secret = "check.sh output that must never be logged"
+        (profile / "full.log").write_text(secret)
+        (profile / "cache" / "deep").mkdir(parents=True)
+        (profile / "cache" / "deep" / "state.json").write_text("{}")
+        (profile / "guardkit-player" / "notes.json").write_text("{}")
+        (profile / "guardkit-player" / "AGENTS.md").write_text("")
+
+        with caplog.at_level(logging.WARNING):
+            assert selector_module._configure_dcode_launch(worktree) == profile
+
+        remaining = sorted(
+            str(path.relative_to(profile)) for path in profile.rglob("*")
+        )
+        assert remaining == [
+            "guardkit-player",
+            "guardkit-player/AGENTS.md",
+            "guardkit-player/skills",
+        ]
+        logged = [
+            record.getMessage()
+            for record in caplog.records
+            if record.levelno == logging.WARNING and "reset before launch" in record.getMessage()
+        ]
+        assert len(logged) == 1
+        message = logged[0]
+        assert secret not in message
+        assert "'full.log'" in message and "'cache'" in message
+        assert "'guardkit-player/notes.json'" in message
+        assert hashlib.sha256(secret.encode()).hexdigest() in message
+        assert f"'size': {len(secret)}" in message
+        assert "'cache/deep/state.json'" in message
+        self._launch_check(worktree, profile)
+
+    def test_supplied_profile_is_not_reset_and_is_refused_as_today(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        from guardkitfactory.harness import PlayerLaunchRefused
+
+        worktree = tmp_path / "worktree"
+        worktree.mkdir()
+        supplied = tmp_path / "supplied-profile"
+        supplied.mkdir()
+        (supplied / "full.log").write_text("left by someone else")
+        monkeypatch.setenv("DEEPAGENTS_HOME", str(supplied))
+
+        for _turn in range(2):
+            assert selector_module._configure_dcode_launch(worktree) == supplied.resolve()
+            assert (supplied / "full.log").read_text() == "left by someone else"
+        assert selector_module._AUTO_DCODE_PROFILE is None
+        with pytest.raises(
+            PlayerLaunchRefused,
+            match="run profile contains unexpected configuration or nonempty memory",
+        ) as refused:
+            self._launch_check(worktree, supplied.resolve())
+        assert [entry["path"] for entry in refused.value.entries] == ["full.log"]
+
+    def test_planted_symlinks_are_removed_without_following_them(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        worktree, profile = self._auto_profile(monkeypatch, tmp_path)
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        (outside / "keep.txt").write_text("not the profile's")
+        (profile / "linked-dir").symlink_to(outside, target_is_directory=True)
+        (profile / "linked-file").symlink_to(outside / "keep.txt")
+        # A link where dcode's own directory belongs is removed too.
+        (profile / "guardkit-player" / "skills").rmdir()
+        (profile / "guardkit-player" / "skills").symlink_to(outside, target_is_directory=True)
+
+        selector_module._configure_dcode_launch(worktree)
+
+        assert sorted(p.name for p in profile.rglob("*")) == ["guardkit-player"]
+        assert (outside / "keep.txt").read_text() == "not the profile's"
+        self._launch_check(worktree, profile)
+
+    def test_no_reset_while_another_player_invocation_uses_the_profile(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Parallel tasks share the profile: a running Player is never reset under."""
+
+        import threading
+
+        from guardkitfactory.harness.dcode_harness import player_profile_in_use
+
+        worktree, profile = self._auto_profile(monkeypatch, tmp_path)
+        (profile / "full.log").write_text("written by the running task")
+        running = threading.Event()
+        finish = threading.Event()
+
+        def other_task() -> None:
+            with player_profile_in_use(profile):
+                running.set()
+                finish.wait(10)
+
+        thread = threading.Thread(target=other_task)
+        thread.start()
+        try:
+            assert running.wait(10)
+            with caplog.at_level(logging.WARNING):
+                selector_module._configure_dcode_launch(worktree)
+            assert (profile / "full.log").exists()
+            assert any(
+                "not reset: 1 Player invocation(s)" in record.getMessage()
+                for record in caplog.records
+            )
+        finally:
+            finish.set()
+            thread.join(10)
+
+        selector_module._configure_dcode_launch(worktree)
+        assert not (profile / "full.log").exists()
+        self._launch_check(worktree, profile)
+
+    def test_concurrent_launches_and_a_reset_never_overlap(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """Launches in several threads stay serialised with the reset."""
+
+        worktree, profile = self._auto_profile(monkeypatch, tmp_path)
+        (profile / "full.log").write_text("stray")
+
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            selected = tuple(
+                pool.map(
+                    lambda _index: selector_module._configure_dcode_launch(worktree),
+                    range(8),
+                )
+            )
+
+        assert selected == (profile,) * 8
+        assert not (profile / "full.log").exists()
+        self._launch_check(worktree, profile)
+
+
+def test_a_factory_without_the_reset_keeps_todays_behaviour(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """GuardKit still works with a released guardkitfactory that cannot reset."""
+
+    _install_fake_guardkitfactory(monkeypatch, _old_factory_no_cap)
+    monkeypatch.setattr(selector_module, "_AUTO_DCODE_PROFILE", None)
+    for name in _DCODE_LAUNCH_VARS:
+        monkeypatch.delenv(name, raising=False)
+    worktree = tmp_path / "worktree"
+    worktree.mkdir()
+    made = tmp_path / "auto"
+    made.mkdir()
+    monkeypatch.setattr(selector_module.tempfile, "mkdtemp", lambda **_kwargs: str(made))
+    profile = selector_module._configure_dcode_launch(worktree)
+    (profile / "full.log").write_text("stray")
+
+    assert selector_module._configure_dcode_launch(worktree) == profile
+    assert (profile / "full.log").read_text() == "stray"
