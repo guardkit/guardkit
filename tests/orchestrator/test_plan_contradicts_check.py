@@ -601,19 +601,76 @@ class TestStructuredRecordControls:
         ran = {"ran": False, "outcome": None, "skipped_reason": "parallel_wave"}
         assert self._stop(tmp_path, _record(deepcopy(GATE_REPORT)), ran) is None
 
-    def test_a_model_rejection_over_criteria_only_stops(self, tmp_path: Path) -> None:
-        report = {
+    @staticmethod
+    def _model_report(independent: Dict[str, Any]) -> Dict[str, Any]:
+        return {
             "decision": "feedback",
             "issues": [{"type": "missing_requirement", "description": "AC-003"}],
             "criteria_verification": [
                 {"criterion_id": "AC-001", "result": "verified"},
                 {"criterion_id": "AC-003", "result": "rejected"},
             ],
-            "validation_results": {
-                "independent_tests": {"tests_passed": True, "signal_absent": False}
-            },
+            "validation_results": {"independent_tests": independent},
         }
+
+    def test_a_model_rejection_over_criteria_only_stops(self, tmp_path: Path) -> None:
+        """A real passing independent run: flags plus a real command."""
+        report = self._model_report(
+            {"tests_passed": True, "signal_absent": False, "test_command": "bash scripts/check.sh"}
+        )
         assert self._stop(tmp_path, _record(report)) is not None
+
+    def test_a_real_independent_run_is_read_from_the_real_merge(self, tmp_path: Path) -> None:
+        """The report shape the orchestrator really builds from a run."""
+        from guardkit.orchestrator.quality_gates.coach_validator import (
+            IndependentTestResult,
+        )
+
+        repo = make_project(tmp_path)
+        orch = make_orchestrator(repo, repair=repair_with(None))
+        bundle = CoachEvidenceBundle(
+            honesty=HonestyVerification(verified=True),
+            independent_tests=IndependentTestResult(
+                tests_passed=True, test_command="bash scripts/check.sh",
+                test_output_summary="ok", duration_seconds=1.0,
+            ),
+        )
+        ran = self._model_report({})
+        ran["validation_results"] = {}
+        orch._merge_evidence_test_signal_into_report(ran, bundle)
+        assert _criteria_only_rejection(_record(ran)) == ["AC-003"]
+
+        skipped_bundle = CoachEvidenceBundle(
+            honesty=HonestyVerification(verified=True),
+            independent_tests=IndependentTestResult.skipped(
+                test_output_summary="No task-specific tests found"
+            ),
+        )
+        skipped = self._model_report({})
+        skipped["validation_results"] = {}
+        orch._merge_evidence_test_signal_into_report(skipped, skipped_bundle)
+        assert skipped["validation_results"]["independent_tests"]["tests_passed"] is True
+        assert _criteria_only_rejection(_record(skipped)) is None
+
+    @pytest.mark.parametrize(
+        "independent",
+        [
+            # IndependentTestResult.skipped(): passing flags, no run.
+            {"tests_passed": True, "signal_absent": False, "test_command": "skipped"},
+            {"tests_passed": True, "signal_absent": False,
+             "test_command": "<no test command declared or detected>"},
+            # No command recorded at all, or an empty one: unconfirmed.
+            {"tests_passed": True, "signal_absent": False},
+            {"tests_passed": True, "signal_absent": False, "test_command": ""},
+            {"tests_passed": True, "signal_absent": False, "test_command": "   "},
+            {"tests_passed": True, "signal_absent": False, "test_command": None},
+        ],
+    )
+    def test_a_skipped_or_unconfirmed_independent_run_never_stops(
+        self, tmp_path: Path, independent: Dict[str, Any]
+    ) -> None:
+        report = self._model_report(independent)
+        assert self._stop(tmp_path, _record(report)) is None
 
     def test_a_model_rejection_with_a_test_failure_keeps_todays_rejection(
         self, tmp_path: Path

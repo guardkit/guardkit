@@ -1079,7 +1079,8 @@ def _criteria_only_rejection(turn_record: "TurnRecord") -> Optional[List[str]]:
       gate blocker) and their ``unmet_ids`` name at least one criterion;
     * the model Coach: every issue has type ``missing_requirement``, at least
       one criterion is ``rejected``, and the Coach's independent tests ran and
-      passed.
+      passed: the passing flags AND a recorded test command that is not one
+      of the "nothing ran" placeholders (a skipped run never counts).
 
     Any other blocker, a missing or malformed record, or any other shape
     returns ``None``: the turn is sent back exactly as today.
@@ -1139,6 +1140,17 @@ def _criteria_only_rejection(turn_record: "TurnRecord") -> Optional[List[str]]:
         and independent.get("tests_passed") is True
         and independent.get("signal_absent") is False
     ):
+        return None
+    # A real run, not a skipped one (implementation review R1, 19 October
+    # 2026): IndependentTestResult.skipped() also reads tests_passed=True and
+    # signal_absent=False, so the recorded command must be a real one. The
+    # placeholders that mean "nothing ran" are the shared
+    # _NON_RUN_TEST_COMMANDS. A missing or empty command is unconfirmed, and
+    # unconfirmed counts as no early stop.
+    command = independent.get("test_command")
+    if not isinstance(command, str) or not command.strip():
+        return None
+    if command.strip() in _NON_RUN_TEST_COMMANDS:
         return None
     return rejected
 
