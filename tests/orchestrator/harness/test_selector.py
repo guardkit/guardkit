@@ -1945,6 +1945,54 @@ class TestOwnDcodeProfileLock:
         assert [config.lock_profile for config in configs] == [True] * 8
 
 
+    @pytest.mark.parametrize("replacement", ["link", "other_directory"])
+    def test_a_replaced_own_profile_is_not_locked_and_launches_as_today(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
+        replacement: str,
+    ) -> None:
+        """R5: the profile root replaced before the first launch is not ours to lock."""
+        import stat as stat_module
+
+        made = tmp_path / "auto-profile"
+        _own_profile_at(monkeypatch, made)
+        configs = self._real_config_capture(monkeypatch)
+        worktree = tmp_path / "worktree"
+        worktree.mkdir()
+        assert selector_module._configure_dcode_launch(worktree) == made.resolve()
+
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        (outside / "keep.txt").write_text("not the profile's")
+        before = {
+            str(p): stat_module.S_IMODE(p.lstat().st_mode) for p in [outside, *outside.rglob("*")]
+        }
+        # Moved aside (not deleted) so its inode cannot be reused by a new one.
+        made.rename(tmp_path / "moved-aside")
+        if replacement == "link":
+            made.symlink_to(outside, target_is_directory=True)
+            expected_home = outside.resolve()
+        else:
+            made.mkdir()  # same path, a different directory
+            expected_home = made.resolve()
+
+        with caplog.at_level(logging.WARNING, logger=selector_module.logger.name):
+            config = self._select(tmp_path)
+
+        assert config.lock_profile is False
+        assert configs == [config]
+        assert any("dcode profile not locked" in r.getMessage() for r in caplog.records)
+        # As today: the launch uses what DEEPAGENTS_HOME now resolves to.
+        assert config.dcode_home == expected_home
+        assert os.environ["DEEPAGENTS_HOME"] == str(expected_home)
+        after = {
+            str(p): stat_module.S_IMODE(p.lstat().st_mode) for p in [outside, *outside.rglob("*")]
+        }
+        assert after == before
+
+
 def test_an_old_factory_gets_no_lock_and_keeps_todays_behaviour(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

@@ -32,6 +32,7 @@ import hashlib
 import inspect
 import logging
 import os
+import stat
 import tempfile
 import threading
 from collections.abc import Callable, Sequence
@@ -269,6 +270,10 @@ _PLAYER_PATH_FIELDS = frozenset(
 _COMMAND_FIELDS = ("test", "install", "typecheck", "lint", "build")
 _DCODE_PROFILE_LOCK = threading.Lock()
 _AUTO_DCODE_PROFILE: Path | None = None
+# (st_dev, st_ino) of each profile directory mkdtemp made in this process,
+# from os.lstat, so a later replacement (a link to another directory) is not
+# mistaken for this process's own profile.
+_AUTO_DCODE_IDENTITIES: dict[Path, tuple[int, int]] = {}
 _DCODE_TRACE_VARS = ("LANGCHAIN_TRACING", "LANGCHAIN_TRACING_V2", "LANGSMITH_TRACING")
 
 
@@ -298,7 +303,9 @@ def _configure_dcode_launch(worktree: Path) -> Path:
             candidate = Path(
                 tempfile.mkdtemp(prefix=f"guardkit-dcode-{os.getpid()}-")
             )
+            made = os.lstat(candidate)
             _AUTO_DCODE_PROFILE = candidate
+            _AUTO_DCODE_IDENTITIES[candidate] = (made.st_dev, made.st_ino)
 
         if not candidate.is_absolute():
             raise AgentInvocationError("DEEPAGENTS_HOME must be an absolute path.")
@@ -330,11 +337,39 @@ def _configure_dcode_launch(worktree: Path) -> Path:
 
 
 def _is_auto_dcode_profile(profile: Path) -> bool:
-    """Is ``profile`` the dcode profile this process made itself?"""
+    """Is ``profile`` (the resolved DEEPAGENTS_HOME) the one this process made?
+
+    True only when the path mkdtemp returned is, right now, a real directory
+    (not a link) with the device and inode it had when it was made, and
+    ``profile`` is that same path. A replaced profile is never resolved away:
+    it is simply not this process's own, so it is not locked (logged at
+    WARNING) and the launch check decides the rest.
+    """
 
     with _DCODE_PROFILE_LOCK:
         auto = _AUTO_DCODE_PROFILE
-    return auto is not None and profile == auto.resolve()
+        identity = None if auto is None else _AUTO_DCODE_IDENTITIES.get(auto)
+    if auto is None:
+        return False
+    if identity is not None:
+        try:
+            now = os.lstat(auto)
+        except OSError:
+            now = None
+        if (
+            now is not None
+            and stat.S_ISDIR(now.st_mode)
+            and (now.st_dev, now.st_ino) == identity
+            and profile == auto
+        ):
+            return True
+    logger.warning(
+        "dcode profile not locked: %s is no longer the directory this process "
+        "made at %s (replaced, linked or moved)",
+        profile,
+        auto,
+    )
+    return False
 
 
 def _player_path_list(raw: Any, *, field: str, config_path: Path) -> tuple[str, ...]:
