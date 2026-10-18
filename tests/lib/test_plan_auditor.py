@@ -479,6 +479,103 @@ class TestPlanAuditor:
         assert discrepancies == []
 
 
+class TestTestsAndStylesBesideThePlan:
+    """Tests, test helpers and styles of the planned work are low, not high.
+
+    Everything else extra still counts towards the "three is high" line.
+    """
+
+    PLANNED = [
+        "web/src/pages/ShelfPage.tsx",
+        "web/src/components/EmptyShelf.tsx",
+        "web/src/components/BookCard.tsx",
+        "web/src/components/BookCard.module.css",
+    ]
+
+    @pytest.fixture
+    def auditor(self, tmp_path):
+        return PlanAuditor(workspace_root=tmp_path)
+
+    def _plan(self):
+        return {
+            "files_to_create": list(self.PLANNED),
+            "files_to_modify": ["web/src/App.tsx"],
+        }
+
+    def test_live_shape_is_low(self, auditor):
+        actual = {
+            "files_created": self.PLANNED + [
+                "web/src/ShelfPage.test.tsx",
+                "web/src/components/EmptyShelf.module.css",
+                "web/src/test-harness.tsx",
+            ],
+            "files_modified": ["web/src/App.tsx", "web/src/App.test.tsx"],
+        }
+
+        discrepancies = auditor._compare_files(self._plan(), actual)
+
+        assert auditor._calculate_severity(discrepancies) == "low"
+        assert all(d.severity == "low" for d in discrepancies)
+        beside = [d for d in discrepancies if "test or style" in d.message]
+        assert len(beside) == 1
+        assert beside[0].actual == [
+            "web/src/ShelfPage.test.tsx",
+            "web/src/components/EmptyShelf.module.css",
+            "web/src/test-harness.tsx",
+        ]
+        assert "extra" in beside[0].message
+
+    def test_scope_creep_is_still_high(self, auditor):
+        actual = {
+            "files_created": self.PLANNED + [
+                "api/Dockerfile",
+                "deploy/compose.yaml",
+                "deploy/README.md",
+                "web/src/pages/ShelfPage.test.tsx",
+            ],
+            "files_modified": ["web/src/App.tsx"],
+        }
+
+        discrepancies = auditor._compare_files(self._plan(), actual)
+
+        assert auditor._calculate_severity(discrepancies) == "high"
+        counted = [d for d in discrepancies if d.severity == "high"]
+        assert len(counted) == 1
+        assert counted[0].actual == [
+            "api/Dockerfile", "deploy/README.md", "deploy/compose.yaml",
+        ]
+
+    def test_a_test_nobody_planned_and_a_lone_helper_still_count(self, auditor):
+        actual = {
+            "files_created": self.PLANNED + [
+                "tests/test_billing.py",
+                "scripts/mock_server.sh",
+                "web/src/billing/invoice.ts",
+            ],
+            "files_modified": [],
+        }
+
+        discrepancies = auditor._compare_files(self._plan(), actual)
+
+        assert auditor._calculate_severity(discrepancies) == "high"
+        assert not [d for d in discrepancies if "test or style" in d.message]
+
+    def test_a_go_test_beside_its_planned_file_is_low(self, auditor):
+        plan = {"files_to_create": ["api/internal/shelf/handler.go"]}
+        actual = {
+            "files_created": [
+                "api/internal/shelf/handler.go",
+                "api/internal/shelf/handler_test.go",
+                "api/internal/shelf/testdata_fixture.go",
+                "api/internal/shelf/store_test.go",
+            ],
+        }
+
+        discrepancies = auditor._compare_files(plan, actual)
+
+        assert auditor._calculate_severity(discrepancies) == "low"
+
+
 class TestAuditAgainstARealGitHistory:
     """Drive the auditor over a real repository with real turns of commits.
 

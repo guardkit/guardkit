@@ -12423,10 +12423,40 @@ class CoachValidator:
             type_words = (
                 f"{task_type} tasks" if task_type else "this task type"
             )
-            issues.append({
-                "severity": "must_fix",
-                "category": "coverage_unknown",
-                "description": (
+            # The project's declared coverage command runs only once every
+            # other required gate has passed (_coverage_resolution_pending).
+            # When it is declared but another gate failed first, the feedback
+            # says so, and names that gate, instead of claiming the project
+            # declares nothing (build FEAT-86FD, 18 October 2026).
+            try:
+                declared_command = self._declared_coverage_command()
+            except AttributeError:  # a validator built without a toolchain
+                declared_command = None
+            waiting_on: List[str] = []
+            if gates.tests_required and gates.tests_passed is not True:
+                waiting_on.append("tests")
+            if gates.arch_review_required and not gates.arch_review_passed:
+                waiting_on.append("architectural review")
+            if gates.plan_audit_required and not gates.plan_audit_passed:
+                waiting_on.append("plan audit")
+            if (
+                declared_command
+                and gates.coverage_receipt is None
+                and waiting_on
+            ):
+                description = (
+                    f"Coverage is UNKNOWN, not met: coverage is required for "
+                    f"{type_words}. The project declares a coverage command "
+                    f"(toolchain.coverage: {declared_command}), but it was not "
+                    f"run this turn because the "
+                    f"{' and '.join(waiting_on)} gate(s) failed first; it runs "
+                    f"once every other required gate passes. Nothing to change "
+                    f"for coverage itself: put right the other gate(s) named "
+                    f"in this feedback."
+                )
+                provenance = "declared_coverage_command_not_run"
+            else:
+                description = (
                     f"Coverage is UNKNOWN, not met: coverage is required for "
                     f"{type_words}, and neither the Player's report "
                     f"(quality_gates.coverage_met) nor the project "
@@ -12434,14 +12464,21 @@ class CoachValidator:
                     f"measurement. Nothing measured coverage, so the gate "
                     f"cannot approve. Report a measured coverage_met, or "
                     f"declare the project's own coverage command."
-                ),
+                )
+                provenance = "unmeasured"
+            issues.append({
+                "severity": "must_fix",
+                "category": "coverage_unknown",
+                "description": description,
                 "details": {
                     "coverage_met": None,
-                    "provenance": "unmeasured",
+                    "provenance": provenance,
                     "declared_coverage_command": (
-                        gates.coverage_receipt or {}
-                    ).get("command"),
+                        (gates.coverage_receipt or {}).get("command")
+                        or declared_command
+                    ),
                     "coverage_receipt": gates.coverage_receipt,
+                    "waiting_on_gates": waiting_on,
                 },
             })
         elif (
@@ -12515,11 +12552,29 @@ class CoachValidator:
             if severity:
                 parts.append(f"{severity}-severity")
             parts.append("discrepancies")
-            if extra_files:
+            # Extra files that are tests or styles beside the planned work are
+            # recorded as low by the auditor; name the counted ones first so
+            # the Player is not sent after its own tests.
+            beside = set(plan_audit.get("extra_files_beside_the_plan") or [])
+            counted_extra = [f for f in extra_files if f not in beside]
+            if counted_extra:
+                preview = ", ".join(counted_extra[:3])
+                if len(counted_extra) > 3:
+                    preview += f", ... (+{len(counted_extra) - 3} more)"
+                parts.append(f"— {len(counted_extra)} extra file(s): {preview}")
+            if beside and len(beside) < len(extra_files):
+                parts.append(
+                    f"— and {len(beside)} test or style file(s) beside the "
+                    f"planned work (recorded, low)"
+                )
+            elif beside:
                 preview = ", ".join(extra_files[:3])
                 if len(extra_files) > 3:
                     preview += f", ... (+{len(extra_files) - 3} more)"
-                parts.append(f"— {len(extra_files)} extra file(s): {preview}")
+                parts.append(
+                    f"— {len(extra_files)} extra test or style file(s) beside "
+                    f"the planned work (recorded, low): {preview}"
+                )
             if missing_files:
                 preview = ", ".join(missing_files[:3])
                 if len(missing_files) > 3:
