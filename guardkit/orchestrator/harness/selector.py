@@ -329,6 +329,14 @@ def _configure_dcode_launch(worktree: Path) -> Path:
         return profile
 
 
+def _is_auto_dcode_profile(profile: Path) -> bool:
+    """Is ``profile`` the dcode profile this process made itself?"""
+
+    with _DCODE_PROFILE_LOCK:
+        auto = _AUTO_DCODE_PROFILE
+    return auto is not None and profile == auto.resolve()
+
+
 def _player_path_list(raw: Any, *, field: str, config_path: Path) -> tuple[str, ...]:
     """Validate one project-declared list of repository-relative paths."""
 
@@ -1307,10 +1315,22 @@ def select_harness(
                 project_inputs.pop("required_documents")
             try:
                 dcode_home = _configure_dcode_launch(task_worktree)
+                # 18 October 2026 (build FEAT-05EE, FEAT-B463): the profile
+                # this process made itself is locked read-only by the factory
+                # once a launch passes, so a stray write into it fails instead
+                # of refusing every later turn. Never a supplied profile, and
+                # only with a factory that can do it (else today's behaviour).
+                lock_profile = (
+                    {"lock_profile": True}
+                    if _is_auto_dcode_profile(dcode_home)
+                    and _factory_accepts_kwarg(build_player_config, "lock_profile")
+                    else {}
+                )
                 player_config = build_player_config(
                     cwd=task_worktree,
                     dcode_home=dcode_home,
                     **project_inputs,
+                    **lock_profile,
                 )
             except ValueError as exc:
                 raise AgentInvocationError(

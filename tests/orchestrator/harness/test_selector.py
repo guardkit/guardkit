@@ -1821,3 +1821,150 @@ class TestLaunchDeclarationReachesTheBackend:
                 {"settings": [], "scratch": ["TOOL_CACHE"]},
                 Path("/tmp/git/scratch"),
             )
+
+
+# ----------------------------------------------------------------------
+# 18 October 2026 (build FEAT-05EE, FEAT-B463): GuardKit asks the factory to
+# lock the dcode profile it made itself, and only that one.
+# ----------------------------------------------------------------------
+
+
+def _own_profile_at(monkeypatch: pytest.MonkeyPatch, made: Path) -> None:
+    """Make the selector's own profile at ``made``; other temporary folders as usual."""
+
+    real = selector_module.tempfile.mkdtemp
+
+    def mkdtemp(**kwargs: Any) -> str:
+        if not str(kwargs.get("prefix", "")).startswith("guardkit-dcode-"):
+            return real(**kwargs)
+        made.mkdir()
+        return str(made)
+
+    monkeypatch.setattr(selector_module.tempfile, "mkdtemp", mkdtemp)
+
+
+def _factory_can_lock() -> bool:
+    if not _has_guardkitfactory():
+        return False
+    import inspect
+
+    from guardkitfactory.harness import build_player_config
+
+    return "lock_profile" in inspect.signature(build_player_config).parameters
+
+
+@pytest.mark.skipif(
+    not _factory_can_lock(), reason="needs a guardkitfactory that can lock the profile"
+)
+class TestOwnDcodeProfileLock:
+    @pytest.fixture(autouse=True)
+    def _fresh_process(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(selector_module, "_AUTO_DCODE_PROFILE", None)
+        for name in (
+            "DEEPAGENTS_HOME",
+            "DEEPAGENTS_CODE_OFFLINE",
+            "LANGCHAIN_TRACING",
+            "LANGCHAIN_TRACING_V2",
+            "LANGSMITH_TRACING",
+        ):
+            monkeypatch.delenv(name, raising=False)
+        monkeypatch.setenv(_TEST_ENV_VAR, "langgraph")
+
+    @staticmethod
+    def _real_config_capture(monkeypatch: pytest.MonkeyPatch) -> list[Any]:
+        """Keep the real build_player_config (and its signature); record results."""
+        import functools
+
+        import guardkitfactory.harness as factory_harness
+
+        real = factory_harness.build_player_config
+        made: list[Any] = []
+
+        @functools.wraps(real)
+        def build_player_config(**kwargs: Any) -> Any:
+            made.append(real(**kwargs))
+            return made[-1]
+
+        monkeypatch.setattr(factory_harness, "build_player_config", build_player_config)
+        monkeypatch.setattr(
+            factory_harness, "LangGraphHarness", lambda **kwargs: kwargs["player_config"]
+        )
+        return made
+
+    def _select(self, root: Path) -> Any:
+        worktree = root / "worktree"
+        worktree.mkdir(exist_ok=True)
+        return select_harness(
+            env_var=_TEST_ENV_VAR, model=MagicMock(), cwd=worktree, harness_role="player"
+        )
+
+    def test_own_profile_asks_for_the_lock(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        made = tmp_path / "auto-profile"
+        _own_profile_at(monkeypatch, made)
+        configs = self._real_config_capture(monkeypatch)
+
+        config = self._select(tmp_path)
+
+        assert config.lock_profile is True
+        assert config.dcode_home == made.resolve()
+        assert configs == [config]
+
+    def test_supplied_profile_never_asks_for_the_lock(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        supplied = tmp_path.parent / f"{tmp_path.name}-supplied"
+        supplied.mkdir()
+        monkeypatch.setenv("DEEPAGENTS_HOME", str(supplied))
+        self._real_config_capture(monkeypatch)
+
+        for _turn in range(2):
+            assert self._select(tmp_path).lock_profile is False
+        assert selector_module._AUTO_DCODE_PROFILE is None
+
+    def test_parallel_launches_on_the_locked_own_profile_all_succeed(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        made = tmp_path / "auto-profile"
+        _own_profile_at(monkeypatch, made)
+        self._real_config_capture(monkeypatch)
+        assert self._select(tmp_path).lock_profile is True
+        # What the factory's lock leaves: dcode's skeleton, read-only.
+        (made / "guardkit-player" / "skills").mkdir(parents=True)
+        (made / "guardkit-player" / "AGENTS.md").write_bytes(b"")
+        (made / "guardkit-player" / "AGENTS.md").chmod(0o444)
+        for folder in (made / "guardkit-player" / "skills", made / "guardkit-player", made):
+            folder.chmod(0o555)
+        try:
+            with ThreadPoolExecutor(max_workers=4) as pool:
+                configs = list(pool.map(lambda _i: self._select(tmp_path), range(8)))
+        finally:
+            for folder in (made, made / "guardkit-player", made / "guardkit-player" / "skills"):
+                folder.chmod(0o755)
+        assert [config.lock_profile for config in configs] == [True] * 8
+
+
+def test_an_old_factory_gets_no_lock_and_keeps_todays_behaviour(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """New GuardKit with a released guardkitfactory that has no lock_profile."""
+
+    pytest.importorskip("guardkitfactory")
+    monkeypatch.setattr(selector_module, "_AUTO_DCODE_PROFILE", None)
+    for name in ("DEEPAGENTS_HOME", "DEEPAGENTS_CODE_OFFLINE"):
+        monkeypatch.delenv(name, raising=False)
+    made = tmp_path / "auto-profile"
+    _own_profile_at(monkeypatch, made)
+    monkeypatch.setenv(_TEST_ENV_VAR, "langgraph")
+    constructions, config_calls, _backend_calls = TestRequiredPlayerSelection._install_factory(
+        monkeypatch, accepts_required_documents=False
+    )
+
+    worktree = tmp_path / "worktree"
+    worktree.mkdir()
+    select_harness(env_var=_TEST_ENV_VAR, model=MagicMock(), cwd=worktree, harness_role="player")
+
+    assert len(config_calls) == 1 and "lock_profile" not in config_calls[0]
+    assert config_calls[0]["dcode_home"] == made.resolve()
+    assert constructions

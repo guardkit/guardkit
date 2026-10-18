@@ -873,6 +873,127 @@ class TestInstalledCandidateIntegration:
         _assert_owned_clients_closed(owned_clients)
 
     @pytest.mark.asyncio
+    async def test_own_profile_is_locked_so_a_stray_write_cannot_refuse_the_next_turn(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        """FEAT-05EE through the real selector, factory and dcode graph.
+
+        Turn 1 launches on the profile this process makes, then the factory
+        locks it. A model command writing ``full.log`` into the profile fails
+        inside the command, and the following turn launches.
+        """
+        import inspect
+        import os
+        import stat
+
+        from guardkit.orchestrator.harness import selector as selector_module
+        from guardkitfactory.harness import build_player_config
+
+        if "lock_profile" not in inspect.signature(build_player_config).parameters:
+            pytest.skip("the installed guardkitfactory cannot lock the profile")
+        skill_file = _enable_dcode_player(monkeypatch, tmp_path)
+        # dcode reads its profile once per process, so this uses the profile
+        # the selector already made for this process (or makes it now).
+        monkeypatch.setenv(_TEST_ENV_VAR, "langgraph")
+        profile: list[Path] = []
+
+        class StrayWrite(_DcodePlayerChat):
+            """Read the skill, write into the profile, then finish."""
+
+            def __call__(self, request: httpx.Request) -> httpx.Response:
+                if not self.requests:
+                    return super().__call__(request)  # read the selected skill
+                body = json.loads(request.content)
+                self.requests.append((request.url.path, body))
+                command = f"printf 'check output' > {profile[0] / 'full.log'}; echo exit=$?"
+                if len(self.requests) == 3:
+                    message: dict[str, Any] = {"role": "assistant", "content": self.final_text}
+                    reason = "stop"
+                else:
+                    message = {
+                        "role": "assistant",
+                        "content": "",
+                        "tool_calls": [
+                            {
+                                "id": "call-stray",
+                                "type": "function",
+                                "function": {
+                                    "name": "execute",
+                                    "arguments": json.dumps({"command": command}),
+                                },
+                            }
+                        ],
+                    }
+                    reason = "tool_calls"
+                return httpx.Response(
+                    200,
+                    json={
+                        "id": f"chatcmpl-stray-{len(self.requests)}",
+                        "object": "chat.completion",
+                        "created": len(self.requests),
+                        "model": body["model"],
+                        "choices": [
+                            {"index": 0, "message": message, "finish_reason": reason}
+                        ],
+                        "usage": {"prompt_tokens": 7, "completion_tokens": 3, "total_tokens": 10},
+                    },
+                )
+
+        async def turn(script: _DcodePlayerChat) -> list[Any]:
+            _install_factory_owned_mock_transport(monkeypatch, script)
+            harness = selector_module.select_harness(
+                env_var=_TEST_ENV_VAR,
+                model="qwen36-workhorse",
+                cwd=tmp_path,
+                harness_role="player",
+            )
+            assert harness.player_config.lock_profile is True
+            profile[:] = [harness.player_config.dcode_home]
+            return [
+                event
+                async for event in harness.invoke(
+                    prompt="Return the deterministic response.",
+                    role="player",
+                    tools=[],
+                    cwd=tmp_path,
+                    timeout_seconds=30,
+                )
+            ]
+
+        try:
+            await turn(_DcodePlayerChat(skill_file, final_text="turn one"))
+            made = profile[0]
+            stray = made / "full.log"
+            modes = {
+                str(p.relative_to(made)): stat.S_IMODE(p.lstat().st_mode)
+                for p in [made, *made.rglob("*")]
+            }
+            assert "guardkit-player/skills" in modes
+            assert all(not mode & 0o222 for mode in modes.values()), modes
+
+            stray_script = StrayWrite(skill_file, final_text="turn two")
+            events = await turn(stray_script)
+            assert isinstance(events[-1], ResultMessageEvent)
+            outputs = [
+                str(message.get("content"))
+                for message in stray_script.requests[-1][1]["messages"]
+                if message.get("role") == "tool"
+            ]
+            assert not stray.exists()
+            assert any("exit=" in out and "exit=0" not in out for out in outputs), outputs
+
+            events = await turn(_DcodePlayerChat(skill_file, final_text="turn three"))
+            assert isinstance(events[-2], AssistantMessageEvent)
+            assert events[-2].text == "turn three"
+        finally:
+            # Leave the shared profile writable, as the next test expects it.
+            for root in profile:
+                for directory, _dirs, _files in os.walk(root):
+                    os.chmod(directory, 0o700)
+
+    @pytest.mark.asyncio
     async def test_installed_sdk_selector_invoker_uses_fake_client(
         self,
         monkeypatch: pytest.MonkeyPatch,
