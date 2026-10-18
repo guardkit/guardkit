@@ -547,6 +547,11 @@ class TestAPlannedFilesOwnTestOrStylesheet:
         ("api/notes/handler_test.go", "api/notes/handler.go"),
         ("src/test_feature.py", "src/feature.py"),
         ("app/models/user_spec.rb", "app/models/user.rb"),
+        # dotted module names keep everything before the last extension
+        ("src/user/user.service.test.ts", "src/user/user.service.ts"),
+        ("src/user/user.service.spec.ts", "src/user/user.service.ts"),
+        ("apps/web/src/components/EmptyState.module.css",
+         "apps/web/src/components/EmptyState.tsx"),
     ])
     def test_a_planned_files_own_test_or_stylesheet_is_low(
         self, auditor, extra, planned
@@ -575,6 +580,12 @@ class TestAPlannedFilesOwnTestOrStylesheet:
         ("api/notes/handler_test_test.go", "api/notes/handler.go"),
         ("src/test_test_feature.py", "src/feature.py"),
         ("api/notes/test_handler_test.go", "api/notes/handler.go"),
+        # distinct dotted modules in one directory are not merged
+        ("src/user/user.repository.test.ts", "src/user/user.service.ts"),
+        ("src/user/user.test.ts", "src/user/user.service.ts"),
+        ("src/user/user.service.module.css", "src/user/user.tsx"),
+        # a file with no extension is ambiguous and counts
+        ("src/user/user_test", "src/user/user.ts"),
     ])
     def test_everything_else_counts_in_full(self, auditor, extra, planned):
         assert self._beside([extra], [planned]) == set()

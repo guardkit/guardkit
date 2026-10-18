@@ -105,18 +105,26 @@ _NEVER_COUNTED_PATH_PREFIXES = (".guardkit/", "docs/state/")
 # towards the "three extra files is high" line, only when ALL of these hold:
 #
 #   1. it is in the same directory as a planned file;
-#   2. its name up to the first dot - after dropping one trailing ``_test`` or
-#      ``_spec``, or else one leading ``test_``, once only - equals that
-#      planned file's name up to its first dot;
-#   3. it is a test by GuardKit's generic test-name patterns (``x.test.tsx``,
-#      ``x.spec.ts``, ``x_test.go``, ``test_x.py``, ``x_spec.rb``), or a style
-#      or image file (css, scss, sass, less, svg, png, jpg, gif, webp, ico) -
-#      never production code;
-#   4. it is not a protected file (below).
+#   2. it is a test or a style/image file, never production code, and its
+#      derived name equals that planned file's derived name:
+#        - a planned file: its name with the last extension removed
+#          (``user.service.ts`` → ``user.service``, ``handler.go`` → ``handler``);
+#        - a test: its name with the last extension removed, then exactly one
+#          test marker removed - a trailing ``.test``/``.spec`` segment, or
+#          else a ``_test``/``_spec`` suffix, or else a ``test_`` prefix
+#          (``user.service.test.ts`` → ``user.service``, ``handler_test.go`` →
+#          ``handler``, ``test_feature.py`` → ``feature``). A name with no
+#          marker is not a test;
+#        - a style or image file (css, scss, sass, less, svg, png, jpg, gif,
+#          webp, ico): its name with the last extension removed, then one
+#          trailing ``.module`` removed (``EmptyState.module.css`` →
+#          ``EmptyState``, ``logo.svg`` → ``logo``);
+#   3. it is not a protected file (below).
 #
 # So ``components/EmptyState.module.css`` beside a planned
 # ``components/EmptyState.tsx`` is low, and ``handler_test.go`` beside a
-# planned ``handler.go``. A same-named test in another directory, a same-named
+# planned ``handler.go``; ``user.repository.test.ts`` beside a planned
+# ``user.service.ts`` is not. A same-named test in another directory, a same-named
 # production file (``NotesPage.utils.ts``), a helper, or anything under a test
 # directory counts in full. Anything ambiguous counts in full.
 #
@@ -160,23 +168,45 @@ _PROTECTED_DIRECTORY_NAMES = frozenset({
 })
 
 
-def _stem(path: str) -> str:
-    """The file's name up to its first dot: ``EmptyState.module.css`` → ``emptystate``."""
-    return path.rsplit("/", 1)[-1].split(".", 1)[0].lower()
+def _without_last_extension(path: str) -> str:
+    """The file's name, lower-cased, with its last extension removed."""
+    name = path.rsplit("/", 1)[-1].lower()
+    head, dot, _ = name.rpartition(".")
+    return head if dot and head else name
 
 
-def _companion_name(path: str) -> str:
-    """The extra file's name for matching: its name up to the first dot, with
-    one trailing ``_test`` or ``_spec``, or else one leading ``test_``, dropped
-    (once only): ``handler_test.go`` → ``handler``, ``test_feature.py`` →
-    ``feature``, ``handler_test_test.go`` → ``handler_test``."""
-    stem = _stem(path)
-    for suffix in ("_test", "_spec"):
-        if stem.endswith(suffix) and len(stem) > len(suffix):
-            return stem[: -len(suffix)]
-    if stem.startswith("test_") and len(stem) > len("test_"):
-        return stem[len("test_"):]
-    return stem
+def _planned_name(path: str) -> str:
+    """A planned file's name for matching: ``user.service.ts`` → ``user.service``."""
+    return _without_last_extension(path)
+
+
+_STYLE_AND_IMAGE_SUFFIXES = (
+    ".css", ".scss", ".sass", ".less",
+    ".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico",
+)
+
+
+def _companion_name(path: str) -> Optional[str]:
+    """An extra file's name for matching, or ``None`` when it is neither a
+    test nor a style or image file (production code is never a companion).
+
+    A style or image file drops its last extension and then one trailing
+    ``.module``. A test drops its last extension and then exactly one test
+    marker: a trailing ``.test``/``.spec`` segment, or else a ``_test``/
+    ``_spec`` suffix, or else a ``test_`` prefix.
+    """
+    name = path.rsplit("/", 1)[-1].lower()
+    base = _without_last_extension(path)
+    if base == name:
+        return None  # no extension at all: ambiguous, counts in full
+    if name.endswith(_STYLE_AND_IMAGE_SUFFIXES):
+        return base[: -len(".module")] if base.endswith(".module") else base
+    for marker in (".test", ".spec", "_test", "_spec"):
+        if base.endswith(marker) and len(base) > len(marker):
+            return base[: -len(marker)]
+    if base.startswith("test_") and len(base) > len("test_"):
+        return base[len("test_"):]
+    return None
 
 
 def _is_protected(path: str) -> bool:
@@ -204,33 +234,6 @@ def _is_protected(path: str) -> bool:
     return any(part.lower() in _PROTECTED_DIRECTORY_NAMES for part in parts[:-1])
 
 
-_TEST_NAME_SUFFIXES = ("_test", "_spec")
-_TEST_NAME_MIDDLES = (".test.", ".spec.")
-_STYLE_AND_IMAGE_SUFFIXES = (
-    ".css", ".scss", ".sass", ".less",
-    ".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico",
-)
-
-
-def _is_test_or_style_file(path: str) -> bool:
-    """A test by the generic test-name patterns, or a style or image file.
-
-    Decided from the file's own name only - never from the directory it sits
-    in, so nothing under a ``tests`` folder qualifies just by being there.
-    """
-    name = path.rsplit("/", 1)[-1].lower()
-    if name.endswith(_STYLE_AND_IMAGE_SUFFIXES):
-        return True
-    stem = name.split(".", 1)[0]
-    if stem.startswith("test_") and len(stem) > len("test_") and "." in name:
-        return True
-    if any(
-        stem.endswith(s) and len(stem) > len(s) for s in _TEST_NAME_SUFFIXES
-    ) and "." in name:
-        return True
-    return any(m in name and not name.startswith(m) for m in _TEST_NAME_MIDDLES)
-
-
 def _folder(path: str) -> str:
     return path.rsplit("/", 1)[0] if "/" in path else ""
 
@@ -239,17 +242,20 @@ def _beside_the_plan(extra: Set[str], planned: Set[str]) -> Set[str]:
     """The extra files that are a planned file's own test or stylesheet.
 
     ``planned`` is every file the plan names (to create or to change). See the
-    four conditions at the top of this file. Nothing is removed from the audit
-    by this: the caller still names every one.
+    conditions at the top of this file. Nothing is removed from the audit by
+    this: the caller still names every one.
     """
-    planned_by_folder_and_name = {(_folder(p), _stem(p)) for p in planned}
-    return {
-        path
-        for path in extra
-        if (_folder(path), _companion_name(path)) in planned_by_folder_and_name
-        and _is_test_or_style_file(path)
-        and not _is_protected(path)
-    }
+    planned_by_folder_and_name = {(_folder(p), _planned_name(p)) for p in planned}
+    beside: Set[str] = set()
+    for path in extra:
+        name = _companion_name(path)
+        if (
+            name is not None
+            and (_folder(path), name) in planned_by_folder_and_name
+            and not _is_protected(path)
+        ):
+            beside.add(path)
+    return beside
 
 
 class PlanAuditor:
