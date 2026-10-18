@@ -336,21 +336,22 @@ def _configure_dcode_launch(worktree: Path) -> Path:
         return profile
 
 
-def _is_auto_dcode_profile(profile: Path) -> bool:
-    """Is ``profile`` (the resolved DEEPAGENTS_HOME) the one this process made?
+def _auto_dcode_profile_identity(profile: Path) -> tuple[int, int] | None:
+    """The recorded (st_dev, st_ino) if ``profile`` is the one this process made.
 
-    True only when the path mkdtemp returned is, right now, a real directory
-    (not a link) with the device and inode it had when it was made, and
-    ``profile`` is that same path. A replaced profile is never resolved away:
-    it is simply not this process's own, so it is not locked (logged at
-    WARNING) and the launch check decides the rest.
+    Returned only when the path mkdtemp returned is, right now, a real
+    directory (not a link) with the device and inode it had when it was made,
+    and ``profile`` (the resolved DEEPAGENTS_HOME) is that same path. The
+    factory checks the same identity again on the directory it locks. A
+    replaced profile is never resolved away: it is simply not this process's
+    own, so ``None`` (logged at WARNING) and the launch check decides the rest.
     """
 
     with _DCODE_PROFILE_LOCK:
         auto = _AUTO_DCODE_PROFILE
         identity = None if auto is None else _AUTO_DCODE_IDENTITIES.get(auto)
     if auto is None:
-        return False
+        return None
     if identity is not None:
         try:
             now = os.lstat(auto)
@@ -362,14 +363,14 @@ def _is_auto_dcode_profile(profile: Path) -> bool:
             and (now.st_dev, now.st_ino) == identity
             and profile == auto
         ):
-            return True
+            return identity
     logger.warning(
         "dcode profile not locked: %s is no longer the directory this process "
         "made at %s (replaced, linked or moved)",
         profile,
         auto,
     )
-    return False
+    return None
 
 
 def _player_path_list(raw: Any, *, field: str, config_path: Path) -> tuple[str, ...]:
@@ -1353,14 +1354,15 @@ def select_harness(
                 # 18 October 2026 (build FEAT-05EE, FEAT-B463): the profile
                 # this process made itself is locked read-only by the factory
                 # once a launch passes, so a stray write into it fails instead
-                # of refusing every later turn. Never a supplied profile, and
-                # only with a factory that can do it (else today's behaviour).
-                lock_profile = (
-                    {"lock_profile": True}
-                    if _is_auto_dcode_profile(dcode_home)
-                    and _factory_accepts_kwarg(build_player_config, "lock_profile")
-                    else {}
-                )
+                # of refusing every later turn. The factory is given the
+                # directory's identity recorded at mkdtemp, and locks only that
+                # directory. Never a supplied profile, and only with a factory
+                # that can do it (else today's behaviour).
+                lock_profile: dict[str, tuple[int, int]] = {}
+                if _factory_accepts_kwarg(build_player_config, "lock_profile_identity"):
+                    identity = _auto_dcode_profile_identity(dcode_home)
+                    if identity is not None:
+                        lock_profile["lock_profile_identity"] = identity
                 player_config = build_player_config(
                     cwd=task_worktree,
                     dcode_home=dcode_home,

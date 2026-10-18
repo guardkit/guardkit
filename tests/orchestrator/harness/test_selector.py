@@ -1850,7 +1850,7 @@ def _factory_can_lock() -> bool:
 
     from guardkitfactory.harness import build_player_config
 
-    return "lock_profile" in inspect.signature(build_player_config).parameters
+    return "lock_profile_identity" in inspect.signature(build_player_config).parameters
 
 
 @pytest.mark.skipif(
@@ -1907,7 +1907,8 @@ class TestOwnDcodeProfileLock:
 
         config = self._select(tmp_path)
 
-        assert config.lock_profile is True
+        recorded = made.lstat()
+        assert config.lock_profile_identity == (recorded.st_dev, recorded.st_ino)
         assert config.dcode_home == made.resolve()
         assert configs == [config]
 
@@ -1920,7 +1921,7 @@ class TestOwnDcodeProfileLock:
         self._real_config_capture(monkeypatch)
 
         for _turn in range(2):
-            assert self._select(tmp_path).lock_profile is False
+            assert self._select(tmp_path).lock_profile_identity is None
         assert selector_module._AUTO_DCODE_PROFILE is None
 
     def test_parallel_launches_on_the_locked_own_profile_all_succeed(
@@ -1929,7 +1930,7 @@ class TestOwnDcodeProfileLock:
         made = tmp_path / "auto-profile"
         _own_profile_at(monkeypatch, made)
         self._real_config_capture(monkeypatch)
-        assert self._select(tmp_path).lock_profile is True
+        assert self._select(tmp_path).lock_profile_identity is not None
         # What the factory's lock leaves: dcode's skeleton, read-only.
         (made / "guardkit-player" / "skills").mkdir(parents=True)
         (made / "guardkit-player" / "AGENTS.md").write_bytes(b"")
@@ -1942,7 +1943,10 @@ class TestOwnDcodeProfileLock:
         finally:
             for folder in (made, made / "guardkit-player", made / "guardkit-player" / "skills"):
                 folder.chmod(0o755)
-        assert [config.lock_profile for config in configs] == [True] * 8
+        recorded = made.lstat()
+        assert {config.lock_profile_identity for config in configs} == {
+            (recorded.st_dev, recorded.st_ino)
+        }
 
 
     @pytest.mark.parametrize("replacement", ["link", "other_directory"])
@@ -1981,7 +1985,7 @@ class TestOwnDcodeProfileLock:
         with caplog.at_level(logging.WARNING, logger=selector_module.logger.name):
             config = self._select(tmp_path)
 
-        assert config.lock_profile is False
+        assert config.lock_profile_identity is None
         assert configs == [config]
         assert any("dcode profile not locked" in r.getMessage() for r in caplog.records)
         # As today: the launch uses what DEEPAGENTS_HOME now resolves to.
@@ -1993,10 +1997,61 @@ class TestOwnDcodeProfileLock:
         assert after == before
 
 
+    @pytest.mark.parametrize("replacement", ["link", "other_directory"])
+    def test_a_root_replaced_after_authorisation_is_never_locked(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
+        replacement: str,
+    ) -> None:
+        """R5: GuardKit authorises, then the root is replaced before the factory locks."""
+        import stat as stat_module
+
+        from guardkitfactory.harness.dcode_harness import _lock_profile
+
+        made = tmp_path / "auto-profile"
+        _own_profile_at(monkeypatch, made)
+        self._real_config_capture(monkeypatch)
+        config = self._select(tmp_path)
+        assert config.lock_profile_identity is not None
+
+        def modes(root: Path) -> dict[str, int]:
+            return {
+                str(p): stat_module.S_IMODE(p.lstat().st_mode) for p in [root, *root.rglob("*")]
+            }
+
+        # The skeleton dcode would have made, then the root replaced.
+        (made / "guardkit-player" / "skills").mkdir(parents=True)
+        (made / "guardkit-player" / "AGENTS.md").write_bytes(b"")
+        aside = tmp_path / "moved-aside"
+        made.rename(aside)
+        outside = tmp_path / "outside"
+        (outside / "guardkit-player" / "skills").mkdir(parents=True)
+        (outside / "guardkit-player" / "AGENTS.md").write_bytes(b"")
+        if replacement == "link":
+            made.symlink_to(outside, target_is_directory=True)
+            replaced = outside
+        else:
+            made.mkdir()
+            (made / "guardkit-player" / "skills").mkdir(parents=True)
+            (made / "guardkit-player" / "AGENTS.md").write_bytes(b"")
+            replaced = made
+        before = {root: modes(root) for root in (replaced, outside, aside)}
+
+        with caplog.at_level(logging.WARNING, logger="guardkitfactory.harness.dcode_harness"):
+            _lock_profile(config.dcode_home, config.lock_profile_identity)
+
+        for root, recorded in before.items():
+            assert modes(root) == recorded
+            assert all(mode & 0o200 for mode in modes(root).values())
+        assert any("not locked" in r.getMessage() for r in caplog.records)
+
+
 def test_an_old_factory_gets_no_lock_and_keeps_todays_behaviour(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """New GuardKit with a released guardkitfactory that has no lock_profile."""
+    """New GuardKit with a released guardkitfactory that has no lock_profile_identity."""
 
     pytest.importorskip("guardkitfactory")
     monkeypatch.setattr(selector_module, "_AUTO_DCODE_PROFILE", None)
@@ -2013,6 +2068,6 @@ def test_an_old_factory_gets_no_lock_and_keeps_todays_behaviour(
     worktree.mkdir()
     select_harness(env_var=_TEST_ENV_VAR, model=MagicMock(), cwd=worktree, harness_role="player")
 
-    assert len(config_calls) == 1 and "lock_profile" not in config_calls[0]
+    assert len(config_calls) == 1 and "lock_profile_identity" not in config_calls[0]
     assert config_calls[0]["dcode_home"] == made.resolve()
     assert constructions

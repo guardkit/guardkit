@@ -891,7 +891,7 @@ class TestInstalledCandidateIntegration:
         from guardkit.orchestrator.harness import selector as selector_module
         from guardkitfactory.harness import build_player_config
 
-        if "lock_profile" not in inspect.signature(build_player_config).parameters:
+        if "lock_profile_identity" not in inspect.signature(build_player_config).parameters:
             pytest.skip("the installed guardkitfactory cannot lock the profile")
         skill_file = _enable_dcode_player(monkeypatch, tmp_path)
         # dcode reads its profile once per process, so this uses the profile
@@ -949,7 +949,7 @@ class TestInstalledCandidateIntegration:
                 cwd=tmp_path,
                 harness_role="player",
             )
-            assert harness.player_config.lock_profile is True
+            assert harness.player_config.lock_profile_identity is not None
             profile[:] = [harness.player_config.dcode_home]
             return [
                 event
