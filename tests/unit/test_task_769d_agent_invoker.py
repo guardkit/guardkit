@@ -139,18 +139,28 @@ class TestHeuristicAnalyzerWithFileSamples:
         analyzer = HeuristicAnalyzer(Path("."))
         assert analyzer.file_samples is None
 
-    def test_analyze_with_file_samples(self):
-        """Test analyze uses file_samples when provided"""
+    def test_analyze_with_file_samples(self, tmp_path):
+        """Test analyze works on a sampled project when file_samples are provided"""
         file_samples = [
             {"path": "src/main.py", "content": "from fastapi import FastAPI"},
             {"path": "requirements.txt", "content": "fastapi==0.95.0\npytest==7.2.0"}
         ]
+        # Technology detection reads the codebase on disk (file_samples only
+        # feed the example files), so the sampled project must exist on disk.
+        # It used to scan the repository root and passed only because
+        # GuardKit's own legacy requirements.txt mentioned fastapi.
+        for sample in file_samples:
+            target = tmp_path / sample["path"]
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(sample["content"])
+        (tmp_path / "tests").mkdir()
+        (tmp_path / "tests" / "test_main.py").write_text("def test_ok():\n    pass\n")
 
-        analyzer = HeuristicAnalyzer(Path("."), file_samples=file_samples)
+        analyzer = HeuristicAnalyzer(tmp_path, file_samples=file_samples)
 
         result = analyzer.analyze()
 
-        # Should detect Python and FastAPI from file samples
+        # Should detect Python, FastAPI and pytest from the sampled project
         assert result["technology"]["primary_language"] == "Python"
         assert "FastAPI" in result["technology"]["frameworks"]
         assert "pytest" in result["technology"]["testing_frameworks"]

@@ -46,10 +46,13 @@ dependencies = [
 # Requires Python 3.12+ (same as guardkit)
 # Docs: https://platform.claude.com/docs/en/agent-sdk/python
 autobuild = [
-    # Lower bound 0.1.49 = first release with typed RateLimitEvent parsing
-    # (TASK-FIX-7A01 / TASK-REV-E4F5 F1). Upper bound <0.2 reflects upstream's
-    # 0.1.x series as the stable surface; re-audit before bumping past 0.2.
-    "claude-agent-sdk>=0.1.49,<0.2",
+    # Lower bound 0.2.121 = first release fixing GHSA-h4mw-j7qp-8mwm (critical,
+    # 9.2: argument injection through the `resume` option, which the SDK
+    # harness passes). Raised from 0.1.49 (typed RateLimitEvent parsing,
+    # TASK-FIX-7A01) on 18 October 2026; no fixed 0.1.x release exists.
+    # Upper bound <0.3 = the 0.2.x series, audited against GuardKit's use of
+    # the SDK on 18 October 2026; re-audit before bumping past 0.3.
+    "claude-agent-sdk>=0.2.121,<0.3",
     # TASK-HMIG-006 AC-005: cross-repo dispatch through the
     # HarnessAdapter substrate seam. Resolved from a sibling repo in
     # operator-side dev via [tool.uv.sources] below; end-user installs
@@ -122,7 +125,7 @@ visual = [
     "pillow>=9",
 ]
 all = [
-    "claude-agent-sdk>=0.1.49,<0.2",
+    "claude-agent-sdk>=0.2.121,<0.3",
     "guardkitfactory>=0.2.0,<1",
     "nats-core>=0.4,<1",
     "fleet-memory>=0.1,<1",

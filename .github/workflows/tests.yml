@@ -180,7 +180,7 @@ jobs:
         # (importorskip'd in tests/orchestrator/**) actually run rather than
         # skip. pytest-timeout turns any hang into a fast failure instead of a
         # stuck runner.
-        run: python -m pip install "claude-agent-sdk>=0.1.49,<0.2" pytest-timeout
+        run: python -m pip install "claude-agent-sdk>=0.2.121,<0.3" pytest-timeout
 
       - name: Run test suite (quarantine applied via tests/conftest.py)
         # `-o addopts=""` clears the repo's default --cov flags (this gate is
