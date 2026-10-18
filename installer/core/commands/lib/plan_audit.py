@@ -99,125 +99,98 @@ _NEVER_COUNTED_SUFFIXES = frozenset({".pyc", ".pyo"})
 _NEVER_COUNTED_PATH_PREFIXES = (".guardkit/", "docs/state/")
 
 
-# TESTS AND STYLES BESIDE THE PLANNED WORK (18 October 2026). An extra file is
-# still counted and still named, but some extra files are the ordinary
-# by-products of building exactly what the plan says, and they are recorded as
-# low, not counted towards the "three extra files is high" line:
+# FILES NAMED AFTER A PLANNED FILE (18 October 2026, made blunt 19 October
+# after review). An extra file is still counted and still named, but one whose
+# name up to its first dot is the name up to the first dot of a file the plan
+# names - ``NotesPage.test.tsx`` or ``NotesPage.module.css`` beside a planned
+# ``NotesPage.tsx`` - is the ordinary by-product of building that planned file.
+# It is recorded in a low discrepancy of its own and does not count towards the
+# "three extra files is high" line. Nothing else is: not a file in the same
+# folder, not a helper, not everything under a test directory.
 #
-#   * a test of a planned file - by name (``NotesPage.test.tsx`` for a planned
-#     ``pages/NotesPage.tsx``, ``tests/test_feature.py`` for ``src/feature.py``)
-#     or by sitting in the same folder as a planned file;
-#   * a test helper (a file whose name says test, spec, fixture, mock or
-#     conftest) in the same folder as such a test, a planned test, or an
-#     existing test this build changed;
-#   * a style or asset file for a planned component - same name
-#     (``EmptyState.module.css`` for a planned ``EmptyState.tsx``) or the same
-#     folder as a planned file.
-#
-# A test of something nobody planned is not beside the planned work, so it
-# still counts in full: sprawl that lands in a test is still sprawl (see the
-# note above). A Dockerfile, a compose file, a README, a deploy script or a
-# migration is never a test or a style file, so it always counts in full.
+# A protected file is never a companion, whatever it is called or wherever it
+# sits: container and compose files, READMEs, migrations, lockfiles and
+# dependency manifests (the files this audit reads dependencies from), CI and
+# workflow files, environment files, and infrastructure and deploy files. So
+# ``NotesPage.Dockerfile`` or ``NotesPage.README.md`` still counts in full.
 #
 # Build FEAT-86FD (18 October 2026) stalled three turns on a plan audit that
-# called a component's own test, its stylesheet and a test helper "high".
-#
-# What a test file is: the generic names GuardKit's other test recognisers
-# already use (agent_invoker, state_tracker, coach_validator) and the factory's
-# merge card uses (Forge's DEFAULT_TEST_PATHS). A project has no declaration of
-# its own for this yet.
-_TEST_DIRECTORY_NAMES = frozenset({"tests", "test", "__tests__", "Tests"})
-_TEST_NAME_SUFFIXES = (
-    "_test.py", "_test.go", "_test.dart", "_spec.rb",
-    ".test.js", ".test.jsx", ".test.ts", ".test.tsx", ".test.mjs", ".test.cjs",
-    ".spec.js", ".spec.jsx", ".spec.ts", ".spec.tsx", ".spec.dart",
+# called a planned page's own test and a planned component's stylesheet "high".
+# GuardKit had no path-based infrastructure list to reuse, so the list is here.
+_PROTECTED_NAMES = frozenset({
+    # lockfiles
+    "package-lock.json", "npm-shrinkwrap.json", "yarn.lock", "pnpm-lock.yaml",
+    "bun.lockb", "bun.lock", "poetry.lock", "uv.lock", "pipfile.lock",
+    "cargo.lock", "gemfile.lock", "composer.lock", "go.sum",
+    "packages.lock.json", "pubspec.lock", "mix.lock",
+    # dependency manifests (what _extract_dependencies reads, and their kin)
+    "package.json", "pyproject.toml", "requirements.txt", "pipfile",
+    "setup.py", "setup.cfg", "go.mod", "cargo.toml", "gemfile",
+    "composer.json", "pubspec.yaml", "directory.packages.props",
+    # build, deploy and CI entry points
+    "makefile", "procfile", "jenkinsfile", ".gitlab-ci.yml",
+    "azure-pipelines.yml", "bitbucket-pipelines.yml", "skaffold.yaml",
+    "chart.yaml", "values.yaml", "kustomization.yaml",
+})
+# Any dot-separated part of the name starting with one of these protects it,
+# so ``Dockerfile.dev``, ``NotesPage.Dockerfile`` and ``README.md`` all count.
+_PROTECTED_NAME_PART_PREFIXES = (
+    "dockerfile", "containerfile", "readme",
 )
-_TEST_HELPER_WORDS = frozenset({
-    "test", "tests", "testing", "spec", "specs", "fixture", "fixtures",
-    "mock", "mocks", "conftest",
+_PROTECTED_SUFFIXES = (
+    ".lock", ".csproj", ".fsproj", ".vbproj", ".sln", ".tf", ".tfvars",
+    ".dockerignore", ".sql",
+)
+_PROTECTED_DIRECTORY_NAMES = frozenset({
+    "migrations", "migration", "migrate", "alembic", ".github", ".circleci",
+    ".buildkite", ".gitlab", ".woodpecker", ".devcontainer", "deploy",
+    "deployment", "deployments", "infra", "infrastructure", "terraform",
+    "helm", "k8s", "kubernetes", "ansible",
 })
-_STYLE_AND_ASSET_SUFFIXES = frozenset({
-    ".css", ".scss", ".sass", ".less", ".styl",
-    ".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".avif",
-})
-
-
-def _folder(path: str) -> str:
-    return path.rsplit("/", 1)[0] if "/" in path else ""
-
-
-def _name(path: str) -> str:
-    return path.rsplit("/", 1)[-1]
 
 
 def _stem(path: str) -> str:
-    """The file's name up to its first dot: ``EmptyState.module.css`` → ``EmptyState``."""
-    return _name(path).split(".", 1)[0].lower()
+    """The file's name up to its first dot: ``EmptyState.module.css`` → ``emptystate``."""
+    return path.rsplit("/", 1)[-1].split(".", 1)[0].lower()
 
 
-def _is_test_path(path: str) -> bool:
-    """Whether ``path`` is a test by the generic names GuardKit already uses."""
-    name = _name(path)
-    if name.startswith("test_") and len(name) > len("test_"):
+def _is_protected(path: str) -> bool:
+    """Whether ``path`` is a file that is never a companion of planned work."""
+    parts = path.split("/")
+    name = parts[-1].lower()
+    if name in _PROTECTED_NAMES or name.endswith(_PROTECTED_SUFFIXES):
         return True
-    if any(name.endswith(s) and len(name) > len(s) for s in _TEST_NAME_SUFFIXES):
+    if name.startswith(".env") or name.startswith("."):
+        # .env*, and every other dotfile (.gitlab-ci.yml, .npmrc, ...)
         return True
-    return any(part in _TEST_DIRECTORY_NAMES for part in path.split("/")[:-1])
+    name_parts = name.split(".")
+    if any(
+        p.startswith(_PROTECTED_NAME_PART_PREFIXES) or p == "env"
+        for p in name_parts
+    ):
+        return True
+    if "migration" in name:
+        return True
+    # compose*.y*ml and docker-compose*.y*ml, under any prefix
+    if name.endswith((".yml", ".yaml")) and any(
+        p.startswith(("compose", "docker-compose")) for p in name_parts
+    ):
+        return True
+    return any(part.lower() in _PROTECTED_DIRECTORY_NAMES for part in parts[:-1])
 
 
-def _test_subject(path: str) -> str:
-    """What a test is named after: ``test_feature.py`` → ``feature``."""
-    stem = _stem(path)
-    for prefix in ("test_", "test-"):
-        if stem.startswith(prefix):
-            stem = stem[len(prefix):]
-    for suffix in ("_test", "-test", "_spec", "-spec"):
-        if stem.endswith(suffix):
-            stem = stem[: -len(suffix)]
-    return stem
+def _beside_the_plan(extra: Set[str], planned: Set[str]) -> Set[str]:
+    """The extra files named after a planned file, and not protected.
 
-
-def _name_words(path: str) -> Set[str]:
-    """The words in a file name: ``setupTests.ts`` → {setup, tests}."""
-    stem = _name(path).split(".", 1)[0]
-    spaced = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", stem)
-    return {w.lower() for w in re.split(r"[^A-Za-z0-9]+|\s+", spaced) if w}
-
-
-def _beside_the_plan(
-    extra: Set[str],
-    planned: Set[str],
-    changed_existing: Set[str],
-) -> Set[str]:
-    """The extra files that are tests, test helpers or styles of planned work.
-
-    ``planned`` is every file the plan names (to create or to change);
-    ``changed_existing`` is every existing file this build changed. Nothing is
-    removed from the audit by this: the caller still names every one of them.
+    ``planned`` is every file the plan names (to create or to change). Nothing
+    is removed from the audit by this: the caller still names every one.
     """
     planned_stems = {_stem(p) for p in planned}
-    planned_folders = {_folder(p) for p in planned}
-
-    beside: Set[str] = set()
-    for path in extra:
-        if _is_test_path(path) and (
-            _test_subject(path) in planned_stems or _folder(path) in planned_folders
-        ):
-            beside.add(path)
-        elif Path(path).suffix.lower() in _STYLE_AND_ASSET_SUFFIXES and (
-            _stem(path) in planned_stems or _folder(path) in planned_folders
-        ):
-            beside.add(path)
-
-    test_folders = {
-        _folder(p)
-        for p in (beside | planned | changed_existing)
-        if _is_test_path(p)
+    return {
+        path
+        for path in extra
+        if _stem(path) in planned_stems and not _is_protected(path)
     }
-    for path in extra - beside:
-        if _name_words(path) & _TEST_HELPER_WORDS and _folder(path) in test_folders:
-            beside.add(path)
-    return beside
 
 
 class PlanAuditor:
@@ -825,15 +798,11 @@ class PlanAuditor:
         )
         missing_files = planned_files - actual_files
 
-        # Tests, test helpers and styles of the planned work are named in a
-        # low discrepancy of their own and do not count towards the line
-        # below (see _beside_the_plan at the top of this file).
+        # Extra files named after a planned file (and not protected) are
+        # named in a low discrepancy of their own and do not count towards
+        # the line below (see _beside_the_plan at the top of this file).
         planned_anywhere = planned_files | set(plan_data.get("files_to_modify", []))
-        beside = _beside_the_plan(
-            extra_files,
-            planned_anywhere,
-            set(actual.get("files_modified", [])),
-        )
+        beside = _beside_the_plan(extra_files, planned_anywhere)
         counted_extra = extra_files - beside
 
         if counted_extra:
@@ -854,8 +823,8 @@ class PlanAuditor:
                 category="files",
                 severity="low",
                 message=(
-                    f"{len(beside)} extra test or style file(s) not in plan, "
-                    f"beside the planned work"
+                    f"{len(beside)} extra file(s) not in plan, named after "
+                    f"a planned file"
                 ),
                 planned=sorted(list(planned_files)),
                 actual=sorted(list(beside)),

@@ -14296,7 +14296,7 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                 )
             elif disc.category == "files" and "extra" in disc.message:
                 # Two discrepancies can name extra files: the counted ones and
-                # the low one for tests and styles beside the planned work
+                # the low one for files named after a planned file
                 # (plan_audit._beside_the_plan). Every one is named.
                 named = list(disc.actual) if isinstance(disc.actual, list) else []
                 extra_files = sorted(set(extra_files) | set(named))
@@ -14332,9 +14332,8 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
             "severity": severity,
             "violations": violations,
             "extra_files": extra_files,
-            # The extra files recorded as low because they are tests, test
-            # helpers or styles of the planned work; they are in extra_files
-            # too.
+            # The extra files recorded as low because each is named after a
+            # planned file and is not protected; they are in extra_files too.
             "extra_files_beside_the_plan": extra_beside_the_plan,
             "missing_files": missing_files,
             "extra_modifications": extra_modifications,

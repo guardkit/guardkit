@@ -479,10 +479,11 @@ class TestPlanAuditor:
         assert discrepancies == []
 
 
-class TestTestsAndStylesBesideThePlan:
-    """Tests, test helpers and styles of the planned work are low, not high.
+class TestFilesNamedAfterAPlannedFile:
+    """An extra file named after a planned file (up to the first dot) is low.
 
-    Everything else extra still counts towards the "three is high" line.
+    Nothing else is: not a file in the same folder, not a helper, not
+    everything under a test directory, and never a protected file.
     """
 
     PLANNED = [
@@ -502,7 +503,7 @@ class TestTestsAndStylesBesideThePlan:
             "files_to_modify": ["web/src/App.tsx"],
         }
 
-    def test_live_shape_is_low(self, auditor):
+    def test_live_shape_is_medium_with_one_counted_extra(self, auditor):
         actual = {
             "files_created": self.PLANNED + [
                 "web/src/ShelfPage.test.tsx",
@@ -514,66 +515,104 @@ class TestTestsAndStylesBesideThePlan:
 
         discrepancies = auditor._compare_files(self._plan(), actual)
 
-        assert auditor._calculate_severity(discrepancies) == "low"
-        assert all(d.severity == "low" for d in discrepancies)
-        beside = [d for d in discrepancies if "test or style" in d.message]
-        assert len(beside) == 1
-        assert beside[0].actual == [
+        assert auditor._calculate_severity(discrepancies) == "medium"
+        counted = [d for d in discrepancies if d.severity == "medium"]
+        assert len(counted) == 1
+        assert counted[0].actual == ["web/src/test-harness.tsx"]
+        named_after = [d for d in discrepancies if "named after" in d.message]
+        assert len(named_after) == 1
+        assert named_after[0].severity == "low"
+        assert named_after[0].actual == [
             "web/src/ShelfPage.test.tsx",
             "web/src/components/EmptyShelf.module.css",
-            "web/src/test-harness.tsx",
         ]
-        assert "extra" in beside[0].message
+        assert "extra" in named_after[0].message
 
-    def test_scope_creep_is_still_high(self, auditor):
+    def test_unrelated_test_helper_and_asset_in_a_planned_folder_count(
+        self, auditor
+    ):
         actual = {
             "files_created": self.PLANNED + [
-                "api/Dockerfile",
-                "deploy/compose.yaml",
-                "deploy/README.md",
-                "web/src/pages/ShelfPage.test.tsx",
+                "web/src/components/OtherThing.test.tsx",
+                "web/src/components/renderHelpers.tsx",
+                "web/src/components/logo.svg",
             ],
-            "files_modified": ["web/src/App.tsx"],
         }
 
         discrepancies = auditor._compare_files(self._plan(), actual)
 
         assert auditor._calculate_severity(discrepancies) == "high"
-        counted = [d for d in discrepancies if d.severity == "high"]
-        assert len(counted) == 1
-        assert counted[0].actual == [
-            "api/Dockerfile", "deploy/README.md", "deploy/compose.yaml",
-        ]
+        assert not [d for d in discrepancies if "named after" in d.message]
 
-    def test_a_test_nobody_planned_and_a_lone_helper_still_count(self, auditor):
-        actual = {
-            "files_created": self.PLANNED + [
-                "tests/test_billing.py",
-                "scripts/mock_server.sh",
-                "web/src/billing/invoice.ts",
-            ],
-            "files_modified": [],
-        }
-
-        discrepancies = auditor._compare_files(self._plan(), actual)
-
-        assert auditor._calculate_severity(discrepancies) == "high"
-        assert not [d for d in discrepancies if "test or style" in d.message]
-
-    def test_a_go_test_beside_its_planned_file_is_low(self, auditor):
-        plan = {"files_to_create": ["api/internal/shelf/handler.go"]}
+    def test_everything_under_a_test_directory_is_not_exempt(self, auditor):
+        plan = {"files_to_create": ["src/feature.py", "tests/test_feature.py"]}
         actual = {
             "files_created": [
-                "api/internal/shelf/handler.go",
-                "api/internal/shelf/handler_test.go",
-                "api/internal/shelf/testdata_fixture.go",
-                "api/internal/shelf/store_test.go",
+                "src/feature.py", "tests/test_feature.py",
+                "tests/test_billing.py", "tests/conftest.py", "tests/data.json",
             ],
         }
 
         discrepancies = auditor._compare_files(plan, actual)
 
-        assert auditor._calculate_severity(discrepancies) == "low"
+        assert auditor._calculate_severity(discrepancies) == "high"
+
+    def test_protected_files_beside_a_planned_test_count_even_when_named_after_it(
+        self, auditor
+    ):
+        plan = {
+            "files_to_create": [
+                "api/notes/handler.go", "api/notes/handler_test.go",
+            ],
+        }
+        actual = {
+            "files_created": plan["files_to_create"] + [
+                "api/notes/Dockerfile",
+                "api/notes/compose.yaml",
+                "api/notes/README.md",
+                "api/notes/migrations/0001_notes.sql",
+                "api/notes/handler.Dockerfile",
+                "api/notes/handler.README.md",
+                "api/notes/handler.compose.yaml",
+                "api/notes/handler.migration.go",
+            ],
+        }
+
+        discrepancies = auditor._compare_files(plan, actual)
+
+        assert auditor._calculate_severity(discrepancies) == "high"
+        assert not [d for d in discrepancies if "named after" in d.message]
+        counted = [d for d in discrepancies if d.severity == "high"]
+        assert len(counted[0].actual) == 8
+
+    @pytest.mark.parametrize("path", [
+        "Dockerfile", "web/Dockerfile.dev", "web/src/ShelfPage.Dockerfile",
+        "Containerfile", "compose.yaml", "docker-compose.override.yml",
+        "web/ShelfPage.compose.yaml", "README.md", "web/src/ShelfPage.README.md",
+        "db/migrations/0001_add.py", "alembic/versions/0002.py",
+        "web/src/ShelfPage.migration.ts", "schema/ShelfPage.sql",
+        "package-lock.json", "yarn.lock", "web/pnpm-lock.yaml", "go.sum",
+        "uv.lock", "web/package.json", "pyproject.toml", "go.mod",
+        ".github/workflows/ci.yml", ".gitlab-ci.yml", "Jenkinsfile",
+        ".env", ".env.local", "web/ShelfPage.env", "deploy/ShelfPage.sh",
+        "infra/ShelfPage.ts", "main.tf", "Makefile", "api/Api.csproj",
+    ])
+    def test_protected_types_are_never_companions(self, path):
+        from plan_audit import _beside_the_plan, _is_protected
+
+        assert _is_protected(path)
+        planned = {f"web/src/{path.rsplit('/', 1)[-1].split('.', 1)[0]}.tsx"}
+        assert _beside_the_plan({path}, planned) == set()
+
+    @pytest.mark.parametrize("path", [
+        "web/src/ShelfPage.test.tsx", "web/src/ShelfPage.module.css",
+        "web/src/components/EmptyShelf.module.css", "api/handler_test.go",
+        "web/src/Envelope.test.tsx",
+    ])
+    def test_ordinary_tests_and_styles_are_not_protected(self, path):
+        from plan_audit import _is_protected
+
+        assert not _is_protected(path)
 
 
 class TestAuditAgainstARealGitHistory:

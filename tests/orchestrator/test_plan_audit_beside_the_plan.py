@@ -1,11 +1,15 @@
-"""The plan audit does not call a component's own test, its stylesheet or a
-test helper "high" - and still calls real scope creep high.
+"""The plan audit does not call a planned file's own test or stylesheet
+"high" - and still calls real scope creep high.
 
 Build FEAT-86FD (18 October 2026) stalled after three turns: the task document
 planned a page screen and its components, the build also wrote the page's
 test, a stylesheet for a planned component and a small test helper, and
 changed an existing test. The audit counted three extra files, called that
 high, and the Coach refused every turn although the tests passed.
+
+An extra file whose name up to its first dot is the name of a file the plan
+names (and which is not a protected type) is now recorded as low and does not
+count towards the three-is-high line. The helper still counts.
 
 These tests drive the normal caller - ``AgentInvoker._compute_plan_audit_verdict``
 over a real git repository and a real task document - and hand its block to
@@ -133,7 +137,7 @@ def _gate_passes(root: Path, plan_audit: Dict) -> bool:
 
 
 class TestTheLiveShape:
-    def test_a_page_test_a_component_stylesheet_and_a_test_helper_pass(
+    def test_page_test_and_component_stylesheet_are_low_the_helper_counts(
         self, repo: Path
     ) -> None:
         _build_the_planned_work(repo)
@@ -145,8 +149,9 @@ class TestTheLiveShape:
 
         verdict = _verdict(repo)
 
+        # One counted extra file (the helper) is medium, and medium passes.
+        assert verdict["severity"] == "medium", verdict
         assert verdict["status"] == "passed", verdict
-        assert verdict["severity"] == "low", verdict
         assert verdict["violations"] == 0
         # Recorded and shown, never hidden.
         assert verdict["extra_files"] == [
@@ -154,7 +159,10 @@ class TestTheLiveShape:
             "web/src/components/EmptyShelf.module.css",
             "web/src/test-harness.tsx",
         ]
-        assert verdict["extra_files_beside_the_plan"] == verdict["extra_files"]
+        assert verdict["extra_files_beside_the_plan"] == [
+            "web/src/ShelfPage.test.tsx",
+            "web/src/components/EmptyShelf.module.css",
+        ]
         assert verdict["extra_modifications"] == ["web/src/App.test.tsx"]
         assert _gate_passes(repo, verdict)
 
@@ -195,6 +203,38 @@ class TestScopeCreepStillHigh:
 
         assert verdict["severity"] == "high", verdict
         assert verdict["extra_files_beside_the_plan"] == []
+        assert not _gate_passes(repo, verdict)
+
+    def test_unrelated_test_helper_and_asset_in_a_planned_folder_count(
+        self, repo: Path
+    ) -> None:
+        _build_the_planned_work(repo)
+        _write(repo, "web/src/components/OtherThing.test.tsx", "test('o', () => {});\n")
+        _write(repo, "web/src/components/renderHelpers.tsx", "export const r = 1;\n")
+        _write(repo, "web/src/components/logo.svg", "<svg/>\n")
+
+        verdict = _verdict(repo)
+
+        assert verdict["severity"] == "high", verdict
+        assert verdict["extra_files_beside_the_plan"] == []
+        assert not _gate_passes(repo, verdict)
+
+    def test_protected_files_named_after_a_planned_file_still_count(
+        self, repo: Path
+    ) -> None:
+        _build_the_planned_work(repo)
+        _write(repo, "web/src/pages/ShelfPage.test.tsx", "test('x', () => {});\n")
+        _write(repo, "web/src/pages/ShelfPage.Dockerfile", "FROM scratch\n")
+        _write(repo, "web/src/pages/ShelfPage.README.md", "# Shelf\n")
+        _write(repo, "web/src/pages/compose.yaml", "services: {}\n")
+        _write(repo, "web/src/pages/migrations/ShelfPage.sql", "SELECT 1;\n")
+
+        verdict = _verdict(repo)
+
+        assert verdict["severity"] == "high", verdict
+        assert verdict["extra_files_beside_the_plan"] == [
+            "web/src/pages/ShelfPage.test.tsx"
+        ]
         assert not _gate_passes(repo, verdict)
 
     def test_changed_dockerfile_compose_and_readme_are_named(
@@ -253,5 +293,5 @@ class TestTheCoachFeedbackWording:
             "3 extra file(s): api/Dockerfile, deploy/README.md, "
             "deploy/compose.yaml" in text
         )
-        assert "1 test or style file(s) beside the planned work" in text
+        assert "1 file(s) named after a planned file" in text
         assert "ShelfPage.test.tsx" not in text.split("— and")[0]
