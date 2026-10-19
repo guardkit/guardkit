@@ -76,6 +76,30 @@ from tests.orchestrator.stub_sdk import (  # noqa: E402
 TASK_ID = "TASK-OSI-STUB"
 
 
+@pytest.fixture(autouse=True)
+def _routine_seat(monkeypatch: pytest.MonkeyPatch, m0_routine_fleet_route: str) -> str:
+    """The seat and the harness these tests were written for, stated outright.
+
+    Two things changed under this file after it was written (25 April 2026):
+
+    * TASK-HMIG-011 (16 June 2026) flipped the default harness from ``sdk`` to
+      ``langgraph``. These tests record specialists through a stub
+      ``claude_agent_sdk`` (``tests/orchestrator/stub_sdk.py``), which only the
+      ``sdk`` harness calls, so they name it — the SDK path stays an opt-in
+      fallback, exactly as the cutover left it.
+    * The effective-seat M0 fence at ``select_harness`` (``m0_fence.py``,
+      2 August 2026) refuses a construction with no model: an unnamed seat falls
+      to a frontier default. These tests declare the routine local-fleet route
+      with the suite's sanctioned fixture (``tests/conftest.py``), and every
+      ``AgentInvoker`` here is handed that seat as ``model_name`` — never
+      ``GUARDKIT_ALLOW_FRONTIER``, which would switch the fence off.
+
+    Nothing here reaches a network: the stub records each call.
+    """
+    monkeypatch.setenv("GUARDKIT_HARNESS", "sdk")
+    return m0_routine_fleet_route
+
+
 def _write_task_markdown(
     worktree: Path,
     task_id: str,
@@ -155,14 +179,15 @@ def worktree(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def agent_invoker(worktree: Path) -> AgentInvoker:
-    """``AgentInvoker`` rooted at the test worktree."""
+def agent_invoker(worktree: Path, _routine_seat: str) -> AgentInvoker:
+    """``AgentInvoker`` rooted at the test worktree, on the routine local seat."""
     return AgentInvoker(
         worktree_path=worktree,
         max_turns_per_agent=5,
         sdk_timeout_seconds=10,
         use_task_work_delegation=False,
         development_mode="standard",
+        model_name=_routine_seat,
     )
 
 
@@ -343,6 +368,7 @@ async def test_orchestrator_side_invocation_fires_on_non_direct_task(
 @pytest.mark.integration
 async def test_direct_mode_task_skips_specialists(
     tmp_path: Path,
+    _routine_seat: str,
 ) -> None:
     """``implementation_mode: direct`` blocks all specialist invocation.
 
@@ -359,6 +385,7 @@ async def test_direct_mode_task_skips_specialists(
         sdk_timeout_seconds=10,
         use_task_work_delegation=False,
         development_mode="standard",
+        model_name=_routine_seat,
     )
 
     recorder = StubSDKRecorder(tmp_path, TASK_ID)
@@ -404,6 +431,12 @@ async def test_phase4_failure_skips_phase5_and_records_partial(
     with patch.dict(sys.modules, {"claude_agent_sdk": mock_sdk}):
         await _drive_orchestrator_phase_4_5(worktree, TASK_ID, agent_invoker)
 
+    # THE STUB'S OWN FAILURE, not any Phase 4 failure: the test-orchestrator
+    # really was invoked (and raised, as configured), and nothing else was. A
+    # Phase 4 that failed before reaching the SDK — a fence refusal, a harness
+    # that could not be built — records no invocation and fails here.
+    assert [i.agent_type for i in recorder.invocations] == ["test-orchestrator"]
+
     # The code-reviewer must NOT have been called.
     code_reviewer_calls = [
         inv for inv in recorder.invocations
@@ -428,6 +461,7 @@ async def test_phase4_failure_skips_phase5_and_records_partial(
 @pytest.mark.integration
 async def test_player_emitted_phase_4_markers_are_dropped(
     tmp_path: Path,
+    _routine_seat: str,
 ) -> None:
     """Player-tagged Phase 4 entry is replaced by the orchestrator-tagged one.
 
@@ -456,6 +490,7 @@ async def test_player_emitted_phase_4_markers_are_dropped(
         sdk_timeout_seconds=10,
         use_task_work_delegation=False,
         development_mode="standard",
+        model_name=_routine_seat,
     )
 
     recorder = StubSDKRecorder(tmp_path, TASK_ID)
