@@ -114,7 +114,11 @@ class TestFeatFd32Reproducer:
         assert natural_ids == [
             f"AC-LOAD-{i:02d}" for i in range(1, 9)
         ]
-        assert all(cr.result == "verified" for cr in result.criteria_results)
+        # A Player promise is recorded as a claim, not a proof: since
+        # 8d2ea169 (19 September 2026, B9 Lane C) _match_by_promises records
+        # "claimed", which still counts as met for the turn; only the Coach's
+        # own corroboration can raise it to "verified".
+        assert all(cr.result == "claimed" for cr in result.criteria_results)
 
     def test_acceptance_criteria_status_uses_natural_labels(
         self,
@@ -144,7 +148,7 @@ class TestFeatFd32Reproducer:
         # making turn-state files incoherent with the markdown labels.
         for i in range(1, 9):
             assert f"AC-LOAD-{i:02d}" in ac_status
-            assert ac_status[f"AC-LOAD-{i:02d}"] == "verified"
+            assert ac_status[f"AC-LOAD-{i:02d}"] == "claimed"
 
 
 # ============================================================================
