@@ -282,16 +282,142 @@ class TestTheExistenceCheckSkipsOnlyModifiedDeletions:
             ("file_existence", "critical", f"{key}: {DELETED}")
         ]
 
-    def test_beside_the_modified_entry_only_the_other_list_is_recorded(
+    def test_beside_another_claim_the_modified_entry_loses_its_exemption(
         self, repo: Path
     ) -> None:
+        """files_modified must be the path's ONLY claim (Codex round 1, R1).
+
+        With a second claim both entries are recorded, as before the
+        exemption existed, so the Coach's single-record demotion cannot apply.
+        """
         verifier = CoachVerifier(repo, task_id=TASK_ID)
 
         records = verifier._verify_files_exist(
             {"files_modified": [DELETED], "files_created": [DELETED]}
         )
 
-        assert [r.player_claim for r in records] == [f"files_created: {DELETED}"]
+        assert sorted(r.player_claim for r in records) == sorted(
+            [f"files_created: {DELETED}", f"files_modified: {DELETED}"]
+        )
+
+
+UNCOMMITTED = "apps/shelf/src/Main.tsx"
+
+
+@pytest.fixture
+def repo_with_uncommitted_deletion(repo: Path) -> Path:
+    """After the first checkpoint, this turn deletes a base file, uncommitted.
+
+    ``Main.tsx`` existed at the task base and is still tracked; deleting it
+    now leaves `` D apps/shelf/src/Main.tsx`` in git status, so the claim
+    audit's would-stage set holds it (Codex review round 1, R1).
+    """
+    (repo / UNCOMMITTED).unlink()
+    return repo
+
+
+def _uncommitted_results(extra: dict) -> dict:
+    # The git step lists every path that differs from the task base, the
+    # uncommitted deletion included, under files_modified.
+    results = {
+        "task_id": TASK_ID,
+        "files_modified": [UNCOMMITTED, "apps/shelf/src/pages/ShelfPage.tsx"],
+        "files_created": [],
+    }
+    for key, value in extra.items():
+        if key == "completion_promises":
+            for promise in value:
+                promise = dict(promise)
+                for field in ("test_file",):
+                    if promise.get(field) == DELETED:
+                        promise[field] = UNCOMMITTED
+                if "implementation_files" in promise:
+                    promise["implementation_files"] = [UNCOMMITTED]
+                results.setdefault("completion_promises", []).append(promise)
+        else:
+            results[key] = [UNCOMMITTED]
+    return results
+
+
+def _must_fix(repo: Path, results: dict):
+    validator = CoachValidator(str(repo), task_id=TASK_ID)
+    honesty = validator._verify_honesty(results)
+    must_fix = [
+        issue
+        for issue in validator._honesty_issues_from(honesty)
+        if issue["severity"] == "must_fix"
+    ]
+    return honesty, must_fix
+
+
+class TestAnUncommittedDeletionClaimedTwiceIsRefused:
+    """Codex review round 1, R1: the deletion is not yet committed.
+
+    git status lists the deletion, so the claim audit's main loop never sees
+    the path; the second claim must still be blocking.
+    """
+
+    @pytest.mark.parametrize("label", sorted(SECOND_CLAIMS))
+    def test_the_coach_honesty_check_raises_must_fix(
+        self, repo_with_uncommitted_deletion: Path, label: str
+    ) -> None:
+        results = _uncommitted_results(SECOND_CLAIMS[label])
+        assert UNCOMMITTED in results["files_modified"]
+
+        honesty, must_fix = _must_fix(repo_with_uncommitted_deletion, results)
+
+        assert not honesty.verified, label
+        assert must_fix, (label, honesty.discrepancies)
+
+    @pytest.mark.parametrize("label", sorted(SECOND_CLAIMS))
+    def test_the_claim_check_itself_records_it(
+        self, repo_with_uncommitted_deletion: Path, label: str
+    ) -> None:
+        verifier = CoachVerifier(repo_with_uncommitted_deletion, task_id=TASK_ID)
+
+        records = verifier._verify_claims_were_staged(
+            _uncommitted_results(SECOND_CLAIMS[label])
+        )
+
+        assert [(r.claim_type, r.severity, r.player_claim) for r in records] == [
+            ("claim_audit", "critical", f"Player claimed file {UNCOMMITTED}")
+        ], label
+        assert "report it only as changed" in records[0].actual_value
+
+    def test_modified_only_is_still_a_true_report(
+        self, repo_with_uncommitted_deletion: Path
+    ) -> None:
+        """Positive control: the uncommitted deletion, reported as changed."""
+        results = _uncommitted_results({})
+
+        honesty, must_fix = _must_fix(repo_with_uncommitted_deletion, results)
+
+        assert honesty.verified, honesty.discrepancies
+        assert must_fix == []
+
+    @pytest.mark.parametrize("key", ["files_created", "tests_written"])
+    def test_the_existence_check_records_the_modified_entry_too(
+        self, repo_with_uncommitted_deletion: Path, key: str
+    ) -> None:
+        verifier = CoachVerifier(repo_with_uncommitted_deletion, task_id=TASK_ID)
+
+        records = verifier._verify_files_exist(
+            {"files_modified": [UNCOMMITTED], key: [UNCOMMITTED]}
+        )
+
+        assert sorted(r.player_claim for r in records) == sorted(
+            [f"files_modified: {UNCOMMITTED}", f"{key}: {UNCOMMITTED}"]
+        )
+
+
+class TestTheCommittedDeletionControlStillPasses:
+    def test_modified_only_committed_deletion_has_no_record(
+        self, repo: Path
+    ) -> None:
+        honesty, must_fix = _must_fix(repo, TURN_2_RESULTS)
+
+        assert honesty.verified, honesty.discrepancies
+        assert must_fix == []
 
 
 class TestRecoveredStateNamesFilesNotFolders:

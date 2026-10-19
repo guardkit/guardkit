@@ -507,6 +507,7 @@ class CoachVerifier:
         """
         discrepancies: List[Discrepancy] = []
         self._resolved_paths = []
+        other_claims = self._claims_other_than_modified(report)
 
         canonical_path: Optional[Path] = None
         canonical_resolved: bool = False
@@ -552,9 +553,13 @@ class CoachVerifier:
                     continue
 
                 # A modified file that is missing because this task deleted
-                # it is a true report (see _verify_claims_were_staged).
-                if file_list_key == "files_modified" and self._deleted_since_task_base(
-                    self._normalize_claimed_path(str(file_path))
+                # it is a true report (see _verify_claims_were_staged) - but
+                # only when files_modified is the path's only claim.
+                normalized_path = self._normalize_claimed_path(str(file_path))
+                if (
+                    file_list_key == "files_modified"
+                    and normalized_path not in other_claims
+                    and self._deleted_since_task_base(normalized_path)
                 ):
                     continue
 
@@ -696,7 +701,6 @@ class CoachVerifier:
         authored_claims: set[str] = set()
         run_claims: set[str] = set()
         modified_claims: set[str] = set()
-        created_or_test_claims: set[str] = set()
         for key in ("files_created", "files_modified", "tests_written"):
             for entry in report.get(key) or []:
                 if entry:
@@ -704,8 +708,7 @@ class CoachVerifier:
                     authored_claims.add(normalized)
                     if key == "files_modified":
                         modified_claims.add(normalized)
-                    else:
-                        created_or_test_claims.add(normalized)
+        other_claims = self._claims_other_than_modified(report)
         for promise in report.get("completion_promises") or []:
             if not isinstance(promise, dict):
                 continue
@@ -844,9 +847,36 @@ class CoachVerifier:
                     self._normalize_claimed_path(path_part.strip().strip('"'))
                 )
 
+        # A file that is not on disk can only truthfully be reported as
+        # CHANGED (deleted). Named as created, as a test written, or as
+        # evidence for a check, it is a false claim - whether the deletion is
+        # still uncommitted (here: git would stage it, so the loop below never
+        # sees it) or already committed (the loop below, which grants the
+        # deletion exemption only to a files_modified-only claim). Codex
+        # review round 1, R1 (19 October 2026).
+        discrepancies: List[Discrepancy] = []
+        for path in sorted(claimed & other_claims & would_stage):
+            if (self.worktree_path / path).exists():
+                continue
+            discrepancies.append(
+                Discrepancy(
+                    claim_type="claim_audit",
+                    player_claim=f"Player claimed file {path}",
+                    actual_value=(
+                        "The file is not on disk and git would stage its "
+                        "deletion, so this task removed it; but the report "
+                        "names it as created, as a test written, or as "
+                        "evidence for a check, and a removed file is none of "
+                        "those. To clear this record: put the file back if "
+                        "the task needs it, or report it only as changed."
+                    ),
+                    severity="critical",
+                )
+            )
+
         dropped = sorted(claimed - would_stage)
         if not dropped:
-            return []
+            return discrepancies
 
         # TASK-FIX-IGNR + TASK-FIX-PCN: split the dropped set into:
         #   * "fabricated"          — path absent from disk, OR present
@@ -871,7 +901,6 @@ class CoachVerifier:
         #                              so the gate surfaces a warning
         #                              rather than rejecting the turn on
         #                              what is almost always a noise path.
-        discrepancies: List[Discrepancy] = []
         for path in dropped:
             classification = self._classify_dropped_path(path)
             if (
@@ -882,8 +911,7 @@ class CoachVerifier:
                 # turn, so a builder that also says it created the file,
                 # wrote a test there, or cites it for a check is making a
                 # claim the deletion does not make true.
-                and path not in created_or_test_claims
-                and path not in run_claims
+                and path not in other_claims
                 and self._deleted_since_task_base(path)
             ):
                 # A file this task DELETED, and an earlier turn's checkpoint
@@ -1299,6 +1327,35 @@ class CoachVerifier:
         if not isinstance(commit, str) or not commit.strip():
             return None
         return f"{commit.strip()}^"
+
+    def _claims_other_than_modified(self, report: Dict[str, Any]) -> set[str]:
+        """Every path the report names other than as a modified file.
+
+        ``files_created``, ``tests_written``, and every completion promise's
+        ``implementation_files`` and ``test_file`` (split on commas, as the
+        claim audit does). Normalised the same way as the claim audit. The
+        deletion exemption applies only to a path that is NOT in this set:
+        a deleted file can truthfully be "modified", never created, tested or
+        cited (Codex review round 1, R1, 19 October 2026).
+        """
+        paths: set[str] = set()
+        for key in ("files_created", "tests_written"):
+            for entry in report.get(key) or []:
+                if entry:
+                    paths.add(self._normalize_claimed_path(str(entry)))
+        for promise in report.get("completion_promises") or []:
+            if not isinstance(promise, dict):
+                continue
+            for entry in promise.get("implementation_files") or []:
+                if entry:
+                    paths.add(self._normalize_claimed_path(str(entry)))
+            test_file = promise.get("test_file")
+            if test_file:
+                for part in str(test_file).split(","):
+                    part = part.strip()
+                    if part:
+                        paths.add(self._normalize_claimed_path(part))
+        return paths
 
     def _deleted_since_task_base(self, path: str) -> bool:
         """Whether ``path`` existed where this task started and is gone now.
