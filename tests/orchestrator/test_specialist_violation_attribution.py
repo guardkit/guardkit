@@ -459,7 +459,7 @@ class TestCappedReviewReachesCoachAsEvidenceAbsent:
         cut_off = AgentInvocationError(
             "SDK invocation failed for coach (LangGraphHarnessError): "
             "LangGraphHarness: agent.ainvoke failed for role='coach' "
-            "model='reviewer-model': Recursion limit of 24 reached without "
+            "model='reviewer-model': Recursion limit of 40 reached without "
             "hitting a stop condition.",
             error_class="LangGraphHarnessError",
         )
@@ -529,7 +529,7 @@ class TestCappedReviewReachesCoachAsEvidenceAbsent:
         assert note["category"] == "specialist_substrate"
         assert note["severity"] == "should_fix"
         assert "code-reviewer" in note["description"]
-        assert "step cap (24 steps)" in note["description"]
+        assert "step cap (40 steps)" in note["description"]
         assert "ABSENT, not failed" in note["description"]
         # No review evidence reaches the Coach.
         assert [
