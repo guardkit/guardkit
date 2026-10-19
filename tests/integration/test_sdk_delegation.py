@@ -802,7 +802,12 @@ class TestDevelopmentModeHandling:
         run_async(run_test())
 
         assert captured_prompt is not None
-        assert f"--mode={mode}" in captured_prompt
+        # The prompt states the mode in its Context block. It used to be the
+        # slash command "/task-work <id> --implement-only --mode=<mode>"; that
+        # was replaced by an inline protocol on 15 February 2026 (42a07adda,
+        # TASK-POF-004) and the line now comes from
+        # _build_autobuild_implementation_prompt (TASK-ACO-002, 28534d78b).
+        assert f"- Mode: {mode}\n" in captured_prompt
 
     def test_mode_defaults_to_instance_mode(self, agent_invoker):
         """Mode defaults to instance development_mode when not specified."""
