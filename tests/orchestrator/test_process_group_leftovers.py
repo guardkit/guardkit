@@ -1,0 +1,458 @@
+"""A project command leaves nothing running, goes first when memory runs out,
+and is told no one is watching (19 October 2026).
+
+In a factory build, the sandbox ran out of memory while a command held
+dozens of test-runner processes under ``timeout N <test command> | tail``, and
+the kernel stopped GuardKit, the biggest single process. The runner for the
+commands a build is judged by ended a command's process group on a timeout
+only: nothing when the command returned, and nothing that moved out of the
+group (``timeout`` moves itself and what it runs into a group of its own).
+
+These tests show, with harmless ``sleep`` processes standing in for a
+forgotten server, watcher or test run:
+
+* what a command leaves running is ended when it returns, also in a group of
+  its own (``timeout``), in a session of its own (``setsid``, found by the
+  command's marker) and without the marker (found by the session); the log
+  says so, naming the command and how many processes;
+* a process that keeps the output open does not hold the caller until the
+  time limit;
+* on a timeout the command and everything it started are ended;
+* processes the command did not start are never touched;
+* the command's processes go first when memory runs out, GuardKit's own
+  process does not change;
+* ``run_project_command`` still behaves as ``subprocess.run``;
+* the project's commands get ``CI=true`` unless the project declares ``CI``.
+
+No network, no model and no ``claude``. Every process started here is killed
+by the test's own clean-up if the code under test fails to.
+"""
+
+from __future__ import annotations
+
+import errno
+import logging
+import os
+import shutil
+import signal
+import subprocess
+import sys
+import threading
+import time
+from pathlib import Path
+from typing import Iterator, List
+
+import pytest
+
+from guardkit.orchestrator import process_group
+from guardkit.orchestrator import project_command_env as pce
+from guardkit.orchestrator.launch_declaration import LaunchDeclaration
+from guardkit.orchestrator.process_group import (
+    COMMAND_MARKER_NAME,
+    run_in_own_group,
+    run_project_command,
+)
+
+linux_only = pytest.mark.skipif(
+    sys.platform != "linux" or not Path("/proc/self/stat").exists(),
+    reason="the process checks read /proc",
+)
+
+_ENV = {"PATH": "/usr/bin:/bin"}
+_WAIT_FOR = "while [ ! -s {name} ]; do sleep 0.05; done"
+
+
+def _alive(pid: int) -> bool:
+    try:
+        data = Path(f"/proc/{pid}/stat").read_bytes()
+    except OSError:
+        return False
+    return data[data.rindex(b")") + 2 :].split()[0] not in (b"Z", b"X")
+
+
+def _pid(folder: Path, name: str) -> int:
+    return int((folder / name).read_text().strip())
+
+
+@pytest.fixture
+def started(tmp_path: Path) -> Iterator[List[int]]:
+    """Pids the test started; any still running at the end are killed."""
+    pids: List[int] = []
+    yield pids
+    for name in ("bg.pid", "inner.pid", "fg.pid"):
+        file = tmp_path / name
+        if file.exists():
+            try:
+                pids.append(int(file.read_text().strip()))
+            except ValueError:
+                pass
+    for pid in pids:
+        if _alive(pid):
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except OSError:
+                pass
+
+
+def _run(tmp_path: Path, command: str, **kwargs):
+    kwargs.setdefault("timeout", 60)
+    kwargs.setdefault("env", dict(_ENV))
+    return run_project_command(
+        command, shell=True, cwd=str(tmp_path), capture_output=True, text=True, **kwargs,
+    )
+
+
+# ---------------------------------------------------------------------------
+# What a command leaves behind
+# ---------------------------------------------------------------------------
+
+
+@linux_only
+class TestLeftoversAreEnded:
+    def test_a_background_process_is_ended_when_the_command_returns(
+        self, tmp_path: Path, started: List[int], caplog: pytest.LogCaptureFixture
+    ) -> None:
+        command = "sleep 300 >/dev/null 2>&1 & echo $! > bg.pid; echo started"
+        with caplog.at_level(logging.WARNING, logger=process_group.__name__):
+            proc = _run(tmp_path, command)
+
+        assert proc.returncode == 0
+        assert proc.stdout == "started\n"
+        assert not _alive(_pid(tmp_path, "bg.pid"))
+        assert caplog.records[-1].getMessage() == (
+            "A project command finished but left 1 process running; it was "
+            f"stopped. The command: {command}"
+        )
+
+    def test_run_in_own_group_ends_it_too(
+        self, tmp_path: Path, started: List[int]
+    ) -> None:
+        run = run_in_own_group(
+            "sleep 300 >/dev/null 2>&1 & echo $! > bg.pid; echo started",
+            shell=True, cwd=tmp_path, env=dict(_ENV), timeout=60,
+        )
+
+        assert (run.returncode, run.stdout, run.timed_out) == (0, "started\n", False)
+        assert not _alive(_pid(tmp_path, "bg.pid"))
+
+    def test_a_process_in_a_group_of_its_own_is_ended(
+        self, tmp_path: Path, started: List[int], caplog: pytest.LogCaptureFixture
+    ) -> None:
+        # The incident's shape: ``timeout`` moves itself and what it runs
+        # into a process group of its own, still in the command's session.
+        if shutil.which("timeout", path=_ENV["PATH"]) is None:
+            pytest.skip("no timeout program")
+        with caplog.at_level(logging.WARNING, logger=process_group.__name__):
+            proc = _run(
+                tmp_path,
+                "timeout 120 sh -c 'echo $$ > inner.pid; exec sleep 300' "
+                ">/dev/null 2>&1 & echo $! > bg.pid; "
+                + _WAIT_FOR.format(name="inner.pid"),
+            )
+
+        assert proc.returncode == 0
+        assert not _alive(_pid(tmp_path, "bg.pid"))
+        assert not _alive(_pid(tmp_path, "inner.pid"))
+        assert "left 2 processes running; they were stopped" in caplog.text
+
+    def test_a_process_in_a_session_of_its_own_is_ended(
+        self, tmp_path: Path, started: List[int]
+    ) -> None:
+        if shutil.which("setsid", path=_ENV["PATH"]) is None:
+            pytest.skip("no setsid program")
+        _run(
+            tmp_path,
+            "setsid sh -c 'echo $$ > bg.pid; exec sleep 300' >/dev/null 2>&1 & "
+            + _WAIT_FOR.format(name="bg.pid"),
+        )
+
+        assert not _alive(_pid(tmp_path, "bg.pid"))
+
+    def test_a_process_without_the_marker_is_ended_by_its_session(
+        self, tmp_path: Path, started: List[int]
+    ) -> None:
+        # Out of the group (``timeout``) and without the marker: only the
+        # session finds it.
+        if shutil.which("timeout", path=_ENV["PATH"]) is None:
+            pytest.skip("no timeout program")
+        _run(
+            tmp_path,
+            f"env -u {COMMAND_MARKER_NAME} timeout 120 sh -c 'echo $$ > bg.pid; "
+            "exec sleep 300' >/dev/null 2>&1 & " + _WAIT_FOR.format(name="bg.pid"),
+        )
+
+        assert not _alive(_pid(tmp_path, "bg.pid"))
+
+    def test_a_process_that_ignores_sigterm_is_killed(
+        self, tmp_path: Path, started: List[int], caplog: pytest.LogCaptureFixture
+    ) -> None:
+        # One in the command's group, one outside it (setsid): SIGKILL ends
+        # both after SIGTERM's grace.
+        if shutil.which("setsid", path=_ENV["PATH"]) is None:
+            pytest.skip("no setsid program")
+        began = time.monotonic()
+        with caplog.at_level(logging.WARNING, logger=process_group.__name__):
+            proc = _run(
+                tmp_path,
+                "sh -c 'trap \"\" TERM; echo $$ > bg.pid; exec sleep 300' >/dev/null 2>&1 & "
+                "setsid sh -c 'trap \"\" TERM; echo $$ > inner.pid; exec sleep 300' "
+                ">/dev/null 2>&1 & "
+                + _WAIT_FOR.format(name="bg.pid") + "; " + _WAIT_FOR.format(name="inner.pid"),
+                grace=0.5,
+            )
+        took = time.monotonic() - began
+
+        assert proc.returncode == 0
+        assert not _alive(_pid(tmp_path, "bg.pid"))
+        assert not _alive(_pid(tmp_path, "inner.pid"))
+        assert took >= 0.5
+        assert "left 2 processes running; they were stopped" in caplog.text
+        assert "still running" not in caplog.text
+
+    def test_a_refused_pidfd_still_ends_the_process(
+        self, tmp_path: Path, started: List[int], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # A security filter may refuse pidfd_open (EPERM): the process outside
+        # the group is then checked and signalled the ordinary way.
+        if shutil.which("setsid", path=_ENV["PATH"]) is None:
+            pytest.skip("no setsid program")
+
+        def refused(_pid: int) -> int:
+            raise PermissionError(errno.EPERM, "refused by a filter")
+
+        monkeypatch.setattr(process_group.os, "pidfd_open", refused)
+        _run(
+            tmp_path,
+            "setsid sh -c 'echo $$ > bg.pid; exec sleep 300' >/dev/null 2>&1 & "
+            + _WAIT_FOR.format(name="bg.pid"),
+        )
+
+        assert not _alive(_pid(tmp_path, "bg.pid"))
+
+    def test_a_process_holding_the_output_does_not_hold_the_caller(
+        self, tmp_path: Path, started: List[int]
+    ) -> None:
+        began = time.monotonic()
+        proc = _run(tmp_path, "sleep 300 & echo $! > bg.pid; echo done", timeout=40)
+        took = time.monotonic() - began
+
+        assert took < 20
+        assert (proc.returncode, proc.stdout) == (0, "done\n")
+        assert not _alive(_pid(tmp_path, "bg.pid"))
+
+    def test_a_timeout_ends_the_command_and_everything_it_started(
+        self, tmp_path: Path, started: List[int], caplog: pytest.LogCaptureFixture
+    ) -> None:
+        began = time.monotonic()
+        with caplog.at_level(logging.WARNING, logger=process_group.__name__):
+            with pytest.raises(subprocess.TimeoutExpired) as caught:
+                _run(
+                    tmp_path,
+                    "setsid sh -c 'echo $$ > bg.pid; exec sleep 300' >/dev/null 2>&1 & "
+                    + _WAIT_FOR.format(name="bg.pid")
+                    + "; echo $$ > fg.pid; echo partial; sleep 300",
+                    timeout=2,
+                )
+        took = time.monotonic() - began
+
+        assert took < 20
+        assert caught.value.stdout == "partial\n"
+        assert not _alive(_pid(tmp_path, "bg.pid"))
+        assert not _alive(_pid(tmp_path, "fg.pid"))
+        assert "ran past its time limit (2s)" in caplog.text
+
+    def test_processes_the_command_did_not_start_are_left_alone(
+        self, tmp_path: Path, started: List[int]
+    ) -> None:
+        before = subprocess.Popen(["sleep", "300"], start_new_session=True, env=dict(_ENV))
+        started.append(before.pid)
+        strangers = [before]
+        stranger_env = {**_ENV, COMMAND_MARKER_NAME: "f" * 32}
+
+        def start_during() -> None:
+            during = subprocess.Popen(["sleep", "300"], start_new_session=True, env=stranger_env)
+            started.append(during.pid)
+            strangers.append(during)
+
+        timer = threading.Timer(0.3, start_during)
+        timer.start()
+        try:
+            proc = _run(tmp_path, "sleep 300 >/dev/null 2>&1 & echo $! > bg.pid; sleep 1.5")
+            timer.join()
+
+            assert proc.returncode == 0
+            assert len(strangers) == 2
+            assert not _alive(_pid(tmp_path, "bg.pid"))
+            assert all(_alive(p.pid) for p in strangers)
+        finally:
+            timer.cancel()
+            timer.join()
+            for p in strangers:
+                p.kill()
+                p.wait()
+
+    def test_end_process_group_also_ends_the_session(
+        self, started: List[int]
+    ) -> None:
+        # The serve probe's shape: started by the caller, ended with
+        # end_process_group. A worker that left the group still goes.
+        if shutil.which("timeout", path=_ENV["PATH"]) is None:
+            pytest.skip("no timeout program")
+        proc = subprocess.Popen(
+            ["/bin/sh", "-c", "timeout 120 sleep 300 & echo $!; wait"],
+            stdout=subprocess.PIPE, start_new_session=True, text=True, env=dict(_ENV),
+        )
+        try:
+            worker = int(proc.stdout.readline())
+            started.append(worker)
+            process_group.end_process_group(proc, grace=0.5)
+            assert proc.returncode is None, "the leader was collected during the cleanup"
+            assert not _alive(worker)
+        finally:
+            proc.wait(timeout=10)
+            proc.stdout.close()
+
+    def test_a_quick_command_says_nothing(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        with caplog.at_level(logging.WARNING, logger=process_group.__name__):
+            proc = _run(tmp_path, "echo hi")
+        assert proc.stdout == "hi\n"
+        assert caplog.records == []
+
+
+# ---------------------------------------------------------------------------
+# First in line when memory runs out
+# ---------------------------------------------------------------------------
+
+
+@linux_only
+class TestCommandsGoFirstWhenMemoryRunsOut:
+    def test_a_shell_command_and_what_it_starts(self, tmp_path: Path) -> None:
+        own = Path("/proc/self/oom_score_adj").read_text().strip()
+
+        shell = _run(tmp_path, "cat /proc/$$/oom_score_adj")
+        child = _run(tmp_path, "cat /proc/self/oom_score_adj")
+        grandchild = _run(tmp_path, "sh -c 'sh -c \"cat /proc/self/oom_score_adj\"'")
+
+        assert shell.stdout == child.stdout == grandchild.stdout == "1000\n"
+        assert Path("/proc/self/oom_score_adj").read_text().strip() == own
+
+    def test_a_program_run_directly_and_what_it_starts_later(self, tmp_path: Path) -> None:
+        proc = run_project_command(
+            ["sh", "-c", "sleep 0.3; cat /proc/$$/oom_score_adj; "
+             "sh -c 'cat /proc/self/oom_score_adj'"],
+            cwd=str(tmp_path), env=dict(_ENV), capture_output=True, text=True, timeout=30,
+        )
+        assert proc.stdout == "1000\n1000\n"
+
+    def test_the_shell_still_leads_the_session(self, tmp_path: Path) -> None:
+        proc = _run(tmp_path, "awk '{print $6}' /proc/$$/stat; echo $$")
+        session, shell = proc.stdout.split()
+        assert session == shell
+
+
+# ---------------------------------------------------------------------------
+# Still subprocess.run's shape
+# ---------------------------------------------------------------------------
+
+
+class TestStillShapedLikeSubprocessRun:
+    @pytest.mark.parametrize(
+        ("args", "kwargs"),
+        [
+            ("echo hi; echo err >&2; exit 3", {"shell": True, "capture_output": True, "text": True}),
+            ("printf 'a\\r\\nb\\rc'", {"shell": True, "capture_output": True, "text": True}),
+            ("printf 'a\\r\\nb'", {"shell": True, "capture_output": True}),
+            (["printf", "%s|", "one", "two words"], {"capture_output": True, "text": True}),
+            (["cat"], {"input": "piped in\n", "capture_output": True, "text": True}),
+            (["cat"], {"input": b"bytes in", "capture_output": True}),
+            ("printf '[%s]' \"$0\" \"$1\"", {"shell": True, "capture_output": True, "text": True}),
+            (
+                ["printf '[%s]' \"$0\" \"$1\"", "zero", "one"],
+                {"shell": True, "capture_output": True, "text": True},
+            ),
+            ("exit 4", {"shell": True}),
+            (["true"], {"stdout": subprocess.DEVNULL}),
+        ],
+    )
+    def test_the_same_result(self, tmp_path: Path, args, kwargs) -> None:
+        ours = run_project_command(args, cwd=str(tmp_path), env=dict(_ENV), timeout=30, **kwargs)
+        theirs = subprocess.run(args, cwd=str(tmp_path), env=dict(_ENV), timeout=30, **kwargs)
+
+        assert (ours.args, ours.returncode, ours.stdout, ours.stderr) == (
+            theirs.args, theirs.returncode, theirs.stdout, theirs.stderr,
+        )
+
+    def test_check_raises_as_subprocess_run_does(self, tmp_path: Path) -> None:
+        with pytest.raises(subprocess.CalledProcessError) as caught:
+            run_project_command(
+                "echo out; exit 5", shell=True, cwd=str(tmp_path), env=dict(_ENV),
+                capture_output=True, text=True, check=True, timeout=30,
+            )
+        assert (caught.value.returncode, caught.value.stdout) == (5, "out\n")
+
+    def test_a_program_that_does_not_exist_cannot_start(self, tmp_path: Path) -> None:
+        with pytest.raises(FileNotFoundError):
+            run_project_command(
+                ["no-such-program-anywhere"], cwd=str(tmp_path), env=dict(_ENV), timeout=30,
+            )
+        with pytest.raises(FileNotFoundError):
+            run_in_own_group(
+                ["no-such-program-anywhere"], cwd=tmp_path, env=dict(_ENV), timeout=30,
+            )
+
+    def test_each_command_has_its_own_marker_and_the_env_given_is_unchanged(
+        self, tmp_path: Path
+    ) -> None:
+        env = dict(_ENV)
+        first = _run(tmp_path, f'printf "%s" "${COMMAND_MARKER_NAME}"', env=env)
+        second = _run(tmp_path, f'printf "%s" "${COMMAND_MARKER_NAME}"', env=env)
+        assert len(first.stdout) == 32 and len(second.stdout) == 32
+        assert first.stdout != second.stdout
+        assert env == _ENV
+
+
+# ---------------------------------------------------------------------------
+# CI=true unless the project says otherwise
+# ---------------------------------------------------------------------------
+
+
+def _work_folder(tmp_path: Path) -> Path:
+    folder = tmp_path / "repo"
+    folder.mkdir()
+    subprocess.run(["git", "init", "-q", str(folder)], check=True, env=dict(_ENV, HOME=str(tmp_path)))
+    return folder
+
+
+class TestCi:
+    def test_a_project_command_has_ci_true(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("CI", "0")  # not copied: the project does not declare it
+        env = pce.project_command_environment(_work_folder(tmp_path), None)
+        assert env["CI"] == "true"
+
+    def test_a_project_that_declares_ci_keeps_its_own_value(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("CI", "0")
+        env = pce.project_command_environment(
+            _work_folder(tmp_path), LaunchDeclaration(settings=("CI",), scratch=())
+        )
+        assert env["CI"] == "0"
+
+    def test_a_declared_ci_not_set_here_falls_back_to_true(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("CI", raising=False)
+        env = pce.project_command_environment(
+            _work_folder(tmp_path), LaunchDeclaration(settings=("CI",), scratch=())
+        )
+        assert env["CI"] == "true"
+
+    def test_a_value_the_project_wrote_wins(self, tmp_path: Path) -> None:
+        env = pce.project_command_environment(
+            _work_folder(tmp_path), None, overlay={"CI": "false"}
+        )
+        assert env["CI"] == "false"

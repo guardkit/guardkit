@@ -17,8 +17,9 @@ from an empty dictionary, in five steps, each working on the one before:
    folder's scratch folder (``paths.prepare_builder_scratch_dir``, outside
    the project); ``LANG``, ``LC_ALL`` and ``LC_*`` when set; ``HTTP_PROXY``,
    ``HTTPS_PROXY``, ``NO_PROXY`` and ``ALL_PROXY`` in upper and lower case
-   when set; the declared ``launch.settings`` names when set; and the
-   declared ``launch.scratch`` folders.
+   when set; the declared ``launch.settings`` names when set; the
+   declared ``launch.scratch`` folders; and ``CI=true`` unless a declared
+   setting already set ``CI`` (19 October 2026).
 2. **Additions:** values the factory itself sets for this one command. A
    credential-shaped name, or ``GUARDKIT_RUN_OWNER``, is a programming error
    and raises ``ValueError``.
@@ -254,6 +255,12 @@ def project_command_environment(
     # taken for ``env=None``).
     result = apply_launch_environment(env, declaration, Path(work_folder))
     composed = dict(result if result is not None else env)
+    # 19 October 2026 (a factory build): the common "no one is at the
+    # keyboard" signal, so a tool that would wait for a person or keep
+    # watching for changes runs once and finishes. After the declared
+    # settings, so a project that declares ``CI`` (set where the factory
+    # runs) keeps its own value; an overlay may still set it (step 3).
+    composed.setdefault("CI", "true")
     _say_declared_not_set(declaration)
 
     # Steps 2 to 5.
