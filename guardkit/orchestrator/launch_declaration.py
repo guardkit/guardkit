@@ -15,7 +15,7 @@ only when the launching process has one (``forge.launch_environment``). The
 builder's and verifier's shell does NOT inherit this process's environment
 (guardkitfactory ``backend_config``: ``inherit_env=False``, ``PATH``, and,
 since 19 October 2026, ``HOME`` and ``TMPDIR`` set to the shell's own private
-folders ``<scratch folder>/toolchain/SHELL-HOME`` and ``SHELL-TMPDIR``, apart
+folders ``<scratch folder>/toolchain/<role>-SHELL-HOME`` and ``-SHELL-TMPDIR``, apart
 from the ``toolchain/HOME`` and ``TMPDIR`` GuardKit's project commands use),
 so the same names are carried into it from here, again only when set.
 

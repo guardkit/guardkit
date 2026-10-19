@@ -178,7 +178,7 @@ CHECKPOINT_EXCLUDE_PATHSPECS: Tuple[str, ...] = (
     # knows nothing about them, which is exactly the dependency the junk law
     # removes. Since 19 October 2026 the shell's HOME and TMPDIR are private
     # folders outside the worktree (guardkitfactory ``backend_config``:
-    # ``<scratch>/toolchain/SHELL-HOME`` and ``SHELL-TMPDIR``), so these
+    # ``<scratch>/toolchain/<role>-SHELL-HOME`` and ``-SHELL-TMPDIR``), so these
     # caches no longer land here; this exclude, like the HOME-driven ones
     # above, stays as a safety net for a tool that still writes into the
     # worktree.
