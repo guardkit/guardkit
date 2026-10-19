@@ -5709,6 +5709,7 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         event_role: Optional[str] = None,
         event_agent_name: Optional[str] = None,
         tool_counter: Optional[ToolCallCounter] = None,
+        shell_role: Optional[str] = None,
     ) -> Optional[Tuple[None, List[HarnessEvent]]]:
         """Low-level SDK invocation with role-based permissions.
 
@@ -5787,6 +5788,12 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                 native tool hook, alongside the debug copy when that is on;
                 on the SDK harness it counts the stream's tool events. It
                 keeps tool names only. ``None`` (the default) changes nothing.
+            shell_role: 19 October 2026. The shell's role when it is not the
+                one ``agent_type`` implies (``select_harness``'s
+                ``shell_role``): :func:`run_specialist` passes
+                ``"specialist"`` so a specialist running with the Player's or
+                the Coach's permissions gets the specialists' own home and
+                temporary folders. ``None`` (the default) changes nothing.
 
         Returns:
             ``None`` by default. ``(None, harness_events)`` when
@@ -5955,6 +5962,8 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                 # The task's pinned `launch:` settings and scratch folders for
                 # the shell (LangGraph only). None without a task or a block.
                 launch_declaration=load_launch_snapshot(task_id, self.worktree_path),
+                # 19 October 2026: only when a caller names one (a specialist).
+                **({"shell_role": shell_role} if shell_role is not None else {}),
             )
 
             if tool_counter is not None:
