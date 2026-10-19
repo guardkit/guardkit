@@ -14,7 +14,8 @@ Test Coverage:
 
 Architecture:
     - Uses real file fixtures and temporary directories
-    - Mocks subprocess calls to avoid actual task-work execution
+    - Stands in for the implement step (``_invoke_task_work_implement``), so
+      no test here can start a model
     - Tests state transitions via TaskStateBridge
     - Verifies feedback file creation and format
 
@@ -47,6 +48,7 @@ from guardkit.orchestrator.autobuild import (
 )
 from guardkit.orchestrator.exceptions import (
     SDKTimeoutError,
+    TaskWorkResult,
     TaskStateError,
     PlanNotFoundError,
 )
@@ -263,63 +265,75 @@ This is a valid implementation plan with enough content.
 
 
 @pytest.mark.integration
+def _implement_returns(invoker, result=None, *, side_effect=None):
+    """Stand in for the implement step ``invoke_player`` delegates to.
+
+    These tests were written for a ``guardkit task-work --implement-only``
+    subprocess, patched through ``asyncio.create_subprocess_exec``. GuardKit
+    never spawned one: the AutoBuild commit that added this file
+    (b7f0472ac) already delegated through the SDK, and since 15 February
+    2026 (42a07adda, TASK-POF-004; 28534d78b, TASK-ACO-002) the Player prompt
+    is an inline protocol built by ``_invoke_task_work_implement``. That
+    method is the seam ``invoke_player`` hands over to, so the tests stand in
+    for it here. Nothing below can start a model: the step is replaced.
+    """
+    return patch.object(
+        invoker,
+        "_invoke_task_work_implement",
+        AsyncMock(return_value=result, side_effect=side_effect),
+    )
+
+
 class TestTaskWorkDelegation:
     """Integration tests for task-work delegation in AutoBuild."""
 
     @pytest.mark.asyncio
     async def test_invoke_player_calls_task_work(self, mock_worktree):
-        """Verify invoke_player delegates to task-work --implement-only."""
+        """invoke_player hands the turn to the implement step and returns its report."""
         invoker = AgentInvoker(
             worktree_path=mock_worktree,
             development_mode="tdd",
             use_task_work_delegation=True,
         )
 
-        with patch("asyncio.create_subprocess_exec") as mock_exec:
-            # Configure mock process
-            mock_proc = AsyncMock()
-            mock_proc.returncode = 0
-            mock_proc.communicate = AsyncMock(return_value=(
-                b'{"success": true, "tests_passed": true}',
-                b''
-            ))
-            mock_exec.return_value = mock_proc
+        # Create player report file (task-work would create this)
+        report_dir = mock_worktree / ".guardkit" / "autobuild" / "TASK-TEST-001"
+        report_file = report_dir / "player_turn_1.json"
+        report_file.write_text(json.dumps({
+            "task_id": "TASK-TEST-001",
+            "turn": 1,
+            "files_modified": [],
+            "files_created": ["src/feature.py"],
+            "tests_written": ["tests/test_feature.py"],
+            "tests_run": True,
+            "tests_passed": True,
+            "implementation_notes": "Implemented feature X",
+            "concerns": [],
+            "requirements_addressed": ["Feature X"],
+            "requirements_remaining": [],
+        }), encoding='utf-8')
 
-            # Create player report file (task-work would create this)
-            report_dir = mock_worktree / ".guardkit" / "autobuild" / "TASK-TEST-001"
-            report_file = report_dir / "player_turn_1.json"
-            report_file.write_text(json.dumps({
-                "task_id": "TASK-TEST-001",
-                "turn": 1,
-                "files_modified": [],
-                "files_created": ["src/feature.py"],
-                "tests_written": ["tests/test_feature.py"],
-                "tests_run": True,
-                "tests_passed": True,
-                "implementation_notes": "Implemented feature X",
-                "concerns": [],
-                "requirements_addressed": ["Feature X"],
-                "requirements_remaining": [],
-            }), encoding='utf-8')
-
+        with _implement_returns(
+            invoker, TaskWorkResult(success=True, output={"tests_passed": 3})
+        ) as implement:
             result = await invoker.invoke_player(
                 task_id="TASK-TEST-001",
                 turn=1,
                 requirements="Implement feature X",
             )
 
-            # Verify task-work was called with correct args
-            mock_exec.assert_called_once()
-            call_args = mock_exec.call_args[0]
-            assert "guardkit" in call_args
-            assert "task-work" in call_args
-            assert "--implement-only" in call_args
-            assert "--mode=tdd" in call_args
+        # The turn was delegated once, for this task, in the invoker's mode
+        implement.assert_awaited_once()
+        kwargs = implement.await_args.kwargs
+        assert kwargs["task_id"] == "TASK-TEST-001"
+        assert kwargs["mode"] == "tdd"
+        assert kwargs["turn"] == 1
+        assert kwargs["requirements"] == "Implement feature X"
 
-            # Verify result
-            assert result.success is True
-            assert result.agent_type == "player"
-            assert result.report["tests_passed"] is True
+        # Verify result
+        assert result.success is True
+        assert result.agent_type == "player"
+        assert result.report["tests_passed"] is True
 
     @pytest.mark.asyncio
     async def test_invoke_player_with_feedback(self, mock_worktree):
@@ -351,15 +365,7 @@ class TestTaskWorkDelegation:
             "rationale": "Need improvements before approval",
         }
 
-        with patch("asyncio.create_subprocess_exec") as mock_exec:
-            mock_proc = AsyncMock()
-            mock_proc.returncode = 0
-            mock_proc.communicate = AsyncMock(return_value=(
-                b'{"success": true}',
-                b''
-            ))
-            mock_exec.return_value = mock_proc
-
+        with _implement_returns(invoker, TaskWorkResult(success=True, output={})):
             # Create player report for turn 2
             report_dir = mock_worktree / ".guardkit" / "autobuild" / "TASK-TEST-001"
             report_file = report_dir / "player_turn_2.json"
@@ -543,12 +549,7 @@ status: in_progress
         )
 
         with patch.object(invoker, "_ensure_design_approved_state") as mock_ensure:
-            with patch("asyncio.create_subprocess_exec") as mock_exec:
-                mock_proc = AsyncMock()
-                mock_proc.returncode = 0
-                mock_proc.communicate = AsyncMock(return_value=(b'{}', b''))
-                mock_exec.return_value = mock_proc
-
+            with _implement_returns(invoker, TaskWorkResult(success=True, output={})):
                 # Create player report
                 report_dir = mock_worktree / ".guardkit" / "autobuild" / "TASK-TEST-001"
                 report_file = report_dir / "player_turn_1.json"
@@ -588,47 +589,24 @@ class TestModeParameter:
     @pytest.mark.asyncio
     @pytest.mark.parametrize("mode", ["tdd", "standard", "bdd"])
     async def test_mode_passed_to_task_work(self, mock_worktree, mode):
-        """Verify mode is passed correctly to task-work."""
+        """The invoker's development mode reaches the implement step."""
         invoker = AgentInvoker(
             worktree_path=mock_worktree,
             development_mode=mode,
             use_task_work_delegation=True,
         )
 
-        with patch("asyncio.create_subprocess_exec") as mock_exec:
-            mock_proc = AsyncMock()
-            mock_proc.returncode = 0
-            mock_proc.communicate = AsyncMock(return_value=(
-                b'{"success": true}',
-                b''
-            ))
-            mock_exec.return_value = mock_proc
-
-            # Create player report
-            report_dir = mock_worktree / ".guardkit" / "autobuild" / "TASK-TEST-001"
-            report_file = report_dir / "player_turn_1.json"
-            report_file.write_text(json.dumps({
-                "task_id": "TASK-TEST-001",
-                "turn": 1,
-                "files_modified": [],
-                "files_created": [],
-                "tests_written": [],
-                "tests_run": True,
-                "tests_passed": True,
-                "implementation_notes": "",
-                "concerns": [],
-                "requirements_addressed": [],
-                "requirements_remaining": [],
-            }), encoding='utf-8')
-
+        with _implement_returns(
+            invoker, TaskWorkResult(success=False, output={}, error="stop here")
+        ) as implement:
             await invoker.invoke_player(
                 task_id="TASK-TEST-001",
                 turn=1,
                 requirements="Test",
             )
 
-            call_args = mock_exec.call_args[0]
-            assert f"--mode={mode}" in call_args
+        implement.assert_awaited_once()
+        assert implement.await_args.kwargs["mode"] == mode
 
     @pytest.mark.asyncio
     async def test_mode_override_in_invoke_player(self, mock_worktree):
@@ -639,29 +617,9 @@ class TestModeParameter:
             use_task_work_delegation=True,
         )
 
-        with patch("asyncio.create_subprocess_exec") as mock_exec:
-            mock_proc = AsyncMock()
-            mock_proc.returncode = 0
-            mock_proc.communicate = AsyncMock(return_value=(b'{}', b''))
-            mock_exec.return_value = mock_proc
-
-            # Create player report
-            report_dir = mock_worktree / ".guardkit" / "autobuild" / "TASK-TEST-001"
-            report_file = report_dir / "player_turn_1.json"
-            report_file.write_text(json.dumps({
-                "task_id": "TASK-TEST-001",
-                "turn": 1,
-                "files_modified": [],
-                "files_created": [],
-                "tests_written": [],
-                "tests_run": True,
-                "tests_passed": True,
-                "implementation_notes": "",
-                "concerns": [],
-                "requirements_addressed": [],
-                "requirements_remaining": [],
-            }), encoding='utf-8')
-
+        with _implement_returns(
+            invoker, TaskWorkResult(success=False, output={}, error="stop here")
+        ) as implement:
             await invoker.invoke_player(
                 task_id="TASK-TEST-001",
                 turn=1,
@@ -669,8 +627,8 @@ class TestModeParameter:
                 mode="bdd",  # Override to bdd
             )
 
-            call_args = mock_exec.call_args[0]
-            assert "--mode=bdd" in call_args
+        implement.assert_awaited_once()
+        assert implement.await_args.kwargs["mode"] == "bdd"
 
     def test_cli_mode_option(self, runner):
         """Test CLI accepts --mode option."""
@@ -695,29 +653,25 @@ class TestErrorHandling:
 
     @pytest.mark.asyncio
     async def test_task_work_timeout_handled(self, mock_worktree):
-        """Verify timeout is handled gracefully."""
+        """A timed-out implement step becomes a failed Player turn naming the timeout."""
         invoker = AgentInvoker(
             worktree_path=mock_worktree,
             sdk_timeout_seconds=1,  # Short timeout
             use_task_work_delegation=True,
         )
 
-        with patch("asyncio.create_subprocess_exec") as mock_exec:
-            mock_proc = AsyncMock()
-            # Simulate timeout on communicate
-            mock_proc.communicate = AsyncMock(side_effect=asyncio.TimeoutError())
-            mock_proc.kill = Mock()
-            mock_proc.wait = AsyncMock()
-            mock_exec.return_value = mock_proc
-
+        with _implement_returns(
+            invoker, side_effect=SDKTimeoutError("implement step ran past 1s")
+        ):
             result = await invoker.invoke_player(
                 task_id="TASK-TEST-001",
                 turn=1,
                 requirements="Test",
             )
 
-            assert result.success is False
-            assert "timeout" in result.error.lower()
+        assert result.success is False
+        assert "timeout" in result.error.lower()
+        assert "implement step ran past 1s" in result.error
 
     @pytest.mark.asyncio
     async def test_task_work_failure_captured(self, mock_worktree):
@@ -727,75 +681,26 @@ class TestErrorHandling:
             use_task_work_delegation=True,
         )
 
-        with patch("asyncio.create_subprocess_exec") as mock_exec:
-            mock_proc = AsyncMock()
-            mock_proc.returncode = 1  # Non-zero exit code
-            mock_proc.communicate = AsyncMock(return_value=(
-                b'',
-                b'Error: Task not found'
-            ))
-            mock_exec.return_value = mock_proc
-
+        with _implement_returns(
+            invoker,
+            TaskWorkResult(
+                success=False, output={}, error="Error: Task not found", exit_code=1
+            ),
+        ):
             result = await invoker.invoke_player(
                 task_id="TASK-TEST-001",
                 turn=1,
                 requirements="Test",
             )
 
-            assert result.success is False
-            assert "Task not found" in result.error
-
-    @pytest.mark.asyncio
-    async def test_guardkit_not_found_handled(self, mock_worktree):
-        """Verify missing guardkit command is handled gracefully."""
-        invoker = AgentInvoker(
-            worktree_path=mock_worktree,
-            use_task_work_delegation=True,
-        )
-
-        with patch("asyncio.create_subprocess_exec") as mock_exec:
-            mock_exec.side_effect = FileNotFoundError("guardkit not found")
-
-            result = await invoker.invoke_player(
-                task_id="TASK-TEST-001",
-                turn=1,
-                requirements="Test",
-            )
-
-            assert result.success is False
-            assert "guardkit" in result.error.lower() or "not found" in result.error.lower()
-
-    @pytest.mark.asyncio
-    async def test_player_report_not_found(self, mock_worktree):
-        """Verify missing player report is handled."""
-        invoker = AgentInvoker(
-            worktree_path=mock_worktree,
-            use_task_work_delegation=True,
-        )
-
-        with patch("asyncio.create_subprocess_exec") as mock_exec:
-            mock_proc = AsyncMock()
-            mock_proc.returncode = 0
-            mock_proc.communicate = AsyncMock(return_value=(b'{}', b''))
-            mock_exec.return_value = mock_proc
-
-            # DON'T create the player report file
-            # This should cause PlayerReportNotFoundError
-
-            result = await invoker.invoke_player(
-                task_id="TASK-TEST-001",
-                turn=1,
-                requirements="Test",
-            )
-
-            assert result.success is False
-            assert "report" in result.error.lower() or "not found" in result.error.lower()
+        assert result.success is False
+        assert result.report == {}
+        assert "Task not found" in result.error
 
 
 # ============================================================================
 # TestFullDelegationFlow - End-to-End Integration
 # ============================================================================
-
 
 @pytest.mark.integration
 class TestFullDelegationFlow:
