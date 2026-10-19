@@ -273,7 +273,7 @@ def test_orchestrator_accepts_model_parameter(temp_repo, mock_worktree_manager):
 def test_orchestrator_model_defaults_to_none(temp_repo, mock_worktree_manager):
     """Test FeatureOrchestrator model defaults to None when unspecified.
 
-    The CLI default ('claude-sonnet-4-5-20250929') is supplied by Click in
+    The CLI default ('claude-opus-5-5') is supplied by Click in
     `guardkit.cli.autobuild.feature`, not by the orchestrator's __init__,
     so a direct construction without a model is permitted (matches the
     AutoBuildOrchestrator contract — see guardkit/orchestrator/autobuild.py:920).

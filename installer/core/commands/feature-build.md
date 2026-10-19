@@ -28,7 +28,7 @@ Supports two modes:
 | `--sdk-timeout S` | Claude SDK operation timeout in seconds | 300 |
 | `--resume` | Resume from last saved state | false |
 | `--verbose` | Show detailed turn-by-turn output | false |
-| `--model MODEL` | Claude model to use | claude-sonnet-4-5-20250929 |
+| `--model MODEL` | Claude model to use | claude-opus-5-5 |
 | `--parallel N` | Max parallel tasks (feature mode only) | 1 |
 | `--stop-on-failure` | Stop feature execution on first task failure | true |
 | `--task TASK-ID` | Run specific task within feature (feature mode) | - |
@@ -584,8 +584,8 @@ autobuild:
 | `enabled` | Enable AutoBuild for this task | false |
 | `max_turns` | Maximum iterations | 5 |
 | `base_branch` | Branch to create worktree from | main |
-| `player_model` | Model for Player agent | claude-sonnet-4-5-20250929 |
-| `coach_model` | Model for Coach agent | claude-sonnet-4-5-20250929 |
+| `player_model` | Model for Player agent | the `--model` default (claude-opus-5-5) |
+| `coach_model` | Model for Coach agent | the Player's model, unless `--coach-model` is given |
 | `sdk_timeout` | SDK timeout in seconds | 600 |
 
 ## State Persistence
