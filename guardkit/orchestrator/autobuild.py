@@ -122,7 +122,10 @@ from guardkit.orchestrator.quality_gates import (
     CoachValidator,
     CoachValidationResult,
 )
-from guardkit.orchestrator.quality_gates.coach_evidence import CoachEvidenceBundle
+from guardkit.orchestrator.quality_gates.coach_evidence import (
+    INVALID_TASK_TYPE_CAUSE,
+    CoachEvidenceBundle,
+)
 
 # TASK-AB-COACHSUBPROC01: env > config > default (subprocess) resolution for
 # the Coach's independent test-execution mode.
@@ -10424,6 +10427,35 @@ class AutoBuildOrchestrator:
                 start_time=start_time,
             )
 
+        # TASK-ABFIX-003 fast-exit, restored on the primary path (19 October
+        # 2026). An unrecognised task_type is a fault in the task file: there
+        # is no quality-gate profile to judge against and no Player turn can
+        # fix it. The legacy validate() path ends the turn as a configuration
+        # error; when TASK-HMIG-008R made the LLM Coach primary,
+        # gather_evidence recorded the cause but nothing acted on it, so the
+        # LLM Coach was asked to judge the turn and the Player retried until
+        # the turn budget ran out. This does not call validate(); it reads the
+        # bundle's own cause, as the other deterministic gates below do.
+        invalid_task_type_prefix = f"{INVALID_TASK_TYPE_CAUSE}: "
+        if (
+            isinstance(evidence_bundle, CoachEvidenceBundle)
+            and evidence_bundle.gathering_status == "partial_exception"
+            and (evidence_bundle.gathering_error or "").startswith(
+                invalid_task_type_prefix
+            )
+        ):
+            return self._emit_synthetic_coach_feedback(
+                task_id=task_id,
+                turn=turn,
+                worktree=worktree,
+                rationale=evidence_bundle.gathering_error[
+                    len(invalid_task_type_prefix):
+                ],
+                start_time=start_time,
+                category=INVALID_TASK_TYPE_CAUSE,
+                is_configuration_error=True,
+            )
+
         if oracle_required and not isinstance(evidence_bundle, CoachEvidenceBundle):
             return self._emit_synthetic_coach_feedback(
                 task_id=task_id,
@@ -11262,6 +11294,10 @@ class AutoBuildOrchestrator:
         # ``[{category, unmet_ids}]``. Only ``_direct_mode_evidence_gate``
         # passes it; every other caller's report stays byte-identical.
         gate_blockers: Optional[List[Dict[str, Any]]] = None,
+        # 19 October 2026: True only for the primary path's invalid-task-type
+        # fast-exit (TASK-ABFIX-003), so the loop stops instead of retrying.
+        # Every other caller's report stays byte-identical.
+        is_configuration_error: bool = False,
     ) -> AgentInvocationResult:
         """Write a synthetic feedback coach_turn_N.json and return its result.
 
@@ -11346,7 +11382,7 @@ class AutoBuildOrchestrator:
             "rationale": rationale,
             "context_used": None,
             "approved_without_independent_tests": False,
-            "is_configuration_error": False,
+            "is_configuration_error": is_configuration_error,
             "environment_conditional_approval": False,
             "honesty_verification": None,
             "coach_primary_synthetic_feedback": True,

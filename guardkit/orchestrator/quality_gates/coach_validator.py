@@ -97,6 +97,7 @@ from guardkit.orchestrator.toolchain_declaration import (
     resolve_component_cwd,
 )
 from guardkit.orchestrator.quality_gates.coach_evidence import (
+    INVALID_TASK_TYPE_CAUSE,
     CoachEvidenceBundle,
     IndependentTestClassification,
     RuntimeParityResult,
@@ -3341,7 +3342,7 @@ class CoachValidator:
             return CoachEvidenceBundle(
                 honesty=default_honest,
                 gathering_status="partial_exception",
-                gathering_error=f"invalid_task_type: {exc}",
+                gathering_error=f"{INVALID_TASK_TYPE_CAUSE}: {exc}",
             )
 
         try:

@@ -199,8 +199,12 @@ def _make_approve_coach_result(
 class TestConfigErrorFastExit:
     """Integration tests for configuration error detection and fast-exit."""
 
+    @pytest.mark.parametrize(
+        "coach_legacy", [None, "1"], ids=["llm-coach-primary", "legacy-validator"]
+    )
     def test_invalid_task_type_causes_immediate_exit(
         self, tmp_path, mock_worktree, mock_progress_display, mock_worktree_manager,
+        monkeypatch, coach_legacy,
     ):
         """
         Verify that when Coach detects an invalid task_type, the loop exits
@@ -208,13 +212,20 @@ class TestConfigErrorFastExit:
 
         This prevents the 3-turn stall where Player retries futilely.
 
-        The CoachValidator catches an invalid task_type during
-        _resolve_task_type and returns a configuration error result directly,
-        without needing the SDK fallback path.
+        Both Coach paths are pinned. Under GUARDKIT_COACH_LEGACY=1,
+        CoachValidator.validate() returns the configuration error directly.
+        On the default path (TASK-HMIG-008R, LLM Coach primary),
+        gather_evidence records the invalid type and _invoke_coach_primary
+        ends the turn before the LLM Coach is asked; until 19 October 2026
+        that path asked the LLM Coach anyway and the fast-exit never fired.
         """
+        if coach_legacy is None:
+            monkeypatch.delenv("GUARDKIT_COACH_LEGACY", raising=False)
+        else:
+            monkeypatch.setenv("GUARDKIT_COACH_LEGACY", coach_legacy)
         mock_invoker = Mock()
         mock_invoker.invoke_player = AsyncMock(return_value=_make_player_result())
-        mock_invoker.invoke_coach = AsyncMock()  # Fallback, should not be reached
+        mock_invoker.invoke_coach = AsyncMock()  # must not be reached
         mock_invoker.sdk_timeout_seconds = DEFAULT_SDK_TIMEOUT
         mock_invoker._sdk_timeout_is_override = False
         # The loop budgets against a real number and awaits the specialist
@@ -248,6 +259,14 @@ class TestConfigErrorFastExit:
         assert turn_history[0].is_configuration_error is True
         # Player invoked once
         assert mock_invoker.invoke_player.call_count == 1
+        # The LLM Coach is not asked to judge a turn with no gate profile
+        mock_invoker.invoke_coach.assert_not_called()
+        config_issues = [
+            i for i in turn_history[0].coach_result.report["issues"]
+            if i.get("category") == "invalid_task_type"
+        ]
+        assert len(config_issues) == 1
+        assert _INVALID_TASK_TYPE in config_issues[0]["description"]
 
     def test_config_error_propagates_to_orchestration_result(
         self, tmp_path, mock_worktree, mock_progress_display, mock_worktree_manager,
@@ -348,14 +367,16 @@ class TestConfigErrorFastExit:
 
     def test_config_error_does_not_create_pollution_checkpoint(
         self, tmp_path, mock_worktree, mock_progress_display, mock_worktree_manager,
+        monkeypatch,
     ):
         """
         Verify that configuration errors don't create checkpoints
         or trigger pollution detection (since tests were never run).
         """
+        monkeypatch.delenv("GUARDKIT_COACH_LEGACY", raising=False)
         mock_invoker = Mock()
         mock_invoker.invoke_player = AsyncMock(return_value=_make_player_result())
-        mock_invoker.invoke_coach = AsyncMock()  # Should not be reached (CoachValidator handles it)
+        mock_invoker.invoke_coach = AsyncMock()  # must not be reached
         mock_invoker.sdk_timeout_seconds = DEFAULT_SDK_TIMEOUT
         mock_invoker._sdk_timeout_is_override = False
         # The loop budgets against a real number and awaits the specialist
@@ -390,6 +411,7 @@ class TestConfigErrorFastExit:
         )
 
         assert decision == "configuration_error"
+        mock_invoker.invoke_coach.assert_not_called()
         # Checkpoint should NOT have been created for config error turn
         mock_checkpoint_mgr.create_checkpoint.assert_not_called()
         # Pollution detection should NOT have been triggered
