@@ -565,7 +565,7 @@ guardkit autobuild task TASK-XXX [OPTIONS]
 | Option | Default | Description |
 |--------|---------|-------------|
 | `--max-turns N` | 5 | Maximum adversarial turns |
-| `--model MODEL` | claude-sonnet-4-5-20250929 | Claude model to use |
+| `--model MODEL` | claude-opus-5-5 | Claude model to use (sdk harness; `--model claude-sonnet-5-5` for Sonnet) |
 | `--verbose` | false | Show detailed turn-by-turn output |
 | `--resume` | false | Resume from last saved state |
 | `--mode MODE` | tdd | Development mode: standard, tdd, or bdd |

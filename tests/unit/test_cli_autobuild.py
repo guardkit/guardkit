@@ -1445,7 +1445,7 @@ def test_feature_command_model_default_matches_task_subcommand(
 
     mock_orchestrator_class.assert_called_once()
     call_kwargs = mock_orchestrator_class.call_args[1]
-    assert call_kwargs["model"] == "claude-sonnet-4-5-20250929"
+    assert call_kwargs["model"] == "claude-opus-5-5"
 
 
 # ============================================================================

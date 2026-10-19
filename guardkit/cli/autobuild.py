@@ -252,7 +252,7 @@ def autobuild():
 )
 @click.option(
     "--model",
-    default="claude-sonnet-4-5-20250929",
+    default="claude-opus-5-5",
     help="Claude model to use",
     show_default=True,
 )
@@ -433,7 +433,7 @@ def task(
         guardkit autobuild task TASK-AB-001
         guardkit autobuild task TASK-AB-001 --mode=standard
         guardkit autobuild task TASK-AB-001 --max-turns 10 --verbose
-        guardkit autobuild task TASK-AB-001 --model claude-opus-4-5-20251101
+        guardkit autobuild task TASK-AB-001 --model claude-sonnet-5-5
         guardkit autobuild task TASK-AB-001 --resume
 
     \b
@@ -743,7 +743,7 @@ def status(ctx, task_id: str, verbose: bool):
 )
 @click.option(
     "--model",
-    default="claude-sonnet-4-5-20250929",
+    default="claude-opus-5-5",
     help="Claude model to use",
     show_default=True,
 )
