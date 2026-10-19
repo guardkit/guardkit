@@ -16,6 +16,7 @@ from pathlib import Path
 import tempfile
 import shutil
 import sys
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "installer" / "core" / "commands"))
 
@@ -23,6 +24,22 @@ from lib.spec_drift_detector import (
     SpecDriftDetector,
     format_drift_report
 )
+
+
+@pytest.fixture(autouse=True)
+def _require_kit_installed():
+    """Run this workflow as if require-kit were installed.
+
+    Since TASK-012 (d85f17ae4) the detector degrades gracefully when the
+    require-kit marker is missing from ~/.agentecflow: it loads no
+    requirements, reports 100% implemented and prints an install hint in
+    place of the coverage section. Everything in this file exercises the
+    requirements-traceability path, so without this patch the result
+    depended on whether the machine running the tests had require-kit
+    installed. The unit tests were given the same patch in c4d01fcf2.
+    """
+    with patch('lib.spec_drift_detector.supports_requirements', return_value=True):
+        yield
 
 
 @pytest.fixture
