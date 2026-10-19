@@ -439,6 +439,22 @@ absence of a measurement must not be readable as absence of work.
 """
 
 
+_APPLIED_SDK_TIMEOUT_RE = re.compile(r"SDK timeout after (\d+)s")
+
+
+def _applied_sdk_timeout_seconds(error: Optional[str]) -> Optional[int]:
+    """The limit a timed-out invocation ran under, read from its own error.
+
+    The invoker writes ``"SDK timeout after <N>s: ..."`` with the limit it
+    applied after scaling the base for the task. ``None`` when the error does
+    not say.
+    """
+    if not error:
+        return None
+    match = _APPLIED_SDK_TIMEOUT_RE.search(str(error))
+    return int(match.group(1)) if match else None
+
+
 def _worktree_change_snapshot(
     worktree_path: Path,
     timeout_s: int = WORKTREE_CHANGE_PROBE_TIMEOUT_S,
@@ -5020,8 +5036,26 @@ class AutoBuildOrchestrator:
                 ):
                     elapsed = int(_time.monotonic() - loop_start)
                     remaining = max(0, self._task_timeout - elapsed)
+                    # The invoker scales the base limit per task (mode and
+                    # complexity) and states the limit it applied in the
+                    # error. Build FEAT-D31F's turn ran under 4,860 s and
+                    # this line said "sdk_timeout=1800s", the base
+                    # (19 October 2026).
+                    applied = _applied_sdk_timeout_seconds(
+                        turn_record.player_result.error
+                    )
+                    if applied is not None:
+                        limit_said = (
+                            f"sdk_timeout={applied}s expired (base "
+                            f"{self.sdk_timeout}s, scaled for this task)"
+                        )
+                    else:
+                        limit_said = (
+                            f"SDK timeout expired (base sdk_timeout="
+                            f"{self.sdk_timeout}s; applied limit not recorded)"
+                        )
                     logger.info(
-                        f"[{task_id}] TIMEOUT (SDK-level): sdk_timeout={self.sdk_timeout}s expired "
+                        f"[{task_id}] TIMEOUT (SDK-level): {limit_said} "
                         f"during turn {turn}. Feature task had {remaining}s remaining of its "
                         f"{self._task_timeout}s budget."
                     )

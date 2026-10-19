@@ -18,7 +18,7 @@ import re
 import subprocess
 import sys
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
 
 if TYPE_CHECKING:
@@ -491,8 +491,9 @@ class CoachVerifier:
         When a claimed path is missing on disk and identity-resolution is wired
         (``task_id`` and ``state_bridge`` both supplied at construction time),
         consult :py:meth:`TaskStateBridge.canonical_path_for` once per call.
-        If that returns a path that exists on disk, suppress the discrepancy
-        and append a :py:class:`ResolvedPath` audit record to
+        If that returns a path that exists on disk AND the claimed path names
+        that same task file (same file name, 19 October 2026), suppress the
+        discrepancy and append a :py:class:`ResolvedPath` audit record to
         ``self._resolved_paths`` instead. This closes the FEAT-FFC3 false-fail
         where the orchestrator's post-turn enrichment attributes a pre-move
         task path to the Player after state_bridge has moved the file
@@ -506,6 +507,7 @@ class CoachVerifier:
         """
         discrepancies: List[Discrepancy] = []
         self._resolved_paths = []
+        other_claims = self._claims_other_than_modified(report)
 
         canonical_path: Optional[Path] = None
         canonical_resolved: bool = False
@@ -550,6 +552,17 @@ class CoachVerifier:
                 if full_path.exists():
                     continue
 
+                # A modified file that is missing because this task deleted
+                # it is a true report (see _verify_claims_were_staged) - but
+                # only when files_modified is the path's only claim.
+                normalized_path = self._normalize_claimed_path(str(file_path))
+                if (
+                    file_list_key == "files_modified"
+                    and normalized_path not in other_claims
+                    and self._deleted_since_task_base(normalized_path)
+                ):
+                    continue
+
                 if (
                     self.task_id is not None
                     and self.state_bridge is not None
@@ -558,7 +571,19 @@ class CoachVerifier:
                         canonical_path = self.state_bridge.canonical_path_for()
                         canonical_resolved = True
 
-                    if canonical_path is not None and canonical_path.exists():
+                    # Only the task's own document, met at an earlier
+                    # place (same file name), is resolved. Before 19 October
+                    # 2026 ANY missing file was "resolved" whenever the task
+                    # document existed: build FEAT-D31F recorded a deleted
+                    # page component as resolved to the task markdown.
+                    if (
+                        canonical_path is not None
+                        and canonical_path.exists()
+                        and PurePosixPath(
+                            str(file_path).replace("\\", "/")
+                        ).name
+                        == canonical_path.name
+                    ):
                         try:
                             resolved_to = str(
                                 canonical_path.relative_to(self.worktree_path)
@@ -675,10 +700,15 @@ class CoachVerifier:
         # that is missing, untracked or ignored is still reported below.
         authored_claims: set[str] = set()
         run_claims: set[str] = set()
+        modified_claims: set[str] = set()
         for key in ("files_created", "files_modified", "tests_written"):
             for entry in report.get(key) or []:
                 if entry:
-                    authored_claims.add(self._normalize_claimed_path(str(entry)))
+                    normalized = self._normalize_claimed_path(str(entry))
+                    authored_claims.add(normalized)
+                    if key == "files_modified":
+                        modified_claims.add(normalized)
+        other_claims = self._claims_other_than_modified(report)
         for promise in report.get("completion_promises") or []:
             if not isinstance(promise, dict):
                 continue
@@ -817,9 +847,36 @@ class CoachVerifier:
                     self._normalize_claimed_path(path_part.strip().strip('"'))
                 )
 
+        # A file that is not on disk can only truthfully be reported as
+        # CHANGED (deleted). Named as created, as a test written, or as
+        # evidence for a check, it is a false claim - whether the deletion is
+        # still uncommitted (here: git would stage it, so the loop below never
+        # sees it) or already committed (the loop below, which grants the
+        # deletion exemption only to a files_modified-only claim). Codex
+        # review round 1, R1 (19 October 2026).
+        discrepancies: List[Discrepancy] = []
+        for path in sorted(claimed & other_claims & would_stage):
+            if (self.worktree_path / path).exists():
+                continue
+            discrepancies.append(
+                Discrepancy(
+                    claim_type="claim_audit",
+                    player_claim=f"Player claimed file {path}",
+                    actual_value=(
+                        "The file is not on disk and git would stage its "
+                        "deletion, so this task removed it; but the report "
+                        "names it as created, as a test written, or as "
+                        "evidence for a check, and a removed file is none of "
+                        "those. To clear this record: put the file back if "
+                        "the task needs it, or report it only as changed."
+                    ),
+                    severity="critical",
+                )
+            )
+
         dropped = sorted(claimed - would_stage)
         if not dropped:
-            return []
+            return discrepancies
 
         # TASK-FIX-IGNR + TASK-FIX-PCN: split the dropped set into:
         #   * "fabricated"          — path absent from disk, OR present
@@ -844,9 +901,34 @@ class CoachVerifier:
         #                              so the gate surfaces a warning
         #                              rather than rejecting the turn on
         #                              what is almost always a noise path.
-        discrepancies: List[Discrepancy] = []
         for path in dropped:
             classification = self._classify_dropped_path(path)
+            if (
+                classification == "fabricated"
+                and path in modified_claims
+                # files_modified must be the path's ONLY claim. The git step
+                # adds every deleted path to files_modified on every later
+                # turn, so a builder that also says it created the file,
+                # wrote a test there, or cites it for a check is making a
+                # claim the deletion does not make true.
+                and path not in other_claims
+                and self._deleted_since_task_base(path)
+            ):
+                # A file this task DELETED, and an earlier turn's checkpoint
+                # committed the deletion: porcelain is quiet and the file is
+                # gone, but the report is true - the file was changed, by
+                # being removed. The orchestrator's own git enrichment lists
+                # it under files_modified on every later turn, so calling it
+                # fabricated refused build FEAT-D31F's task on four turns in a
+                # row with nothing the builder could correct (19 October
+                # 2026). Same reasoning as _differs_from_task_base below.
+                # Whether the deletion was right is for the other checks.
+                logger.debug(
+                    "claim audit: %s was deleted by this task and the "
+                    "deletion is already committed; no honesty record",
+                    path,
+                )
+                continue
             if classification == "gitignored":
                 ignore_rule = self._git_check_ignore_rule(path)
                 discrepancies.append(
@@ -984,7 +1066,12 @@ class CoachVerifier:
                     if not path_exists:
                         cause = (
                             "Most likely cause: the Player claimed work "
-                            "on a file that does not exist on disk."
+                            "on a file that does not exist on disk. "
+                            "To clear this record: create the file at "
+                            "this path if the task needs it, or take the "
+                            "path out of the files you report as created, "
+                            "changed or tested. Other checks are not run "
+                            "while this record stands."
                         )
                     else:
                         cause = (
@@ -1240,6 +1327,60 @@ class CoachVerifier:
         if not isinstance(commit, str) or not commit.strip():
             return None
         return f"{commit.strip()}^"
+
+    def _claims_other_than_modified(self, report: Dict[str, Any]) -> set[str]:
+        """Every path the report names other than as a modified file.
+
+        ``files_created``, ``tests_written``, and every completion promise's
+        ``implementation_files`` and ``test_file`` (split on commas, as the
+        claim audit does). Normalised the same way as the claim audit. The
+        deletion exemption applies only to a path that is NOT in this set:
+        a deleted file can truthfully be "modified", never created, tested or
+        cited (Codex review round 1, R1, 19 October 2026).
+        """
+        paths: set[str] = set()
+        for key in ("files_created", "tests_written"):
+            for entry in report.get(key) or []:
+                if entry:
+                    paths.add(self._normalize_claimed_path(str(entry)))
+        for promise in report.get("completion_promises") or []:
+            if not isinstance(promise, dict):
+                continue
+            for entry in promise.get("implementation_files") or []:
+                if entry:
+                    paths.add(self._normalize_claimed_path(str(entry)))
+            test_file = promise.get("test_file")
+            if test_file:
+                for part in str(test_file).split(","):
+                    part = part.strip()
+                    if part:
+                        paths.add(self._normalize_claimed_path(part))
+        return paths
+
+    def _deleted_since_task_base(self, path: str) -> bool:
+        """Whether ``path`` existed where this task started and is gone now.
+
+        That is a deletion this task made. Fail CLOSED: no base, no git, a
+        path still on disk, or any error returns ``False`` and the record
+        stands exactly as before. A path that was never in the repository at
+        the task's start is not a deletion, so a claim of a file that never
+        existed stays fabricated.
+        """
+        if (self.worktree_path / path).exists():
+            return False
+        base = self._task_base_commit()
+        if base is None:
+            return False
+        try:
+            result = run_git(
+                ["cat-file", "-e", f"{base}:{path}"],
+                cwd=self.worktree_path,
+                check=False,
+                timeout=30,
+            )
+        except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+            return False
+        return result.returncode == 0
 
     def _differs_from_task_base(self, path: str) -> bool:
         """Whether ``path`` differs from where this task started.

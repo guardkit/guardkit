@@ -527,6 +527,26 @@ _ORCHESTRATOR_MANAGED_PATH_PATTERNS: Tuple[re.Pattern, ...] = (
     re.compile(r"(?:.*/)?\.tmp/"),
     re.compile(r"(?:.*/)?\.npm/"),
     re.compile(r"(?:.*/)?\.guardkit-git\.lock$"),
+    # GuardKit's own records that this list did not name (19 October 2026).
+    # ``worktree_checkpoints.FACTORY_RECORD_PATHS`` is the list of folders
+    # GuardKit and the coding model write records to; a test now pins that
+    # every one of them is matched here too. Build FEAT-D31F's repair ran at
+    # the repository root, where the Coach's private records folder sits
+    # inside the build folder: 13 of its records and the memory query log
+    # were listed as files the builder created, the code reviewer was sent to
+    # read them, and they made every turn look busy to the stall check.
+    #   .guardkit/autobuild-private/  the Coach's private records
+    #   .guardkit/qav-shadow/         the shadow judge's queue
+    #   .guardkit/memory-query-log.jsonl*  the memory query log and its
+    #                    rotated copy, written in whatever folder a command
+    #                    runs in, so matched at any depth
+    #   .guardkit/worktrees/          GuardKit's inner build folders
+    #   conversation_history/         the coding model's session records
+    re.compile(r"^\.guardkit/autobuild-private/"),
+    re.compile(r"^\.guardkit/qav-shadow/"),
+    re.compile(r"(?:.*/)?\.guardkit/memory-query-log\.jsonl"),
+    re.compile(r"^\.guardkit/worktrees/"),
+    re.compile(r"^conversation_history/"),
 )
 
 
@@ -14488,6 +14508,61 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
             ),
         }
 
+    def _resolve_bare_declared_names(
+        self,
+        declared: Dict[str, Optional[List[str]]],
+    ) -> Tuple[Dict[str, Optional[List[str]]], Dict[str, str], Dict[str, List[str]]]:
+        """Replace each bare declared name that means exactly one file.
+
+        Returns the declaration with those names replaced, what each resolved
+        name became, and which bare names matched more than one file. When
+        nothing is bare, or git cannot list the repository, the declaration is
+        returned unchanged. Never raises.
+        """
+        from guardkit.orchestrator.declared_paths import (
+            is_bare_name,
+            repository_files,
+            resolve_bare_names,
+        )
+
+        every = list(declared["create"] or []) + list(declared["modify"] or [])
+        if not any(is_bare_name(entry) for entry in every):
+            return declared, {}, {}
+        try:
+            candidates = repository_files(self.worktree_path)
+            if candidates is None:
+                return declared, {}, {}
+
+            def _excluded(path: str) -> bool:
+                return _is_orchestrator_managed_path(
+                    path, worktree_path=self.worktree_path
+                )
+
+            resolved: Dict[str, str] = {}
+            ambiguous: Dict[str, List[str]] = {}
+            out: Dict[str, Optional[List[str]]] = {}
+            for key in ("create", "modify"):
+                outcome = resolve_bare_names(
+                    declared[key],
+                    worktree_path=self.worktree_path,
+                    candidates=candidates,
+                    excluded=_excluded,
+                )
+                if outcome is None:
+                    out[key] = None
+                    continue
+                out[key] = outcome.paths
+                resolved.update(outcome.resolved)
+                ambiguous.update(outcome.ambiguous)
+            return out, resolved, ambiguous
+        except Exception as exc:  # noqa: BLE001 — the audit must still run
+            logger.warning(
+                "resolving bare file names in the task document raised %s; "
+                "they are checked as written.",
+                exc.__class__.__name__,
+            )
+            return declared, {}, {}
+
     def _plan_audit_against_task_document(
         self,
         task_id: str,
@@ -14510,6 +14585,15 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
         from installer.core.commands.lib.plan_audit import (
             DeclaredFiles,
             PlanAuditor,
+        )
+
+        # 19 October 2026 (FEAT-D31F repair): a task document can declare a
+        # bare name such as ``Shelf.tsx`` beside its full path. A bare name that
+        # matches exactly one repository file is that file; one that matches
+        # several stays as written, so it is still missing and is named as
+        # ambiguous below. See guardkit/orchestrator/declared_paths.py.
+        declared, bare_resolved, bare_ambiguous = self._resolve_bare_declared_names(
+            declared
         )
 
         every_declared_path = list(declared["create"] or []) + list(
@@ -14611,6 +14695,8 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
         block["planned_files_source"] = "the task document"
         block["player_note_files"] = report.plan_summary.get("player_note_files", {})
         block["files_read"] = bool(report.actual_summary.get("files_read"))
+        block["bare_names_resolved"] = bare_resolved
+        block["bare_names_ambiguous"] = bare_ambiguous
 
         declared_count = len(every_declared_path)
         # A file the acceptance criteria named and the two file sections did
@@ -14648,6 +14734,16 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                     f"{len(missing_files)} of them are not on disk: "
                     + ", ".join(missing_files[:3])
                     + (", and more" if len(missing_files) > 3 else "")
+                )
+            for name in sorted(set(bare_ambiguous) & set(missing_files)):
+                matches = bare_ambiguous[name]
+                said.append(
+                    f"{name} is a bare file name that matches {len(matches)} "
+                    "files ("
+                    + ", ".join(matches[:3])
+                    + (", and more" if len(matches) > 3 else "")
+                    + "), so it cannot be checked; the task document must give "
+                    "the full path"
                 )
             block["message"] = "; ".join(said)
         elif block["extra_files"] or block["extra_modifications"]:

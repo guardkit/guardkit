@@ -495,6 +495,23 @@ class SubtaskExtractor:
                 seen.add(f)
                 unique_files.append(f)
 
+        # A bare name (no folder) that is the last part of a full path found
+        # in the same text is that file mentioned a second time (invented
+        # example: "fix `apps/shelf/src/Shelf.tsx` ... `Shelf.tsx` line 12").
+        # Listing both put the bare name in the fix task's Files to Modify,
+        # and the plan audit then looked for it at the top of the repository
+        # and refused every turn (build FEAT-D31F repair, 19 October 2026). A
+        # bare name with no such full path is kept.
+        full_path_names = {
+            re.split(r'[/\\]', f)[-1]
+            for f in unique_files
+            if '/' in f or '\\' in f
+        }
+        unique_files = [
+            f for f in unique_files
+            if '/' in f or '\\' in f or f not in full_path_names
+        ]
+
         return unique_files
 
     def extract_subtasks(self, feature_slug: str) -> List[Dict]:

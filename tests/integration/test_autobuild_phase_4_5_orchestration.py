@@ -621,7 +621,8 @@ def test_phase_5_receives_criteria_and_reported_files(tmp_path: Path) -> None:
     mirror helper above) with the Player, Coach and both specialists
     stubbed at their call sites. ``invoke_code_reviewer`` must receive the
     same criteria list the Coach receives, and the Player report's
-    ``files_created`` plus ``files_modified``."""
+    ``files_modified`` then ``files_created`` (that order since 19 October
+    2026)."""
     from unittest.mock import Mock
 
     from guardkit.orchestrator import specialist_invocations as _si
@@ -691,8 +692,9 @@ def test_phase_5_receives_criteria_and_reported_files(tmp_path: Path) -> None:
     assert reviewer_kwargs, "the code reviewer was not invoked"
     coach_criteria = coach.call_args.kwargs["acceptance_criteria"]
     assert reviewer_kwargs["acceptance_criteria"] == coach_criteria == criteria
+    # Modified files first since 19 October 2026.
     assert reviewer_kwargs["reported_files"] == [
-        "src/new_module.py",
         "src/existing.py",
         "README.md",
+        "src/new_module.py",
     ]

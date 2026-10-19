@@ -166,13 +166,19 @@ _CODE_REVIEWER_SDK_TIMEOUT_CAP_SECONDS: int = int(
 # 13 October 2026 (bounded code review): the reviewer's step cap, using the
 # Coach evidence pass's mechanism (``_invoke_with_role(recursion_limit=...,
 # max_tool_result_chars=...)``). Before this nothing limited its steps: 30 of
-# 33 reviews on 12-13 October ran to the 600-second limit. LangGraph counts
-# about two steps per model call that uses tools plus one for the final
-# answer, so 24 steps allow about 11 rounds of tool calls; the prompt says 10
-# (``_code_reviewer_tool_rounds``) to leave a margin. LangGraph only: the SDK
-# harness ignores both and keeps its turn ceiling, as it does for the Coach.
+# 33 reviews on 12-13 October ran to the 600-second limit. LangGraph only: the
+# SDK harness ignores both and keeps its turn ceiling, as it does for the Coach.
+#
+# 19 October 2026: every review since the cap ended at it - 31 of 31 in the
+# receipts, none finished - including every turn of build FEAT-D31F. Measured
+# offline with the pinned deepagents (0.7.14) and a scripted model: a review
+# of N tool rounds takes 3 + 2N steps, so 24 steps held exactly the 10 rounds
+# the prompt promised and no margin at all. The cap is now 40 (18 rounds fit;
+# the prompt promises 14, see ``_code_reviewer_tool_rounds``). Observed
+# reviews took 21-102 seconds for their 24 steps, so the 600-second limit
+# above still bounds the time.
 _CODE_REVIEWER_RECURSION_LIMIT: int = int(
-    os.environ.get("GUARDKIT_CODE_REVIEWER_RECURSION_LIMIT", "24")
+    os.environ.get("GUARDKIT_CODE_REVIEWER_RECURSION_LIMIT", "40")
 )
 _CODE_REVIEWER_MAX_TOOL_RESULT_CHARS: int = int(
     os.environ.get("GUARDKIT_CODE_REVIEWER_MAX_TOOL_RESULT_CHARS", "12000")
@@ -1139,11 +1145,18 @@ def _prompt_count(summary: Any, key: str) -> str:
 def _code_reviewer_tool_rounds(recursion_limit: int) -> int:
     """Rounds of tool calls the reviewer prompt promises under its step cap.
 
-    LangGraph spends about two steps on each model call that uses tools and
-    one on the final answer, so ``(limit - 1) // 2`` rounds fit; one is held
-    back as a margin (24 steps give 10 rounds).
+    Measured (19 October 2026, deepagents 0.7.14, scripted model, no network):
+    a run of N tool rounds and a final answer takes ``3 + 2N`` steps, so
+    ``(limit - 3) // 2`` rounds fit. The old count, ``(limit - 1) // 2 - 1``,
+    was that same number - the "margin" it meant to keep was spent on the
+    start-up steps - and a model that used every promised round lost its
+    review. A quarter of the rounds that fit, and at least two, is now held
+    back: 40 steps fit 18 rounds and the prompt promises 14; 24 steps fit 10
+    and it promises 8.
     """
-    return max(1, (int(recursion_limit) - 1) // 2 - 1)
+    fit = (int(recursion_limit) - 3) // 2
+    margin = max(2, fit // 4)
+    return max(1, fit - margin)
 
 
 def _quote_file_name(name: str) -> str:
@@ -1353,7 +1366,8 @@ def _build_code_reviewer_prompt(
         "Your job:\n"
         "1. Review the work against the acceptance criteria, starting with "
         "any listed files.\n"
-        "2. Read other files only when you need them.\n"
+        "2. Read other files only when you need them; read several files "
+        "in one round where you can.\n"
         "3. The tests have already run (Phase 4 summary above), and you "
         "cannot run anything.\n"
         f"4. You have at most {tool_rounds} rounds of tool calls. After that "
@@ -2211,22 +2225,58 @@ async def invoke_test_orchestrator(
     return run_result
 
 
+def _is_factory_record(name: str) -> bool:
+    """Whether ``name`` is one of GuardKit's own records, not the build's work.
+
+    Uses the orchestrator's managed-path rule and the checkpoint's list of
+    record folders (``FACTORY_RECORD_PATHS``), so the reviewer is never sent
+    to read the Coach's records or the memory query log.
+    """
+    from fnmatch import fnmatchcase
+
+    from guardkit.orchestrator.agent_invoker import _is_orchestrator_managed_path
+    from guardkit.orchestrator.worktree_checkpoints import FACTORY_RECORD_PATHS
+
+    normalized = name.replace("\\", "/")
+    if normalized.startswith("./"):
+        normalized = normalized[2:]
+    if _is_orchestrator_managed_path(normalized):
+        return True
+    rooted = "/" + normalized
+    return any(
+        fnmatchcase(normalized, pattern) or fnmatchcase(rooted, pattern)
+        for pattern in FACTORY_RECORD_PATHS
+    )
+
+
 def reported_changed_files(player_report: Any) -> Optional[list[str]]:
     """The files the Player reported changed this turn, for the code reviewer.
 
-    ``files_created`` followed by ``files_modified`` from the Player's report
-    (13 October 2026). ``None`` when the report holds neither list. The names
-    are what the Player reported, not a measured change.
+    ``files_modified`` followed by ``files_created`` from the Player's report
+    (13 October 2026; modified first since 19 October). ``None`` when the
+    report holds neither list. The names are what the Player reported, not a
+    measured change.
+
+    GuardKit's own records are left out (19 October 2026). In build
+    FEAT-D31F's repair, 20 of the 22 names were the Coach's private records
+    and the memory query log, listed first, and the prompt tells the reviewer
+    to start with the listed files; the two real source files came last.
     """
     if not isinstance(player_report, dict):
         return None
     found = False
     names: list[str] = []
-    for key in ("files_created", "files_modified"):
+    for key in ("files_modified", "files_created"):
         value = player_report.get(key)
         if isinstance(value, list):
             found = True
-            names.extend(str(item) for item in value if item is not None)
+            for item in value:
+                if item is None:
+                    continue
+                name = str(item)
+                if _is_factory_record(name) or name in names:
+                    continue
+                names.append(name)
     return names if found else None
 
 

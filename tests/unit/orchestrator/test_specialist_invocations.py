@@ -2612,17 +2612,20 @@ async def test_code_reviewer_prompt_states_step_allowance(
     invoker = _make_fake_agent_invoker()
     await _review(tmp_path, invoker)
     prompt = invoker._invoke_with_role.await_args.kwargs["prompt"]
-    assert "at most 10 rounds of tool calls" in prompt
+    # 19 October 2026: 40 steps by default; 3 + 2N steps fit N = 18 rounds,
+    # and a quarter of them is held back.
+    assert "at most 14 rounds of tool calls" in prompt
     assert "write your review before then" in prompt
 
     monkeypatch.setattr(
-        specialist_invocations, "_CODE_REVIEWER_RECURSION_LIMIT", 40
+        specialist_invocations, "_CODE_REVIEWER_RECURSION_LIMIT", 24
     )
     invoker = _make_fake_agent_invoker()
     await _review(tmp_path, invoker)
     prompt = invoker._invoke_with_role.await_args.kwargs["prompt"]
-    assert "at most 18 rounds of tool calls" in prompt
-    assert invoker._invoke_with_role.await_args.kwargs["recursion_limit"] == 40
+    # 24 steps fit exactly 10 rounds; the old prompt promised all 10.
+    assert "at most 8 rounds of tool calls" in prompt
+    assert invoker._invoke_with_role.await_args.kwargs["recursion_limit"] == 24
 
 
 @pytest.mark.asyncio
@@ -2649,7 +2652,7 @@ async def test_code_reviewer_passes_step_cap(tmp_path: Path) -> None:
         await _review(tmp_path, invoker)
 
     invoker._invoke_with_role.assert_awaited_once()
-    assert seen["recursion_limit"] == 24
+    assert seen["recursion_limit"] == 40
     assert seen["max_tool_result_chars"] == 12000
     assert seen["timeout"] == 600
     assert (
@@ -2661,7 +2664,7 @@ async def test_code_reviewer_passes_step_cap(tmp_path: Path) -> None:
 _RECURSION_ERROR_TEXT = (
     "SDK invocation failed for coach (LangGraphHarnessError): LangGraphHarness: "
     "agent.ainvoke failed for role='coach' model='reviewer-model': Recursion "
-    "limit of 24 reached without hitting a stop condition. You can increase "
+    "limit of 40 reached without hitting a stop condition. You can increase "
     "the limit by setting the `recursion_limit` config key."
 )
 
@@ -2686,7 +2689,7 @@ async def test_code_reviewer_step_limit_gives_todays_outcome(
     block = _phase_5_block(tmp_path)
     assert block["status"] == "failed"
     assert block["error"] == (
-        "stopped at its step cap (24 steps) before writing a review"
+        "stopped at its step cap (40 steps) before writing a review"
     )
     assert result.error == block["error"]
     assert "review_evidence" not in block
@@ -2839,11 +2842,11 @@ async def test_code_reviewer_record_states_limits_in_force(
     invoker = _make_fake_agent_invoker()
     await _review(tmp_path, invoker)
     record = _phase_5_block(tmp_path)["review_record"]
-    assert record["step_cap"] == 24
+    assert record["step_cap"] == 40
     assert record["tool_result_limit"] == 12000
 
     monkeypatch.setattr(
-        specialist_invocations, "_CODE_REVIEWER_RECURSION_LIMIT", 40
+        specialist_invocations, "_CODE_REVIEWER_RECURSION_LIMIT", 32
     )
     monkeypatch.setattr(
         specialist_invocations, "_CODE_REVIEWER_MAX_TOOL_RESULT_CHARS", 9000
@@ -2852,16 +2855,16 @@ async def test_code_reviewer_record_states_limits_in_force(
     with caplog.at_level("INFO", logger=specialist_invocations.logger.name):
         await _review(tmp_path, invoker)
     record = _phase_5_block(tmp_path)["review_record"]
-    assert record["step_cap"] == 40
+    assert record["step_cap"] == 32
     assert record["tool_result_limit"] == 9000
     kwargs = invoker._invoke_with_role.await_args.kwargs
-    assert kwargs["recursion_limit"] == 40
+    assert kwargs["recursion_limit"] == 32
     assert kwargs["max_tool_result_chars"] == 9000
     (line,) = [
         r.getMessage() for r in caplog.records
         if "code-reviewer review ended" in r.getMessage()
     ]
-    assert "step_cap=40" in line
+    assert "step_cap=32" in line
     assert "tool_result_limit=9000" in line
 
 
