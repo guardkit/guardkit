@@ -267,7 +267,6 @@ This is a valid implementation plan with enough content.
 # ============================================================================
 
 
-@pytest.mark.integration
 def _implement_returns(invoker, result=None, *, side_effect=None):
     """Stand in for the implement step ``invoke_player`` delegates to.
 
@@ -287,6 +286,7 @@ def _implement_returns(invoker, result=None, *, side_effect=None):
     )
 
 
+@pytest.mark.integration
 class TestTaskWorkDelegation:
     """Integration tests for task-work delegation in AutoBuild."""
 
