@@ -772,10 +772,12 @@ class TestDevelopmentModeHandling:
     @pytest.mark.parametrize("mode", ["tdd", "standard", "bdd"])
     def test_mode_included_in_sdk_prompt(self, mock_worktree, mode, _routine_seat):
         """Development mode is included in SDK prompt."""
+        # The invoker's own mode differs from the call's, so the prompt must
+        # carry the mode passed to this call, not the instance default.
         invoker = AgentInvoker(
             worktree_path=mock_worktree,
             use_task_work_delegation=True,
-            development_mode=mode,
+            development_mode="tdd" if mode != "tdd" else "standard",
             model_name=_routine_seat,
         )
 
