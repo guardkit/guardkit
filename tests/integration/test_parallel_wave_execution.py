@@ -116,6 +116,20 @@ def mock_worktree_manager(tmp_repo_root):
     return manager
 
 
+def _files_to_create_yaml(task_data: Dict[str, Any]) -> str:
+    """Frontmatter lines declaring the files a task will create, if any.
+
+    Since 3f01445d0 (11 September 2026) a wave runs one task at a time unless
+    every task says which files it will touch and no two share an area (the
+    same file, or files in the same directory). A test that wants a wave to
+    run in parallel has to declare that, as a real plan does.
+    """
+    files = task_data.get("files_to_create")
+    if not files:
+        return ""
+    return "files_to_create:\n" + "".join(f"  - {f}\n" for f in files)
+
+
 def create_test_feature(
     feature_id: str,
     tasks: List[Dict[str, Any]],
@@ -152,7 +166,7 @@ title: {task_data.get('name', task_data['id'])}
 status: pending
 task_type: feature
 complexity: {task_data.get('complexity', 5)}
----
+{_files_to_create_yaml(task_data)}---
 
 # {task_data.get('name', task_data['id'])}
 
@@ -308,9 +322,13 @@ class TestParallelWaveExecution:
         feature = create_test_feature(
             feature_id="FEAT-PARALLEL",
             tasks=[
-                {"id": "TASK-001", "name": "Task 1", "estimated_minutes": 30},
-                {"id": "TASK-002", "name": "Task 2", "estimated_minutes": 30},
-                {"id": "TASK-003", "name": "Task 3", "estimated_minutes": 30},
+                # Each task declares its own area, so the wave may run at once.
+                {"id": "TASK-001", "name": "Task 1", "estimated_minutes": 30,
+                 "files_to_create": ["src/alpha/one.py"]},
+                {"id": "TASK-002", "name": "Task 2", "estimated_minutes": 30,
+                 "files_to_create": ["src/beta/two.py"]},
+                {"id": "TASK-003", "name": "Task 3", "estimated_minutes": 30,
+                 "files_to_create": ["src/gamma/three.py"]},
             ],
             parallel_groups=[["TASK-001", "TASK-002", "TASK-003"]],
             tmp_repo_root=tmp_repo_root,
