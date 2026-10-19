@@ -556,9 +556,17 @@ class TestFallbackBehavior:
         # Use _identify_capability_needs which has fallback logic
         needs = generator._identify_capability_needs(complex_maui_analysis)
 
-        # Should identify at least some basic patterns
-        assert len(needs) > 0
+        # The heuristic fallback (ace1cdd07, TASK-FIX-AGENT-GEN) promises at
+        # least three needs, built from the language, the architecture and up
+        # to two frameworks. It replaced the deleted hard-coded detector, which
+        # also added a testing-framework specialist, so no testing need is
+        # expected here any more.
+        assert len(needs) >= 3
 
-        # Should have testing need (hard-coded pattern always detects testing_framework)
-        test_needs = [n for n in needs if "test" in n.name.lower() or "xunit" in n.name.lower()]
-        assert len(test_needs) > 0
+        names = [n.name for n in needs]
+        assert "csharp-specialist" in names
+        assert "clean-architecture-specialist" in names
+        assert any("realm" in name for name in names)
+        # ".NET MAUI" names its specialist without a leading hyphen.
+        assert "net-specialist" in names
+        assert not any(name.startswith("-") for name in names)

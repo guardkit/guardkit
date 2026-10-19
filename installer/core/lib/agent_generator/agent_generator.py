@@ -504,7 +504,7 @@ Return the JSON array now:"""
         # 3. Framework specialist (if detected, up to 2)
         for fw in frameworks[:2]:
             fw_str = str(fw)
-            fw_name = fw_str.split()[0].lower().replace('.', '-')
+            fw_name = fw_str.split()[0].lower().replace('.', '-').strip('-')
             if fw_name and fw_name not in ['unknown', 'none']:
                 needs.append(CapabilityNeed(
                     name=f"{fw_name}-specialist",

@@ -50,6 +50,14 @@ if TYPE_CHECKING:  # pragma: no cover — annotation-only imports
     )
 
 
+INVALID_TASK_TYPE_CAUSE = "invalid_task_type"
+"""The cause ``gather_evidence`` names first in ``gathering_error`` (as
+``"invalid_task_type: <detail>"``) when the task's ``task_type`` is neither a
+``TaskType`` nor a registered alias. The primary Coach path reads it to end
+the turn as a configuration error (TASK-ABFIX-003) instead of asking the LLM
+Coach to judge a turn that has no quality-gate profile."""
+
+
 GatheringStatus = Literal[
     "complete",
     "partial_honesty_abort",
