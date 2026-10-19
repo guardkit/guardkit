@@ -567,3 +567,6 @@ class TestFallbackBehavior:
         assert "csharp-specialist" in names
         assert "clean-architecture-specialist" in names
         assert any("realm" in name for name in names)
+        # ".NET MAUI" names its specialist without a leading hyphen.
+        assert "net-specialist" in names
+        assert not any(name.startswith("-") for name in names)

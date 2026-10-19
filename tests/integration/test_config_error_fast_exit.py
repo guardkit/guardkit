@@ -315,15 +315,20 @@ class TestConfigErrorFastExit:
 
     def test_normal_feedback_still_enters_retry_loop(
         self, tmp_path, mock_worktree, mock_progress_display, mock_worktree_manager,
+        monkeypatch,
     ):
         """
         Regression guard: normal feedback (not config error) should
         still enter the retry loop and not fast-exit.
+
+        Runs on the default LLM Coach path, so a fast-exit widened beyond
+        the invalid-task-type cause would end this loop after one turn.
         """
+        monkeypatch.delenv("GUARDKIT_COACH_LEGACY", raising=False)
         mock_invoker = Mock()
         mock_invoker.invoke_player = AsyncMock(return_value=_make_player_result())
-        # Turn 1: feedback, Turn 2: approve
-        # CoachValidator will fail (no task_work_results.json) and fall back to invoke_coach
+        # Turn 1: feedback, Turn 2: approve. On the default path the LLM
+        # Coach (invoke_coach) decides each turn.
         mock_invoker.invoke_coach = AsyncMock(
             side_effect=[
                 _make_normal_feedback_coach_result(turn=1),
@@ -349,7 +354,8 @@ class TestConfigErrorFastExit:
             enable_context=False,
         )
 
-        # Patch CoachValidator.validate to force SDK fallback (invoke_coach mock)
+        # The default path never calls CoachValidator.validate; making it
+        # raise keeps a legacy decision from passing this test by accident.
         with patch.object(CoachValidator, 'validate', side_effect=Exception("force SDK fallback")):
             turn_history, decision = orchestrator._loop_phase(
                 task_id="TASK-CFG-001",
