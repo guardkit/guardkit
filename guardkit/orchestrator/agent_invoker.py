@@ -527,6 +527,26 @@ _ORCHESTRATOR_MANAGED_PATH_PATTERNS: Tuple[re.Pattern, ...] = (
     re.compile(r"(?:.*/)?\.tmp/"),
     re.compile(r"(?:.*/)?\.npm/"),
     re.compile(r"(?:.*/)?\.guardkit-git\.lock$"),
+    # GuardKit's own records that this list did not name (19 October 2026).
+    # ``worktree_checkpoints.FACTORY_RECORD_PATHS`` is the list of folders
+    # GuardKit and the coding model write records to; a test now pins that
+    # every one of them is matched here too. Build FEAT-D31F's repair ran at
+    # the repository root, where the Coach's private records folder sits
+    # inside the build folder: 13 of its records and the memory query log
+    # were listed as files the builder created, the code reviewer was sent to
+    # read them, and they made every turn look busy to the stall check.
+    #   .guardkit/autobuild-private/  the Coach's private records
+    #   .guardkit/qav-shadow/         the shadow judge's queue
+    #   .guardkit/memory-query-log.jsonl*  the memory query log and its
+    #                    rotated copy, written in whatever folder a command
+    #                    runs in, so matched at any depth
+    #   .guardkit/worktrees/          GuardKit's inner build folders
+    #   conversation_history/         the coding model's session records
+    re.compile(r"^\.guardkit/autobuild-private/"),
+    re.compile(r"^\.guardkit/qav-shadow/"),
+    re.compile(r"(?:.*/)?\.guardkit/memory-query-log\.jsonl"),
+    re.compile(r"^\.guardkit/worktrees/"),
+    re.compile(r"^conversation_history/"),
 )
 
 
