@@ -13,7 +13,8 @@ Tests:
 1. FeatureOrchestrator._execute_task() passes requires_infrastructure to
    AutoBuildOrchestrator.orchestrate() (validates R1/TASK-BOOT-B032)
 2. AutoBuildOrchestrator._invoke_coach_safely() puts requires_infrastructure
-   in the task dict passed to CoachValidator.validate()
+   in the task dict passed to CoachValidator.gather_evidence() (the default,
+   LLM-Coach-primary path) and to CoachValidator.validate() (the legacy path)
 3. CoachValidator.run_independent_tests() receives the value and enters the
    Docker lifecycle guard when requires_infrastructure is truthy
 4. AutoBuildOrchestrator.orchestrate() falls back to frontmatter when the
@@ -181,22 +182,43 @@ class TestFeatureOrchestratorPassesRequiresInfrastructure:
 
 
 class TestAutoBuiltPutsRequiresInfrastructureInCoachTaskDict:
-    """_invoke_coach_safely() must include requires_infrastructure in task dict."""
+    """_invoke_coach_safely() must include requires_infrastructure in task dict.
 
+    Since 51ac051b5 (21 May 2026, TASK-HMIG-008R) the LLM Coach is primary:
+    by default the Coach's task dict goes to ``CoachValidator.gather_evidence``
+    and ``validate()`` runs only on the operator's ``GUARDKIT_COACH_LEGACY=1``
+    revert. The key has to reach the validator on both paths.
+    """
+
+    @pytest.mark.parametrize(
+        "legacy, method",
+        [(False, "gather_evidence"), (True, "validate")],
+        ids=["primary-gather_evidence", "legacy-validate"],
+    )
     def test_requires_infrastructure_present_in_task_dict_passed_to_validate(
-        self, tmp_path: Path
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, legacy: bool, method: str
     ) -> None:
         """
         Verify _invoke_coach_safely(requires_infrastructure=[...]) propagates
-        the value to CoachValidator.validate(task={"requires_infrastructure": [...]}).
+        the value to the validator's task dict (``task={"requires_infrastructure": [...]}``).
         """
+        if legacy:
+            monkeypatch.setenv("GUARDKIT_COACH_LEGACY", "1")
+        else:
+            monkeypatch.delenv("GUARDKIT_COACH_LEGACY", raising=False)
+
         orchestrator = _make_autobuild_orchestrator(tmp_path)
         worktree = _make_mock_worktree(tmp_path)
 
-        captured_task_dict: Dict[str, Any] = {}
+        captured: Dict[str, Dict[str, Any]] = {}
+
+        def fake_gather_evidence(*, task_id, turn, task, skip_arch_review=False, context=None):
+            captured["gather_evidence"] = dict(task)
+            # Stop the turn here: what follows is the LLM Coach, not under test.
+            raise RuntimeError("captured the task dict")
 
         def fake_validate(task_id, turn, task, skip_arch_review=False, context=None):
-            captured_task_dict.update(task)
+            captured["validate"] = dict(task)
             result = Mock()
             result.to_dict.return_value = {}
             return result
@@ -206,6 +228,7 @@ class TestAutoBuiltPutsRequiresInfrastructureInCoachTaskDict:
         ) as MockValidator:
             instance = MockValidator.return_value
             instance._is_docker_available.return_value = True
+            instance.gather_evidence.side_effect = fake_gather_evidence
             instance.validate.side_effect = fake_validate
             instance.save_decision = Mock()
 
@@ -222,10 +245,14 @@ class TestAutoBuiltPutsRequiresInfrastructureInCoachTaskDict:
                 requires_infrastructure=_REQUIRES_INFRA,
             )
 
-        assert "requires_infrastructure" in captured_task_dict, (
-            "requires_infrastructure key must be present in task dict passed to validate()"
+        assert list(captured) == [method], (
+            f"expected the Coach's task dict to go to {method}(), got {list(captured)}"
         )
-        assert captured_task_dict["requires_infrastructure"] == _REQUIRES_INFRA
+        task_dict = captured[method]
+        assert "requires_infrastructure" in task_dict, (
+            f"requires_infrastructure key must be present in task dict passed to {method}()"
+        )
+        assert task_dict["requires_infrastructure"] == _REQUIRES_INFRA
 
 
 # ---------------------------------------------------------------------------

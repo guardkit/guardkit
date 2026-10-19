@@ -307,13 +307,23 @@ class TestAutoBuildSkipArchReviewPropagation:
         self,
         mock_worktree,
         task_work_results_zero_arch_score,
+        monkeypatch,
     ):
         """
         Test that AutoBuildOrchestrator passes skip_arch_review=True to
         CoachValidator when enable_pre_loop=False.
 
         This is the key integration test for TASK-FIX-ARIMPL.
+
+        The deterministic decision this test reads is CoachValidator.validate().
+        Since 51ac051b5 (21 May 2026, TASK-HMIG-008R) that is the Coach only on
+        the operator's GUARDKIT_COACH_LEGACY=1 revert; by default the LLM Coach
+        decides, and this orchestrator has none. So the test names the legacy
+        path; the default path's hand-over of the flag is checked by
+        test_primary_coach_path_passes_skip_arch_review_to_gather_evidence.
         """
+        monkeypatch.setenv("GUARDKIT_COACH_LEGACY", "1")
+
         # Mock the worktree manager
         mock_worktree_manager = MagicMock()
         mock_worktree_obj = MagicMock()
@@ -349,17 +359,31 @@ class TestAutoBuildSkipArchReviewPropagation:
 
         # Call _invoke_coach_safely directly to verify skip_arch_review is passed
         # This method is what calls CoachValidator.validate()
-        # Use scaffolding task type to skip independent test verification
-        result = orchestrator._invoke_coach_safely(
-            task_id="TASK-TEST-001",
-            turn=1,
-            requirements="Implement feature X",
-            player_report=mock_player_result.report,
-            worktree=mock_worktree_obj,
-            acceptance_criteria=["Feature X implemented", "Tests added"],
-            task_type="scaffolding",  # Skip independent test verification
-            skip_arch_review=not orchestrator.enable_pre_loop,  # Should be True
-        )
+        # A feature task, whose profile requires the architectural review, so
+        # the zero arch score fails the turn unless the flag arrives. (With
+        # "scaffolding", as this test first used, the review is not required
+        # and the flag made no difference.) The independent test run is
+        # stubbed, as in the sibling test above, to isolate the review gate.
+        with patch.object(
+            CoachValidator,
+            "run_independent_tests",
+            return_value=IndependentTestResult(
+                tests_passed=True,
+                test_command="pytest tests/",
+                test_output_summary="All tests passed",
+                duration_seconds=1.0,
+            ),
+        ):
+            result = orchestrator._invoke_coach_safely(
+                task_id="TASK-TEST-001",
+                turn=1,
+                requirements="Implement feature X",
+                player_report=mock_player_result.report,
+                worktree=mock_worktree_obj,
+                acceptance_criteria=["Feature X implemented", "Tests added"],
+                task_type="feature",
+                skip_arch_review=not orchestrator.enable_pre_loop,  # Should be True
+            )
 
         assert result.success is True, (
             f"Coach validation should succeed with skip_arch_review=True. "
@@ -371,6 +395,55 @@ class TestAutoBuildSkipArchReviewPropagation:
             f"Expected 'approve' decision, got '{result.report.get('decision')}'. "
             f"Report: {result.report}"
         )
+
+
+    def test_primary_coach_path_passes_skip_arch_review_to_gather_evidence(
+        self,
+        mock_worktree,
+        task_work_results_zero_arch_score,
+        monkeypatch,
+    ):
+        """On the default (LLM-Coach-primary) path the flag reaches the evidence.
+
+        The real ``gather_evidence`` runs; only its arguments are recorded.
+        The turn then needs the LLM Coach, which this orchestrator does not
+        have, so the decision is not read here.
+        """
+        monkeypatch.delenv("GUARDKIT_COACH_LEGACY", raising=False)
+
+        mock_worktree_manager = MagicMock()
+        mock_worktree_obj = MagicMock()
+        mock_worktree_obj.path = mock_worktree
+        mock_worktree_manager.create.return_value = mock_worktree_obj
+
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=mock_worktree,
+            max_turns=1,
+            enable_pre_loop=False,  # Implement-only mode
+            worktree_manager=mock_worktree_manager,
+        )
+
+        real_gather_evidence = CoachValidator.gather_evidence
+        seen: Dict[str, Any] = {}
+
+        def spy(self, *args, **kwargs):
+            seen.update(kwargs)
+            return real_gather_evidence(self, *args, **kwargs)
+
+        with patch.object(CoachValidator, "gather_evidence", spy):
+            orchestrator._invoke_coach_safely(
+                task_id="TASK-TEST-001",
+                turn=1,
+                requirements="Implement feature X",
+                player_report={"files_modified": ["src/feature.py"]},
+                worktree=mock_worktree_obj,
+                acceptance_criteria=["Feature X implemented", "Tests added"],
+                task_type="scaffolding",
+                skip_arch_review=not orchestrator.enable_pre_loop,  # Should be True
+            )
+
+        assert seen, "gather_evidence was not called on the primary Coach path"
+        assert seen["skip_arch_review"] is True
 
 
 # ============================================================================

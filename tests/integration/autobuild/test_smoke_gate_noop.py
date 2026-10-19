@@ -51,6 +51,9 @@ def _make_feature_no_smoke(task_ids_per_wave: List[List[str]]):
             task.id = tid
             task.dependencies = []
             task.status = "pending"
+            # The real "no estimate" value; the wave phase resolves each
+            # task's timeout from it (_resolve_wave_task_timeouts).
+            task.estimated_minutes = None
             tasks.append(task)
     feature.tasks = tasks
     feature.orchestration.parallel_groups = task_ids_per_wave

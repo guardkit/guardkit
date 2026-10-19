@@ -62,6 +62,42 @@ from guardkit.orchestrator.exceptions import (
 
 
 # ============================================================================
+# Typed stand-ins for the SDK's message classes
+# ============================================================================
+#
+# The code under test has checked ``isinstance(message, AssistantMessage)``
+# and read the text out of each message's ``TextBlock`` content since
+# TASK-FB-FIX-013 (in b7f0472ac, the commit that added this file); today the
+# sdk harness does the same (``sdk_harness.py``) and duck-types blocks on
+# ``type(block).__name__``. A bare ``MagicMock`` message is not an instance of
+# anything and a ``MagicMock`` attribute is not a type, so the stand-ins carry
+# the real SDK's class names, as the unit tests' fake SDK does
+# (``tests/unit/test_agent_invoker.py``, ``_create_mock_sdk``).
+
+
+class TextBlock:
+    def __init__(self, text: str):
+        self.type = "text"
+        self.text = text
+
+
+class AssistantMessage:
+    def __init__(self, content: list):
+        self.content = content
+
+
+class ResultMessage:
+    def __init__(self, num_turns: int = 1, session_id: Any = None):
+        self.num_turns = num_turns
+        self.session_id = session_id
+
+
+def _assistant(text: str) -> AssistantMessage:
+    """One assistant message saying ``text``, as the SDK streams it."""
+    return AssistantMessage([TextBlock(text)])
+
+
+# ============================================================================
 # Test Fixtures
 # ============================================================================
 
@@ -224,10 +260,8 @@ def mock_sdk_query():
                 raise Exception("SDK query failed")
 
             for msg in messages:
-                # Create a mock message object
-                mock_msg = MagicMock()
-                mock_msg.content = msg
-                yield mock_msg
+                yield _assistant(msg)
+            yield ResultMessage()
 
         return mock_query
 
@@ -382,6 +416,9 @@ def _create_mock_sdk(query_gen):
     mock_sdk.CLINotFoundError = type("CLINotFoundError", (Exception,), {})
     mock_sdk.ProcessError = type("ProcessError", (Exception,), {"exit_code": 1, "stderr": ""})
     mock_sdk.CLIJSONDecodeError = type("CLIJSONDecodeError", (Exception,), {})
+    mock_sdk.AssistantMessage = AssistantMessage
+    mock_sdk.TextBlock = TextBlock
+    mock_sdk.ResultMessage = ResultMessage
     return mock_sdk
 
 
@@ -394,9 +431,8 @@ class TestSDKDelegationHappyPath:
         # Create mock SDK response
         async def mock_query_gen(*args, **kwargs):
             for msg in sample_sdk_messages:
-                mock_msg = MagicMock()
-                mock_msg.content = msg
-                yield mock_msg
+                yield _assistant(msg)
+            yield ResultMessage()
 
         mock_sdk = _create_mock_sdk(mock_query_gen)
 
@@ -457,9 +493,8 @@ class TestSDKDelegationHappyPath:
         # Create mock SDK response
         async def mock_query_gen(*args, **kwargs):
             for msg in sample_sdk_messages:
-                mock_msg = MagicMock()
-                mock_msg.content = msg
-                yield mock_msg
+                yield _assistant(msg)
+            yield ResultMessage()
 
         mock_sdk = _create_mock_sdk(mock_query_gen)
 
@@ -889,12 +924,7 @@ class TestCoachResultsValidation:
             mock_query = await mock_sdk_query(sample_sdk_messages)
 
             # Create mock SDK module
-            mock_sdk = MagicMock()
-            mock_sdk.query = mock_query
-            mock_sdk.ClaudeAgentOptions = MagicMock()
-            mock_sdk.CLINotFoundError = type("CLINotFoundError", (Exception,), {})
-            mock_sdk.ProcessError = type("ProcessError", (Exception,), {"exit_code": 1, "stderr": ""})
-            mock_sdk.CLIJSONDecodeError = type("CLIJSONDecodeError", (Exception,), {})
+            mock_sdk = _create_mock_sdk(mock_query)
 
             with patch.dict(sys.modules, {"claude_agent_sdk": mock_sdk}):
                 result = await agent_invoker._invoke_task_work_implement(
@@ -919,6 +949,10 @@ class TestCoachResultsValidation:
             assert "tests_passing" in quality_gates
             assert "coverage" in quality_gates
             assert "all_passed" in quality_gates
+            # ... and carry what the stream said ("12 tests passed",
+            # "Coverage: 85.5%"), so the file is built from the output.
+            assert quality_gates["tests_passed"] == 12
+            assert quality_gates["coverage"] == 85.5
 
         run_async(run_test())
 
@@ -942,12 +976,7 @@ class TestCoachResultsValidation:
             ]
             mock_query = await mock_sdk_query(messages)
 
-            mock_sdk = MagicMock()
-            mock_sdk.query = mock_query
-            mock_sdk.ClaudeAgentOptions = MagicMock()
-            mock_sdk.CLINotFoundError = type("CLINotFoundError", (Exception,), {})
-            mock_sdk.ProcessError = type("ProcessError", (Exception,), {"exit_code": 1, "stderr": ""})
-            mock_sdk.CLIJSONDecodeError = type("CLIJSONDecodeError", (Exception,), {})
+            mock_sdk = _create_mock_sdk(mock_query)
 
             with patch.dict(sys.modules, {"claude_agent_sdk": mock_sdk}):
                 result = await agent_invoker._invoke_task_work_implement(
@@ -974,10 +1003,17 @@ class TestCoachResultsValidation:
 
         run_async(run_test())
 
-    def test_results_file_not_created_on_sdk_failure(
+    def test_failure_results_file_written_on_sdk_failure(
         self, agent_invoker, mock_worktree
     ):
-        """Results file is NOT created when SDK invocation fails."""
+        """A failed SDK invocation still leaves a results file, marked failed.
+
+        ``_write_failure_results`` has run on every error path since this file
+        was added (b7f0472ac): "Called on ALL error paths to ensure Coach
+        receives actionable information instead of 'results not found'". So
+        the Coach reads a failure record naming the cause, never a missing
+        file and never a success.
+        """
 
         async def run_test():
             # Create mock SDK that raises ProcessError
@@ -1004,10 +1040,17 @@ class TestCoachResultsValidation:
                 )
 
             assert result.success is False
+            assert "Error: tests failed" in result.error
 
-            # Verify results file was NOT created
+            # The Coach gets a failure record, not a missing file.
             results_path = mock_worktree / ".guardkit" / "autobuild" / "TASK-FAIL-001" / "task_work_results.json"
-            assert not results_path.exists(), "task_work_results.json should NOT exist after failure"
+            assert results_path.exists(), "task_work_results.json should record the failure"
+            results = json.loads(results_path.read_text())
+            assert results["task_id"] == "TASK-FAIL-001"
+            assert results["completed"] is False
+            assert results["success"] is False
+            assert results["quality_gates"]["all_passed"] is False
+            assert "Error: tests failed" in results["error"]
 
         run_async(run_test())
 

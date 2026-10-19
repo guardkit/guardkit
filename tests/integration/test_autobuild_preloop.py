@@ -435,77 +435,14 @@ class TestPreLoopFailsWithoutPlan:
 
 @pytest.mark.integration
 class TestPlayerFailsWithoutPlan:
-    """Test that Player fails appropriately when plan is missing."""
+    """The pre-loop's plan reaching the Player.
 
-    @pytest.mark.asyncio
-    async def test_player_fails_without_plan(
-        self,
-        mock_worktree_with_task,
-    ):
-        """
-        Verify Player raises appropriate error when implementation plan is missing.
-
-        This test verifies that the Player agent (via AgentInvoker) properly
-        handles the case where no implementation plan exists, which would occur
-        if pre-loop was skipped or failed.
-        """
-        # Create invoker pointing to worktree without plan
-        invoker = AgentInvoker(
-            worktree_path=mock_worktree_with_task,
-            development_mode="tdd",
-            use_task_work_delegation=True,
-        )
-
-        # Move task to design_approved state (normally done by pre-loop)
-        task_file = mock_worktree_with_task / "tasks" / "backlog" / "TASK-PRELOOP-001-test-preloop.md"
-        design_approved_dir = mock_worktree_with_task / "tasks" / "design_approved"
-        new_task_file = design_approved_dir / "TASK-PRELOOP-001-test-preloop.md"
-
-        # Update status in frontmatter
-        content = task_file.read_text()
-        content = content.replace("status: backlog", "status: design_approved")
-        task_file.write_text(content)
-
-        # Move file
-        import shutil
-        shutil.move(str(task_file), str(new_task_file))
-
-        # Create player report file that task-work would have created
-        report_dir = mock_worktree_with_task / ".guardkit" / "autobuild" / "TASK-PRELOOP-001"
-        report_file = report_dir / "player_turn_1.json"
-        report_file.write_text(json.dumps({
-            "task_id": "TASK-PRELOOP-001",
-            "turn": 1,
-            "files_modified": [],
-            "files_created": [],
-            "tests_written": [],
-            "tests_run": False,
-            "tests_passed": False,
-            "implementation_notes": "Failed - no plan available",
-            "concerns": ["No implementation plan found"],
-            "requirements_addressed": [],
-            "requirements_remaining": ["All requirements"],
-        }), encoding='utf-8')
-
-        # Mock subprocess to simulate task-work failure due to missing plan
-        with patch("asyncio.create_subprocess_exec") as mock_exec:
-            mock_proc = AsyncMock()
-            mock_proc.returncode = 1  # Non-zero exit code
-            mock_proc.communicate = AsyncMock(return_value=(
-                b'',
-                b'Error: Implementation plan not found for TASK-PRELOOP-001'
-            ))
-            mock_exec.return_value = mock_proc
-
-            result = await invoker.invoke_player(
-                task_id="TASK-PRELOOP-001",
-                turn=1,
-                requirements="Implement feature X",
-            )
-
-            # Verify Player failed
-            assert result.success is False
-            assert "plan" in result.error.lower() or "not found" in result.error.lower()
+    (``test_player_fails_without_plan`` was removed on 19 October 2026: since
+    6c624c8eb the invoker's state bridge writes a stub plan when none exists in
+    AutoBuild context, so a Player no longer fails for want of one; and the
+    ``guardkit task-work`` subprocess it patched was never spawned. The stub
+    plan is covered in ``tests/unit/test_state_bridge.py``.)
+    """
 
     @pytest.mark.asyncio
     async def test_player_receives_plan_context_from_preloop(

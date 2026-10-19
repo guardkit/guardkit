@@ -50,7 +50,7 @@ from guardkit.worktrees import Worktree
 # ============================================================================
 
 
-def _git_init_seeded(path: Path) -> None:
+def _git_init_seeded(path: Path, branch: str = "main") -> None:
     """Make ``path`` a real git repo with a `main` branch and one commit.
 
     The orchestrator writes evidence commits into the worktree it is handed.
@@ -74,6 +74,8 @@ def _git_init_seeded(path: Path) -> None:
     run("config", "user.email", "test@guardkit.local")
     run("config", "user.name", "GuardKit Test")
     run("commit", "--allow-empty", "-m", "seed")
+    if branch != "main":
+        run("checkout", "-q", "-b", branch)
 
 
 # ============================================================================
@@ -161,7 +163,11 @@ complexity: {scenario['complexity']}
     # commit.
     worktree_dir = tmp_path / ".guardkit" / "worktrees" / task_id
     worktree_dir.mkdir(parents=True)
-    _git_init_seeded(worktree_dir)
+    # A real AutoBuild worktree is checked out on its own branch, and the
+    # orchestrator refuses to checkpoint anywhere else (worktree_checkpoints,
+    # head identity), so the fixture repo is on the branch mock_worktree
+    # declares, branched from the seeded main.
+    _git_init_seeded(worktree_dir, branch=f"autobuild/{task_id}")
 
     return {
         "task_id": task_id,
@@ -347,6 +353,14 @@ def mock_coach_validator(task_scenario, mock_task_work_results):
 
     Returns realistic validation results based on the simulated
     task-work quality gate results.
+
+    Which part of this decides a turn (checked 19 October 2026): since
+    51ac051b5 (21 May 2026, TASK-HMIG-008R) the LLM Coach is primary. By
+    default the orchestrator asks this validator only for evidence
+    (``gather_evidence``, which here returns a MagicMock, keeping the run
+    hermetic), and the decision is the one the test's ``invoke_coach`` mock
+    returns. ``validate()``'s result below is read only on the
+    ``GUARDKIT_COACH_LEGACY=1`` revert.
     """
     with patch("guardkit.orchestrator.autobuild.CoachValidator") as mock_validator_class:
         mock_instance = MagicMock()
