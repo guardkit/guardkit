@@ -172,10 +172,16 @@ CHECKPOINT_EXCLUDE_PATHSPECS: Tuple[str, ...] = (
     # under ``.tmp/`` (node's compile cache), 8 under ``.npm/`` (npm's
     # ``_logs/`` + ``_update-notifier-last-checked``), the orchestrator's
     # own plan stub, and the harness's git lock — 1374 junk paths beside
-    # ~10 of real Player work. npm mints these INSIDE the worktree because
-    # the run recipe points its HOME/cache there; the target repo's
-    # .gitignore (node_modules/dist/coverage/*.tsbuildinfo) knows nothing
-    # about them, which is exactly the dependency the junk law removes.
+    # ~10 of real Player work. npm minted these INSIDE the worktree because
+    # the builder's shell pointed its HOME (and TMPDIR, ``.tmp``) there; the
+    # target repo's .gitignore (node_modules/dist/coverage/*.tsbuildinfo)
+    # knows nothing about them, which is exactly the dependency the junk law
+    # removes. Since 19 October 2026 the shell's HOME and TMPDIR are private
+    # folders outside the worktree (guardkitfactory ``backend_config``:
+    # ``<scratch>/toolchain/SHELL-HOME`` and ``SHELL-TMPDIR``), so these
+    # caches no longer land here; this exclude, like the HOME-driven ones
+    # above, stays as a safety net for a tool that still writes into the
+    # worktree.
     ":(exclude,glob)**/.tmp/**",
     ":(exclude,glob)**/.npm/**",
     # ``.claude/task-plans/`` ONLY — deliberately NOT ``**/.claude/**``.
