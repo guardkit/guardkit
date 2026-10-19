@@ -6166,6 +6166,10 @@ class CoachValidator:
                 model=model,
                 cwd=self.worktree_path,
                 env=_sdk_env_overrides(worktree_str, venv_bin),
+                # 19 October 2026: the checker's test run gets the checker's
+                # own shell folders, never the builder's (LangGraph only; the
+                # selector compares the role only with "player" otherwise).
+                harness_role="coach",
             )
 
             async with asyncio.timeout(self.test_timeout):

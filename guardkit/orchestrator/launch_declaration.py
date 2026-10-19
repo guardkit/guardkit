@@ -353,10 +353,23 @@ def load_launch_snapshot(
 
 
 def _private_directory(directory: Path) -> Path:
-    """Create ``directory`` (mode 0700) or reuse it; refuse anything else."""
+    """Create ``directory`` (mode 0700) or reuse it; refuse anything else.
+
+    19 October 2026: an existing folder is not taken as it is. It is opened
+    without following a symlink, must belong to this process's user, and is
+    set to mode 0700 if it is not already, as a new one would be. A symlink,
+    a non-folder, another user's folder or one that cannot be made private
+    raises :class:`LaunchEnvironmentError`. (These are the project commands'
+    private ``HOME`` and ``TMPDIR`` and the declared scratch folders; the
+    factory's shell folders get the same treatment in guardkitfactory.)
+    Two callers making the same new folder at once both succeed.
+    """
     try:
         if not os.path.lexists(directory):
-            directory.mkdir(mode=0o700)
+            try:
+                directory.mkdir(mode=0o700)
+            except FileExistsError:
+                pass
         status = directory.lstat()
     except OSError as exc:
         raise LaunchEnvironmentError(
@@ -366,6 +379,35 @@ def _private_directory(directory: Path) -> Path:
         raise LaunchEnvironmentError(
             f"the declared scratch folder is not a real folder: {directory}"
         )
+    try:
+        descriptor = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    except OSError as exc:
+        raise LaunchEnvironmentError(
+            f"the declared scratch folder is not a real folder: {directory}"
+        ) from exc
+    try:
+        try:
+            opened = os.fstat(descriptor)
+        except OSError as exc:
+            raise LaunchEnvironmentError(
+                f"the declared scratch folder could not be inspected: {directory}"
+            ) from exc
+        # (LaunchEnvironmentError is an OSError, so it is raised outside the
+        # handlers that turn other OSErrors into a plain sentence.)
+        if opened.st_uid != os.geteuid():
+            raise LaunchEnvironmentError(
+                f"the declared scratch folder belongs to another user: {directory}"
+            )
+        if stat.S_IMODE(opened.st_mode) != 0o700:
+            try:
+                os.fchmod(descriptor, 0o700)
+            except OSError as exc:
+                raise LaunchEnvironmentError(
+                    f"the declared scratch folder could not be made private: "
+                    f"{directory}"
+                ) from exc
+    finally:
+        os.close(descriptor)
     return directory
 
 
