@@ -61,7 +61,7 @@ The simplest approach (Approach A from the review) - inline env vars:
 # Quick test with a simple existing task
 ANTHROPIC_BASE_URL=http://promaxgb10-41b1:8000 \
 ANTHROPIC_API_KEY=vllm-local-key \
-guardkit autobuild task TASK-GLI-004 --verbose
+guardkit autobuild task TASK-GLI-004 --verbose --model claude-sonnet-4-5-20250929
 TASK-GLI-004 (update graphiti.yaml schema) is complexity 2, making it a good first test.
 
 Step 4: Create the Permanent Wrapper Script (Optional)
@@ -91,7 +91,8 @@ export ANTHROPIC_API_KEY="vllm-local-key"
 
 echo "AutoBuild → VLLM/Qwen3 @ ${VLLM_URL}"
 echo "---"
-exec guardkit autobuild "$@"
+# The served-model name above; AutoBuild's own default (claude-opus-5-5) is not served here.
+exec guardkit autobuild "$@" --model "${VLLM_MODEL:-claude-sonnet-4-5-20250929}"
 EOF
 
 chmod +x ~/.local/bin/autobuild-vllm
@@ -108,7 +109,7 @@ Medium task	autobuild-vllm task TASK-GLI-002 --verbose	Multi-file edits, config 
 Full workflow	autobuild-vllm task TASK-GLI-003 --verbose	Complex code injection, mocking
 What to Watch For
 Tool calling failures: If the model doesn't use tools correctly, try --tool-call-parser qwen3_xml instead of qwen3_coder in the vllm-serve command
-Model name mismatch: The --served-model-name must be claude-sonnet-4-5-20250929 (AutoBuild's default)
+Model name mismatch: The --served-model-name must match the --model AutoBuild is given (this guide serves and passes claude-sonnet-4-5-20250929; AutoBuild's own default, claude-opus-5-5, is not served by vLLM)
 Slow first request: Normal - prefix cache is cold. Subsequent turns should be faster
 Context overflow: If tasks have very large prompts, reduce --max-model-len or use the 30B model
 Key Verification
