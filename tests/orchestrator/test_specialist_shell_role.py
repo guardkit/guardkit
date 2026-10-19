@@ -72,6 +72,9 @@ def shells(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict:
     # offline, no tracing; restored afterwards.
     profile = tmp_path / "dcode-profile"
     profile.mkdir()
+    # The selector keeps one dcode profile per process; start from none so
+    # an earlier test's profile does not refuse this one (as test_selector).
+    monkeypatch.setattr(selector, "_AUTO_DCODE_PROFILE", None)
     monkeypatch.setenv("DEEPAGENTS_HOME", str(profile))
     monkeypatch.setenv("DEEPAGENTS_CODE_OFFLINE", "1")
     for name in ("LANGCHAIN_TRACING", "LANGCHAIN_TRACING_V2", "LANGSMITH_TRACING"):
