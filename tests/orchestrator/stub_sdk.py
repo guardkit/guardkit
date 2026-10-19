@@ -17,6 +17,11 @@ The recorder:
   (for the wiring's failure path).
 * Yields a single ``ResultMessage`` so the consumer in
   ``AgentInvoker._invoke_with_role`` exits cleanly on the first iteration.
+  For the code-reviewer it first yields one ``AssistantMessage`` whose text
+  is the review: since 17 September 2026 (``02effd84b``) Phase 5 keeps the
+  reviewer's last words as its evidence and counts a review with none as
+  failed, so a reviewer that says nothing is not a stand-in for one that
+  reviewed.
 
 References:
 
@@ -33,6 +38,13 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, AsyncIterator, List, Optional
+
+
+#: The review the stand-in code-reviewer says, in words (Phase 5 evidence).
+STUB_REVIEW_TEXT: str = (
+    "Stub review: the change was read against the acceptance criteria; "
+    "nothing further to report."
+)
 
 
 @dataclass
@@ -118,6 +130,10 @@ class StubSDKRecorder:
         # ResultMessage class assigned by build_mock_sdk_module() so the
         # consumer's ``isinstance(message, ResultMessage)`` check passes.
         self.ResultMessage: Optional[type] = None
+        # AssistantMessage / TextBlock classes assigned the same way, for the
+        # code-reviewer's review text.
+        self.AssistantMessage: Optional[type] = None
+        self.TextBlock: Optional[type] = None
 
     async def query(
         self, prompt: str, options: Any
@@ -142,6 +158,10 @@ class StubSDKRecorder:
                     "stub: simulated test-orchestrator SDK failure"
                 )
             self._write_phase_4_summary(_PHASE_4_SUMMARY_PASS)
+
+        if agent_type == "code-reviewer" and self.AssistantMessage is not None:
+            # The review, in words: what Phase 5 keeps as its evidence.
+            yield self.AssistantMessage(content=[self.TextBlock(STUB_REVIEW_TEXT)])
 
         yield self._make_result_message()
 
@@ -210,9 +230,21 @@ def build_mock_sdk_module(recorder: StubSDKRecorder) -> Any:
         """Sentinel ResultMessage carrying no fields the consumer needs."""
 
     class _MockAssistantMessage:
-        """Sentinel AssistantMessage; consumer uses isinstance + .error."""
+        """AssistantMessage stand-in; consumer uses isinstance + .error + .content."""
+
+        def __init__(self, content: Optional[list] = None) -> None:
+            self.content = content or []
+            self.error = None
+
+    class TextBlock:
+        """Named ``TextBlock``: the harness reads text blocks by class name."""
+
+        def __init__(self, text: str) -> None:
+            self.text = text
 
     recorder.ResultMessage = _MockResultMessage
+    recorder.AssistantMessage = _MockAssistantMessage
+    recorder.TextBlock = TextBlock
 
     mock = MagicMock()
     mock.query = recorder.query
