@@ -127,9 +127,15 @@ def detect_git_changes(worktree_path: Path) -> Optional[GitChangesSummary]:
         return None
 
     try:
-        # Get git status in porcelain format (machine-readable)
+        # Get git status in porcelain format (machine-readable).
+        # ``--untracked-files=all`` names each new file. Without it git folds
+        # a new folder into one ``?? folder/`` line, the recovered report then
+        # lists the folder as a created file, and the Coach's claim audit
+        # calls that folder a fabricated file: build FEAT-D31F's task 2 was
+        # refused on its recovery turn over ``.claude/task-plans/`` and
+        # ``.local/`` (19 October 2026).
         status_result = run_git(
-            ["status", "--porcelain"],
+            ["status", "--porcelain", "--untracked-files=all"],
             cwd=worktree_path,
             timeout=GIT_COMMAND_TIMEOUT_SECONDS,
         )

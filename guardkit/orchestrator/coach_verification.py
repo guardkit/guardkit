@@ -550,6 +550,13 @@ class CoachVerifier:
                 if full_path.exists():
                     continue
 
+                # A modified file that is missing because this task deleted
+                # it is a true report (see _verify_claims_were_staged).
+                if file_list_key == "files_modified" and self._deleted_since_task_base(
+                    self._normalize_claimed_path(str(file_path))
+                ):
+                    continue
+
                 if (
                     self.task_id is not None
                     and self.state_bridge is not None
@@ -675,10 +682,17 @@ class CoachVerifier:
         # that is missing, untracked or ignored is still reported below.
         authored_claims: set[str] = set()
         run_claims: set[str] = set()
+        modified_claims: set[str] = set()
+        created_or_test_claims: set[str] = set()
         for key in ("files_created", "files_modified", "tests_written"):
             for entry in report.get(key) or []:
                 if entry:
-                    authored_claims.add(self._normalize_claimed_path(str(entry)))
+                    normalized = self._normalize_claimed_path(str(entry))
+                    authored_claims.add(normalized)
+                    if key == "files_modified":
+                        modified_claims.add(normalized)
+                    else:
+                        created_or_test_claims.add(normalized)
         for promise in report.get("completion_promises") or []:
             if not isinstance(promise, dict):
                 continue
@@ -847,6 +861,33 @@ class CoachVerifier:
         discrepancies: List[Discrepancy] = []
         for path in dropped:
             classification = self._classify_dropped_path(path)
+            if (
+                classification == "fabricated"
+                and path in modified_claims
+                # files_modified must be the path's ONLY claim. The git step
+                # adds every deleted path to files_modified on every later
+                # turn, so a builder that also says it created the file,
+                # wrote a test there, or cites it for a check is making a
+                # claim the deletion does not make true.
+                and path not in created_or_test_claims
+                and path not in run_claims
+                and self._deleted_since_task_base(path)
+            ):
+                # A file this task DELETED, and an earlier turn's checkpoint
+                # committed the deletion: porcelain is quiet and the file is
+                # gone, but the report is true - the file was changed, by
+                # being removed. The orchestrator's own git enrichment lists
+                # it under files_modified on every later turn, so calling it
+                # fabricated refused build FEAT-D31F's task on four turns in a
+                # row with nothing the builder could correct (19 October
+                # 2026). Same reasoning as _differs_from_task_base below.
+                # Whether the deletion was right is for the other checks.
+                logger.debug(
+                    "claim audit: %s was deleted by this task and the "
+                    "deletion is already committed; no honesty record",
+                    path,
+                )
+                continue
             if classification == "gitignored":
                 ignore_rule = self._git_check_ignore_rule(path)
                 discrepancies.append(
@@ -984,7 +1025,12 @@ class CoachVerifier:
                     if not path_exists:
                         cause = (
                             "Most likely cause: the Player claimed work "
-                            "on a file that does not exist on disk."
+                            "on a file that does not exist on disk. "
+                            "To clear this record: create the file at "
+                            "this path if the task needs it, or take the "
+                            "path out of the files you report as created, "
+                            "changed or tested. Other checks are not run "
+                            "while this record stands."
                         )
                     else:
                         cause = (
@@ -1240,6 +1286,31 @@ class CoachVerifier:
         if not isinstance(commit, str) or not commit.strip():
             return None
         return f"{commit.strip()}^"
+
+    def _deleted_since_task_base(self, path: str) -> bool:
+        """Whether ``path`` existed where this task started and is gone now.
+
+        That is a deletion this task made. Fail CLOSED: no base, no git, a
+        path still on disk, or any error returns ``False`` and the record
+        stands exactly as before. A path that was never in the repository at
+        the task's start is not a deletion, so a claim of a file that never
+        existed stays fabricated.
+        """
+        if (self.worktree_path / path).exists():
+            return False
+        base = self._task_base_commit()
+        if base is None:
+            return False
+        try:
+            result = run_git(
+                ["cat-file", "-e", f"{base}:{path}"],
+                cwd=self.worktree_path,
+                check=False,
+                timeout=30,
+            )
+        except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+            return False
+        return result.returncode == 0
 
     def _differs_from_task_base(self, path: str) -> bool:
         """Whether ``path`` differs from where this task started.
