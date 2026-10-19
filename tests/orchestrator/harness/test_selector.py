@@ -1496,7 +1496,10 @@ class TestSelectHarnessBackendKwargCompat:
         received: dict[str, Any] = {}
 
         def new_factory(
-            worktree: Any, *, max_tool_result_chars: int | None = None
+            worktree: Any,
+            *,
+            max_tool_result_chars: int | None = None,
+            shell_role: str | None = None,  # current since 19 October 2026
         ) -> Any:
             received["worktree"] = worktree
             received["cap"] = max_tool_result_chars
@@ -1533,7 +1536,10 @@ class TestSelectHarnessBackendKwargCompat:
         received: dict[str, Any] = {}
 
         def new_factory(
-            worktree: Any, *, max_tool_result_chars: int | None = None
+            worktree: Any,
+            *,
+            max_tool_result_chars: int | None = None,
+            shell_role: str | None = None,  # current since 19 October 2026
         ) -> Any:
             received["cap"] = max_tool_result_chars
             return MagicMock(name="composite-backend")
@@ -1781,7 +1787,9 @@ class TestLaunchDeclarationReachesTheBackend:
             launch_declaration=None,
         )
 
-        assert set(received) == {"worktree", "max_tool_result_chars"}
+        # The shell role is always named (19 October 2026); nothing else.
+        assert set(received) == {"worktree", "max_tool_result_chars", "shell_role"}
+        assert received["shell_role"] == "specialist"
 
     def test_declared_scratch_without_a_scratch_folder_is_refused(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
@@ -2071,3 +2079,81 @@ def test_an_old_factory_gets_no_lock_and_keeps_todays_behaviour(
     assert len(config_calls) == 1 and "lock_profile_identity" not in config_calls[0]
     assert config_calls[0]["dcode_home"] == made.resolve()
     assert constructions
+
+
+# ----------------------------------------------------------------------
+# 19 October 2026: the factory is told which agent a shell is for, so the
+# builder's and the checker's shells get their own home and temporary
+# folders and the builder cannot change what the checker runs.
+# ----------------------------------------------------------------------
+
+
+class TestShellRoleReachesTheBackend:
+    @staticmethod
+    def _recording_factory(received: dict[str, Any]) -> Any:
+        def new_factory(worktree: Any, **kwargs: Any) -> Any:
+            received.update(kwargs)
+            return MagicMock(name="composite-backend")
+
+        return new_factory
+
+    @pytest.mark.parametrize(
+        "harness_role, shell_role",
+        [("player", "builder"), ("coach", "checker"), (None, "specialist"),
+         ("design", "specialist")],
+    )
+    def test_each_harness_role_names_its_shell(
+        self, harness_role: Any, shell_role: str
+    ) -> None:
+        from guardkit.orchestrator.harness.selector import shell_role_for
+
+        assert shell_role_for(harness_role) == shell_role
+
+    @pytest.mark.parametrize(
+        "harness_role, shell_role", [("coach", "checker"), (None, "specialist")]
+    )
+    def test_select_harness_hands_the_role_to_the_factory(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+        harness_role: Any,
+        shell_role: str,
+    ) -> None:
+        monkeypatch.setenv(_TEST_ENV_VAR, "langgraph")
+        received: dict[str, Any] = {}
+        _install_fake_guardkitfactory(monkeypatch, self._recording_factory(received))
+
+        select_harness(
+            env_var=_TEST_ENV_VAR, model=MagicMock(), cwd=tmp_path,
+            harness_role=harness_role,
+        )
+
+        assert received["shell_role"] == shell_role
+
+    def test_the_role_is_forwarded_to_a_factory_that_takes_it(self) -> None:
+        received: dict[str, Any] = {}
+        _build_backend_with_optional_cap(
+            self._recording_factory(received), Path("/tmp/wt"), None,
+            shell_role="builder",
+        )
+        assert received["shell_role"] == "builder"
+
+    def test_an_older_factory_still_builds_and_the_drop_is_said(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        with caplog.at_level(
+            logging.WARNING, logger="guardkit.orchestrator.harness.selector"
+        ):
+            result = _build_backend_with_optional_cap(
+                lambda worktree, *, max_tool_result_chars=None: "backend",
+                Path("/tmp/wt"), None, shell_role="checker",
+            )
+        assert result == "backend"
+        assert "checker's shell its own home" in caplog.text
+
+    def test_no_role_passes_nothing(self) -> None:
+        received: dict[str, Any] = {}
+        _build_backend_with_optional_cap(
+            self._recording_factory(received), Path("/tmp/wt"), None
+        )
+        assert "shell_role" not in received

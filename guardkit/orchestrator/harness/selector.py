@@ -979,6 +979,7 @@ def _build_backend_with_optional_cap(
     launch_environment: dict[str, list[str]] | None = None,
     launch_scratch_root: Path | None = None,
     read_only: bool = False,
+    shell_role: str | None = None,
 ) -> Any:
     """Call ``build_autobuild_backend``, forwarding the gather cap defensively.
 
@@ -1072,7 +1073,34 @@ def _build_backend_with_optional_cap(
                 "is not built in its place."
             )
         kwargs["read_only"] = True
+    # 19 October 2026: which agent the shell is for, so each role gets its own
+    # private HOME and TMPDIR and the builder's shell cannot change what the
+    # checker's shell runs. An older factory still keeps every shell's HOME
+    # at the worktree, so dropping the name loses nothing it had; say so.
+    if shell_role is not None:
+        if _factory_accepts_kwarg(factory, "shell_role"):
+            kwargs["shell_role"] = shell_role
+        else:
+            logger.warning(
+                "The installed guardkitfactory cannot give the %s's shell its "
+                "own home and temporary folders; install the matching Factory "
+                "revision.",
+                shell_role,
+            )
     return factory(worktree, **kwargs)
+
+
+#: The shell each harness role gets (19 October 2026): the Player builds, the
+#: Coach (and its test run) checks, and anything else (the design phase, the
+#: specialists) has a third folder of its own.
+_SHELL_ROLE_BY_HARNESS_ROLE = {"player": "builder", "coach": "checker"}
+#: Every shell role the factory knows (guardkitfactory ``SHELL_ROLES``).
+SHELL_ROLES = ("builder", "checker", "specialist")
+
+
+def shell_role_for(harness_role: Any) -> str:
+    """The factory shell role for a ``harness_role`` passed to ``select_harness``."""
+    return _SHELL_ROLE_BY_HARNESS_ROLE.get(harness_role, "specialist")
 
 
 def provided_scratch_root(harness: Any) -> Path | None:
@@ -1193,6 +1221,17 @@ def select_harness(
     # Coach/synthesis retain the shared Deep Agents graph and SDK remains a
     # separate substrate.
     harness_role = harness_kwargs.pop("harness_role", None)
+    # 19 October 2026 (review R1): the shell's role, when it is not the one
+    # the permission role implies. A specialist runs with the Player's or the
+    # Coach's permissions (``harness_role``) but must get the specialists'
+    # own home and temporary folders, never the builder's or the checker's.
+    # Popped here like ``harness_role`` so it never reaches a constructor.
+    shell_role_override = harness_kwargs.pop("shell_role", None)
+    if shell_role_override is not None and shell_role_override not in SHELL_ROLES:
+        raise ValueError(
+            f"select_harness: shell_role must be one of {', '.join(SHELL_ROLES)}, "
+            f"not {shell_role_override!r}"
+        )
 
     # 3 October 2026 (concurrent builds): per-call environment overrides for
     # the SDK subprocess (the Coach's PYTHONPATH/PATH for its test run), so
@@ -1386,6 +1425,7 @@ def select_harness(
             launch_environment,
             launch_scratch_root,
             read_only=read_only,
+            shell_role=shell_role_override or shell_role_for(harness_role),
         )
         # TASK-FIX-SPECINVOKE01: forward ``on_model_activity`` only when the
         # installed guardkitfactory's signature accepts it; drop-with-WARNING

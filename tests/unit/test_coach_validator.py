@@ -5558,6 +5558,25 @@ class TestSdkEnvMerge:
         overrides = select.call_args.kwargs["env"]
         assert overrides["PYTHONPATH"] == str(tmp_worktree), "PYTHONPATH must be set to worktree root"
 
+    def test_the_test_run_asks_for_the_checkers_shell(self, tmp_worktree):
+        """19 October 2026: the Coach's test run is the checker's shell.
+
+        ``harness_role="coach"`` makes the selector ask the factory for the
+        checker's own home and temporary folders, never the builder's.
+        """
+        import asyncio
+
+        validator = CoachValidator(str(tmp_worktree))
+        fake = _FakeHarness(events=[])
+
+        with patch(
+            "guardkit.orchestrator.quality_gates.coach_validator.select_harness",
+            return_value=fake,
+        ) as select:
+            asyncio.run(validator._run_tests_via_sdk("pytest tests/"))
+
+        assert select.call_args.kwargs["harness_role"] == "coach"
+
     def test_sdk_env_pythonpath_prepends_worktree(self, tmp_worktree, monkeypatch):
         """PYTHONPATH at harness.invoke() time includes the worktree root as a prefix."""
         import asyncio

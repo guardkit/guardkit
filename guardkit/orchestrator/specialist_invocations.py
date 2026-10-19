@@ -663,6 +663,11 @@ async def run_specialist(
         # which wrongly put the reviewer's timeouts on the Coach's record.
         "event_role": "specialist",
         "event_agent_name": specialist_name,
+        # 19 October 2026 (review R1): the specialists' own shell folders. The
+        # permission role above makes the test orchestrator a "player" and the
+        # code reviewer a "coach"; without this they would share the
+        # builder's or the checker's home and temporary folders.
+        "shell_role": "specialist",
     }
 
     capturing = capture_final_message
