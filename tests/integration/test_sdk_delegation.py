@@ -66,6 +66,30 @@ from guardkit.orchestrator.exceptions import (
 # ============================================================================
 
 
+@pytest.fixture(autouse=True)
+def _routine_seat(monkeypatch: pytest.MonkeyPatch, m0_routine_fleet_route: str) -> str:
+    """The seat and the harness these tests were written for, stated outright.
+
+    Two things changed under this file after it was written (merged 25 January 2026):
+
+    * TASK-HMIG-011 (16 June 2026) flipped the default harness from ``sdk`` to
+      ``langgraph``. These tests drive ``_invoke_task_work_implement`` through
+      a patched ``claude_agent_sdk`` module (``sys.modules``), which only the
+      ``sdk`` harness calls, so they name it — the SDK path stays an opt-in
+      fallback, exactly as the cutover left it.
+    * The effective-seat M0 fence at ``select_harness`` (``m0_fence.py``,
+      2 August 2026) refuses a construction with no model: an unnamed seat falls
+      to a frontier default. These tests declare the routine local-fleet route
+      with the suite's sanctioned fixture (``tests/conftest.py``), and every
+      ``AgentInvoker`` here is handed that seat as ``model_name`` — never
+      ``GUARDKIT_ALLOW_FRONTIER``, which would switch the fence off.
+
+    Nothing here reaches a network: every SDK call goes to the patched module.
+    """
+    monkeypatch.setenv("GUARDKIT_HARNESS", "sdk")
+    return m0_routine_fleet_route
+
+
 @pytest.fixture
 def mock_worktree(tmp_path):
     """
@@ -148,14 +172,15 @@ SDK delegation implementation plan.
 
 
 @pytest.fixture
-def agent_invoker(mock_worktree):
-    """Create AgentInvoker instance with task-work delegation enabled."""
+def agent_invoker(mock_worktree, _routine_seat):
+    """Create AgentInvoker instance with task-work delegation enabled, on the routine local seat."""
     return AgentInvoker(
         worktree_path=mock_worktree,
         max_turns_per_agent=30,
         sdk_timeout_seconds=60,
         use_task_work_delegation=True,
         development_mode="tdd",
+        model_name=_routine_seat,
     )
 
 
@@ -477,12 +502,13 @@ class TestSDKDelegationHappyPath:
 class TestSDKTimeoutHandling:
     """Test SDK timeout handling."""
 
-    def test_sdk_timeout_raises_error(self, mock_worktree):
+    def test_sdk_timeout_raises_error(self, mock_worktree, _routine_seat):
         """SDK timeout raises SDKTimeoutError."""
         invoker = AgentInvoker(
             worktree_path=mock_worktree,
             sdk_timeout_seconds=1,  # Very short timeout
             use_task_work_delegation=True,
+            model_name=_routine_seat,
         )
 
         # Create mock that simulates slow response
@@ -504,12 +530,13 @@ class TestSDKTimeoutHandling:
 
         assert "timeout" in str(exc_info.value).lower()
 
-    def test_invoke_player_timeout_returns_failure(self, mock_worktree):
+    def test_invoke_player_timeout_returns_failure(self, mock_worktree, _routine_seat):
         """invoke_player returns failure result on timeout."""
         invoker = AgentInvoker(
             worktree_path=mock_worktree,
             sdk_timeout_seconds=1,
             use_task_work_delegation=True,
+            model_name=_routine_seat,
         )
 
         async def slow_query(*args, **kwargs):
@@ -543,11 +570,12 @@ class TestSDKTimeoutHandling:
 class TestSDKErrorHandling:
     """Test SDK error handling scenarios."""
 
-    def test_sdk_import_error_handled(self, mock_worktree):
+    def test_sdk_import_error_handled(self, mock_worktree, _routine_seat):
         """Missing SDK import is handled gracefully."""
         invoker = AgentInvoker(
             worktree_path=mock_worktree,
             use_task_work_delegation=True,
+            model_name=_routine_seat,
         )
 
         async def run_test():
@@ -584,6 +612,11 @@ class TestSDKErrorHandling:
         result = run_async(run_test())
 
         assert result.success is False
+        # THE STUB'S OWN FAILURE, not any failure: the configured ProcessError's
+        # stderr reaches the result. A run refused before the SDK is called (a
+        # fence refusal, a harness that cannot be built) also fails, but does
+        # not carry these words, and fails here.
+        assert "Command failed" in result.error
 
     def test_sdk_generic_error_handled(self, agent_invoker):
         """Generic SDK errors are handled gracefully."""
@@ -737,12 +770,15 @@ class TestDevelopmentModeHandling:
     """Test development mode parameter handling in SDK delegation."""
 
     @pytest.mark.parametrize("mode", ["tdd", "standard", "bdd"])
-    def test_mode_included_in_sdk_prompt(self, mock_worktree, mode):
+    def test_mode_included_in_sdk_prompt(self, mock_worktree, mode, _routine_seat):
         """Development mode is included in SDK prompt."""
+        # The invoker's own mode differs from the call's, so the prompt must
+        # carry the mode passed to this call, not the instance default.
         invoker = AgentInvoker(
             worktree_path=mock_worktree,
             use_task_work_delegation=True,
-            development_mode=mode,
+            development_mode="tdd" if mode != "tdd" else "standard",
+            model_name=_routine_seat,
         )
 
         captured_prompt = None
@@ -768,7 +804,12 @@ class TestDevelopmentModeHandling:
         run_async(run_test())
 
         assert captured_prompt is not None
-        assert f"--mode={mode}" in captured_prompt
+        # The prompt states the mode in its Context block. It used to be the
+        # slash command "/task-work <id> --implement-only --mode=<mode>"; that
+        # was replaced by an inline protocol on 15 February 2026 (42a07adda,
+        # TASK-POF-004) and the line now comes from
+        # _build_autobuild_implementation_prompt (TASK-ACO-002, 28534d78b).
+        assert f"- Mode: {mode}\n" in captured_prompt
 
     def test_mode_defaults_to_instance_mode(self, agent_invoker):
         """Mode defaults to instance development_mode when not specified."""

@@ -59,7 +59,7 @@ def test_repo_root(tmp_path):
     repo_dir.mkdir()
 
     # Initialize git repo
-    subprocess.run(["git", "init"], cwd=repo_dir, check=True, capture_output=True)
+    subprocess.run(["git", "init", "-b", "main"], cwd=repo_dir, check=True, capture_output=True)
     subprocess.run(
         ["git", "config", "user.name", "Test User"],
         cwd=repo_dir,
