@@ -51,7 +51,9 @@ the biggest single process, so the whole build was lost. Three changes:
   ``communicate()`` (which collects it), so the group's and the session's
   number stay this command's throughout. A process outside the group is
   pinned (a pidfd) and checked again before it is signalled, so a number
-  handed to another process in between is never signalled. A process that
+  handed to another process in between is never signalled. No process is
+  signalled by number alone: where no pidfd can be had, a process outside
+  the group is left running and the log says so plainly. A process that
   keeps the output open after the leader has exited no longer holds the
   caller until the time limit: after ``_PIPE_GRACE_SECONDS`` it is ended and
   the output so far is returned.
@@ -63,7 +65,10 @@ the biggest single process, so the whole build was lost. Three changes:
   program run directly gets it from GuardKit straight after it starts, so
   anything it starts in its first moments may miss it.
 * Without ``/proc`` (macOS) the command's group alone is signalled when it
-  returns, and nothing is counted.
+  returns, and nothing is counted. Without ``os.waitid`` (macOS before
+  Python 3.13) the leader's exit cannot be read without collecting it, so
+  the command is waited for with ``communicate()`` as before, and only a
+  timeout ends its group.
 """
 
 from __future__ import annotations
@@ -324,36 +329,52 @@ def _look(
 
 def _signal_outside(
     pids: Set[int], pgid: int, entry: Optional[bytes], since: Optional[int], sig: int
-) -> None:
-    """Signal each of the command's processes outside its group.
+) -> Set[int]:
+    """Signal each of the command's processes outside its group; return those
+    that could not be pinned, and so were not signalled.
 
-    Each is pinned first (a pidfd) and checked again, so a number handed to
-    another process in between is never signalled. Where a pidfd cannot be
-    had for any reason but the process being gone (a kernel older than Linux
-    5.3, or a security filter that refuses the call), the check is made just
-    before an ordinary signal instead, so the process is still ended.
+    Each is pinned first (a pidfd) and checked again. A pidfd names one
+    process, not a number: if the process ends and its number is handed to
+    another one after the pidfd is opened, the signal finds the ended process
+    and goes nowhere. No process is ever signalled by number alone (Codex
+    review, 19 October 2026): where a pidfd cannot be had (a kernel older
+    than Linux 5.3, or a security filter that refuses the call) the process
+    is left alone, and the caller says so.
     """
+    refused: Set[int] = set()
     for pid in pids:
         try:
             handle = os.pidfd_open(pid)
-        except AttributeError:
-            handle = None
+        except AttributeError:  # pragma: no cover - no pidfds in this Python
+            refused.add(pid)
+            continue
         except OSError as exc:
-            if exc.errno == errno.ESRCH:
-                continue  # gone
-            handle = None
+            if exc.errno != errno.ESRCH:  # ESRCH: it has gone
+                refused.add(pid)
+            continue
         try:
-            if _belongs(pid, pgid, entry, since) is None:
-                continue
-            if handle is None:
-                os.kill(pid, sig)
-            else:
+            if _belongs(pid, pgid, entry, since) is not None:
                 signal.pidfd_send_signal(handle, sig)
         except OSError:
-            pass
+            pass  # it ended after it was pinned
         finally:
-            if handle is not None:
-                os.close(handle)
+            os.close(handle)
+    return refused
+
+
+def _signal_group(pgid: int, sig: int) -> None:
+    """Signal the command's own group, in one step, by the number its
+    uncollected leader pins. A group holding only processes of another user
+    (a program run as another user, such as ``sudo``) refuses the signal;
+    that is said plainly and the ending goes on."""
+    try:
+        os.killpg(pgid, sig)
+    except PermissionError:
+        logger.warning(
+            "process group %s could not be signalled: permission refused (a "
+            "program in it runs as another user)",
+            pgid,
+        )
 
 
 def end_process_group(proc: subprocess.Popen, grace: float = _GRACE_SECONDS) -> None:
@@ -379,41 +400,56 @@ def end_process_group(proc: subprocess.Popen, grace: float = _GRACE_SECONDS) -> 
     _end_group(proc, grace)
 
 
+@dataclass(frozen=True)
+class _Ended:
+    """What an ending did: every process of the command it saw (the leader
+    apart), and those outside the group left running because no pidfd could
+    be had for them."""
+
+    seen: Set[int]
+    not_safe: Set[int]
+
+
 def _end_group(
     proc: subprocess.Popen,
     grace: float,
     entry: Optional[bytes] = None,
     since: Optional[int] = None,
-) -> Set[int]:
+) -> _Ended:
     """SIGTERM the command's own group (and its processes outside the group:
     in its session, or carrying ``entry``), wait briefly, then SIGKILL them
-    until nothing is running (bounded). Never collects the leader. Returns
-    every process of the command it saw, the leader apart."""
+    until nothing is running (bounded). Never collects the leader."""
     pgid = proc.pid  # a session leader's group id is its own pid
     seen: Set[int] = set()
+    refused: Set[int] = set()
+
+    def ended() -> _Ended:
+        left = _look(pgid, entry, since)[0]
+        return _Ended(seen, left & refused)
+
     if pgid == os.getpgrp():  # pragma: no cover - start_new_session prevents it
         proc.kill()
-        return seen
+        return _Ended(seen, set())
     if _leader_state(proc) == _COLLECTED:
         logger.warning(
             "process group %s was not signalled: its leader has already been "
             "collected, so the group's number may belong to another process",
             pgid,
         )
-        return seen
+        return _Ended(seen, set())
     # The leader is uncollected, so the number names this command's group
     # and session.
     members, outside = _look(pgid, entry, since)
     seen |= members
-    os.killpg(pgid, signal.SIGTERM)
-    _signal_outside(outside, pgid, entry, since, signal.SIGTERM)
+    _signal_group(pgid, signal.SIGTERM)
+    refused |= _signal_outside(outside, pgid, entry, since, signal.SIGTERM)
     deadline = time.monotonic() + grace
     while time.monotonic() < deadline:
         if _group_finished(proc, pgid):
             members, outside = _look(pgid, entry, since)
             seen |= members
-            if not outside:
-                return seen
+            if not outside - refused:
+                return ended()
         time.sleep(_LOOK_INTERVAL_SECONDS)
     # SIGKILL cannot be ignored, but a killed process is only gone once it
     # has finished exiting. Look until nothing is running, sending SIGKILL
@@ -426,13 +462,13 @@ def _end_group(
                 "while the group was being ended; it is no longer signalled",
                 pgid,
             )
-            return seen
+            return _Ended(seen, set())
         members, outside = _look(pgid, entry, since)
         seen |= members
-        os.killpg(pgid, signal.SIGKILL)
-        _signal_outside(outside, pgid, entry, since, signal.SIGKILL)
-        if _group_finished(proc, pgid) and not _look(pgid, entry, since)[1]:
-            return seen
+        _signal_group(pgid, signal.SIGKILL)
+        refused |= _signal_outside(outside - refused, pgid, entry, since, signal.SIGKILL)
+        if _group_finished(proc, pgid) and not _look(pgid, entry, since)[1] - refused:
+            return ended()
         if time.monotonic() >= deadline:
             logger.warning(
                 "process group %s: something in it was still running %.0f "
@@ -440,7 +476,7 @@ def _end_group(
                 pgid,
                 _KILL_WAIT_SECONDS,
             )
-            return seen
+            return ended()
         time.sleep(_LOOK_INTERVAL_SECONDS)
 
 
@@ -648,6 +684,25 @@ def _end_without_proc(proc: subprocess.Popen) -> None:
             time.sleep(_LOOK_INTERVAL_SECONDS)
 
 
+def _can_wait_without_collecting() -> bool:
+    """Whether ``os.waitid`` exists. macOS has it only from Python 3.13."""
+    try:
+        os.waitid  # noqa: B018 - the attribute's presence is the question
+    except AttributeError:
+        return False
+    return True
+
+
+def _not_safe_sentence(count: int) -> str:
+    if not count:
+        return ""
+    return (
+        f" {_processes(count).capitalize()} outside the command's process group "
+        f"could not be stopped safely on this system (no pidfd), so "
+        f"{'it is' if count == 1 else 'they are'} still running."
+    )
+
+
 def _run(
     proc: subprocess.Popen,
     marker: str,
@@ -663,31 +718,43 @@ def _run(
     On return or timeout every process of the command is ended before the
     leader is collected, and the log names what was stopped.
     """
+    if not _can_wait_without_collecting():
+        return _run_without_waitid(proc, input=input, timeout=timeout, grace=grace)
     entry = _marker_entry(marker)
     exchange: Optional[_Exchange] = None
     try:
         exchange = _Exchange(proc, input)
         timed_out = exchange.wait(timeout)
         if timed_out:
-            seen = _end_group(proc, grace, entry, since)
+            ended = _end_group(proc, grace, entry, since)
+            stopped = len(ended.seen - ended.not_safe)
             logger.warning(
                 "A project command ran past its time limit (%ss), so it was "
-                "stopped along with %s it started. The command: %s",
+                "stopped along with %s it started.%s The command: %s",
                 timeout,
-                "everything" if not seen else f"the {_processes(len(seen))}",
+                "everything" if not stopped else f"the {_processes(stopped)}",
+                _not_safe_sentence(len(ended.not_safe)),
                 _quoted(args),
             )
         elif not Path("/proc/self/stat").exists():
             _end_without_proc(proc)
         elif _anything_left(proc, entry, since):
-            seen = _end_group(proc, grace, entry, since)
-            if seen:
-                were = "it was" if len(seen) == 1 else "they were"
+            ended = _end_group(proc, grace, entry, since)
+            if ended.seen:
+                left = len(ended.seen)
+                stopped = left - len(ended.not_safe)
+                if ended.not_safe:
+                    done = (
+                        f"{stopped} {'was' if stopped == 1 else 'were'} stopped."
+                        + _not_safe_sentence(len(ended.not_safe))
+                    )
+                else:
+                    done = f"{'it was' if left == 1 else 'they were'} stopped."
                 logger.warning(
                     "A project command finished but left %s running; %s "
-                    "stopped. The command: %s",
-                    _processes(len(seen)),
-                    were,
+                    "The command: %s",
+                    _processes(left),
+                    done,
                     _quoted(args),
                 )
         exchange.drain(_DRAIN_SECONDS)
@@ -703,6 +770,38 @@ def _run(
     proc.wait()
     stdout, stderr = exchange.output()
     return stdout, stderr, timed_out
+
+
+def _run_without_waitid(
+    proc: subprocess.Popen, *, input: Any, timeout: Optional[float], grace: float  # noqa: A002
+) -> Tuple[Any, Any, bool]:
+    """Where the leader's exit cannot be read without collecting it (macOS
+    before Python 3.13): wait with ``communicate()`` as before 19 October
+    2026, and on a timeout end the command's group by the number the still
+    uncollected leader pins. Nothing outside the group can be found there
+    (no ``/proc``), so nothing more is safe to do."""
+    try:
+        out, err = proc.communicate(input=input, timeout=timeout)
+        return out, err, False
+    except subprocess.TimeoutExpired:
+        # A timed-out communicate() has not collected the leader.
+        _signal_group(proc.pid, signal.SIGTERM)
+        time.sleep(grace)
+        _signal_group(proc.pid, signal.SIGKILL)
+        try:
+            out, err = proc.communicate(timeout=_DRAIN_SECONDS)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            try:
+                out, err = proc.communicate(timeout=1)
+            except subprocess.TimeoutExpired:  # pragma: no cover
+                out, err = None, None
+        return out, err, True
+    except BaseException:
+        if proc.returncode is None:
+            _signal_group(proc.pid, signal.SIGKILL)
+        proc.wait()
+        raise
 
 
 def run_in_own_group(

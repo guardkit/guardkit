@@ -209,25 +209,118 @@ class TestLeftoversAreEnded:
         assert "left 2 processes running; they were stopped" in caplog.text
         assert "still running" not in caplog.text
 
-    def test_a_refused_pidfd_still_ends_the_process(
-        self, tmp_path: Path, started: List[int], monkeypatch: pytest.MonkeyPatch
+    def test_without_a_pidfd_a_process_outside_the_group_is_never_signalled(
+        self,
+        tmp_path: Path,
+        started: List[int],
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
-        # A security filter may refuse pidfd_open (EPERM): the process outside
-        # the group is then checked and signalled the ordinary way.
+        # A security filter may refuse pidfd_open (EPERM). The command's own
+        # group is still ended (by the number its uncollected leader pins),
+        # but a process that left the group is never signalled by number:
+        # it is left running and the log says so plainly.
         if shutil.which("setsid", path=_ENV["PATH"]) is None:
             pytest.skip("no setsid program")
 
         def refused(_pid: int) -> int:
             raise PermissionError(errno.EPERM, "refused by a filter")
 
-        monkeypatch.setattr(process_group.os, "pidfd_open", refused)
-        _run(
-            tmp_path,
-            "setsid sh -c 'echo $$ > bg.pid; exec sleep 300' >/dev/null 2>&1 & "
-            + _WAIT_FOR.format(name="bg.pid"),
-        )
+        def no_kill(pid: int, sig: int) -> None:
+            raise AssertionError(f"signalled {pid} by number")
 
+        monkeypatch.setattr(process_group.os, "pidfd_open", refused)
+        monkeypatch.setattr(process_group.os, "kill", no_kill)
+        with caplog.at_level(logging.WARNING, logger=process_group.__name__):
+            proc = _run(
+                tmp_path,
+                "sleep 300 >/dev/null 2>&1 & echo $! > bg.pid; "
+                "setsid sh -c 'echo $$ > inner.pid; exec sleep 300' >/dev/null 2>&1 & "
+                + _WAIT_FOR.format(name="inner.pid"),
+                grace=0.3,
+            )
+
+        monkeypatch.undo()  # the clean-up below signals the one left running
+
+        assert proc.returncode == 0
         assert not _alive(_pid(tmp_path, "bg.pid"))
+        assert _alive(_pid(tmp_path, "inner.pid"))
+        assert (
+            "left 2 processes running; 1 was stopped. 1 process outside the "
+            "command's process group could not be stopped safely on this system "
+            "(no pidfd), so it is still running."
+        ) in caplog.text
+
+    def test_a_number_reused_after_pinning_is_never_signalled(
+        self, started: List[int], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Simulated at the check/signal boundary: the pidfd was opened for the
+        # process that held the number, which then ended; the number now
+        # names another process, which even passes the ownership check. The
+        # signal goes to the ended process, so the other one is untouched.
+        gone = subprocess.Popen(["true"])
+        stale = os.pidfd_open(gone.pid)
+        gone.wait()
+        victim = subprocess.Popen(["sleep", "300"], start_new_session=True)
+        started.append(victim.pid)
+        monkeypatch.setattr(
+            process_group, "_belongs", lambda *_a: ("S", victim.pid, victim.pid, 0)
+        )
+        monkeypatch.setattr(process_group.os, "pidfd_open", lambda pid: os.dup(stale))
+        monkeypatch.setattr(
+            process_group.os, "kill", lambda pid, sig: pytest.fail(f"signalled {pid}")
+        )
+        try:
+            refused = process_group._signal_outside(
+                {victim.pid}, os.getpid() + 1, None, None, signal.SIGKILL
+            )
+            time.sleep(0.2)
+            assert refused == set()
+            assert _alive(victim.pid)
+        finally:
+            monkeypatch.undo()
+            os.close(stale)
+            victim.kill()
+            victim.wait()
+
+    def test_an_interrupted_run_still_ends_the_command(
+        self, tmp_path: Path, started: List[int], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The caller is interrupted while the command runs (Ctrl-C, a
+        # cancelled task): the command and what it started are ended, then
+        # the interruption goes on.
+        def interrupted(self, _timeout):
+            deadline = time.monotonic() + 20
+            while not (tmp_path / "fg.pid").exists() and time.monotonic() < deadline:
+                time.sleep(0.05)
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr(process_group._Exchange, "wait", interrupted)
+        began = time.monotonic()
+        with pytest.raises(KeyboardInterrupt):
+            _run(
+                tmp_path,
+                "setsid sh -c 'echo $$ > bg.pid; exec sleep 600' >/dev/null 2>&1 & "
+                + _WAIT_FOR.format(name="bg.pid")
+                + "; echo $$ > fg.pid; exec sleep 600",
+            )
+
+        # Ended, not waited for: the command would run ten minutes.
+        assert time.monotonic() - began < 30
+        assert not _alive(_pid(tmp_path, "bg.pid"))
+        assert not _alive(_pid(tmp_path, "fg.pid"))
+
+    def test_a_group_that_refuses_the_signal_is_said_plainly(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        def refused(_pgid: int, _sig: int) -> None:
+            raise PermissionError(errno.EPERM, "another user's process")
+
+        monkeypatch.setattr(process_group.os, "killpg", refused)
+        with caplog.at_level(logging.WARNING, logger=process_group.__name__):
+            process_group._signal_group(424242, signal.SIGTERM)
+
+        assert "could not be signalled: permission refused" in caplog.text
 
     def test_a_process_holding_the_output_does_not_hold_the_caller(
         self, tmp_path: Path, started: List[int]
@@ -329,14 +422,37 @@ class TestLeftoversAreEnded:
 @linux_only
 class TestCommandsGoFirstWhenMemoryRunsOut:
     def test_a_shell_command_and_what_it_starts(self, tmp_path: Path) -> None:
-        own = Path("/proc/self/oom_score_adj").read_text().strip()
-
         shell = _run(tmp_path, "cat /proc/$$/oom_score_adj")
         child = _run(tmp_path, "cat /proc/self/oom_score_adj")
         grandchild = _run(tmp_path, "sh -c 'sh -c \"cat /proc/self/oom_score_adj\"'")
 
         assert shell.stdout == child.stdout == grandchild.stdout == "1000\n"
-        assert Path("/proc/self/oom_score_adj").read_text().strip() == own
+
+    def test_guardkits_own_value_never_changes(self, tmp_path: Path) -> None:
+        # In a fresh process, so no earlier test can have changed it first.
+        script = (
+            "import subprocess\n"
+            "from pathlib import Path\n"
+            "from guardkit.orchestrator.process_group import run_project_command\n"
+            "own = Path('/proc/self/oom_score_adj').read_text().strip()\n"
+            "env = {'PATH': '/usr/bin:/bin'}\n"
+            "run_project_command('true', shell=True, env=env, timeout=30)\n"
+            "run_project_command(['true'], env=env, timeout=30)\n"
+            "try:\n"
+            "    run_project_command('sleep 30', shell=True, env=env, timeout=1)\n"
+            "except subprocess.TimeoutExpired:\n"
+            "    pass\n"
+            "print(own, Path('/proc/self/oom_score_adj').read_text().strip())\n"
+        )
+        root = Path(process_group.__file__).resolve().parents[2]
+        done = subprocess.run(
+            [sys.executable, "-c", script], cwd=str(tmp_path), capture_output=True,
+            text=True, timeout=60, env={**os.environ, "PYTHONPATH": str(root)},
+        )
+        assert done.returncode == 0, done.stderr
+        before, after = done.stdout.split()
+        assert before == after
+        assert after != "1000"
 
     def test_a_program_run_directly_and_what_it_starts_later(self, tmp_path: Path) -> None:
         proc = run_project_command(
@@ -350,6 +466,46 @@ class TestCommandsGoFirstWhenMemoryRunsOut:
         proc = _run(tmp_path, "awk '{print $6}' /proc/$$/stat; echo $$")
         session, shell = proc.stdout.split()
         assert session == shell
+
+
+class TestWithoutWaitid:
+    """macOS before Python 3.13 has no ``os.waitid``: commands still run (with
+    ``communicate()``, as before), and a timeout still ends the group."""
+
+    @pytest.fixture(autouse=True)
+    def _no_waitid(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delattr(os, "waitid")
+
+    @pytest.mark.parametrize(
+        ("args", "kwargs"),
+        [
+            ("echo hi; echo err >&2; exit 3", {"shell": True, "capture_output": True, "text": True}),
+            (["cat"], {"input": "piped in\n", "capture_output": True, "text": True}),
+            ("exit 4", {"shell": True}),
+        ],
+    )
+    def test_the_same_result_as_subprocess_run(self, tmp_path: Path, args, kwargs) -> None:
+        ours = run_project_command(args, cwd=str(tmp_path), env=dict(_ENV), timeout=30, **kwargs)
+        theirs = subprocess.run(args, cwd=str(tmp_path), env=dict(_ENV), timeout=30, **kwargs)
+        assert (ours.returncode, ours.stdout, ours.stderr) == (
+            theirs.returncode, theirs.stdout, theirs.stderr,
+        )
+
+    def test_run_in_own_group_runs(self, tmp_path: Path) -> None:
+        run = run_in_own_group("echo hi", shell=True, cwd=tmp_path, env=dict(_ENV), timeout=30)
+        assert (run.returncode, run.stdout, run.timed_out) == (0, "hi\n", False)
+
+    @linux_only
+    def test_a_timeout_ends_the_group(self, tmp_path: Path, started: List[int]) -> None:
+        with pytest.raises(subprocess.TimeoutExpired):
+            _run(
+                tmp_path,
+                "sleep 300 >/dev/null 2>&1 & echo $! > bg.pid; echo $$ > fg.pid; exec sleep 300",
+                timeout=1,
+                grace=0.2,
+            )
+        assert not _alive(_pid(tmp_path, "bg.pid"))
+        assert not _alive(_pid(tmp_path, "fg.pid"))
 
 
 # ---------------------------------------------------------------------------
