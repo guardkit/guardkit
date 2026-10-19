@@ -76,8 +76,13 @@ def test_orchestrator_has_all_phases():
     assert "def _phase4_template_generation" in source
     assert "def _phase5_agent_recommendation" in source
     assert "def _phase7_write_agents" in source
-    assert "def _phase7_5_enhance_agents" in source
     assert "def _phase8_claude_md_generation" in source
+    assert "def _phase4_5_completeness_validation" in source
+    assert "def _phase9_package_assembly" in source
+    assert "def _phase9_5_extended_validation" in source
+    # Phase 7.5 (agent enhancement) was removed on purpose in 6fefb6a55
+    # (TASK-SIMP-9ABE, 0% success rate); Phase 7 now flows straight to 8.
+    assert "def _phase7_5_enhance_agents" not in source
 
 
 def test_orchestrator_has_error_handling():
@@ -129,70 +134,3 @@ def test_convenience_function_signature():
     assert "def run_template_create(" in source
     assert "codebase_path" in source
     assert "output_location" in source
-
-
-class TestPhase75BatchEnhancement:
-    """Tests for Phase 7.5 batch enhancement result interpretation fix"""
-
-    def test_orchestrator_result_extraction_full_success(self):
-        """Test orchestrator correctly interprets full success batch result"""
-        source = (commands_lib_path / "template_create_orchestrator.py").read_text()
-
-        # Verify fix is in place
-        assert 'status = results.get("status"' in source
-        assert 'enhanced_count = results.get("enhanced_count"' in source
-        assert 'total_count = results.get("total_count"' in source
-        assert 'success_rate = results.get("success_rate"' in source
-        assert 'if status == "success"' in source
-
-    def test_orchestrator_result_extraction_partial_success(self):
-        """Test orchestrator handles partial success batch result"""
-        source = (commands_lib_path / "template_create_orchestrator.py").read_text()
-
-        # Verify partial success handling
-        assert 'enhanced_count > 0' in source
-        assert '_print_success_line' in source
-
-    def test_orchestrator_result_extraction_complete_failure(self):
-        """Test orchestrator handles complete failure batch result"""
-        source = (commands_lib_path / "template_create_orchestrator.py").read_text()
-
-        # Verify failure handling
-        assert '_print_info' in source
-        assert 'No agents enhanced' in source
-
-    def test_orchestrator_result_extraction_skipped(self):
-        """Test orchestrator handles skipped batch result"""
-        source = (commands_lib_path / "template_create_orchestrator.py").read_text()
-
-        # Verify skipped status handling
-        assert 'status == "skipped"' in source
-        assert 'Agent enhancement skipped' in source
-
-    def test_orchestrator_defensive_dict_access(self):
-        """Test orchestrator uses .get() for safe dict access"""
-        source = (commands_lib_path / "template_create_orchestrator.py").read_text()
-
-        # Verify defensive programming - using .get() with defaults
-        assert 'results.get("status"' in source
-        assert 'results.get("enhanced_count"' in source
-        assert 'results.get("total_count"' in source
-        assert 'results.get("success_rate"' in source
-        assert 'results.get("errors"' in source
-        assert 'results.get("reason"' in source
-
-    def test_orchestrator_has_display_enhancement_errors(self):
-        """Test orchestrator has method to display enhancement errors"""
-        source = (commands_lib_path / "template_create_orchestrator.py").read_text()
-
-        # Verify error display method exists
-        assert 'def _display_enhancement_errors' in source
-        assert '_display_enhancement_errors(errors)' in source
-
-    def test_orchestrator_error_display_implementation(self):
-        """Test that error display method is properly implemented"""
-        source = (commands_lib_path / "template_create_orchestrator.py").read_text()
-
-        # Find the method and verify it has error handling logic
-        assert '_display_enhancement_errors' in source
-        assert '_print_warning' in source or '_print_error' in source
