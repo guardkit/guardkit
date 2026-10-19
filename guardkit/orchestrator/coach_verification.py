@@ -18,7 +18,7 @@ import re
 import subprocess
 import sys
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
 
 if TYPE_CHECKING:
@@ -491,8 +491,9 @@ class CoachVerifier:
         When a claimed path is missing on disk and identity-resolution is wired
         (``task_id`` and ``state_bridge`` both supplied at construction time),
         consult :py:meth:`TaskStateBridge.canonical_path_for` once per call.
-        If that returns a path that exists on disk, suppress the discrepancy
-        and append a :py:class:`ResolvedPath` audit record to
+        If that returns a path that exists on disk AND the claimed path names
+        that same task file (same file name, 19 October 2026), suppress the
+        discrepancy and append a :py:class:`ResolvedPath` audit record to
         ``self._resolved_paths`` instead. This closes the FEAT-FFC3 false-fail
         where the orchestrator's post-turn enrichment attributes a pre-move
         task path to the Player after state_bridge has moved the file
@@ -565,7 +566,19 @@ class CoachVerifier:
                         canonical_path = self.state_bridge.canonical_path_for()
                         canonical_resolved = True
 
-                    if canonical_path is not None and canonical_path.exists():
+                    # Only the task's own document, met at an earlier
+                    # place (same file name), is resolved. Before 19 October
+                    # 2026 ANY missing file was "resolved" whenever the task
+                    # document existed: build FEAT-D31F recorded a deleted
+                    # page component as resolved to the task markdown.
+                    if (
+                        canonical_path is not None
+                        and canonical_path.exists()
+                        and PurePosixPath(
+                            str(file_path).replace("\\", "/")
+                        ).name
+                        == canonical_path.name
+                    ):
                         try:
                             resolved_to = str(
                                 canonical_path.relative_to(self.worktree_path)
