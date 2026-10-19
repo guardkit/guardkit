@@ -59,6 +59,10 @@ def _make_feature(
             task.id = tid
             task.dependencies = []
             task.status = "pending"
+            # The real "no estimate" value. The wave phase resolves each
+            # task's timeout from its estimate (_resolve_wave_task_timeouts),
+            # so a MagicMock here would be compared with a number.
+            task.estimated_minutes = None
             tasks.append(task)
     feature.tasks = tasks
     feature.orchestration.parallel_groups = task_ids_per_wave
@@ -102,9 +106,16 @@ def _common_patches(orchestrator):
     return (
         patch.object(orchestrator, "_preflight_check"),
         patch.object(orchestrator, "_bootstrap_environment"),
+        # The wave-0 baseline probe (b503bd16, 9 July 2026) measures the base
+        # once before wave 1, and with no declared test command it does so
+        # with the feature's smoke command, through the same run_smoke_gate
+        # these tests script. It is report-only and has its own tests; left
+        # running, it would take the first scripted smoke result.
+        patch.object(orchestrator, "_run_baseline_probe"),
         patch(
             "guardkit.orchestrator.feature_orchestrator.FeatureLoader.find_task",
-            side_effect=lambda f, tid: f,  # any non-None task is fine here
+            # The feature's own task with that id, as the real loader returns.
+            side_effect=lambda f, tid: next(t for t in f.tasks if t.id == tid),
         ),
         patch(
             "guardkit.orchestrator.feature_orchestrator.FeatureLoader.save_feature",
@@ -327,6 +338,7 @@ def test_failing_smoke_stops_feature_build(tmp_path: Path) -> None:
     with (
         patch.object(orchestrator, "_preflight_check"),
         patch.object(orchestrator, "_bootstrap_environment"),
+        patch.object(orchestrator, "_run_baseline_probe"),  # see _common_patches
         patch.object(orchestrator, "_mark_wave_completed"),
         patch.object(
             orchestrator,
