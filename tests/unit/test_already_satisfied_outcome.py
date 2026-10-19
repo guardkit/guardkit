@@ -994,3 +994,261 @@ class TestTheClaimIsCarried:
         assert written[ALREADY_SATISFIED_FIELD]["citations"] == (
             PYTHON_CITATIONS
         )
+
+
+# ---------------------------------------------------------------------------
+# 7. Every blocking objection refuses the claim, in the reviewer's own words
+# ---------------------------------------------------------------------------
+
+
+class TestEveryBlockingObjectionRefusesTheClaim:
+    """Found by an independent review on 19 October 2026.
+
+    The claim was refused only when an objection carried the literal severity
+    ``must_fix``. The reviewer model never writes that word: the v4 contract
+    marks every finding ``major`` and the older contract says ``critical`` or
+    ``major``. And the close never read the reviewer's decision, so a turn
+    that changed nothing could close a task as already done over a
+    rejection-level finding, with only the per-criterion check in the way.
+
+    Two rules now hold. An objection the builder's own feedback would list as
+    must-fix refuses the claim, whatever word it uses; and a turn the reviewer
+    did not accept cannot close the task at all.
+    """
+
+    @staticmethod
+    def _record(
+        issues: List[Dict[str, Any]], decision: str = "approve"
+    ) -> TurnRecord:
+        # Every criterion verified, so only the objection or the decision
+        # can stand in the way.
+        return _turn(
+            1,
+            coach=_reviewer(
+                1, decision, _verified(*STATS_CRITERIA), issues=issues
+            ),
+            decision=decision,
+        )
+
+    @pytest.mark.parametrize("severity", ["major", "critical", "MAJOR ", "Critical"])
+    def test_a_blocking_finding_refuses_the_claim(self, severity):
+        """Approve is kept here so the objection alone has to refuse it."""
+        record = self._record([{
+            "type": "finding",
+            "severity": severity,
+            "description": "the count is computed in the caller, not the query",
+        }])
+        refusal = _already_satisfied_refusal(record, STATS_CRITERIA)
+        assert refusal is not None
+        assert "must be fixed" in refusal
+        assert "count is computed in the caller" in refusal
+
+    def test_a_v4_finding_on_a_rejected_turn_names_the_finding(self):
+        """The v4 shape: decision feedback, every finding ``major``."""
+        record = self._record(
+            [{
+                "type": "finding",
+                "severity": "major",
+                "description": "src/users/crud.py:88 ignores the timezone",
+                "suggestion": "",
+                "requirement": "",
+            }],
+            decision="feedback",
+        )
+        refusal = _already_satisfied_refusal(record, STATS_CRITERIA)
+        assert refusal is not None
+        assert "must be fixed" in refusal
+        assert "ignores the timezone" in refusal
+
+    def test_an_advisory_honesty_record_marked_major_does_not_refuse(self):
+        """Advisory records are never a reason the turn was rejected."""
+        from guardkit.orchestrator.coach_narrative_reconciler import (
+            DETERMINISTIC_SOURCE,
+        )
+
+        record = self._record([{
+            "severity": "major",
+            "category": "honesty",
+            "description": "Deterministic honesty record (advisory).",
+            "details": {"source": DETERMINISTIC_SOURCE},
+        }])
+        assert _already_satisfied_refusal(record, STATS_CRITERIA) is None
+
+    def test_a_should_fix_does_not_refuse(self):
+        record = self._record([{
+            "severity": "should_fix",
+            "category": "style",
+            "description": "the docstring could name the timezone",
+        }])
+        assert _already_satisfied_refusal(record, STATS_CRITERIA) is None
+
+    def test_no_objection_lets_the_claim_stand(self):
+        assert _already_satisfied_refusal(
+            self._record([]), STATS_CRITERIA
+        ) is None
+
+    def test_a_refused_turn_with_no_reason_cannot_close(self):
+        """The reviewer said no and gave nothing this code can rank."""
+        refusal = _already_satisfied_refusal(
+            self._record([], decision="feedback"), STATS_CRITERIA
+        )
+        assert refusal is not None
+        assert "the reviewer asked for changes on this turn" in refusal
+        assert '"feedback"' not in refusal
+
+    def test_a_refused_turn_with_only_advice_cannot_close(self):
+        refusal = _already_satisfied_refusal(
+            self._record(
+                [{"severity": "should_fix", "description": "rename it"}],
+                decision="feedback",
+            ),
+            STATS_CRITERIA,
+        )
+        assert refusal is not None
+        assert "the reviewer asked for changes on this turn" in refusal
+
+    def test_a_refusal_in_an_unranked_severity_cannot_close(self):
+        """A word no rule ranks; the decision still refuses the claim."""
+        refusal = _already_satisfied_refusal(
+            self._record(
+                [{
+                    "severity": "blocker",
+                    "category": "spec",
+                    "description": "the endpoint returns six entries",
+                }],
+                decision="feedback",
+            ),
+            STATS_CRITERIA,
+        )
+        assert refusal is not None
+        assert "the reviewer asked for changes on this turn" in refusal
+
+    @pytest.mark.parametrize("severity", ["error", "high"])
+    def test_the_zero_test_error_and_high_are_blocking_objections(
+        self, severity
+    ):
+        """Ranked with "major" since 19 October 2026, so they are quoted."""
+        refusal = _already_satisfied_refusal(
+            self._record([{
+                "severity": severity,
+                "category": "zero_test_anomaly",
+                "description": "No task-specific tests found.",
+            }]),
+            STATS_CRITERIA,
+        )
+        assert refusal is not None
+        assert "must be fixed" in refusal
+        assert "No task-specific tests found." in refusal
+
+    def test_a_blocking_finding_after_advice_still_refuses(self):
+        """Every objection is read, not only the first one."""
+        refusal = _already_satisfied_refusal(
+            self._record([
+                {"severity": "minor", "description": "a comment is stale"},
+                {"severity": "should_fix", "description": "rename it"},
+                {
+                    "severity": "major",
+                    "description": "the query drops days with no users",
+                },
+            ]),
+            STATS_CRITERIA,
+        )
+        assert refusal is not None
+        assert "must be fixed" in refusal
+        assert "the query drops days with no users" in refusal
+        assert "a comment is stale" not in refusal
+
+    def test_an_error_turn_cannot_close(self):
+        refusal = _already_satisfied_refusal(
+            self._record([], decision="error"), STATS_CRITERIA
+        )
+        assert refusal is not None
+        assert "the reviewer's check could not finish on this turn" in refusal
+        assert '"error"' not in refusal
+
+    def test_an_unknown_decision_cannot_close(self):
+        """Unknown is not a pass."""
+        refusal = _already_satisfied_refusal(
+            self._record([], decision="maybe"), STATS_CRITERIA
+        )
+        assert refusal is not None
+        assert "the reviewer did not accept this turn" in refusal
+
+
+class TestTheLoopHonoursTheReviewer:
+    """The same rules, driven through the real loop and the close."""
+
+    def test_a_major_finding_keeps_the_task_open_until_the_reviewer_agrees(
+        self, tmp_path, caplog
+    ):
+        orchestrator = _orchestrator(tmp_path, max_turns=3)
+        turns = [
+            _turn(
+                1,
+                coach=_reviewer(
+                    1,
+                    "feedback",
+                    _verified(*STATS_CRITERIA),
+                    issues=[{
+                        "type": "finding",
+                        "severity": "major",
+                        "description": "the query is not ordered by day",
+                    }],
+                ),
+                decision="feedback",
+            ),
+            _turn(2),
+        ]
+        with caplog.at_level(logging.WARNING, logger=AUTOBUILD_LOGGER):
+            result = _drive(orchestrator, turns)
+
+        messages = " ".join(r.getMessage() for r in caplog.records)
+        assert "the query is not ordered by day" in messages
+        assert "must be fixed" in messages
+        # Closed on turn two, once the reviewer accepted it — not on turn one.
+        assert result.final_decision == DECISION_ALREADY_SATISFIED
+        assert result.turns_attempted == 2
+
+    def test_a_refused_turn_never_closes_as_already_satisfied(self, tmp_path):
+        orchestrator = _orchestrator(tmp_path, max_turns=3)
+        turns = [
+            _turn(
+                t,
+                coach=_reviewer(
+                    t,
+                    "feedback",
+                    _verified(*STATS_CRITERIA),
+                    issues=[{"severity": "should_fix", "description": "nit"}],
+                ),
+                decision="feedback",
+            )
+            for t in (1, 2, 3)
+        ]
+        result = _drive(orchestrator, turns)
+
+        assert result.final_decision != DECISION_ALREADY_SATISFIED
+        assert result.success is False
+
+    def test_an_advisory_record_does_not_stop_an_accepted_close(self, tmp_path):
+        from guardkit.orchestrator.coach_narrative_reconciler import (
+            DETERMINISTIC_SOURCE,
+        )
+
+        orchestrator = _orchestrator(tmp_path)
+        turn = _turn(
+            1,
+            coach=_reviewer(
+                1,
+                "approve",
+                _verified(*STATS_CRITERIA),
+                issues=[{
+                    "severity": "major",
+                    "description": "Deterministic honesty record (advisory).",
+                    "details": {"source": DETERMINISTIC_SOURCE},
+                }],
+            ),
+        )
+        result = _drive(orchestrator, [turn])
+
+        assert result.final_decision == DECISION_ALREADY_SATISFIED
+        assert result.turns_attempted == 1

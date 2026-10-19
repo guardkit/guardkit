@@ -1680,10 +1680,21 @@ def _reviewer_must_fix_objection(turn_record: "TurnRecord") -> Optional[str]:
     the per-criterion verdicts say — that is the trap the withdrawn 2026-09-01
     version fell into, where a completion that never read the reviewer's
     objection could finish a task the reviewer had just refused.
+
+    "Must be fixed" is decided by :func:`_feedback_issue_is_must_fix`, the
+    same line the builder's own feedback draws between what it must fix and
+    what it should: ``must_fix``, ``critical``, ``major``, ``high`` and
+    ``error``, with the advisory honesty records kept out. Until 19 October 2026 this read only the literal word ``must_fix``,
+    which the reviewer model never writes — the v4 contract marks every
+    finding ``major`` and the older one says ``critical``/``major`` — so under
+    a model reviewer a rejection-level finding did not stop the claim. The
+    severity is read case- and space-insensitively, as it always was here.
     """
     for issue in _coach_report_issues(turn_record):
         severity = issue.get("severity")
-        if isinstance(severity, str) and severity.strip().lower() == "must_fix":
+        if isinstance(severity, str):
+            issue = {**issue, "severity": severity.strip().lower()}
+        if _feedback_issue_is_must_fix(issue):
             description = issue.get("description")
             if isinstance(description, str) and description.strip():
                 return " ".join(description.split())[:300]
@@ -1702,7 +1713,8 @@ def _already_satisfied_refusal(
     asserting it was done would face no bar at all. So every check here is
     made from something the builder does not control — the citations counted
     rather than believed, the orchestrator's own git measurement of what the
-    task has written, and the reviewer's verdict on the acceptance criteria.
+    task has written, the reviewer's verdict on the acceptance criteria, its
+    must-fix objections, and its decision on the turn.
 
     "Already satisfied" says two things at once: nothing was written, and
     there is nothing to merge. That is a claim about the WHOLE TASK, not about
@@ -1802,6 +1814,27 @@ def _already_satisfied_refusal(
             "The builder said this task's work was already in the tree, but "
             "the reviewer did not confirm every acceptance criterion against "
             "the tree, so the claim is unverified. Refused."
+        )
+
+    # The reviewer's own decision on this turn. A reviewer that refused the
+    # turn has not confirmed the claim, whatever its per-criterion entries
+    # say and whatever words it used for its reasons — including a refusal
+    # whose reasons use a severity the rule above does not rank as blocking,
+    # or that gave no reason at all (the v4 contract allows a rejection with
+    # no findings). Without this, the close would be the one place in the
+    # loop that can finish a task over a refusal, which is the trap the
+    # withdrawn 2026-09-01 version fell into.
+    decision = getattr(turn_record, "decision", None)
+    if decision != "approve":
+        if decision == "feedback":
+            what_happened = "the reviewer asked for changes on this turn"
+        elif decision == "error":
+            what_happened = "the reviewer's check could not finish on this turn"
+        else:
+            what_happened = "the reviewer did not accept this turn"
+        return (
+            f"The builder said this task's work was already in the tree, but "
+            f"{what_happened}, so the claim is not confirmed. Refused."
         )
 
     return None
@@ -5242,7 +5275,8 @@ class AutoBuildOrchestrator:
                 # decide alone: the builder must CLAIM it, citing for each
                 # acceptance criterion the file and the place that satisfies
                 # it, and the reviewer must have VERIFIED those criteria
-                # against the tree. A claim nobody verified is just an
+                # against the tree, raised nothing it says must be fixed, and
+                # accepted the turn. A claim nobody verified is just an
                 # assertion, and a builder that can close a task by asserting
                 # it is done has no bar at all — so a refused claim is a
                 # failed turn and the loop carries on exactly as it does
