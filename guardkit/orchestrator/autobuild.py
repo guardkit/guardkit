@@ -860,6 +860,15 @@ _FEEDBACK_SEVERITY_ORDER: Dict[str, int] = {
     "must_fix": 0,
     "critical": 0,
     "major": 1,
+    # 19 October 2026: two more rejection-level severities that scored 99
+    # (below a warning) while missing from this map. "error" is the severity
+    # of the zero-test check's issue, which refuses the turn
+    # (CoachValidator, zero_test_blocking) and is listed after the
+    # agent-invocations advisory warning. No deterministic Coach issue uses a
+    # top-level "high" (the plan audit's "high" is in its details; its issue
+    # is must_fix), but an LLM Coach may, and it reads as rejection-level.
+    "high": 1,
+    "error": 1,
     "should_fix": 2,
     "minor": 3,
     "warning": 4,
@@ -967,45 +976,62 @@ def _turn_changed_no_files(turn_record: "TurnRecord") -> bool:
     return isinstance(value, int) and not isinstance(value, bool) and value == 0
 
 
-def _coach_first_issue_description(
+def _coach_headline_issue(
     turn_record: "TurnRecord", max_chars: int = 300
-) -> Optional[str]:
-    """The description of the first issue the reviewer raised on this turn.
+) -> Optional[Tuple[str, bool]]:
+    """The reviewer's most serious readable issue on this turn, and whether it
+    blocks the turn: ``(description, blocking)``, or ``None``.
 
     Used to tell a person what was being asked for at the point the build gave
-    up. Returns ``None`` when the turn carries no readable issue. Trimmed to
+    up, so it picks what the reviewer refused the turn for, not whatever came
+    first. The order is: blocking before non-blocking, then
+    :func:`_feedback_issue_rank` (the order the Player's own feedback is
+    given in), then the honesty tie-break, then the reviewer's own order. A
+    blocking issue (must_fix, critical, major, high or error, and not an
+    advisory honesty record) always wins over a non-blocking one, so an
+    "Advisory (non-blocking)" warning listed first is never quoted as the
+    reviewer's request while a must_fix refused the turn. With no blocking
+    issue, the most serious remaining one is returned with ``blocking``
+    False, so the caller can say it was not a must-fix.
+
+    At equal severity, the honesty records (``honesty`` / ``claim_audit``)
+    come after everything else. On exactly the runs this is written for,
+    those records say "the generator claimed a file it did not change" —
+    which is the fact the message already states in its first line. Quoting
+    it back as the thing being asked for would be circular and would hide
+    the real request. A more severe honesty record still wins: a must_fix
+    honesty finding is quoted ahead of a major ordinary one. Trimmed to
     ``max_chars`` so a terminal message stays a terminal message.
-
-    The deterministic honesty records (``honesty`` / ``claim_audit``) are
-    passed over when anything else is available. On exactly the runs this is
-    written for, those records say "the generator claimed a file it did not
-    change" — which is the fact the message already states in its first line.
-    Quoting it back as the thing being asked for would be circular and would
-    hide the real request.
     """
-    issues = list(_coach_report_issues(turn_record))
     honesty_categories = {"honesty", "claim_audit"}
-
-    def _clean(issue: Dict[str, Any]) -> Optional[str]:
+    ranked: List[Tuple[Tuple[int, Tuple[int, int], int, int], str, bool]] = []
+    for index, issue in enumerate(_coach_report_issues(turn_record)):
         description = issue.get("description")
         if not isinstance(description, str) or not description.strip():
-            return None
+            continue
         text = " ".join(description.split())
         if len(text) > max_chars:
             text = text[: max_chars - 1].rstrip() + "\u2026"
-        return text
+        blocking = _feedback_issue_is_must_fix(issue)
+        key = (
+            0 if blocking else 1,
+            _feedback_issue_rank(issue),
+            1 if issue.get("category") in honesty_categories else 0,
+            index,
+        )
+        ranked.append((key, text, blocking))
+    if not ranked:
+        return None
+    _, text, blocking = min(ranked, key=lambda item: item[0])
+    return text, blocking
 
-    for issue in issues:
-        if issue.get("category") in honesty_categories:
-            continue
-        text = _clean(issue)
-        if text is not None:
-            return text
-    for issue in issues:
-        text = _clean(issue)
-        if text is not None:
-            return text
-    return None
+
+def _coach_first_issue_description(
+    turn_record: "TurnRecord", max_chars: int = 300
+) -> Optional[str]:
+    """The description of :func:`_coach_headline_issue`, or ``None``."""
+    headline = _coach_headline_issue(turn_record, max_chars=max_chars)
+    return headline[0] if headline is not None else None
 
 
 # ----------------------------------------------------------------------------
@@ -3257,6 +3283,9 @@ class AutoBuildOrchestrator:
         # driven more than once, and the previous run's terminal must not be
         # named by this run's crash.
         self._last_captured_terminal = None
+        # Why this run stopped at task start because no coverage command is
+        # declared (19 October 2026); None unless it did.
+        self._coverage_declaration_refusal: Optional[str] = None
 
         # Emit task.started lifecycle event (TASK-INST-004)
         self._emit_task_started(task_id)
@@ -3301,6 +3330,7 @@ class AutoBuildOrchestrator:
         _component_raw: Any = None
         _verifier_raw: Any = None
         _test_ref_raw: Any = None
+        _implementation_mode_raw: Any = None
         try:
             task_data = TaskLoader.load_task(task_id, repo_root=self.repo_root)
             frontmatter = task_data.get("frontmatter", {})
@@ -3312,6 +3342,9 @@ class AutoBuildOrchestrator:
             task_type = frontmatter.get("task_type")
             if task_type:
                 logger.debug(f"Loaded task_type from task file: {task_type}")
+            # Read only to tell whether the coverage gate is relaxed for this
+            # task (direct mode) at the task-start coverage check below.
+            _implementation_mode_raw = frontmatter.get("implementation_mode")
             # Human-readable name for the build-outcome record (falls back to
             # the task id when the task file is absent or has no title).
             _title = frontmatter.get("title")
@@ -3562,6 +3595,54 @@ class AutoBuildOrchestrator:
                     turn_history=[],
                     worktree=worktree,
                     error=documents_refusal,
+                    ablation_mode=self.ablation_mode,
+                    recovery_count=self.recovery_count,
+                )
+
+            # 19 October 2026: a task whose type needs measured coverage, in a
+            # project that declares no coverage command for it, can never
+            # pass (only the declared command measures coverage). Found out
+            # here, from the pinned declaration the Coach will read, before
+            # the pre-loop phase or any Player turn, instead of after every
+            # turn has been refused "Coverage is UNKNOWN".
+            coverage_refusal = self._undeclared_coverage_refusal(
+                task_id,
+                worktree,
+                task_type=task_type,
+                component=component,
+                implementation_mode=_implementation_mode_raw,
+            )
+            if coverage_refusal is not None:
+                self._coverage_declaration_refusal = coverage_refusal
+                logger.error(
+                    "Task %s stopped before any model call: %s",
+                    task_id, coverage_refusal,
+                )
+                self._emit_task_failed(task_id, "configuration_error")
+                self._capture_build_outcome(
+                    task_id,
+                    success=False,
+                    final_decision="configuration_error",
+                    turn_history=[],
+                    task_title=task_title,
+                    requirements=requirements,
+                    error=coverage_refusal,
+                )
+                self._finalize_phase(
+                    worktree=worktree,
+                    final_decision="configuration_error",
+                    turn_history=[],
+                )
+                if task_file_path:
+                    self._save_state(task_file_path, worktree, "blocked")
+                return OrchestrationResult(
+                    task_id=task_id,
+                    success=False,
+                    total_turns=0,
+                    final_decision="configuration_error",
+                    turn_history=[],
+                    worktree=worktree,
+                    error=coverage_refusal,
                     ablation_mode=self.ablation_mode,
                     recovery_count=self.recovery_count,
                 )
@@ -3940,6 +4021,48 @@ class AutoBuildOrchestrator:
                 task_id,
                 exc,
             )
+
+    def _undeclared_coverage_refusal(
+        self,
+        task_id: str,
+        worktree: "Worktree",
+        *,
+        task_type: Any,
+        component: Optional[str],
+        implementation_mode: Any,
+    ) -> Optional[str]:
+        """The plain reason this task cannot pass for want of a coverage
+        command, or ``None`` when it can (19 October 2026).
+
+        Reads the PINNED declaration, the same one the Coach reads
+        (``load_toolchain_snapshot``), so the answer here is the answer the
+        Coach would give after every turn. A failure to decide is ``None``:
+        the task then runs exactly as it did before this check existed.
+        """
+        if self.ablation_mode:
+            # Ablation runs skip the Coach and approve every turn, so the
+            # coverage gate never judges them and "cannot pass" is untrue.
+            return None
+        try:
+            from guardkit.orchestrator.toolchain_declaration import (
+                load_toolchain_snapshot,
+                undeclared_coverage_refusal,
+            )
+
+            return undeclared_coverage_refusal(
+                task_type=task_type,
+                toolchain=load_toolchain_snapshot(task_id, Path(worktree.path)),
+                component=component,
+                implementation_mode=implementation_mode,
+            )
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning(
+                "Could not check %s for a declared coverage command (%s); "
+                "the task runs as before.",
+                task_id,
+                exc,
+            )
+            return None
 
     def _resolve_task_component(
         self, task_id: str, raw: Any
@@ -8028,20 +8151,29 @@ class AutoBuildOrchestrator:
         else:
             turns_phrase = turn_numbers[0] if turn_numbers else "?"
 
-        last_ask = (
-            _coach_first_issue_description(recent[-1]) if recent else None
-        )
+        headline = _coach_headline_issue(recent[-1]) if recent else None
+        last_ask: Optional[str] = headline[0] if headline else None
+        blocking = headline[1] if headline else True
         if last_ask is None and recent and recent[-1].feedback:
             last_ask = " ".join(str(recent[-1].feedback).split())[:300]
-        ask_line = (
-            f'On turn {turn_numbers[-1] if turn_numbers else "?"} the reviewer '
-            f'was still asking for this: "{last_ask}"'
-            if last_ask
-            else (
+        last_turn = turn_numbers[-1] if turn_numbers else "?"
+        if not last_ask:
+            ask_line = (
                 "The reviewer gave no readable description of what it wanted "
                 "on the last of those turns."
             )
-        )
+        elif blocking:
+            ask_line = (
+                f'On turn {last_turn} the reviewer was still asking for this: '
+                f'"{last_ask}"'
+            )
+        else:
+            # Nothing was marked as must-fix: say so rather than present a
+            # note as the reason the turn was refused.
+            ask_line = (
+                f"On turn {last_turn} the reviewer marked nothing as must-fix; "
+                f'its most serious note was this: "{last_ask}"'
+            )
 
         return (
             f"Unrecoverable stall detected after {len(turn_history)} turn(s) "
@@ -12464,6 +12596,16 @@ class AutoBuildOrchestrator:
             config_turn = next(
                 (t for t in reversed(turn_history) if t.is_configuration_error), None
             )
+            coverage_refusal = getattr(self, "_coverage_declaration_refusal", None)
+            if config_turn is None and coverage_refusal:
+                # Stopped at task start: no coverage command is declared and
+                # this task's type needs one. Not a task_type problem.
+                return (
+                    f"Stopped before any model call: this task cannot pass "
+                    f"without a declared coverage command.\n"
+                    f"Detail: {coverage_refusal}\n"
+                    f"Worktree preserved for inspection."
+                )
             documents_refusal = getattr(self, "_project_documents_refusal", None)
             if config_turn is None and documents_refusal:
                 # Stopped at task start by the binding-documents check: say
@@ -12607,6 +12749,9 @@ class AutoBuildOrchestrator:
                     f"Configuration error: {config_turn.feedback}. "
                     f"Fix the task_type in the task .md file and retry."
                 )
+            coverage_refusal = getattr(self, "_coverage_declaration_refusal", None)
+            if coverage_refusal:
+                return f"Stopped before any model call: {coverage_refusal}"
             documents_refusal = getattr(self, "_project_documents_refusal", None)
             if documents_refusal:
                 return f"Stopped before any model call: {documents_refusal}"

@@ -667,6 +667,113 @@ def load_toolchain_snapshot(
         return None
 
 
+def declared_coverage_command(
+    toolchain: Optional[ToolchainDeclaration],
+    component: Optional[str] = None,
+) -> Optional[str]:
+    """The coverage command declared for one task, or ``None``.
+
+    The same rule as ``CoachValidator._declared_coverage_command``: a task
+    that names a component gets that component's ``coverage:`` and never the
+    root block's; a task that names none gets the root block's.
+    """
+    if component:
+        resolved = toolchain.component(component) if toolchain is not None else None
+        return (resolved.coverage or None) if resolved is not None else None
+    if toolchain is None:
+        return None
+    return toolchain.coverage or None
+
+
+def undeclared_coverage_refusal(
+    *,
+    task_type: Any,
+    toolchain: Optional[ToolchainDeclaration],
+    component: Optional[str] = None,
+    implementation_mode: Any = None,
+) -> Optional[str]:
+    """Say why a task can never pass because no coverage command is declared.
+
+    Since 19 September 2026 a task whose type requires coverage passes only
+    on a MEASURED coverage, and the only thing that measures it is the
+    project's own declared ``coverage`` command (the Coach runs it). So a task
+    of such a type in a project that declares none cannot pass, however good
+    the code is. This finds that out before any turn is spent and returns the
+    plain reason; it returns ``None`` whenever the task can still pass.
+
+    The rule itself is unchanged: which types require coverage comes from the
+    task-type profiles, and nothing here counts an undeclared coverage as met.
+
+    ``None`` is returned when:
+
+    * the task's type does not require coverage;
+    * the task's type is not a valid type (the Coach's own invalid-task-type
+      stop reports that, with its own message);
+    * the task is routed to the direct Player (``implementation_mode:
+      direct``), the one named relaxation of the coverage gate;
+    * a coverage command is declared for the task (root, or its component).
+    """
+    from guardkit.models.task_types import (
+        DEFAULT_PROFILES,
+        TASK_TYPE_ALIASES,
+        TaskType,
+    )
+
+    # The Coach's resolution (CoachValidator._resolve_task_type): absent means
+    # feature, then the enum, then the alias table; anything else is invalid.
+    if task_type is None:
+        resolved = TaskType.FEATURE
+    elif not isinstance(task_type, str):
+        return None
+    else:
+        try:
+            resolved = TaskType(task_type)
+        except ValueError:
+            resolved = TASK_TYPE_ALIASES.get(task_type)
+            if resolved is None:
+                return None
+    if not DEFAULT_PROFILES[resolved].coverage_required:
+        return None
+    # The router sends exactly "direct" to the direct Player
+    # (AgentInvoker._get_implementation_mode), whose results the Coach reads
+    # as the direct-mode relaxation.
+    if implementation_mode == "direct":
+        return None
+    if declared_coverage_command(toolchain, component):
+        return None
+
+    needing = [t.value for t in TaskType if DEFAULT_PROFILES[t].coverage_required]
+    needing_words = ", ".join(needing[:-1]) + " or " + needing[-1]
+    if task_type is None:
+        type_words = (
+            f"{resolved.value} task (a task with no task_type is a feature task)"
+        )
+    elif task_type != resolved.value:
+        type_words = f"{resolved.value} task (task_type: {task_type})"
+    else:
+        type_words = f"{resolved.value} task"
+    if component:
+        where = (
+            f"for the task's component `{component}` "
+            f"(`toolchain.components.{component}.coverage`)"
+        )
+        place = f"under `toolchain.components.{component}:`"
+    else:
+        where = "(`toolchain.coverage`)"
+        place = "under `toolchain:`"
+    return (
+        f"This project declares no coverage command {where} in "
+        f".guardkit/config.yaml, and a {type_words} needs measured coverage "
+        f"to pass. Nothing else measures coverage, so this task cannot pass "
+        f"however good the code is; it was stopped before any work was done. "
+        f"To fix it, add "
+        f'`coverage: "<command that exits 0 when the coverage threshold is '
+        f'met>"` {place} in .guardkit/config.yaml, then run the task again. '
+        f"Only {needing_words} tasks need this; other task types are "
+        f"unaffected."
+    )
+
+
 def resolve_component_cwd(base: Path, cwd: str) -> Path:
     """Resolve a component's ``cwd`` under ``base``, refusing any escape.
 
@@ -705,4 +812,6 @@ __all__ = [
     "toolchain_snapshot_paths",
     "snapshot_task_toolchain",
     "load_toolchain_snapshot",
+    "declared_coverage_command",
+    "undeclared_coverage_refusal",
 ]

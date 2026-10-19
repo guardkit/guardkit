@@ -93,6 +93,12 @@ def pytest_configure(config):
         "security_scanners: this test lets the security check find Gitleaks and "
         "OSV-Scanner on PATH (or its own stubs); every other test sees neither.",
     )
+    config.addinivalue_line(
+        "markers",
+        "coverage_declaration_check: this test runs the task-start check that "
+        "stops a task needing coverage in a project that declares no coverage "
+        "command; every other test runs with that check passing.",
+    )
 
 
 def pytest_collection_modifyitems(config, items):
@@ -478,6 +484,37 @@ def security_scanners_hidden_unless_asked(monkeypatch, request):
     except Exception:  # noqa: BLE001 -- a test without the package is unaffected
         return
     monkeypatch.setattr(security_check, "_find_tool", lambda _name: None)
+
+
+# The task-start coverage check (19 October 2026)
+# ---------------------------------------------------------------------------
+# ``AutoBuildOrchestrator.orchestrate`` stops a feature, refactor, glue or wiring
+# task at task start when the project declares no coverage command, because such a
+# task can never pass. Most tests that drive ``orchestrate(...)`` use fixture
+# projects with no ``toolchain:`` block and fake the Coach's verdict, so the check
+# would stop every one of them before the behaviour they test. It reports nothing
+# for every test unless the test carries the ``coverage_declaration_check``
+# marker; tests/orchestrator/test_undeclared_coverage_fast_exit.py does.
+
+
+@pytest.fixture(autouse=True)
+def coverage_declaration_check_off_unless_asked(monkeypatch, request):
+    if request.node.get_closest_marker("coverage_declaration_check"):
+        return
+    # The decision function is patched, not the orchestrator's method: some
+    # tests reload guardkit.orchestrator.autobuild, after which the class a test
+    # module imported is no longer the one in sys.modules. The method imports
+    # this function at call time, so the patch reaches every copy of the class.
+    try:
+        from guardkit.orchestrator import toolchain_declaration
+    except Exception:  # noqa: BLE001 -- a test without the package is unaffected
+        return
+    monkeypatch.setattr(
+        toolchain_declaration,
+        "undeclared_coverage_refusal",
+        lambda **_kwargs: None,
+        raising=True,
+    )
 
 
 _CHECKOUT = Path(__file__).resolve().parents[1]

@@ -56,6 +56,7 @@ from guardkit.orchestrator.autobuild import (
     TurnRecord,
     _already_implemented_veto,
     _coach_first_issue_description,
+    _coach_headline_issue,
     _turn_changed_no_files,
     _worktree_change_snapshot,
     classify_stall,
@@ -926,3 +927,227 @@ class TestASameSizeEditIsStillAChange:
             counts.append(count_changed_paths(snap, nxt))
             snap = nxt
         assert counts == [1, 1, 1], f"healthy edits measured as {counts}"
+
+
+# ---------------------------------------------------------------------------
+# 9. The quoted ask is the reviewer's most serious issue, not its first
+# ---------------------------------------------------------------------------
+
+#: An invented advisory, listed first by the reviewer in these scenarios.
+ADVISORY = (
+    "Advisory (non-blocking): the report names one of three expected "
+    "specialist steps."
+)
+#: An invented must-fix of the shape that actually refused those turns.
+REFUSAL = (
+    "Coverage is UNKNOWN, not met: nothing measured coverage, so the gate "
+    "cannot approve."
+)
+
+
+def _record_with(issues: List[Dict[str, Any]], turn: int = 1) -> TurnRecord:
+    coach = AgentInvocationResult(
+        task_id="TASK-HDL-001",
+        turn=turn,
+        agent_type="coach",
+        success=True,
+        report={"decision": "feedback", "issues": issues},
+        duration_seconds=1.0,
+        error=None,
+    )
+    return TurnRecord(
+        turn=turn,
+        player_result=_player_reporting_no_edits(turn, task_id="TASK-HDL-001"),
+        coach_result=coach,
+        decision="feedback",
+        feedback="Not yet",
+        timestamp=f"2026-10-19T18:0{turn}:00Z",
+        files_changed_this_turn=0,
+    )
+
+
+def _issue(severity: Optional[str], description: str, **extra: Any) -> Dict[str, Any]:
+    issue: Dict[str, Any] = {"category": "other", "description": description}
+    if severity is not None:
+        issue["severity"] = severity
+    issue.update(extra)
+    return issue
+
+
+class TestTheAskIsTheMostSeriousIssue:
+    def test_advisory_first_then_must_fix_quotes_the_must_fix(self):
+        record = _record_with([
+            _issue("warning", ADVISORY, category="agent_invocations_advisory"),
+            _issue("should_fix", "A specialist step did not run."),
+            _issue("must_fix", REFUSAL, category="coverage_unknown"),
+        ])
+        assert _coach_headline_issue(record) == (REFUSAL, True)
+        assert _coach_first_issue_description(record) == REFUSAL
+
+    @pytest.mark.parametrize("blocking", ["must_fix", "critical", "major", "high"])
+    @pytest.mark.parametrize(
+        "lesser", ["warning", "should_fix", "minor", "consider", None]
+    )
+    def test_a_blocking_issue_beats_any_non_blocking_one(self, blocking, lesser):
+        record = _record_with([
+            _issue(lesser, "a lesser note"),
+            _issue(blocking, "the refusal"),
+        ])
+        assert _coach_headline_issue(record) == ("the refusal", True)
+
+    def test_must_fix_and_critical_come_before_major_and_high(self):
+        record = _record_with([
+            _issue("high", "high one"),
+            _issue("major", "major one"),
+            _issue("critical", "critical one"),
+            _issue("must_fix", "must-fix one"),
+        ])
+        assert _coach_headline_issue(record) == ("critical one", True)
+
+    def test_equal_severity_keeps_the_reviewers_order(self):
+        record = _record_with([
+            _issue("must_fix", "first refusal"),
+            _issue("must_fix", "second refusal"),
+        ])
+        assert _coach_first_issue_description(record) == "first refusal"
+
+    def test_a_blocking_honesty_record_beats_a_non_blocking_request(self):
+        record = _record_with([
+            _issue("should_fix", "a suggestion"),
+            _issue("must_fix", "Claimed work that did not land.", category="honesty"),
+        ])
+        assert _coach_headline_issue(record) == (
+            "Claimed work that did not land.", True,
+        )
+
+    def test_a_more_severe_honesty_record_beats_a_lesser_blocking_one(self):
+        """Severity before the honesty tie-break: a must_fix honesty finding
+        (the reconciler's critical discrepancy) outranks a major ordinary
+        finding (the LLM Coach's constant severity)."""
+        record = _record_with([
+            _issue("major", "an ordinary rejection"),
+            _issue("must_fix", "Claimed work that did not land.", category="honesty"),
+        ])
+        assert _coach_headline_issue(record) == (
+            "Claimed work that did not land.", True,
+        )
+
+    @pytest.mark.parametrize("severity", ["must_fix", "should_fix"])
+    def test_at_equal_standing_the_honesty_record_comes_last(self, severity):
+        record = _record_with([
+            _issue(severity, "Claimed work that did not land.", category="claim_audit"),
+            _issue(severity, "the real request"),
+        ])
+        assert _coach_first_issue_description(record) == "the real request"
+
+    def test_an_advisory_honesty_record_marked_major_is_not_blocking(self):
+        from guardkit.orchestrator.coach_narrative_reconciler import (
+            DETERMINISTIC_SOURCE,
+        )
+
+        record = _record_with([
+            _issue(
+                "major", "Deterministic honesty record.", category="claim_audit",
+                details={"source": DETERMINISTIC_SOURCE},
+            ),
+            _issue("must_fix", REFUSAL),
+        ])
+        assert _coach_headline_issue(record) == (REFUSAL, True)
+
+    def test_the_zero_test_error_after_the_advisory_is_the_refusal(self):
+        """The Coach's zero-test rejection: advisories first, then the
+        zero-test issue at severity "error" (coach-1 F1)."""
+        record = _record_with([
+            _issue("warning", ADVISORY, category="agent_invocations_advisory"),
+            _issue(
+                "error", "No task-specific tests found.",
+                category="zero_test_anomaly",
+            ),
+        ])
+        assert _coach_headline_issue(record) == (
+            "No task-specific tests found.", True,
+        )
+
+    def test_no_blocking_issue_falls_back_to_the_most_serious_note(self):
+        record = _record_with([
+            _issue("warning", ADVISORY),
+            _issue("should_fix", "A specialist step did not run."),
+        ])
+        assert _coach_headline_issue(record) == (
+            "A specialist step did not run.", False,
+        )
+
+    def test_unreadable_issues_are_skipped_and_none_means_none(self):
+        assert _coach_headline_issue(_record_with([])) is None
+        record = _record_with([
+            _issue("must_fix", "   "),
+            {"severity": "must_fix", "category": "x"},
+            _issue("warning", ADVISORY),
+        ])
+        assert _coach_headline_issue(record) == (ADVISORY, False)
+
+
+class TestTheStallMessageQuotesTheRefusal:
+    def test_the_loop_stall_names_the_must_fix_not_the_advisory(
+        self, tmp_path, caplog
+    ):
+        """Advisory first, must_fix last, driven through the real loop and summary."""
+        orch = _loop_orchestrator(tmp_path)
+        issues = [
+            _issue("warning", ADVISORY, category="agent_invocations_advisory"),
+            _issue("should_fix", "A specialist step did not run."),
+            _issue("must_fix", REFUSAL, category="coverage_unknown"),
+        ]
+        turns = [_record_with(issues, turn=t) for t in range(1, 6)]
+        with caplog.at_level("ERROR"):
+            history, decision = _run_loop(orch, turns, tmp_path)
+        assert decision == "unrecoverable_stall"
+        logged = "\n".join(r.getMessage() for r in caplog.records)
+        summary = orch._build_summary_details(history, decision)
+        for text in (logged, summary):
+            assert f'was still asking for this: "{REFUSAL}"' in text
+            assert "Advisory (non-blocking)" not in text
+
+    def test_with_nothing_blocking_the_message_says_so(self, tmp_path):
+        orch = _loop_orchestrator(tmp_path)
+        issues = [_issue("warning", ADVISORY)]
+        turns = [_record_with(issues, turn=t) for t in range(1, 6)]
+        history, decision = _run_loop(orch, turns, tmp_path)
+        assert decision == "unrecoverable_stall"
+        message = orch._no_file_change_stall_message("TASK-HDL-001", history)
+        assert "marked nothing as must-fix" in message
+        assert f'its most serious note was this: "{ADVISORY}"' in message
+        assert "was still asking for this" not in message
+
+    def test_the_zero_test_error_stall_does_not_say_nothing_was_must_fix(
+        self, tmp_path
+    ):
+        orch = _loop_orchestrator(tmp_path)
+        issues = [
+            _issue("warning", ADVISORY, category="agent_invocations_advisory"),
+            _issue("error", "No task-specific tests found.", category="zero_test_anomaly"),
+        ]
+        turns = [_record_with(issues, turn=t) for t in range(1, 6)]
+        history, decision = _run_loop(orch, turns, tmp_path)
+        assert decision == "unrecoverable_stall"
+        message = orch._no_file_change_stall_message("TASK-HDL-001", history)
+        assert 'was still asking for this: "No task-specific tests found."' in message
+        assert "marked nothing as must-fix" not in message
+
+    def test_with_no_readable_issue_the_feedback_text_is_the_ask(self, tmp_path):
+        """The fallback quotes the turn's feedback as the reviewer's request."""
+        orch = _loop_orchestrator(tmp_path)
+        from dataclasses import replace
+
+        turns = [
+            replace(_record_with([], turn=t), feedback="Please   add the missing endpoint.")
+            for t in range(1, 6)
+        ]
+        history, decision = _run_loop(orch, turns, tmp_path)
+        assert decision == "unrecoverable_stall"
+        message = orch._no_file_change_stall_message("TASK-HDL-001", history)
+        assert (
+            'was still asking for this: "Please add the missing endpoint."'
+            in message
+        )
+        assert "marked nothing as must-fix" not in message
