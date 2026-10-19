@@ -2114,7 +2114,7 @@ async def invoke_test_orchestrator(
         if det_block is not None:
             _write_specialist_results(specialist_results_path, det_block)
             logger.info(
-                "[%s] Phase-4 executed deterministically (subprocess pytest): "
+                "[%s] Phase-4 executed deterministically (the declared test command, as a subprocess): "
                 "status=%s tests_run=%s tests_failed=%s in %.1fs",
                 task_id,
                 det_block.get("status"),
