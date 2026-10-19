@@ -446,6 +446,35 @@ def _runtime_deps_available(deps: List[str]) -> Optional[str]:
     return None
 
 
+def _guardkit_checkout_roots() -> List[str]:
+    """Every GuardKit checkout root this interpreter may have on ``sys.path``.
+
+    That is this test's own checkout (``REPO_ROOT``) and, when guardkit-py is
+    an editable install, the checkout the install points at. The two differ
+    when the tests run from a second checkout or a git worktree against a
+    virtualenv that another checkout installed: the ``.pth`` file then names
+    that other checkout, and its ``lib/`` shadows the rendered project's.
+    """
+    roots = [str(REPO_ROOT)]
+    try:
+        from importlib.metadata import PackageNotFoundError, distribution
+
+        direct_url = distribution("guardkit-py").read_text("direct_url.json")
+    except (ImportError, PackageNotFoundError):
+        direct_url = None
+    if direct_url:
+        import json
+        from urllib.parse import unquote, urlparse
+
+        info = json.loads(direct_url)
+        url = info.get("url", "")
+        if info.get("dir_info", {}).get("editable") and url.startswith("file://"):
+            editable_root = unquote(urlparse(url).path)
+            if editable_root not in roots:
+                roots.append(editable_root)
+    return roots
+
+
 def _run_import_check(
     project_dir: Path,
     entrypoints: List[str],
@@ -468,11 +497,13 @@ def _run_import_check(
     # langchain-deepagents-orchestrator template's ``lib/`` which would
     # otherwise resolve to guardkit-py's own ``lib/__init__.py`` rather than
     # the scratch tree. Exact-match filter is sufficient because Python's
-    # editable installs use exact-path ``.pth`` entries.
-    repo_root_literal = repr(str(REPO_ROOT))
+    # editable installs use exact-path ``.pth`` entries. The editable entry
+    # names whichever checkout installed the virtualenv, which is not this
+    # one when the tests run from a worktree, so both roots are purged.
+    roots_literal = repr(_guardkit_checkout_roots())
     script = (
         "import sys; "
-        f"sys.path[:] = [p for p in sys.path if p != {repo_root_literal}]; "
+        f"sys.path[:] = [p for p in sys.path if p not in {roots_literal}]; "
         "sys.path.insert(0, '.'); "
         f"{import_statements}"
     )
