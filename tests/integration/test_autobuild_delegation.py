@@ -187,11 +187,14 @@ def runner():
 @pytest.fixture
 def mock_coach_validator():
     """
-    Patch CoachValidator to force SDK fallback.
+    Patch CoachValidator so the test's invoker decides the Coach turn.
 
-    The CoachValidator is tried first in _invoke_coach_safely. By making it
-    raise an exception, we force the orchestrator to use the mock_agent_invoker
-    which the tests control.
+    Since 51ac051b5 (21 May 2026, TASK-HMIG-008R) the LLM Coach is primary:
+    by default the orchestrator asks the validator only for evidence
+    (``gather_evidence``, a MagicMock here, so nothing real is gathered) and
+    always asks the invoker's ``invoke_coach`` for the decision. On the
+    ``GUARDKIT_COACH_LEGACY=1`` revert ``validate()`` is tried first, and its
+    exception sends the turn to the same invoker.
     """
     with patch(
         "guardkit.orchestrator.autobuild.CoachValidator"
@@ -702,6 +705,23 @@ class TestErrorHandling:
 # TestFullDelegationFlow - End-to-End Integration
 # ============================================================================
 
+def _mock_player_coach_invoker() -> Mock:
+    """A stand-in AgentInvoker the current orchestrator can drive.
+
+    The orchestrator reads numbers and awaitables off the invoker that a bare
+    ``Mock`` answers with another ``Mock``: the Phase-4 block computes its
+    test timeout with ``int(sdk_timeout)``, the turn budget compares
+    ``_calculate_sdk_timeout(...)`` with numbers, and ``_invoke_with_role`` is
+    awaited. Same three attributes as the quality-gate fixture
+    (``tests/integration/quality_gates/conftest.py``, mock_agent_invoker).
+    """
+    invoker = Mock()
+    invoker.sdk_timeout_seconds = 1200
+    invoker._calculate_sdk_timeout = Mock(return_value=1200)
+    invoker._invoke_with_role = AsyncMock()
+    return invoker
+
+
 @pytest.mark.integration
 class TestFullDelegationFlow:
     """End-to-end integration tests for complete AutoBuild with delegation."""
@@ -762,7 +782,7 @@ Valid plan with enough content for validation purposes.
 """, encoding='utf-8')
 
         # Mock AgentInvoker for predictable behavior
-        mock_invoker = Mock()
+        mock_invoker = _mock_player_coach_invoker()
 
         # Player succeeds on turn 1
         player_result = AgentInvocationResult(
@@ -891,7 +911,7 @@ Valid plan content.
 """, encoding='utf-8')
 
         # Mock AgentInvoker for 2-turn workflow
-        mock_invoker = Mock()
+        mock_invoker = _mock_player_coach_invoker()
 
         # Turn 1: Player implements, Coach gives feedback
         player_result_1 = AgentInvocationResult(
