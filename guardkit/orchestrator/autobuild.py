@@ -149,6 +149,26 @@ def build_coverage_record_path(worktree_path: Path) -> Path:
     )
 
 
+def _lock_exclusively(handle: Any) -> bool:
+    """Take an exclusive lock on an open file; False where no lock exists."""
+    try:
+        import fcntl
+    except ImportError:  # pragma: no cover - no fcntl on this system
+        logger.warning(
+            "No file locking on this system: this build's coverage record is "
+            "written without a lock."
+        )
+        return False
+    fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+    return True
+
+
+def _unlock(handle: Any) -> None:
+    import fcntl
+
+    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
 def discard_build_coverage_record(worktree_path: Any) -> None:
     """Forget a build's coverage record (a new build is starting). Never raises."""
     try:
@@ -4372,16 +4392,7 @@ class AutoBuildOrchestrator:
         path.parent.mkdir(parents=True, exist_ok=True)
         lock_path = path.with_name(path.name + ".lock")
         with open(lock_path, "a+", encoding="utf-8") as lock:
-            try:
-                import fcntl
-            except ImportError:  # pragma: no cover - no fcntl on this system
-                fcntl = None  # type: ignore[assignment]
-                logger.warning(
-                    "No file locking on this system: this build's coverage "
-                    "record is written without a lock."
-                )
-            if fcntl is not None:
-                fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+            locked = _lock_exclusively(lock)
             try:
                 data: Dict[str, Any] = {}
                 if path.is_file():
@@ -4409,8 +4420,8 @@ class AutoBuildOrchestrator:
                     raise
                 return command, timeout
             finally:
-                if fcntl is not None:
-                    fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+                if locked:
+                    _unlock(lock)
 
     @classmethod
     def discard_build_coverage_record(cls, worktree_path: Path) -> None:
