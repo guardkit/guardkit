@@ -347,8 +347,13 @@ class TestPerformance:
         """Test that generating 100 IDs completes quickly."""
         import time
 
+        # Nothing here saves a task, so the IDs made so far are passed in, as a
+        # caller making several at once must. Without them, 100 four-character
+        # IDs share a value about 7% of the time.
         start = time.time()
-        task_ids = [generate_task_id() for _ in range(100)]
+        task_ids = []
+        for _ in range(100):
+            task_ids.append(generate_task_id(existing_ids=set(task_ids)))
         duration = time.time() - start
 
         # Should complete in under 1 second (target: <0.1s per ID)
