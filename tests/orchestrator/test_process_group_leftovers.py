@@ -714,6 +714,28 @@ class TestCleanupCapability:
         monkeypatch.undo()
         assert not _alive(_pid(tmp_path, "fg.pid"))
 
+    def test_collecting_the_leader_never_waits_without_bound(
+        self, started: List[int], monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        # Even where the leader cannot be ended (its group refuses the
+        # signal), collecting it gives up after a bounded wait and says so.
+        leader = subprocess.Popen(["sleep", "300"], start_new_session=True)
+        started.append(leader.pid)
+        monkeypatch.setattr(process_group, "_KILL_WAIT_SECONDS", 0.2)
+        monkeypatch.setattr(process_group, "_DRAIN_SECONDS", 0.2)
+        monkeypatch.setattr(process_group.os, "killpg", lambda _pgid, _sig: None)
+        began = time.monotonic()
+        try:
+            with caplog.at_level(logging.WARNING, logger=process_group.__name__):
+                process_group._collect(leader)
+            assert time.monotonic() - began < 5
+            assert "could not be collected" in caplog.text
+        finally:
+            monkeypatch.undo()
+            leader.kill()
+            leader.wait()
+
     @linux_only
     def test_waitid_refused_while_a_command_runs_never_hangs(
         self, tmp_path: Path, started: List[int], monkeypatch: pytest.MonkeyPatch
