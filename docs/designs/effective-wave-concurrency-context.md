@@ -39,6 +39,14 @@ This follows the current `parallel_strategy` contract; the repair adds no new
 cap validation. An empty queue starts no task and passes no concurrency
 context.
 
+The scheduler fact remains valid only while the wave has not timed out. A
+timed-out `asyncio.to_thread` worker can keep running after its semaphore slot
+is released. Starting another queued task could therefore mutate the
+worktree beneath the older task's already-running real-worktree check. After
+the first task timeout, the dispatcher must start no remaining queued task in
+that wave and no later task, gate, or repair dispatch in that feature
+invocation.
+
 Use `effective_concurrency` only to decide whether non-SDK independent tests
 need the parallel-wave isolated copy. Keep `wave_size` nominal and keep every
 other current consumer unchanged.
@@ -68,7 +76,7 @@ every changed callable signature in the propagation chain, including
 The conservative fallback is part of the contract. A direct caller that sends
 `wave_size=2` but no scheduler fact must remain isolated. The existing
 `shares_working_copy=false` default cannot disable isolation because false
-means either “proved serialized” or “an older caller supplied no fact.”
+means either “scheduled one at a time” or “an older caller supplied no fact.”
 
 ## Scheduler boundary
 
@@ -82,14 +90,47 @@ required inputs:
    from `len(queued_calls)` and the resolved cap.
 4. `tasks_run_at_the_same_time` derives its answer from the same helper, so
    `shares_working_copy` and effective concurrency cannot drift.
-5. The orchestrator injects both facts into each runnable task only after the
-   cap is resolved.
+5. A sticky per-feature-invocation timeout flag starts clear at the entry to
+   each public `orchestrate` call. A small async dispatch wrapper runs
+   inside the actual `bound_concurrency` slot and checks the flag before it
+   creates `to_thread` or calls `_execute_task`.
+6. The wrapper otherwise awaits the existing
+   `wait_for(to_thread(...), timeout)` unchanged. If that raises
+   `TimeoutError`, the wrapper sets the flag and re-raises before the outer
+   concurrency wrapper releases its semaphore slot.
+7. A later wrapper that sees the flag returns an explicit unsuccessful
+   `TaskExecutionResult` with `final_decision="error"`, zero turns, and an
+   error stating that the task did not start because another task in its wave
+   timed out. It does not start a Player, Coach, subprocess, or worker thread.
+8. Every dispatch owner checks the same flag immediately after its wave
+   return: `_wave_phase` for normal waves, the smoke and wiring retry helpers,
+   and `_run_feature_check` for whole-feature repair. `_wave_phase` also
+   checks before inter-wave bootstrap and before final boot/feature checks.
+   No subsequent gate, repair, or task dispatch runs in that invocation.
+9. Finalization forces the invocation to failed when the flag is set, even if
+   late-approval reconciliation changed the timed-out task's own result to
+   successful. Task records and counts remain intact. The next explicit public
+   `orchestrate` call resets the flag, including when the same object is reused.
 
 For scheduler-originated task calls this invariant holds:
 
 ```text
 shares_working_copy == (effective_concurrency > 1)
 ```
+
+This is resolved fresh context for tasks that actually start. The timeout
+guard changes which queued tasks start; it does not recalculate
+`shares_working_copy` or pass a weakened context. Existing timeout and
+cancellation events, late-approval reconciliation, result ordering, and
+semaphore limits remain unchanged. A late approval does not clear the flag or
+start unstarted peers. The repair does not stop or join the older worker.
+
+`_execute_wave` continues to own the async loop through `asyncio.run`. The
+local Python runtime gives default-executor shutdown 300 seconds and can then
+return without proving that a worker has stopped. The sticky invocation fence
+therefore controls later dispatch and final success; it does not claim worker
+quiescence. Resetting at a later public invocation is explicit new-run scope,
+not evidence that an older thread was killed.
 
 Nominal membership remains `len(task_ids)` and continues to populate
 `wave_size`, display, queue depth, completion results, and lifecycle
@@ -129,6 +170,7 @@ The following consumers retain nominal `wave_size` behavior:
 `shares_working_copy` also remains separate. It controls whether synthetic or
 recovered Player reports may claim Git-derived file ownership and requirement
 coverage. It is not used as an implicit test-isolation override.
+Its existing timeout behavior is outside this snapshot repair.
 
 ## Compatibility and safety
 
@@ -136,7 +178,19 @@ coverage. It is not used as an implicit test-isolation override.
   real worktree.
 - A multi-task wave serialized by an explicit cap or declared path conflict
   retains nominal `wave_size > 1`, supplies effective one, and runs
-  independent tests in the real worktree.
+  independent tests in the real worktree while earlier tasks complete within
+  their time limits.
+- After any task timeout, every queued task that has not started is returned
+  as an explicit unsuccessful did-not-start result. The rule remains in force
+  for the rest of that wave even if the older worker later exits or records a
+  late approval.
+- The sticky fence also prevents all later waves, post-wave gates, boot smoke,
+  whole-feature checks, and gate-driven repair dispatch in that invocation.
+  Finalization reports failure even when a sole or last timed-out task is
+  reclassified as approved late.
+- A later public `orchestrate` call resets the fence. Reusing an orchestrator
+  object or starting a fresh resume is not permanently poisoned by an earlier
+  invocation's timeout.
 - A larger nominal group with only one runnable task behaves the same way.
 - Two or more runnable tasks with an unlimited or greater-than-one cap supply
   effective concurrency greater than one and retain the current isolated test
@@ -147,8 +201,9 @@ coverage. It is not used as an implicit test-isolation override.
   every binding; the new value is optional and passed by keyword.
 - A three-task group capped at two supplies effective two. Nominal reporting
   still says three.
-- Test failures still fail. The execution root changes only when the scheduler
-  explicitly proves that no peer task can overlap.
+- Test failures still fail. A real-worktree selection means the scheduler
+  resolved the wave to one task at a time and no earlier task timed out; it is
+  not a claim that Python can terminate worker threads.
 
 The repair does not copy, mount, or link version-control metadata into an
 isolated directory. It does not retry a runnable failing suite in the shared
@@ -157,6 +212,12 @@ cannot-start fallback, relax pass criteria, or edit a target repository.
 Git-dependent checks inside a genuinely concurrent isolated copy remain an
 honestly reported compatibility failure outside this bounded correction.
 
+Stopping later dispatch after a timeout is an explicit bounded scheduler
+policy change required to make the real-worktree path safe. It does not change
+the timeout duration, cancellation checkpoints, late-approval task record,
+thread join policy, or treatment of calls already running when the timeout
+fires.
+
 ## Implementation scope
 
 Production changes are limited to the internal context path:
@@ -164,7 +225,9 @@ Production changes are limited to the internal context path:
 - `guardkit/orchestrator/parallel_strategy.py`: calculate effective
   concurrency and reuse it in the existing overlap predicate;
 - `guardkit/orchestrator/feature_orchestrator.py`: produce and pass the
-  explicit value after filtering and policy resolution;
+  explicit value after filtering and policy resolution; set, enforce, and
+  reset the invocation timeout fence; return explicit errors for unstarted
+  peers; skip later dispatch; and force failed finalization;
 - `guardkit/orchestrator/autobuild.py`: store and forward the optional value;
 - `guardkit/orchestrator/specialist_invocations.py`: carry it through
   deterministic Phase 4;
@@ -183,7 +246,7 @@ test-command change is required.
 
 - An explicit concurrency cap of one on a two-task group passes
   `wave_size=2`, `effective_concurrency=1`, and
-  `shares_working_copy=false` to both runnable calls.
+  `shares_working_copy=false` to both runnable calls when neither times out.
 - A two-task declared-path conflict that resolves the cap to one passes the
   same triple through the real `_execute_wave_parallel` caller.
 - A two-task group with one already completed, deferred, or
@@ -199,12 +262,41 @@ test-command change is required.
   task, caps of one and two, and a cap greater than the runnable count.
 - Nominal task identifiers and existing display, queue, completion, and event
   values are unchanged.
+- A controlled cap-one regression uses the real `bound_concurrency` and
+  `wait_for(to_thread(...))` path. Its first worker reaches a controlled
+  real-worktree independent-test boundary, blocks on a test-owned event, and
+  remains alive when the timeout fires. The guard is set before the slot
+  releases, the second queued task never calls `_execute_task`, and its result
+  is unsuccessful `error` with zero turns and a plain did-not-start reason.
+  The test releases the worker in `finally` and makes a bounded assertion that
+  the worker finished, so the test cannot leak a thread.
+- With a cap of two and three queued tasks, a sibling already running when the
+  timeout fires may finish normally; the third task does not start. The guard
+  does not retroactively cancel work that already held a slot.
+- A timed-out task keeps its existing timeout result and late-approval record
+  policy. A late approval does not clear the guard or launch an unstarted peer.
+- Did-not-start peers are never `deferred` or successful. The standard false
+  result path persists them as failed and leaves them eligible for a later
+  resume.
+- Existing timeout-event and cancellation-event timing is unchanged.
+- The sticky fence stops the next wave even with `stop_on_failure=false` and
+  prevents post-wave smoke, wiring, final boot-smoke, whole-feature check, and
+  all three gate-repair re-entry paths from dispatching after a timeout.
+- A timeout on the last or only runnable task followed by `approved_late`
+  still produces the existing approved-late task record, but finalization
+  reports the feature invocation failed with a timeout-stop reason.
+- A second public `orchestrate` call on the same object, including a resume,
+  starts with a clear fence. The first invocation's fence does not poison it.
+- Source inspection records the runtime's 300-second default-executor shutdown
+  bound; no test waits for that duration. The design makes no claim that the
+  old worker is quiescent when the invocation returns, and adds no join or kill.
 
 ### Real isolation decision
 
 - The real FeatureOrchestrator-to-AutoBuild-to-Coach path gives a serialized
-  task a nominally parallel validator whose isolation decision is false; the
-  independent subprocess check runs in the real worktree.
+  task on the clean path a nominally parallel validator whose isolation
+  decision is false; the independent subprocess check runs in the real
+  worktree.
 - The deterministic Phase-4 path receives the same explicit fact and makes the
   same execution-root decision.
 - The same production caller with genuine overlap selects the existing
@@ -240,11 +332,14 @@ After implementation, run focused controls on the Dell through `dell-test`,
 without xdist and with candidate source first on `PYTHONPATH`:
 
 ```text
-~/.local/bin/dell-test timeout 1800 env PYTHONPATH=<candidate>/src:<candidate> <venv>/bin/python -m pytest -q -p no:xdist -p no:cacheprovider -o addopts= tests/unit/test_parallel_strategy.py tests/unit/test_feature_orchestrator.py tests/unit/test_wave_same_area_sequencing.py tests/unit/orchestrator/test_specialist_wave_size_threading.py tests/integration/test_parallel_wave_isolation.py tests/orchestrator/test_direct_mode_timeouts.py tests/orchestrator/test_declared_toolchain_detection.py
+~/.local/bin/dell-test timeout 1800 env PYTHONPATH=<candidate>/src:<candidate> <venv>/bin/python -m pytest -q -p no:xdist -p no:cacheprovider -o addopts= tests/unit/test_parallel_strategy.py tests/unit/test_feature_orchestrator.py tests/unit/test_wave_same_area_sequencing.py tests/unit/orchestrator/test_specialist_wave_size_threading.py tests/unit/orchestrator/test_specialist_component_threading.py tests/unit/orchestrator/test_specialist_invocations.py tests/unit/orchestrator/test_smoke_feedback_retry.py tests/unit/orchestrator/test_wiring_gate.py tests/orchestrator/test_feature_check.py
+~/.local/bin/dell-test timeout 1800 env PYTHONPATH=<candidate>/src:<candidate> <venv>/bin/python -m pytest -q -p no:xdist -p no:cacheprovider -o addopts= tests/unit/test_coach_parallel_isolation.py tests/unit/test_coach_check_could_not_run.py tests/integration/test_parallel_wave_isolation.py tests/orchestrator/test_coach_sdk_stream_resilience.py tests/orchestrator/test_per_component_toolchain.py tests/orchestrator/test_declared_toolchain_detection.py
+~/.local/bin/dell-test timeout 1800 env PYTHONPATH=<candidate>/src:<candidate> <venv>/bin/python -m pytest -q -p no:xdist -p no:cacheprovider -o addopts= tests/unit/test_autobuild_orchestrator.py tests/orchestrator/test_behavioural_oracle_threading.py tests/orchestrator/test_llm_coach_primary.py tests/seam/test_autobuild_coach.py tests/orchestrator/test_direct_mode_timeouts.py
 ```
 
-If focused results expose a regression concern, run the established broader
-`tests/orchestrator` path through the same wrapper. Preserve the exact
+All three commands are mandatory. Run new exact nodes first, then these file
+sets. If focused results expose a regression concern, run the established
+broader `tests/orchestrator` path through the same wrapper. Preserve the exact
 candidate commit, command, result count, and raw log. Compare any failure
 against the unchanged pinned base before changing the design or weakening a
 control.
