@@ -93,7 +93,7 @@ def make_project(
     _write(repo, "scripts/seed.sh", "#!/bin/sh\necho seeded\n")
     _write(repo, "tests/e2e/shelf.spec.ts", "test('shelf', () => {});\n")
     _write(repo, "deploy/Dockerfile", "FROM scratch\n")
-    _write(repo, ".gitignore", "node_modules/\n")
+    _write(repo, ".gitignore", "node_modules/\n.env\n.env.*\nbuild/\n")
     _write(
         repo,
         ".guardkit/config.yaml",
@@ -446,6 +446,7 @@ class TestARepairRoundCanDoItsJob:
             round_number=2,
             start_commit=outcome["head_at_re_open"],
             gate_output=GATE_OUTPUT,
+            ignored_protected=(),
         )
         private = TaskArtifactPaths.task_private_dir(TASK_ID, repo)
         assert not list(private.glob("repair_round*"))
@@ -952,5 +953,132 @@ class TestAnUnreadableRecordIsNeverApproved:
         assert outcome["decision"] == "approved", outcome["history"][-1].coach_result.report
         report = outcome["history"][-1].coach_result.report
         assert not any(
+            i.get("category") == "repair_round_unreadable" for i in report.get("issues", [])
+        )
+
+
+SECRET = "INVENTED_SECRET_VALUE_31f7"
+
+
+class TestIgnoredProtectedFiles:
+    """git's view of changes leaves out ignored files, so an ignored ``.env``
+    is compared, by path and hash only, with what the re-open recorded."""
+
+    def _round_one(self, tmp_path: Path, direct_mode: bool, env: Optional[str]) -> Path:
+        repo = make_project(
+            tmp_path, declare_create=False, declare_modify=False, direct_mode=direct_mode
+        )
+        if env is not None:
+            _write(repo, ".env", env)  # ignored: never committed
+        _write(repo, "build/out.txt", "first build\n")  # ignored, not protected
+        first = run_round(repo, {"apps/web/src/App.tsx": "export const App = () => 1;\n"})
+        assert first["decision"] == "approved", first["history"][-1].coach_result.report
+        return repo
+
+    def _refused_naming_env(self, outcome: Dict[str, Any]) -> None:
+        assert outcome["decision"] != "approved"
+        report = outcome["history"][-1].coach_result.report
+        refusals = [
+            i for i in report.get("issues", []) if i.get("category") == "repair_round_protected"
+        ]
+        assert refusals and ".env" in refusals[0]["details"]["protected"]
+        assert outcome["fo"]._repair_approvals.get(TASK_ID) is None
+
+    def _no_secret_anywhere(self, repo: Path, outcome: Dict[str, Any]) -> None:
+        for prompt in outcome["prompts"]:
+            assert SECRET not in prompt
+        main = repo.parents[2]
+        worktrees = main / ".guardkit" / "worktrees"
+        # Every record the build keeps: the main checkout's .guardkit (its
+        # private folder) and the worktree's .guardkit, not the project's own
+        # files (the .env itself lives there).
+        for folder in (main / ".guardkit", repo / ".guardkit"):
+            for path in folder.rglob("*"):
+                if path.is_file() and worktrees not in path.parents:
+                    assert SECRET.encode() not in path.read_bytes(), path
+        for path in (repo / ".guardkit").rglob("*"):
+            if path.is_file():
+                assert SECRET.encode() not in path.read_bytes(), path
+        assert SECRET not in json.dumps(
+            [tr.coach_result.report for tr in outcome["history"]], default=str
+        )
+
+    HELPER = {"tests/e2e/sign-in.ts": "export const signIn = 1;\n"}
+
+    @pytest.mark.parametrize("direct_mode", [False, True], ids=["no-declarations", "direct-mode"])
+    def test_an_ignored_env_made_during_the_repair_is_refused(
+        self, tmp_path: Path, direct_mode: bool
+    ) -> None:
+        repo = self._round_one(tmp_path, direct_mode, env=None)
+        outcome = reopen_and_repair(
+            repo, {**self.HELPER, ".env": f"API_TOKEN={SECRET}\n"}, model_verdict=APPROVE
+        )
+        self._refused_naming_env(outcome)
+        self._no_secret_anywhere(repo, outcome)
+
+    @pytest.mark.parametrize("direct_mode", [False, True], ids=["no-declarations", "direct-mode"])
+    def test_an_ignored_env_edited_during_the_repair_is_refused(
+        self, tmp_path: Path, direct_mode: bool
+    ) -> None:
+        repo = self._round_one(tmp_path, direct_mode, env=f"API_TOKEN={SECRET}\n")
+        outcome = reopen_and_repair(
+            repo, {**self.HELPER, ".env": f"API_TOKEN={SECRET}x\n"}, model_verdict=APPROVE
+        )
+        self._refused_naming_env(outcome)
+        self._no_secret_anywhere(repo, outcome)
+
+    @pytest.mark.parametrize("direct_mode", [False, True], ids=["no-declarations", "direct-mode"])
+    def test_an_ignored_env_deleted_during_the_repair_is_refused(
+        self, tmp_path: Path, direct_mode: bool
+    ) -> None:
+        repo = self._round_one(tmp_path, direct_mode, env=f"API_TOKEN={SECRET}\n")
+        outcome = reopen_and_repair(
+            repo, self.HELPER, model_verdict=APPROVE,
+            shell_step=lambda root: (root / ".env").unlink(),
+        )
+        self._refused_naming_env(outcome)
+        self._no_secret_anywhere(repo, outcome)
+
+    @pytest.mark.parametrize("direct_mode", [False, True], ids=["no-declarations", "direct-mode"])
+    def test_an_unchanged_ignored_env_still_approves(
+        self, tmp_path: Path, direct_mode: bool
+    ) -> None:
+        repo = self._round_one(tmp_path, direct_mode, env=f"API_TOKEN={SECRET}\n")
+        outcome = reopen_and_repair(repo, self.HELPER, model_verdict=APPROVE)
+        assert outcome["decision"] == "approved", outcome["history"][-1].coach_result.report
+        # Recorded by path and hash only.
+        recorded = dict(outcome["repair_round"].ignored_protected)
+        assert list(recorded) == [".env"] and SECRET not in recorded[".env"]
+        self._no_secret_anywhere(repo, outcome)
+
+    @pytest.mark.parametrize("direct_mode", [False, True], ids=["no-declarations", "direct-mode"])
+    def test_an_ignored_file_that_is_not_protected_is_not_refused_by_this_rule(
+        self, tmp_path: Path, direct_mode: bool
+    ) -> None:
+        repo = self._round_one(tmp_path, direct_mode, env=None)
+        outcome = reopen_and_repair(
+            repo, {**self.HELPER, "build/out.txt": "second build\n"}, model_verdict=APPROVE
+        )
+        assert outcome["decision"] == "approved", outcome["history"][-1].coach_result.report
+
+    @pytest.mark.parametrize("direct_mode", [False, True], ids=["no-declarations", "direct-mode"])
+    def test_no_listing_refuses_the_turn(
+        self, tmp_path: Path, direct_mode: bool, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        repo = self._round_one(tmp_path, direct_mode, env=None)
+        from guardkit.orchestrator import repair_round as rr
+
+        real = rr.ignored_protected_files
+        calls = {"n": 0}
+
+        def _second_listing_fails(worktree_path: Path) -> Any:
+            calls["n"] += 1
+            return real(worktree_path) if calls["n"] == 1 else None
+
+        monkeypatch.setattr(rr, "ignored_protected_files", _second_listing_fails)
+        outcome = reopen_and_repair(repo, self.HELPER, model_verdict=APPROVE)
+        assert outcome["decision"] != "approved"
+        report = outcome["history"][-1].coach_result.report
+        assert any(
             i.get("category") == "repair_round_unreadable" for i in report.get("issues", [])
         )

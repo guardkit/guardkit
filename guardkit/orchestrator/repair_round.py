@@ -40,12 +40,14 @@ with a slash in it, or a bare file name, that matches a file git tracks.
 
 from __future__ import annotations
 
+import hashlib
 import logging
+import os
 import re
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from typing import FrozenSet, Iterable, List, Optional, Set
+from typing import Dict, FrozenSet, Iterable, List, Optional, Set, Tuple
 
 from guardkit.lib.project_git import run_git
 
@@ -73,6 +75,11 @@ class RepairRound:
     start_commit: str
     gate_output: str
     approved_by_earlier_repairs: FrozenSet[str] = frozenset()
+    #: Every protected file git ignores, as it stood at the re-open: path and
+    #: sha256 of its bytes, nothing else (``ignored_protected_files``). Never
+    #: the contents. ``None`` when the listing could not be taken, and then
+    #: every turn of the round is refused.
+    ignored_protected: Optional[Tuple[Tuple[str, str], ...]] = None
 
 
 #: The most implicated paths kept. A gate's output is cut to its last lines
@@ -151,6 +158,7 @@ def begin_repair_round(
         )
         return None
     number = round_number if isinstance(round_number, int) and round_number > 1 else 2
+    ignored = ignored_protected_files(worktree_path)
     return RepairRound(
         round_number=number,
         start_commit=head,
@@ -158,7 +166,71 @@ def begin_repair_round(
         approved_by_earlier_repairs=frozenset(
             str(path) for path in approved_by_earlier_repairs if path
         ),
+        ignored_protected=None if ignored is None else tuple(sorted(ignored.items())),
     )
+
+
+def ignored_protected_files(worktree_path: Path) -> Optional[Dict[str, str]]:
+    """Every protected file git ignores, as ``{path: sha256 of its bytes}``.
+
+    git's own view of changes says nothing about an ignored file, so an
+    ignored ``.env`` a repair round makes, edits or deletes would never be
+    seen. This lists the ignored files (``git ls-files --others --ignored
+    --exclude-standard``), keeps the protected ones (the plan audit's
+    ``_is_protected``), leaves out what the audit never counts (installed
+    packages, caches, the factory's own records) and hashes each one. The
+    contents are read only to hash them: they are never kept, logged or
+    shown. ``None`` when git cannot list them. Never raises.
+    """
+    try:
+        from installer.core.commands.lib.plan_audit import PlanAuditor, _is_protected
+
+        done = run_git(
+            ["ls-files", "--others", "--ignored", "--exclude-standard", "-z"],
+            cwd=Path(worktree_path),
+            check=False,
+            timeout=60,
+        )
+        if done.returncode != 0:
+            return None
+        auditor = PlanAuditor()
+        found: Dict[str, str] = {}
+        for path in done.stdout.split("\0"):
+            if not path or not _is_protected(path) or auditor._is_excluded(Path(path)):
+                continue
+            found[path] = _sha256_of(Path(worktree_path) / path)
+        return found
+    except Exception as exc:  # noqa: BLE001 — a missing listing refuses the turn
+        logger.warning(
+            "The ignored protected files could not be listed (%s).", type(exc).__name__
+        )
+        return None
+
+
+def _sha256_of(path: Path) -> str:
+    """The sha256 of a file's bytes, or a fixed word when it cannot be read."""
+    digest = hashlib.sha256()
+    try:
+        if path.is_symlink():
+            digest.update(b"symlink:" + os.fsencode(os.readlink(path)))
+            return digest.hexdigest()
+        with open(path, "rb") as handle:
+            for chunk in iter(lambda: handle.read(1 << 20), b""):
+                digest.update(chunk)
+    except OSError:
+        return "unreadable"
+    return digest.hexdigest()
+
+
+def ignored_protected_changes(
+    before: Optional[Iterable[Tuple[str, str]]], now: Optional[Dict[str, str]]
+) -> Optional[Set[str]]:
+    """The ignored protected files made, changed or deleted since ``before``,
+    or ``None`` when either listing is missing. Pure."""
+    if before is None or now is None:
+        return None
+    then = dict(before)
+    return {path for path in set(then) | set(now) if then.get(path) != now.get(path)}
 
 
 def _git_out(worktree_path: Path, args: List[str]) -> str:

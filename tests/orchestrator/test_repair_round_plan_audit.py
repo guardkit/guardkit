@@ -202,7 +202,7 @@ def _make_repo(
     _git(root, "config", "user.email", "factory@example.invalid")
     _git(root, "config", "user.name", "Factory Test")
     _git(root, "config", "commit.gpgsign", "false")
-    _write(root, ".gitignore", ".guardkit/autobuild-private/\n")
+    _write(root, ".gitignore", ".guardkit/autobuild-private/\n.env\n.env.*\nbuild/\n")
     _write(root, "web/src/App.tsx", "export const App = () => null;\n")
     _write(root, "api/src/server.ts", "export const serve = 1;\n")
     _write(root, "scripts/check-feature.sh", "#!/bin/sh\nexit 0\n")
@@ -295,7 +295,10 @@ class TestTheAuditInARepairRound:
     def test_the_round_starts_at_head_at_the_re_open(self, repo: Path) -> None:
         start = _approve_round_one(repo)
         round_ = _reopen(repo)
-        assert round_ == RepairRound(round_number=2, start_commit=start, gate_output=GATE_OUTPUT)
+        assert round_ == RepairRound(
+            round_number=2, start_commit=start, gate_output=GATE_OUTPUT,
+            ignored_protected=(),
+        )
 
     def test_extra_files_are_left_to_the_reviewer_and_all_named(self, repo: Path) -> None:
         _approve_round_one(repo)

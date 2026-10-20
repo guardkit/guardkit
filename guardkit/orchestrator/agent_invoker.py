@@ -4762,7 +4762,29 @@ Turn: {turn}
             existed = set(facts.get("existed_at_round_start") or ())
             changed_this_round = list(facts.get("changed_this_round") or ())
             beyond = [p for p in changed_this_round if p not in declared_paths]
-            protected = sorted(_repair_round_protected(changed_this_round, declared_paths))
+            # Protected files git ignores (a .env) are invisible to the
+            # listing above: compared, by path and hash only, with what the
+            # re-open recorded. No listing, no review: the turn is refused.
+            from guardkit.orchestrator.repair_round import (
+                ignored_protected_changes,
+                ignored_protected_files,
+            )
+
+            ignored_touched = ignored_protected_changes(
+                getattr(round_, "ignored_protected", None),
+                ignored_protected_files(self.worktree_path),
+            )
+            if ignored_touched is None:
+                logger.warning(
+                    "[%s] The ignored protected files could not be compared "
+                    "with the re-open's listing; the turn will be refused.",
+                    task_id,
+                )
+                return None
+            protected = sorted(
+                _repair_round_protected(changed_this_round, declared_paths)
+                | {p for p in ignored_touched if p not in declared_paths}
+            )
             self.repair_round_inventory = frozenset(
                 path for path in beyond if not _is_protected(path)
             )
