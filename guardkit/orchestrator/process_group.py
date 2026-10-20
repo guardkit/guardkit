@@ -85,6 +85,7 @@ import select
 import selectors
 import signal
 import subprocess
+import sys
 import time
 import uuid
 from dataclasses import dataclass
@@ -335,6 +336,70 @@ def _look(
     return members, outside
 
 
+#: The system call numbers of pidfd_open and pidfd_send_signal: the same on
+#: every Linux architecture (they come from the unified syscall table).
+_SYS_PIDFD_OPEN = 434
+_SYS_PIDFD_SEND_SIGNAL = 424
+_LIBC: List[Any] = []
+
+
+def _raw_syscall(number: int, *args: Any) -> int:
+    """``syscall(2)`` through ctypes, for a Python built without the pidfd
+    wrappers (some standalone builds, such as uv-managed ones). Raises
+    ``OSError`` with the call's own error."""
+    import ctypes
+
+    if not _LIBC:
+        libc = ctypes.CDLL(None, use_errno=True)
+        libc.syscall.restype = ctypes.c_long
+        _LIBC.append(libc)
+    result = _LIBC[0].syscall(ctypes.c_long(number), *args)
+    if result < 0:
+        code = ctypes.get_errno()
+        raise OSError(code, os.strerror(code))
+    return int(result)
+
+
+def _c_int(value: int) -> Any:
+    import ctypes
+
+    return ctypes.c_int(value)
+
+
+def _has_wrapper(module: str) -> bool:
+    try:
+        if module == "os":
+            os.pidfd_open  # noqa: B018 - the attribute's presence is the question
+        else:
+            signal.pidfd_send_signal  # noqa: B018
+    except AttributeError:
+        return False
+    return True
+
+
+def _pidfd_open(pid: int) -> int:
+    """``os.pidfd_open``, or the system call itself where this Python build
+    lacks the wrapper (Linux only)."""
+    if _has_wrapper("os"):
+        return os.pidfd_open(pid)
+    if sys.platform != "linux":
+        raise OSError(errno.ENOSYS, "pidfd_open is a Linux system call")
+    return _raw_syscall(_SYS_PIDFD_OPEN, _c_int(pid), _c_int(0))
+
+
+def _pidfd_send_signal(handle: int, sig: int) -> None:
+    """``signal.pidfd_send_signal``, or the system call itself where this
+    Python build lacks the wrapper (Linux only)."""
+    if _has_wrapper("signal"):
+        signal.pidfd_send_signal(handle, sig)
+        return
+    if sys.platform != "linux":
+        raise OSError(errno.ENOSYS, "pidfd_send_signal is a Linux system call")
+    _raw_syscall(
+        _SYS_PIDFD_SEND_SIGNAL, _c_int(handle), _c_int(int(sig)), None, _c_int(0)
+    )
+
+
 def _signal_outside(
     pids: Set[int], pgid: int, entry: Optional[bytes], since: Optional[int], sig: int
 ) -> Set[int]:
@@ -353,17 +418,14 @@ def _signal_outside(
     refused: Set[int] = set()
     for pid in pids:
         try:
-            handle = os.pidfd_open(pid)
-        except AttributeError:  # pragma: no cover - no pidfds in this Python
-            refused.add(pid)
-            continue
+            handle = _pidfd_open(pid)
         except OSError as exc:
             if exc.errno != errno.ESRCH:  # ESRCH: it has gone
                 refused.add(pid)
             continue
         try:
             if _belongs(pid, pgid, entry, since) is not None:
-                signal.pidfd_send_signal(handle, sig)
+                _pidfd_send_signal(handle, sig)
         except OSError as exc:
             # Only ESRCH means it ended after it was pinned; anything else (a
             # refusal) means it was not signalled.
@@ -563,8 +625,8 @@ class _Exchange:
                 self.chunks[stream] = []
                 self.selector.register(stream, selectors.EVENT_READ)
         try:
-            self.pidfd = os.pidfd_open(proc.pid)
-        except (AttributeError, OSError):
+            self.pidfd = _pidfd_open(proc.pid)
+        except OSError:
             self.pidfd = None  # look every _LOOK_INTERVAL_SECONDS instead
         if self.pidfd is not None:
             self.selector.register(self.pidfd, selectors.EVENT_READ)
@@ -709,31 +771,44 @@ class CleanupUnavailableError(OSError):
     treats "could not start" as the command's failure says so)."""
 
 
+def _refused(call: str, wrapper: bool, exc: OSError) -> str:
+    """The plain clause naming why ``call`` cannot be used here."""
+    reason = exc.strerror or str(exc)
+    if wrapper:
+        return f"{call} is refused here by the kernel or a security filter ({reason})"
+    if sys.platform != "linux":
+        return f"this Python build lacks {call}, and this system is not Linux"
+    return (
+        f"this Python build lacks {call}, and the system call itself is "
+        f"refused by the kernel or a security filter ({reason})"
+    )
+
+
 def _missing_capability() -> Optional[str]:
-    """What this system lacks to end everything a command leaves, in plain
-    words, or ``None``.
+    """Why this system cannot end everything a command leaves, as a plain
+    clause, or ``None``.
 
     Ending a process that left the command's group needs ``/proc`` (to find
     it), ``os.waitid`` (to keep the leader uncollected meanwhile) and a pidfd
     that can be opened and signalled through (to signal that one process and
-    no other). Both are tried on this process itself.
+    no other). Both are tried on this process itself, through the Python
+    wrappers or, where this Python build lacks them, the system calls
+    themselves.
     """
     if not Path("/proc/self/stat").exists():
-        return "/proc (to find a command's processes)"
+        return "/proc is missing (it is needed to find a command's processes)"
     if not _can_wait_without_collecting():
-        return "os.waitid (Python 3.13 or later on macOS)"
+        return "os.waitid is missing (macOS has it from Python 3.13)"
     try:
-        handle = os.pidfd_open(os.getpid())
-    except AttributeError:
-        return "pidfd support in this Python"
+        handle = _pidfd_open(os.getpid())
     except OSError as exc:
-        return f"pidfd_open (refused here: {exc.strerror or exc})"
+        return _refused("pidfd_open", _has_wrapper("os"), exc)
     try:
         # Signal 0 checks that signalling through a pidfd is allowed too (a
         # filter may allow opening one and refuse sending).
-        signal.pidfd_send_signal(handle, 0)
+        _pidfd_send_signal(handle, 0)
     except OSError as exc:
-        return f"pidfd_send_signal (refused here: {exc.strerror or exc})"
+        return _refused("pidfd_send_signal", _has_wrapper("signal"), exc)
     finally:
         os.close(handle)
     return None
@@ -755,16 +830,16 @@ def _check_capability() -> None:
         return
     if _is_factory_launch():
         raise CleanupUnavailableError(
-            "The factory does not run project commands here: this system lacks "
-            f"{missing}, so what a command leaves running could not all be "
-            "stopped safely. Run the factory on a current Linux kernel (5.3 or "
-            "later) where pidfd_open is allowed."
+            f"The factory does not run project commands here: {missing}, so what "
+            "a command leaves running could not all be stopped safely. Run the "
+            "factory with a Python and a Linux kernel (5.3 or later) that allow "
+            "pidfd_open and pidfd_send_signal."
         )
     if not _WARNED:
         _WARNED.append(True)
         logger.warning(
-            "This system lacks %s, so a process a project command moves out of "
-            "its process group may be left running after the command.",
+            "Here %s, so a process a project command moves out of its process "
+            "group may be left running after the command.",
             missing,
         )
 

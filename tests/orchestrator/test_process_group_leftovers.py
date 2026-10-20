@@ -282,6 +282,31 @@ class TestLeftoversAreEnded:
         assert _alive(_pid(tmp_path, "inner.pid"))
         assert "left 2 processes running; 1 was stopped. 1 process outside" in caplog.text
 
+    def test_a_process_that_no_longer_belongs_after_pinning_is_not_signalled(
+        self, started: List[int], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The re-check after pinning: a process listed as the command's but no
+        # longer its own once pinned (its number was handed on before the
+        # pidfd was opened) is not signalled.
+        stranger = subprocess.Popen(["sleep", "300"], start_new_session=True)
+        started.append(stranger.pid)
+        monkeypatch.setattr(process_group, "_belongs", lambda *_a: None)
+        monkeypatch.setattr(
+            process_group, "_pidfd_send_signal",
+            lambda handle, sig: pytest.fail("signalled a process that is not the command's"),
+        )
+        try:
+            refused = process_group._signal_outside(
+                {stranger.pid}, os.getpid() + 1, None, None, signal.SIGKILL
+            )
+            time.sleep(0.2)
+            assert refused == set()
+            assert _alive(stranger.pid)
+        finally:
+            monkeypatch.undo()
+            stranger.kill()
+            stranger.wait()
+
     def test_a_number_reused_after_pinning_is_never_signalled(
         self, started: List[int], monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -505,7 +530,10 @@ class TestCleanupCapability:
     commands are refused before they start; a person's own run goes on with
     the reduced clean-up and one warning."""
 
-    _MISSING = "pidfd_open (refused here: Operation not permitted)"
+    _MISSING = (
+        "pidfd_open is refused here by the kernel or a security filter "
+        "(Operation not permitted)"
+    )
 
     @pytest.fixture
     def missing(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -535,12 +563,83 @@ class TestCleanupCapability:
         monkeypatch.setattr(process_group.signal, "pidfd_send_signal", refused)
         monkeypatch.setattr(process_group, "_CAPABILITY", [])
         monkeypatch.setenv("GUARDKIT_FACTORY_LAUNCH", "build-x")
-        expected = "pidfd_send_signal (refused here: Operation not permitted)"
+        expected = (
+            "pidfd_send_signal is refused here by the kernel or a security filter "
+            "(Operation not permitted)"
+        )
 
         assert process_group._missing_capability() == expected
         with pytest.raises(process_group.CleanupUnavailableError, match="pidfd_send_signal"):
             _run(tmp_path, "touch ran")
         assert not (tmp_path / "ran").exists()
+
+    @linux_only
+    def test_a_python_without_the_pidfd_wrappers_uses_the_system_calls(
+        self, tmp_path: Path, started: List[int], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Some standalone Python builds (uv-managed ones) lack os.pidfd_open
+        # and signal.pidfd_send_signal although the kernel has the calls.
+        if shutil.which("setsid", path=_ENV["PATH"]) is None:
+            pytest.skip("no setsid program")
+        monkeypatch.delattr(os, "pidfd_open")
+        monkeypatch.delattr(signal, "pidfd_send_signal")
+        monkeypatch.setattr(process_group, "_CAPABILITY", [])
+
+        assert process_group._missing_capability() is None
+        _run(
+            tmp_path,
+            "setsid sh -c 'echo $$ > bg.pid; exec sleep 300' >/dev/null 2>&1 & "
+            + _WAIT_FOR.format(name="bg.pid"),
+        )
+        monkeypatch.undo()
+
+        assert not _alive(_pid(tmp_path, "bg.pid"))
+
+    @linux_only
+    def test_without_wrappers_or_system_calls_the_python_build_is_named(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def refused(_number: int, *_args: object) -> int:
+            raise OSError(errno.EPERM, "Operation not permitted")
+
+        monkeypatch.delattr(os, "pidfd_open")
+        monkeypatch.setattr(process_group, "_raw_syscall", refused)
+        monkeypatch.setattr(process_group, "_CAPABILITY", [])
+        expected = (
+            "this Python build lacks pidfd_open, and the system call itself is "
+            "refused by the kernel or a security filter (Operation not permitted)"
+        )
+
+        assert process_group._missing_capability() == expected
+        with pytest.raises(process_group.CleanupUnavailableError, match="Python build lacks"):
+            _run(tmp_path, "touch ran")
+        assert not (tmp_path / "ran").exists()
+
+    def test_without_wrappers_off_linux_the_platform_is_named(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        if not Path("/proc/self/stat").exists():
+            pytest.skip("needs /proc")
+        monkeypatch.delattr(os, "pidfd_open", raising=False)
+        monkeypatch.setattr(process_group.sys, "platform", "darwin")
+        assert process_group._missing_capability() == (
+            "this Python build lacks pidfd_open, and this system is not Linux"
+        )
+
+    @linux_only
+    @pytest.mark.parametrize("send", ["works", "refused"])
+    def test_the_probe_closes_its_pidfd(
+        self, monkeypatch: pytest.MonkeyPatch, send: str
+    ) -> None:
+        if send == "refused":
+            def refused(_handle: int, _sig: int) -> None:
+                raise PermissionError(errno.EPERM, "Operation not permitted")
+
+            monkeypatch.setattr(signal, "pidfd_send_signal", refused)
+        before = len(os.listdir("/proc/self/fd"))
+        for _ in range(20):
+            process_group._missing_capability()
+        assert len(os.listdir("/proc/self/fd")) == before
 
     def test_a_factory_launch_runs_no_project_command(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, missing: None
@@ -556,10 +655,10 @@ class TestCleanupCapability:
                 run()
             assert isinstance(caught.value, OSError)
             assert str(caught.value) == (
-                "The factory does not run project commands here: this system lacks "
-                f"{self._MISSING}, so what a command leaves running could not all be "
-                "stopped safely. Run the factory on a current Linux kernel (5.3 or "
-                "later) where pidfd_open is allowed."
+                f"The factory does not run project commands here: {self._MISSING}, "
+                "so what a command leaves running could not all be stopped safely. "
+                "Run the factory with a Python and a Linux kernel (5.3 or later) "
+                "that allow pidfd_open and pidfd_send_signal."
             )
         assert not (tmp_path / "ran").exists()
 
