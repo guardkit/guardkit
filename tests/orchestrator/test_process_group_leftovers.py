@@ -41,7 +41,7 @@ import sys
 import threading
 import time
 from pathlib import Path
-from typing import Iterator, List
+from typing import Iterator, List, Set
 
 import pytest
 
@@ -354,6 +354,7 @@ class TestLeftoversAreEnded:
                 time.sleep(0.05)
             raise KeyboardInterrupt
 
+        process_group._check_capability()  # the self-test, before wait is patched
         monkeypatch.setattr(process_group._Exchange, "wait", interrupted)
         began = time.monotonic()
         with pytest.raises(KeyboardInterrupt):
@@ -597,13 +598,10 @@ class TestCleanupCapability:
     def test_this_system_has_everything_needed(self) -> None:
         assert process_group._missing_capability() is None
 
-    @linux_only
-    def test_the_self_test_passes_here_and_leaves_nothing(self) -> None:
-        before = len(os.listdir("/proc/self/fd"))
-        assert process_group._self_test() is None
-        assert len(os.listdir("/proc/self/fd")) == before
+    @staticmethod
+    def _self_test_processes() -> Set[int]:
         marker_name = process_group.COMMAND_MARKER_NAME.encode()
-        left = []
+        found = set()
         for name in os.listdir("/proc"):
             if not name.isdigit():
                 continue
@@ -613,8 +611,16 @@ class TestCleanupCapability:
             except OSError:
                 continue
             if marker_name in environ and b"os.setsid()" in cmdline and _alive(int(name)):
-                left.append(int(name))
-        assert left == []
+                found.add(int(name))
+        return found
+
+    @linux_only
+    def test_the_self_test_passes_here_and_leaves_nothing(self) -> None:
+        before_fds = len(os.listdir("/proc/self/fd"))
+        before = self._self_test_processes()  # earlier tests' refused ones
+        assert process_group._self_test() is None
+        assert len(os.listdir("/proc/self/fd")) == before_fds
+        assert self._self_test_processes() - before == set()
 
     @linux_only
     def test_a_refused_pidfd_is_named(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1019,6 +1025,112 @@ class TestTheRuleOnAFactoryLaunch:
                 + _WAIT_FOR.format(name="bg.pid"),
             )
         monkeypatch.undo()
+
+
+@linux_only
+class TestTheSelfTestSeesForItself:
+    """Codex review, 20 October 2026: the self-test must not rely on the
+    marker scan it is testing, a denied environment read is not an absent
+    marker, and the self-test's own emergency kill checks ownership after
+    pinning."""
+
+    @staticmethod
+    def _deny_environ(monkeypatch: pytest.MonkeyPatch, which) -> None:
+        real_open = open
+
+        def guarded(path, *args, **kwargs):
+            text = str(path)
+            if text.startswith("/proc/") and text.endswith("/environ"):
+                pid = int(text.split("/")[2])
+                if which(pid):
+                    raise PermissionError(errno.EACCES, "Permission denied")
+            return real_open(path, *args, **kwargs)
+
+        monkeypatch.setattr(process_group, "open", guarded, raising=False)
+
+    def test_a_denied_environment_read_fails_the_self_test(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        own = os.getpid()
+        self._deny_environ(monkeypatch, lambda pid: pid != own)
+        monkeypatch.setattr(process_group, "_SELF_TEST_PASSED", [])
+        with pytest.raises(process_group.CleanupUnavailableError) as caught:
+            _run(tmp_path, "touch ran")
+        assert caught.value.reason == (
+            "the clean-up self-test's process environment could not be read "
+            "(Permission denied)"
+        )
+        assert not (tmp_path / "ran").exists()
+
+    def test_a_denied_environment_read_mid_run_ends_a_factory_command(
+        self, tmp_path: Path, started: List[int], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        if shutil.which("setsid", path=_ENV["PATH"]) is None:
+            pytest.skip("no setsid program")
+
+        def escapee(pid: int) -> bool:
+            file = tmp_path / "bg.pid"
+            return file.exists() and file.read_text().strip() == str(pid)
+
+        monkeypatch.setattr(process_group, "_SELF_TEST_PASSED", [True])
+        self._deny_environ(monkeypatch, escapee)
+        with pytest.raises(
+            process_group.CleanupUnavailableError,
+            match="was ended because a process's environment in /proc could not be read",
+        ):
+            _run(
+                tmp_path,
+                "setsid sh -c 'echo $$ > bg.pid; exec sleep 300' >/dev/null 2>&1 & "
+                + _WAIT_FOR.format(name="bg.pid"),
+            )
+
+    def test_the_self_test_checks_its_own_process_not_only_the_scan(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # A scan that misses marked processes would leave the self-test's
+        # process running; the pinned pidfd shows it, so the test fails.
+        monkeypatch.setattr(process_group, "_carries_marker", lambda _pid, _entry: False)
+        assert process_group._self_test() == (
+            "the clean-up self-test's left-behind process was still running after the stop"
+        )
+
+    def test_the_emergency_kill_checks_ownership_after_pinning(
+        self, started: List[int], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # A number listed as the self-test's but handed on before it was
+        # pinned: the process it names now does not carry the marker, so it
+        # is not signalled.
+        stranger = subprocess.Popen(["sleep", "300"], start_new_session=True)
+        started.append(stranger.pid)
+        monkeypatch.setattr(
+            process_group, "_pidfd_send_signal",
+            lambda handle, sig: pytest.fail("signalled a process that is not the self-test's"),
+        )
+        try:
+            process_group._end_self_test_leftovers(
+                {stranger.pid}, f"\0{COMMAND_MARKER_NAME}={'f' * 32}\0".encode(), None
+            )
+            time.sleep(0.2)
+            assert _alive(stranger.pid)
+        finally:
+            monkeypatch.undo()
+            stranger.kill()
+            stranger.wait()
+
+    def test_processes_refused_by_design_are_told_apart(self) -> None:
+        # This process: could be a command's. PID 1 (another user's): not.
+        assert process_group._could_be_this_commands(os.getpid())
+        assert not process_group._could_be_this_commands(1)
+
+    @pytest.mark.personal_run
+    def test_another_users_process_is_not_this_commands(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Its environment cannot be read by design; that is no failure.
+        monkeypatch.setenv("GUARDKIT_FACTORY_LAUNCH", "1")
+        self._deny_environ(monkeypatch, lambda pid: True)
+        monkeypatch.setattr(process_group, "_could_be_this_commands", lambda pid: False)
+        assert process_group._carries_marker(os.getpid(), b"\0X=y\0") is False
 
 
 @pytest.mark.personal_run

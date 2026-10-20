@@ -91,9 +91,11 @@ import logging
 import os
 import select
 import selectors
+import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import uuid
@@ -304,12 +306,71 @@ def _marker_entry(marker: Optional[str]) -> Optional[bytes]:
 
 
 def _carries_marker(pid: int, entry: bytes) -> bool:
+    """Whether ``pid``'s environment holds ``entry``.
+
+    A process that has gone does not. Another user's process, whose
+    environment this user may not read, is not this command's. Any other
+    failure to read it (this user's own process, unreadable) is not an
+    absent marker: on a factory launch the command cannot be watched safely.
+    """
     try:
         with open(f"/proc/{pid}/environ", "rb") as fh:
             environ = fh.read()
-    except OSError:  # gone, or another user's process
+    except (FileNotFoundError, ProcessLookupError):
+        return False
+    except OSError as exc:
+        if isinstance(exc, PermissionError) and not _could_be_this_commands(pid):
+            return False
+        if _is_factory_launch():
+            raise _cleanup_failure(
+                f"a process's environment in /proc could not be read "
+                f"({exc.strerror or exc})",
+                before_launch=False,
+            ) from exc
         return False
     return entry in b"\0" + environ
+
+
+def _status_fields(pid: int) -> Dict[str, str]:
+    try:
+        with open(f"/proc/{pid}/status", encoding="ascii", errors="replace") as fh:
+            text = fh.read()
+    except OSError:
+        return {}
+    fields = {}
+    for line in text.splitlines():
+        name, _, value = line.partition(":")
+        fields[name] = value.strip()
+    return fields
+
+
+def _could_be_this_commands(pid: int) -> bool:
+    """Whether a process whose environment cannot be read may still be one
+    of this command's, so that the refusal is a failure, not a boundary.
+
+    Not this command's: one whose ``/proc`` records belong to another user
+    (another user's, or one that is not dumpable, such as ``sshd`` or
+    ``ssh-agent``); one in a deeper pid namespace (a container's); one
+    holding capabilities this process lacks. Those are refused by design.
+    A process the command starts has none of these, and the self-test
+    proved its environment can be read.
+    """
+    try:
+        if os.stat(f"/proc/{pid}/environ").st_uid != os.geteuid():
+            return False
+    except OSError:
+        return False
+    theirs, ours = _status_fields(pid), _status_fields(os.getpid())
+    if not theirs or not ours:
+        return True  # not knowing counts as possibly ours
+    if len(theirs.get("NSpid", "").split()) != len(ours.get("NSpid", "").split()):
+        return False
+    try:
+        their_caps = int(theirs.get("CapPrm", "0"), 16)
+        our_caps = int(ours.get("CapPrm", "0"), 16)
+    except ValueError:
+        return True
+    return their_caps & ~our_caps == 0
 
 
 def _belongs(
@@ -932,56 +993,190 @@ _SELF_TEST_PASSED: List[bool] = []
 _SELF_TEST_LOCK = threading.Lock()
 _IN_SELF_TEST = threading.local()
 
-#: The self-test's command: it starts one process that moves into a session
-#: of its own (carrying the command's marker, as every process of a command
-#: does), lets go of the output and outlives the command; the command prints
-#: that process's pid and the marker, then returns.
+#: The self-test's command (argument 1: a private folder). It starts one
+#: process that moves into a session of its own (carrying the command's
+#: marker, as every process of a command does), lets go of the output and
+#: writes its pid; the command then waits for the self-test's "go", prints
+#: that pid and the marker, and returns, leaving the process running.
 _SELF_TEST_CODE = (
-    "import os, time\n"
+    "import os, sys, time\n"
+    "folder = sys.argv[1]\n"
     "pid = os.fork()\n"
     "if pid == 0:\n"
     "    os.setsid()\n"
     "    null = os.open(os.devnull, os.O_RDWR)\n"
     "    for fd in (0, 1, 2):\n"
     "        os.dup2(null, fd)\n"
+    "    with open(os.path.join(folder, 'child.tmp'), 'w') as fh:\n"
+    "        fh.write(str(os.getpid()))\n"
+    "    os.rename(os.path.join(folder, 'child.tmp'), os.path.join(folder, 'child'))\n"
     "    time.sleep(30)\n"
     "    os._exit(0)\n"
+    "deadline = time.monotonic() + 20\n"
+    "while not os.path.exists(os.path.join(folder, 'go')) and time.monotonic() < deadline:\n"
+    "    time.sleep(0.01)\n"
     f"print(pid, os.environ.get({COMMAND_MARKER_NAME!r}, ''), flush=True)\n"
 )
+_SELF_TEST_WAIT_SECONDS = 20.0
+
+
+def _self_test_child_check(pid: int, handle: int, since: Optional[int]) -> Tuple[Optional[str], bytes]:
+    """Check, through the pinned pidfd ``handle``, that ``pid`` is the
+    self-test's own process: alive, the leader of a session of its own,
+    started after the self-test, with a readable environment carrying a
+    command marker. Returns ``(problem, marker entry)``."""
+    try:
+        _pidfd_send_signal(handle, 0)  # still the pinned process, still alive
+    except OSError as exc:
+        if exc.errno == errno.ESRCH:
+            return "the clean-up self-test's process ended before it could be checked", b""
+        return _refused("pidfd_send_signal", _has_wrapper("signal"), exc), b""
+    fields = _stat_fields(pid)
+    if fields is None or fields[0] in ("Z", "X"):
+        return "the clean-up self-test's process ended before it could be checked", b""
+    _state, _group, session, started = fields
+    if session != pid or (since is not None and started < since):
+        return "the clean-up self-test's process is not the one it started", b""
+    try:
+        with open(f"/proc/{pid}/environ", "rb") as fh:
+            environ = fh.read()
+    except OSError as exc:
+        return (
+            f"the clean-up self-test's process environment could not be read "
+            f"({exc.strerror or exc})"
+        ), b""
+    prefix = f"{COMMAND_MARKER_NAME}=".encode()
+    for item in environ.split(b"\0"):
+        if item.startswith(prefix) and len(item) > len(prefix):
+            return None, b"\0" + item + b"\0"
+    return "the clean-up self-test's process does not carry the command's marker", b""
+
+
+def _has_ended(handle: int, seconds: float) -> bool:
+    """Whether the pinned process has ended, waiting at most ``seconds``
+    (a pidfd becomes readable when its process exits)."""
+    poller = select.poll()
+    poller.register(handle, select.POLLIN)
+    return bool(poller.poll(int(seconds * 1000)))
+
+
+def _end_self_test_leftovers(pids: Set[int], entry: bytes, since: Optional[int]) -> None:
+    """Kill what the self-test left, through pidfds, each checked again after
+    pinning (alive, started after the self-test, carrying its marker), so a
+    number handed on in between is never signalled."""
+    for pid in pids:
+        try:
+            handle = _pidfd_open(pid)
+        except OSError:
+            continue
+        try:
+            fields = _stat_fields(pid)
+            if (
+                fields is not None
+                and fields[0] not in ("Z", "X")
+                and (since is None or fields[3] >= since)
+                and _carries_marker(pid, entry)
+            ):
+                _pidfd_send_signal(handle, signal.SIGKILL)
+        except OSError:
+            pass
+        finally:
+            os.close(handle)
+
+
+def _self_test_command(folder: str, outcome: Dict[str, Any]) -> None:
+    """The self-test's command, run like any project command (in its own
+    thread, so the self-test can pin the process it leaves meanwhile)."""
+    _IN_SELF_TEST.active = True
+    try:
+        outcome["done"] = run_project_command(
+            [sys.executable, "-I", "-c", _SELF_TEST_CODE, folder],
+            env={"PATH": os.defpath},
+            cwd="/",
+            capture_output=True,
+            text=True,
+            timeout=60,
+            grace=1.0,
+        )
+    except BaseException as exc:  # noqa: BLE001 - reported by the self-test
+        outcome["error"] = exc
 
 
 def _self_test() -> Optional[str]:
     """Run the real clean-up end to end once; ``None`` when it worked, else
     the plain reason.
 
-    A tiny command leaves a process in a session of its own; the command is
-    run, and stopped, exactly as a project command is. Afterwards the left
-    process must be gone (its pid no longer pins a process, or pins one that
-    is not this command's) and nothing carrying the command's marker may be
-    left in ``/proc``. That proves, on this system, the ``/proc`` listing
-    and record reads, ``waitid`` and the pidfd calls the clean-up needs.
+    A tiny command, run through :func:`run_project_command` like any
+    project command, leaves a process in a session of its own. While the
+    command waits, that process is pinned (a pidfd) and checked to be the
+    one it started, carrying the command's marker; then the command
+    returns and the real stop runs. Afterwards the pinned process must have
+    ended (its pidfd readable), and nothing carrying the marker may be left
+    in ``/proc``. That proves, on this system, the ``/proc`` listing and
+    record reads, ``waitid`` and the pidfd calls the clean-up needs, and it
+    does not rely on the marker scan to see its own process.
     """
-    _IN_SELF_TEST.active = True
+    folder = tempfile.mkdtemp(prefix="guardkit-cleanup-self-test-")
+    outcome: Dict[str, Any] = {}
+    since = _now_ticks()
+    worker = threading.Thread(
+        target=_self_test_command, args=(folder, outcome), name="clean-up self-test",
+        daemon=True,
+    )
+    handle: Optional[int] = None
+    entry = b""
+    problem: Optional[str] = None
     try:
-        try:
-            done = run_project_command(
-                [sys.executable, "-I", "-c", _SELF_TEST_CODE],
-                env={"PATH": os.defpath},
-                cwd="/",
-                capture_output=True,
-                text=True,
-                timeout=30,
-                grace=1.0,
-            )
-        except CleanupUnavailableError as exc:
-            return exc.reason or str(exc)
-        except Exception as exc:  # noqa: BLE001 - any failure refuses
-            return f"the clean-up self-test could not run ({type(exc).__name__}: {exc})"
+        worker.start()
+        child_file = Path(folder) / "child"
+        deadline = time.monotonic() + _SELF_TEST_WAIT_SECONDS
+        while not child_file.exists() and worker.is_alive() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        if not child_file.exists():
+            worker.join(_SELF_TEST_WAIT_SECONDS + 60)
+            error = outcome.get("error")
+            if isinstance(error, CleanupUnavailableError):
+                return error.reason or str(error)
+            problem = "the clean-up self-test's process did not start"
+        else:
+            pid = int(child_file.read_text(encoding="ascii"))
+            try:
+                handle = _pidfd_open(pid)
+            except OSError as exc:
+                problem = _refused("pidfd_open", _has_wrapper("os"), exc)
+            else:
+                try:
+                    problem, entry = _self_test_child_check(pid, handle, since)
+                except CleanupUnavailableError as exc:
+                    problem = exc.reason or str(exc)
+        (Path(folder) / "go").write_text("go", encoding="ascii")
+        worker.join(_SELF_TEST_WAIT_SECONDS + 60)
+        if worker.is_alive():
+            return problem or "the clean-up self-test's command did not finish"
+        if problem is not None:
+            return problem
+        error = outcome.get("error")
+        if isinstance(error, CleanupUnavailableError):
+            return error.reason or str(error)
+        if error is not None:
+            return f"the clean-up self-test could not run ({type(error).__name__}: {error})"
+        done = outcome["done"]
         words = (done.stdout or "").split()
-        if done.returncode != 0 or len(words) != 2 or not words[0].isdigit():
-            return f"the clean-up self-test's command did not run (exit {done.returncode})"
-        entry = _marker_entry(words[1])
-        left = []
+        printed = f"\0{COMMAND_MARKER_NAME}={words[1]}\0".encode() if len(words) == 2 else b""
+        if done.returncode != 0 or handle is None or entry != printed:
+            return (
+                "the clean-up self-test's command did not run as expected "
+                f"(exit {done.returncode})"
+            )
+        # Independent of the marker scan: the pinned process itself.
+        if not _has_ended(handle, _GRACE_SECONDS):
+            try:
+                _pidfd_send_signal(handle, signal.SIGKILL)
+            except OSError:
+                pass
+            return "the clean-up self-test's left-behind process was still running after the stop"
+        # And nothing else carrying the marker.
+        left: Set[int] = set()
         try:
             for name in os.listdir("/proc"):
                 if not name.isdigit():
@@ -990,32 +1185,23 @@ def _self_test() -> Optional[str]:
                 if (
                     fields is not None
                     and fields[0] not in ("Z", "X")
+                    # Only what started after the self-test can be its own.
+                    and (since is None or fields[3] >= since)
                     and _carries_marker(int(name), entry)
                 ):
-                    left.append(int(name))
+                    left.add(int(name))
         except CleanupUnavailableError as exc:
             return exc.reason or str(exc)
         except OSError as exc:
             return f"/proc could not be listed ({exc.strerror or exc})"
         if left:
-            for pid in left:  # best effort: pinned, never by number
-                try:
-                    handle = _pidfd_open(pid)
-                except OSError:
-                    continue
-                try:
-                    _pidfd_send_signal(handle, signal.SIGKILL)
-                except OSError:
-                    pass
-                finally:
-                    os.close(handle)
-            return (
-                "the clean-up self-test's left-behind process was still running "
-                "after the stop"
-            )
+            _end_self_test_leftovers(left, entry, since)
+            return "the clean-up self-test left a process running after the stop"
         return None
     finally:
-        _IN_SELF_TEST.active = False
+        if handle is not None:
+            os.close(handle)
+        shutil.rmtree(folder, ignore_errors=True)
 
 
 def _check_capability() -> None:

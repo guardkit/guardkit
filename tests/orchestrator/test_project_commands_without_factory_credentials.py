@@ -1434,7 +1434,7 @@ ALLOWED: Dict[Tuple[str, str], str] = {
         "generic runner (subprocess.run's shape, a process group of its own); "
         "every call is checked"
     ),
-    ("orchestrator/process_group.py", "_self_test"): (
+    ("orchestrator/process_group.py", "_self_test_command"): (
         "the clean-up's own self-test: GuardKit's own Python with a fixed "
         "one-name environment (PATH), no project code"
     ),
