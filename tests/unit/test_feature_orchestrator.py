@@ -2378,6 +2378,7 @@ async def test_timeout_mixed_with_success(
         repo_root=temp_repo,
         worktree_manager=mock_worktree_manager,
         task_timeout=1,  # 1 second timeout
+        max_parallel=2,  # both workers must start before the first times out
     )
 
     def mock_execute_task_mixed(task, feature, worktree, cancellation_event=None, timeout_event=None, time_budget_seconds=None, wave_size=1, **kwargs):

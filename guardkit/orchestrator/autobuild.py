@@ -6905,7 +6905,9 @@ class AutoBuildOrchestrator:
                             # whole-suite guard defers to the LLM specialist in a
                             # parallel wave; it needs the real wave size here.
                             wave_size=self.wave_size,
-                            effective_concurrency=self.effective_concurrency,
+                            effective_concurrency=getattr(
+                                self, "effective_concurrency", None
+                            ),
                             # Per-component seam: the task's component selector
                             # (already resolved and validated in ``run()``, and
                             # in scope here as this turn's parameter) so the
@@ -7168,7 +7170,7 @@ class AutoBuildOrchestrator:
             consumer_context=consumer_context,
             remaining_budget=coach_remaining_budget,
             wave_size=self.wave_size,
-            effective_concurrency=self.effective_concurrency,
+            effective_concurrency=getattr(self, "effective_concurrency", None),
             peer_changed_files=peer_changed_files_snapshot,
             behavioural_oracle=behavioural_oracle,  # TS-lane D.1a
             component=component,  # per-component seam
