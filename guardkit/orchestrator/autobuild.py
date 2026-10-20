@@ -5039,7 +5039,7 @@ class AutoBuildOrchestrator:
         # Coach prompt read it from the invoker; set for every loop, so an
         # ordinary task's invoker never carries another task's round.
         if self._agent_invoker is not None:
-            self._agent_invoker.repair_round = getattr(self, "_repair_round", None)
+            self._agent_invoker.repair_round = self._repair_round_for_this_loop(task_id)
 
         # Initialize checkpoint manager if enabled
         if self.enable_checkpoints and self._checkpoint_manager is None:
@@ -8165,6 +8165,30 @@ class AutoBuildOrchestrator:
             return True
 
         return False
+
+    def _repair_round_for_this_loop(self, task_id: str) -> Optional[Any]:
+        """The repair round this task's turns are judged as, or ``None``.
+
+        In a repair round the plan audit leaves the extra files the round made
+        to the LLM Coach's judgement (repair_round.py). The legacy rule-based
+        Coach (``GUARDKIT_COACH_LEGACY=1``) has no reviewer to judge them, so
+        on that path a repair round is audited exactly as an ordinary turn,
+        and the log says so (20 October 2026).
+        """
+        repair_round = getattr(self, "_repair_round", None)
+        if repair_round is None:
+            return None
+        if os.environ.get("GUARDKIT_COACH_LEGACY") == "1":
+            logger.warning(
+                "[%s] Repair round %s is audited as an ordinary turn: the "
+                "legacy rule-based Coach (GUARDKIT_COACH_LEGACY=1) has no "
+                "reviewer to judge the extra files a repair round makes, so "
+                "they count as on any other turn.",
+                task_id,
+                getattr(repair_round, "round_number", "?"),
+            )
+            return None
+        return repair_round
 
     def _feedback_stall_terminal_message(
         self,

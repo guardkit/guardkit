@@ -486,3 +486,37 @@ class TestARepairRoundThatWandersIsRefused:
         issues = _plan_audit_issues(outcome["history"])
         assert issues and issues[0]["severity"] == "must_fix"
         assert "db/migrations/0003_seed_books.sql" in issues[0]["description"]
+
+
+class TestTheLegacyCoachHasNoReviewer:
+    """With ``GUARDKIT_COACH_LEGACY=1`` no LLM reviewer judges the extra files,
+    so a repair round is audited exactly as an ordinary turn, and the log says
+    so."""
+
+    def test_a_repair_round_is_refused_by_count_and_the_log_says_why(
+        self,
+        approved_round_one: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        repo = approved_round_one
+        monkeypatch.setenv("GUARDKIT_COACH_LEGACY", "1")
+        with caplog.at_level("WARNING", logger="guardkit.orchestrator.autobuild"):
+            outcome = reopen_and_repair(repo, REPAIR_NEAR_THE_FAILURE)
+
+        # The re-open still started the round; the loop did not use it.
+        assert isinstance(outcome["repair_round"], RepairRound)
+        assert outcome["decision"] != "approved"
+        block = _plan_audit(repo)
+        assert block["status"] == "violation"
+        assert block["severity"] == "high"
+        assert "repair_round" not in block
+        assert block["extra_files_for_the_reviewer"] == []
+        # No model Coach was asked, and nothing carried a repair section.
+        assert not any(p.startswith("You are the Coach agent") for p in outcome["prompts"])
+        assert all("## This is a repair round" not in p for p in outcome["prompts"])
+        assert any(
+            "audited as an ordinary turn" in record.getMessage()
+            and "GUARDKIT_COACH_LEGACY=1" in record.getMessage()
+            for record in caplog.records
+        )
