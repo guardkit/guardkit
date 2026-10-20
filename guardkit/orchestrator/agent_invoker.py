@@ -4745,8 +4745,11 @@ Turn: {turn}
             return _unavailable(f"at the re-open: {round_.unavailable}")
         try:
             from guardkit.orchestrator.repair_round import (
+                display_key,
+                factory_owned_path,
+                fingerprint_names,
+                protected_files,
                 protected_fingerprint_changes,
-                protected_fingerprints,
             )
             from guardkit.tasks.state_bridge import TaskStateBridge
             from installer.core.commands.lib.plan_audit import (
@@ -4786,15 +4789,42 @@ Turn: {turn}
             # untracked or ignored, file or symlink), compared by fingerprint
             # with what the re-open recorded: a write through a symlink or to
             # an ignored .env is seen. Raises if any read fails.
+            current = protected_files(self.worktree_path)
+            before = dict(round_.protected_fingerprints)
             fingerprint_touched = protected_fingerprint_changes(
-                round_.protected_fingerprints, protected_fingerprints(self.worktree_path)
+                before.items(),
+                {key: fingerprint for key, (_, fingerprint) in current.items()},
             )
+
+            def _names(key: str) -> Set[str]:
+                # The protected names the walk met for the record, at the
+                # re-open and now: a deleted file keeps its baseline names.
+                names: Set[str] = set(fingerprint_names(before.get(key, "")))
+                names.update(current.get(key, ((), ""))[0])
+                return names or {display_key(key)}
+
+            def _named(key: str, names: Set[str]) -> str:
+                shown = display_key(key)
+                others = sorted(name for name in names if name != shown)
+                return shown if not others else f"{shown} (as {', '.join(others)})"
+
+            fingerprint_protected: Set[str] = set()
+            for key in fingerprint_touched:
+                names = _names(key)
+                # Only the actual object path authorizes its change. Aliases
+                # are incomplete diagnostic witnesses, never permission.
+                actual = display_key(key)
+                if actual in declared_paths:
+                    continue
+                # Collection has already applied package/cache exclusions.
+                # The broad managed-path helper would hide protected aliases
+                # into packages; only actual factory/induced records qualify.
+                if actual in induced or factory_owned_path(actual):
+                    continue
+                fingerprint_protected.add(_named(key, names))
             protected = sorted(
                 _repair_round_protected(changed_this_round, declared_paths)
-                | {
-                    p for p in fingerprint_touched
-                    if p not in declared_paths and not _excluded(p)
-                }
+                | fingerprint_protected
             )
             self.repair_round_inventory = frozenset(
                 path for path in beyond if not _is_protected(path)

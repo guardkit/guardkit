@@ -217,6 +217,27 @@ def parse_launch_block(raw: Any) -> LaunchDeclaration:
     return LaunchDeclaration(settings=settings, scratch=scratch)
 
 
+def _read_regular_text(path: Path) -> Optional[str]:
+    """The text of ``path`` when it is a regular file, else ``None``.
+
+    Never blocks: a named pipe (or socket, or device) at the config path is
+    not opened, because ``open()`` on a pipe waits for a writer forever. The
+    file is opened non-blocking and checked again once open, so swapping it
+    for a pipe in between cannot block either. Raises ``OSError`` when it
+    cannot be read.
+    """
+    if not stat.S_ISREG(os.stat(path).st_mode):
+        return None
+    fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            return None
+        with os.fdopen(fd, "rb", closefd=False) as handle:
+            return handle.read().decode("utf-8")
+    finally:
+        os.close(fd)
+
+
 def load_launch_declaration(
     repo_root: Path, *, warn_unread_keys: bool = False
 ) -> Optional[LaunchDeclaration]:
@@ -243,7 +264,13 @@ def load_launch_declaration(
     if not config_path.exists():
         return None
     try:
-        data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        text = _read_regular_text(config_path)
+        if text is None:
+            logger.warning(
+                "%s is not a regular file, so it is not read.", config_path
+            )
+            return None
+        data = yaml.safe_load(text)
     except Exception as exc:  # noqa: BLE001 — a broken config never crashes a build
         logger.warning("Failed to read %s: %s", config_path, exc)
         return None

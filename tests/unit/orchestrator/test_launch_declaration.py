@@ -902,3 +902,67 @@ class TestReliabilityRequirements:
         assert ran_in == copy_root
         assert not cache.is_relative_to(copy_root)
         assert cache.is_relative_to(Path(os.path.realpath(root / ".git")))
+
+
+def _config_pipe_holding_a_launch_block(root: Path) -> tuple:
+    """A named pipe at the config path whose buffer already holds a valid
+    ``launch:`` block, with a writer kept open: a read that ignored the
+    file type would return that declaration instead of ``None``."""
+    (root / ".guardkit").mkdir()
+    pipe = root / ".guardkit" / "config.yaml"
+    os.mkfifo(pipe)
+    holder = os.open(pipe, os.O_RDWR | os.O_NONBLOCK)
+    os.write(holder, yaml.safe_dump(
+        {"launch": {"settings": ["NEUTRAL_SETTING"]}}).encode())
+    return pipe, holder
+
+
+@pytest.mark.timeout(30)
+def test_a_pipe_at_the_config_path_is_never_read(tmp_path, caplog):
+    """``open()`` on a named pipe can wait for a writer forever; the config
+    is read only when it is a regular file (20 October 2026)."""
+    pipe, holder = _config_pipe_holding_a_launch_block(tmp_path)
+    try:
+        assert load_launch_declaration(tmp_path) is None
+    finally:
+        os.close(holder)
+    assert "is not a regular file" in caplog.text
+
+
+@pytest.mark.timeout(30)
+@pytest.mark.parametrize("with_writer", [True, False],
+                         ids=["a-writer-holds-it", "no-writer"])
+def test_a_pipe_swapped_in_after_the_type_check_is_caught_once_open(
+    tmp_path, monkeypatch, with_writer
+):
+    """The type is checked again on the open descriptor: a path that looked
+    like a regular file a moment earlier is still not read as one, and with
+    no writer the open itself does not wait (it is non-blocking)."""
+    import guardkit.orchestrator.launch_declaration as module
+
+    pipe, holder = _config_pipe_holding_a_launch_block(tmp_path)
+    if not with_writer:
+        os.close(holder)
+        holder = None
+    real_stat = os.stat
+
+    def stat_says_regular(path, *args, **kwargs):
+        result = real_stat(path, *args, **kwargs)
+        if Path(path) == pipe:
+            return os.stat_result(
+                (stat.S_IFREG | 0o644,) + tuple(result)[1:])
+        return result
+
+    monkeypatch.setattr(module.os, "stat", stat_says_regular)
+    try:
+        assert load_launch_declaration(tmp_path) is None
+    finally:
+        monkeypatch.undo()
+        if holder is not None:
+            os.close(holder)
+
+
+def test_a_regular_config_is_still_read(tmp_path):
+    _write_config(tmp_path, {"settings": ["NEUTRAL_SETTING"]})
+    declaration = load_launch_declaration(tmp_path)
+    assert declaration is not None and "NEUTRAL_SETTING" in declaration.settings

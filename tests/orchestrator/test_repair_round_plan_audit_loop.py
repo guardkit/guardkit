@@ -1074,14 +1074,14 @@ class TestIgnoredProtectedFiles:
         repo = self._round_one(tmp_path, direct_mode, env=None)
         from guardkit.orchestrator import repair_round as rr
 
-        real = rr.protected_fingerprints
+        real = rr.protected_files
         calls = {"n": 0}
 
         def _second_listing_fails(worktree_path: Path) -> Any:
             calls["n"] += 1
             return real(worktree_path) if calls["n"] == 1 else None
 
-        monkeypatch.setattr(rr, "protected_fingerprints", _second_listing_fails)
+        monkeypatch.setattr(rr, "protected_files", _second_listing_fails)
         outcome = reopen_and_repair(repo, self.HELPER, model_verdict=APPROVE)
         assert outcome["decision"] != "approved"
         report = outcome["history"][-1].coach_result.report

@@ -44,6 +44,7 @@ import hashlib
 import logging
 import os
 import re
+import stat
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, FrozenSet, Iterable, List, Optional, Set, Tuple
@@ -203,64 +204,269 @@ def git_head(worktree_path: Path) -> str:
 _FACTORY_OWNED_NAMES = frozenset({".guardkit-git.lock"})
 
 
-def protected_fingerprints(worktree_path: Path) -> Dict[str, str]:
-    """Every protected path in the worktree, as ``{path: fingerprint}``.
+#: Separates a fingerprint's hash from the protected names it carries.
+_NAMES_SEPARATOR = "\x00"
+#: The key prefix of a link's own fingerprint (its text and target).
+LINK_KEY_PREFIX = "link:"
 
-    One rule, whatever git thinks of a path: tracked, untracked or ignored,
-    regular file or symlink, and inside a nested repository, a submodule or
-    an ignored folder alike. The listing is a plain walk of the filesystem
-    (``os.walk``, not following directory symlinks, so a loop is impossible),
-    independent of git: git collapses an untracked nested repository into one
-    entry, and says nothing about a write through a symlink. The walk skips
-    only what the plan audit never counts (installed packages, caches, any
-    ``.git`` folder, the factory's own records - ``PlanAuditor._is_excluded``)
-    and the worktree's own ``.git`` entry, and the factory's git lock file. It
-    keeps the protected paths (``_is_protected``) and fingerprints each with
-    ``_sha256_of``: contents are read only to hash them and are never kept,
-    logged or shown. Raises ``RepairFactsUnavailable`` if any directory
-    cannot be read or any one fingerprint cannot be taken.
+
+def fingerprint_names(fingerprint: str) -> List[str]:
+    """The protected logical names a fingerprint carries (see
+    :func:`protected_files`)."""
+    return [name for name in str(fingerprint).split(_NAMES_SEPARATOR)[1:] if name]
+
+
+def display_key(key: str) -> str:
+    """How a fingerprint key is named to a person: its actual repository path."""
+    return key[len(LINK_KEY_PREFIX):] if key.startswith(LINK_KEY_PREFIX) else key
+
+
+def factory_owned_path(path: str, *, folder: bool = False) -> bool:
+    """Genuine factory records by actual repository location, never packages.
+
+    Callers supply a stable actual path; resolving a diagnostic alias here
+    would make ownership depend on traversal order again.
     """
-    from installer.core.commands.lib.plan_audit import PlanAuditor, _is_protected
+    parts = path.split("/")
+    if parts[-1] in _FACTORY_OWNED_NAMES:
+        return True
+    if len(parts) >= 2 and parts[-2] == ".guardkit" and parts[-1].startswith(
+        "memory-query-log.jsonl"
+    ):
+        return True
+    location = path + "/" if folder else path
+    return location.startswith((
+        ".guardkit/", "docs/state/", "large_tool_results/",
+        ".claude/task-plans/", "conversation_history/",
+        "tasks/backlog/", "tasks/design_approved/", "tasks/in_progress/",
+        "tasks/in_review/", "tasks/completed/",
+    ))
+
+
+def protected_fingerprints(worktree_path: Path) -> Dict[str, str]:
+    """Every protected record in the worktree, as ``{key: fingerprint}``.
+    See :func:`protected_files`."""
+    return {key: fingerprint for key, (_, fingerprint) in protected_files(worktree_path).items()}
+
+
+def protected_files(worktree_path: Path) -> Dict[str, Tuple[Tuple[str, ...], str]]:
+    """Every protected record in the worktree, as ``{key: (names, fingerprint)}``.
+
+    Files use real repository paths; links use their own entry paths with
+    parent directories resolved, never the final link. The hash covers contents
+    or type, or link text and resolved target. Logical names are diagnostic
+    witnesses, carried after a separator but ignored when comparing records.
+
+    Each real directory is visited once in the initial walk and once across
+    all protected roots. Protection propagates through roots, including cycles,
+    without enumerating aliases. Pruning depends only on entry names or actual
+    locations: package entries are skipped, but an alias into a package can
+    expose protected contents. Factory targets are always excluded; a protected
+    link outside their namespace still has its own record.
+
+    Outside targets are never walked or opened. Only regular files are opened,
+    non-blocking with a type recheck. Unreadable paths and protected dangling
+    links make facts unavailable. Contents are hashed, never retained or shown.
+    """
+    from installer.core.commands.lib.plan_audit import (
+        _NEVER_COUNTED_DIRECTORY_NAMES,
+        _NEVER_COUNTED_SUFFIXES,
+        _is_protected,
+    )
 
     root = Path(worktree_path)
     if not root.is_dir():
         raise RepairFactsUnavailable("the worktree could not be read")
-    auditor = PlanAuditor()
-    walk_errors: List[OSError] = []
-    found: Dict[str, str] = {}
+    root_real = os.path.realpath(root)
 
-    def _relative(directory: str, name: str) -> str:
-        rel_dir = os.path.relpath(directory, root)
-        return name if rel_dir == "." else f"{rel_dir}/{name}".replace(os.sep, "/")
-
-    for directory, dirnames, filenames in os.walk(
-        root, topdown=True, onerror=walk_errors.append, followlinks=False
-    ):
-        entries = list(filenames)
-        kept_dirs: List[str] = []
-        for name in dirnames:
-            rel = _relative(directory, name)
-            if rel == ".git":
-                continue  # the worktree's own repository
-            if os.path.islink(os.path.join(directory, name)):
-                entries.append(name)  # a link to a folder: an entry, never followed
-                continue
-            if auditor._is_excluded(Path(rel) / "_"):
-                continue  # a folder the audit never counts
-            kept_dirs.append(name)
-        dirnames[:] = kept_dirs
-        for name in entries:
-            rel = _relative(directory, name)
-            if rel == ".git" or name in _FACTORY_OWNED_NAMES:
-                continue
-            if not _is_protected(rel) or auditor._is_excluded(Path(rel)):
-                continue
-            found[rel] = _sha256_of(root / rel)
-    if walk_errors:
-        raise RepairFactsUnavailable(
-            f"{len(walk_errors)} folder(s) of the worktree could not be read "
-            f"({type(walk_errors[0]).__name__})"
+    def _unreadable(path: str, exc: BaseException) -> RepairFactsUnavailable:
+        return RepairFactsUnavailable(
+            f"{os.path.basename(path)} could not be read ({type(exc).__name__})"
         )
+
+    def _inside(real: str) -> bool:
+        return real == root_real or real.startswith(root_real + os.sep)
+
+    def _identity(path: str) -> Tuple[int, int]:
+        try:
+            st = os.stat(path)
+        except OSError as exc:
+            raise _unreadable(path, exc) from exc
+        return (st.st_dev, st.st_ino)
+
+    def _listing(real_dir: str) -> List[Tuple[str, str, bool, bool]]:
+        """``(name, path, is a link, is a folder that is not a link)``, sorted;
+        the two flags come from the folder listing itself."""
+        try:
+            with os.scandir(real_dir) as entries:
+                return sorted(
+                    (
+                        entry.name,
+                        entry.path,
+                        entry.is_symlink(),
+                        entry.is_dir(follow_symlinks=False),
+                    )
+                    for entry in entries
+                )
+        except OSError as exc:
+            raise RepairFactsUnavailable(
+                f"a folder of the worktree could not be read ({type(exc).__name__})"
+            ) from exc
+
+    def _kind(path: str, is_link: bool, plain_dir: bool) -> str:
+        if not is_link:
+            return "folder" if plain_dir else "file"
+        try:
+            if not os.path.exists(path):
+                return "nowhere"  # a link that leads nowhere
+            return "folder" if os.path.isdir(path) else "file"
+        except OSError as exc:
+            raise _unreadable(path, exc) from exc
+
+    def _real(path: str, is_link: bool) -> str:
+        # An entry that is not a link, in a real folder, is its own real path.
+        return os.path.realpath(path) if is_link else path
+
+    def _real_relative(path: str, is_link: bool = True) -> Optional[str]:
+        real = _real(path, is_link)
+        if not _inside(real) or real == root_real:
+            return None
+        return os.path.relpath(real, root_real).replace(os.sep, "/")
+
+    def _factory_owned(path: str, is_link: bool, folder: bool) -> bool:
+        relative = _real_relative(path, is_link)
+        return relative is not None and factory_owned_path(relative, folder=folder)
+
+    def _entry_excluded(name: str, folder: bool, path: str) -> bool:
+        # The collector's original package/cache exclusions also exclude the
+        # entry itself. Never consult a logical ancestor here.
+        return (
+            _factory_owned(path, False, folder)
+            or path == os.path.join(root_real, ".git")
+            or (folder and name in _NEVER_COUNTED_DIRECTORY_NAMES)
+            or Path(name).suffix in _NEVER_COUNTED_SUFFIXES
+        )
+
+    def _package_contents(name: str, folder: bool, path: str) -> bool:
+        # These exclusions used to live only in the caller and cover contents,
+        # not protected symlink entries. Record such a link before pruning.
+        return folder and (
+            name in {"site-packages", ".tmp", ".npm"}
+            or (os.path.dirname(path) == root_real and (
+                name == ".local" or name.startswith(".venv")
+            ))
+        )
+
+    files: Dict[str, Set[str]] = {}  # actual file path -> diagnostic witnesses
+    found: Dict[str, Tuple[Tuple[str, ...], str]] = {}
+
+    def _record_link(path: str, logical: str) -> None:
+        """A link at a protected position: its text and resolved target."""
+        try:
+            link_text = os.readlink(path)
+        except OSError as exc:
+            raise _unreadable(path, exc) from exc
+        digest = hashlib.sha256()
+        digest.update(b"symlink:" + os.fsencode(link_text) + b"\0")
+        digest.update(b"target:" + os.fsencode(os.path.realpath(path)))
+        key = LINK_KEY_PREFIX + str(_real_relative(path, False))
+        names = set(found.get(key, ((), ""))[0]) | {logical}
+        ordered = tuple(sorted(names))
+        found[key] = (
+            ordered,
+            digest.hexdigest() + _NAMES_SEPARATOR + _NAMES_SEPARATOR.join(ordered),
+        )
+
+    def _mark(path: str, logical: str) -> None:
+        real = os.path.realpath(path)
+        if not _inside(real):
+            return  # outside: recorded as a link, never opened
+        files.setdefault(real, set()).add(logical)
+
+    # 1. Each real folder once; protected files by their path here; links at
+    #    protected positions; roots.
+    roots: List[Tuple[str, str]] = []
+    seen: Set[Tuple[int, int]] = set()
+    stack: List[Tuple[str, str]] = [("", root_real)]
+    while stack:
+        logical_dir, real_dir = stack.pop()
+        identity = _identity(real_dir)
+        if identity in seen:
+            continue
+        seen.add(identity)
+        for name, path, is_link, plain_dir in _listing(real_dir):
+            logical = f"{logical_dir}/{name}" if logical_dir else name
+            kind = _kind(path, is_link, plain_dir)
+            folder = kind == "folder"
+            if _entry_excluded(name, folder, path):
+                continue
+            protected_here = _is_protected(logical) or (
+                folder and _is_protected(f"{logical}/_")
+            )
+            if is_link and protected_here:
+                _record_link(path, logical)
+            if _package_contents(name, folder, path) or _factory_owned(path, is_link, folder):
+                continue
+            if kind == "nowhere":
+                if protected_here:
+                    raise RepairFactsUnavailable(f"{name} is a symlink that leads nowhere")
+                continue
+            if folder:
+                if _is_protected(f"{logical}/_"):
+                    roots.append((logical, path))
+                real = _real(path, is_link)
+                if _inside(real):
+                    stack.append((logical, real))
+                continue
+            if _is_protected(logical):
+                _mark(path, logical)
+
+    # 2. Everything reachable from a protected folder is protected. One set of
+    #    visited folders for all roots: a file reached from any of them is
+    #    protected whichever reaches it first.
+    reached: Set[Tuple[int, int]] = set()
+    for root_logical, root_path in sorted(roots):
+        stack = [(root_logical, os.path.realpath(root_path))]
+        while stack:
+            logical_dir, real_dir = stack.pop()
+            if not _inside(real_dir):
+                continue  # recorded as a link
+            identity = _identity(real_dir)
+            if identity in reached:
+                continue
+            reached.add(identity)
+            for name, path, is_link, plain_dir in _listing(real_dir):
+                logical = f"{logical_dir}/{name}"
+                kind = _kind(path, is_link, plain_dir)
+                folder = kind == "folder"
+                if _entry_excluded(name, folder, path):
+                    continue
+                if is_link:
+                    _record_link(path, logical)  # every link here is protected
+                if _package_contents(name, folder, path) or _factory_owned(path, is_link, folder):
+                    continue
+                if kind == "nowhere":
+                    raise RepairFactsUnavailable(f"{name} is a symlink that leads nowhere")
+                if folder:
+                    real = _real(path, is_link)
+                    if _inside(real):
+                        stack.append((logical, real))
+                    continue
+                _mark(path, logical)
+
+    # 3. Distinct actual paths stay distinct, including hardlinks. Names are
+    #    retained for diagnostics only, outside the compared digest.
+    for real, names in files.items():
+        try:
+            contents = _bytes_sha256(Path(real))
+        except OSError as exc:
+            raise _unreadable(real, exc) from exc
+        ordered = tuple(sorted(names))
+        digest = hashlib.sha256()
+        digest.update(b"real:" + os.fsencode(real) + b"\0")
+        digest.update(b"contents:" + contents.encode())
+        key = _real_relative(real, False) or real
+        found[key] = (ordered, digest.hexdigest() + _NAMES_SEPARATOR + _NAMES_SEPARATOR.join(ordered))
     return found
 
 
@@ -293,12 +499,47 @@ def _sha256_of(path: Path) -> str:
 
 
 def _bytes_sha256(path: Path) -> str:
-    """The sha256 of a regular file's bytes. Raises ``OSError`` otherwise."""
-    digest = hashlib.sha256()
-    with open(path, "rb") as handle:
-        for chunk in iter(lambda: handle.read(1 << 20), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
+    """The fingerprint of a file's contents without ever blocking.
+
+    Only a regular file is opened and hashed (sha256 of its bytes). Anything
+    else - a named pipe, a socket, a device - is fingerprinted by its type
+    alone and never opened (``open()`` on a pipe blocks forever), so a change
+    of type still counts as a change. The file is opened non-blocking and
+    checked again once open, so swapping it for a pipe in between cannot
+    block either. Raises ``OSError`` when it cannot be read.
+    """
+    kind = _special_kind(os.stat(path).st_mode)
+    if kind:
+        return f"type:{kind}"
+    fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
+    try:
+        kind = _special_kind(os.fstat(fd).st_mode)
+        if kind:
+            return f"type:{kind}"
+        digest = hashlib.sha256()
+        with os.fdopen(fd, "rb", closefd=False) as handle:
+            for chunk in iter(lambda: handle.read(1 << 20), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+    finally:
+        os.close(fd)
+
+
+def _special_kind(mode: int) -> str:
+    """"" for a regular file, else the kind of file it is."""
+    if stat.S_ISREG(mode):
+        return ""
+    if stat.S_ISFIFO(mode):
+        return "fifo"
+    if stat.S_ISSOCK(mode):
+        return "socket"
+    if stat.S_ISCHR(mode):
+        return "character-device"
+    if stat.S_ISBLK(mode):
+        return "block-device"
+    if stat.S_ISDIR(mode):
+        return "folder"
+    return "other"
 
 
 def protected_fingerprint_changes(
@@ -307,4 +548,11 @@ def protected_fingerprint_changes(
     """The protected paths made, changed or deleted between two complete
     fingerprint listings. Pure."""
     then = dict(before)
-    return {path for path in set(then) | set(now) if then.get(path) != now.get(path)}
+
+    def digest(value: Optional[str]) -> Optional[str]:
+        return value.split(_NAMES_SEPARATOR, 1)[0] if value is not None else None
+
+    return {
+        path for path in set(then) | set(now)
+        if digest(then.get(path)) != digest(now.get(path))
+    }
