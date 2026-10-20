@@ -39,6 +39,7 @@ import signal
 import subprocess
 import sys
 import threading
+import textwrap
 import time
 from pathlib import Path
 from typing import Iterator, List, Set
@@ -1116,6 +1117,56 @@ class TestTheSelfTestSeesForItself:
             monkeypatch.undo()
             stranger.kill()
             stranger.wait()
+
+    def test_a_hidden_runaway_is_warned_about_not_killed(
+        self,
+        tmp_path: Path,
+        started: List[int],
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        # A child that deliberately conceals itself (setsid, keep the marker,
+        # make itself non-dumpable, close its output, outlive the command):
+        # it cannot be inspected, so it is not killed, but it is named in a
+        # plain warning. The command text is never in that warning (it may
+        # carry a secret, and the warning is published).
+        monkeypatch.setattr(process_group, "_SELF_TEST_PASSED", [True])
+        caplog.set_level(logging.WARNING, logger=process_group.__name__)
+        child = textwrap.dedent(
+            """
+            import ctypes, os, time
+            pid = os.fork()
+            if pid == 0:
+                os.setsid()
+                ctypes.CDLL(None).prctl(4, 0, 0, 0, 0)  # PR_SET_DUMPABLE = 4
+                null = os.open(os.devnull, os.O_RDWR)
+                for fd in (0, 1, 2):
+                    os.dup2(null, fd)
+                with open(%r, "w") as fh:
+                    fh.write(str(os.getpid()))
+                time.sleep(300)
+                os._exit(0)
+            while not os.path.exists(%r):
+                time.sleep(0.01)
+            """
+        ) % (str(tmp_path / "hidden.pid"), str(tmp_path / "hidden.pid"))
+        proc = run_project_command(
+            [sys.executable, "-c", child, "a-secret-token"],
+            cwd=str(tmp_path), env=dict(_ENV), capture_output=True, text=True, timeout=30,
+        )
+        hidden = int((tmp_path / "hidden.pid").read_text())
+        started.append(hidden)
+
+        assert proc.returncode == 0
+        assert _alive(hidden)  # not killed
+        warnings = [
+            r.getMessage() for r in caplog.records if "could not be inspected" in r.getMessage()
+        ]
+        assert any(f"pid {hidden} (" in w for w in warnings), warnings
+        # Logged, not folded into the command's own output, and the command
+        # text (which could carry a secret) is never named in the warning.
+        assert "[guardkit]" not in (proc.stderr or "")
+        assert all("a-secret-token" not in w for w in warnings)
 
     def test_processes_refused_by_design_are_told_apart(self) -> None:
         # This process: could be a command's. PID 1 (another user's): not.

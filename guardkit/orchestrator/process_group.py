@@ -373,6 +373,101 @@ def _could_be_this_commands(pid: int) -> bool:
     return their_caps & ~our_caps == 0
 
 
+def _why_uninspectable(pid: int) -> Optional[str]:
+    """When ``pid``'s environment cannot be read and it was excluded as "not
+    this command's" by a by-design boundary, the plain reason; ``None`` when
+    the environment can be read, the process is gone, or it was not excluded
+    that way.
+
+    Deliberate concealment (a child that calls ``setsid`` and
+    ``prctl(PR_SET_DUMPABLE, 0)`` keeps the marker but makes its ``/proc``
+    records root-owned) lands here: the concealment is out of scope for the
+    stop (an accidental runaway never does it, and the sandbox contains
+    adversarial code), but it must not be silent. The caller names it.
+    """
+    try:
+        with open(f"/proc/{pid}/environ", "rb") as fh:
+            fh.read()
+        return None  # readable: inspected normally
+    except (FileNotFoundError, ProcessLookupError):
+        return None  # gone
+    except OSError:
+        pass
+    try:
+        if os.stat(f"/proc/{pid}/environ").st_uid != os.geteuid():
+            return "its /proc records belong to another user, or it is not dumpable"
+    except OSError:
+        return None
+    theirs, ours = _status_fields(pid), _status_fields(os.getpid())
+    if not theirs or not ours:
+        return None
+    if len(theirs.get("NSpid", "").split()) != len(ours.get("NSpid", "").split()):
+        return "it is in a deeper pid namespace"
+    try:
+        if int(theirs.get("CapPrm", "0"), 16) & ~int(ours.get("CapPrm", "0"), 16):
+            return "it holds capabilities this process lacks"
+    except ValueError:
+        return None
+    return None
+
+
+def _uninspectable_newcomers(leader: int, since: Optional[int]) -> List[Tuple[int, str]]:
+    """Live processes that started during the command (``/proc`` stat, which
+    stays readable), are outside its group and session, and were excluded
+    only because they could not be inspected. ``(pid, reason)`` each. Never
+    raises: a warning path must not fail the command."""
+    found: List[Tuple[int, str]] = []
+    try:
+        names = os.listdir("/proc")
+    except OSError:
+        return found
+    for name in names:
+        if not name.isdigit():
+            continue
+        pid = int(name)
+        if pid == leader or pid == os.getpid():
+            continue
+        try:
+            with open(f"/proc/{pid}/stat", "rb") as fh:
+                data = fh.read()
+            rest = data[data.rindex(b")") + 2 :].split()
+            state, group, session, started = (
+                rest[0].decode(), int(rest[2]), int(rest[3]), int(rest[19])
+            )
+        except (OSError, ValueError, IndexError):
+            continue
+        if state in ("Z", "X") or group == leader or session == leader:
+            continue
+        if since is not None and started < since:
+            continue  # it predates the command
+        try:
+            reason = _why_uninspectable(pid)
+        except Exception:  # noqa: BLE001
+            continue
+        if reason is not None:
+            found.append((pid, reason))
+    return found
+
+
+def _warn_uninspectable(leader: int, since: Optional[int]) -> str:
+    """Log and return a plain sentence for processes that started during the
+    command but could not be inspected (so a hidden runaway cannot be
+    silent); empty when there are none. They are not killed: they may be
+    unrelated system processes. The command text is never named here: it may
+    carry a secret, and this warning is published."""
+    newcomers = _uninspectable_newcomers(leader, since)
+    if not newcomers:
+        return ""
+    listed = "; ".join(f"pid {pid} ({reason})" for pid, reason in newcomers)
+    sentence = (
+        f"A project command left {_processes(len(newcomers))} that started while "
+        f"it ran and could not be inspected, so whether they are its own could "
+        f"not be told and they were left alone: {listed}."
+    )
+    logger.warning("%s", sentence)
+    return sentence
+
+
 def _belongs(
     pid: int, pgid: int, entry: Optional[bytes], since: Optional[int]
 ) -> Optional[Tuple[str, int, int, int]]:
@@ -1345,6 +1440,11 @@ def _run(
     exchange.close()
     _collect(proc)
     stdout, stderr = exchange.output()
+    if _is_factory_launch() and Path("/proc/self/stat").exists():
+        # Logged, never folded into the command's own output: that output is
+        # the project's, published under the merge's redaction rules, and
+        # this note is GuardKit's observation, not the command's.
+        _warn_uninspectable(proc.pid, since)
     return stdout, stderr, timed_out
 
 
