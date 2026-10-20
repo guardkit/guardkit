@@ -87,6 +87,7 @@ from guardkit.orchestrator.twin_coverage import (
     twin_coverage_summary,
     write_twin_coverage_receipt,
 )
+from guardkit.orchestrator.repair_round import RepairRound, begin_repair_round
 from guardkit.orchestrator.feature_check import (
     claimed_machine_criteria,
     FeatureCheckAttempt,
@@ -4600,6 +4601,8 @@ The detailed specifications are in the task markdown file.
         # the contention is real source-file damage (not transient infra).
         wave_changed_files: Dict[str, Any] = {}
         wave_files_lock: threading.Lock = threading.Lock()
+        # The repair round each re-opened task starts (20 October 2026).
+        repair_rounds: Dict[str, RepairRound] = {}
 
         # Track wave start time for per-task budget propagation (TASK-ABFIX-004)
         wave_start_time = time.monotonic()
@@ -4638,7 +4641,18 @@ The detailed specifications are in the task markdown file.
                 # The repair round writes the same turn file names again, so
                 # the round that was just approved is moved aside first, names
                 # unchanged, into round-<N>/ (18 October 2026). Never fails.
-                self._archive_previous_round(task_id, worktree)
+                archived_round = self._archive_previous_round(task_id, worktree)
+                # The task's plan audit and Coach are told it is a repair round
+                # (20 October 2026; see repair_round.py): its number, where it
+                # starts and the gate's output, handed down IN MEMORY to this
+                # task's orchestrator. Nothing on disk says so. Never fails.
+                started = begin_repair_round(
+                    worktree.path,
+                    (archived_round + 1) if archived_round else None,
+                    seed_feedback,
+                )
+                if started is not None:
+                    repair_rounds[task_id] = started
             if task.status == "completed":
                 if self._wave_display:
                     self._wave_display.update_task_status(
@@ -4755,6 +4769,12 @@ The detailed specifications are in the task markdown file.
                     **(
                         {"feature_check_repair": feature_check_repair}
                         if feature_check_repair is not None
+                        else {}
+                    ),
+                    # A re-opened task only; absent otherwise.
+                    **(
+                        {"repair_round": repair_rounds[task_id]}
+                        if task_id in repair_rounds
                         else {}
                     ),
                 ),
@@ -6107,6 +6127,7 @@ The detailed specifications are in the task markdown file.
         smoke_expected_exit: int = 0,
         shares_working_copy: bool = False,
         feature_check_repair: Optional[FeatureCheckRepair] = None,
+        repair_round: Optional[RepairRound] = None,
     ) -> TaskExecutionResult:
         """
         Execute single task using AutoBuildOrchestrator with shared worktree.
@@ -6235,6 +6256,8 @@ The detailed specifications are in the task markdown file.
                 # check for the per-task Coach, beside smoke_command; the
                 # single-task-wave guard lives in CoachValidator.
                 feature_check_repair=feature_check_repair,
+                # Gate-driven repair round (20 October 2026), in memory only.
+                repair_round=repair_round,
             )
 
             # Execute task orchestration
@@ -6393,12 +6416,13 @@ The detailed specifications are in the task markdown file.
     # Late-approval reconciliation helpers (TASK-ATR-003)
     # ------------------------------------------------------------------
 
-    def _archive_previous_round(self, task_id: str, worktree: Worktree) -> None:
+    def _archive_previous_round(self, task_id: str, worktree: Worktree) -> Optional[int]:
         """Move a re-opened task's turn files into ``round-<N>/`` (18 Oct 2026).
 
         Covers the task's public and private folders: the ones
         ``_autobuild_candidate_dirs`` lists, plus this worktree's own public
-        folder and ``task_private_dir``. See ``turn_rounds``. Never raises.
+        folder and ``task_private_dir``. See ``turn_rounds``. Returns the
+        round number used, or ``None`` when nothing was moved. Never raises.
         """
         try:
             from guardkit.orchestrator.paths import TaskArtifactPaths
@@ -6408,12 +6432,13 @@ The detailed specifications are in the task markdown file.
             worktree_path = Path(worktree.path)
             folders.append(TaskArtifactPaths.autobuild_dir(task_id, worktree_path))
             folders.append(TaskArtifactPaths.task_private_dir(task_id, worktree_path))
-            archive_turn_files(task_id, folders)
+            return archive_turn_files(task_id, folders)
         except Exception as exc:  # noqa: BLE001 — a record never fails a build
             logger.warning(
                 "[%s] The earlier round's turn files could not be kept: %s",
                 task_id, exc,
             )
+            return None
 
     def _autobuild_candidate_dirs(self, task_id: str) -> list[Path]:
         """

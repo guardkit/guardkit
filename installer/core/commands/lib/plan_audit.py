@@ -258,6 +258,54 @@ def _beside_the_plan(extra: Set[str], planned: Set[str]) -> Set[str]:
     return beside
 
 
+# A REPAIR ROUND (20 October 2026). A gate that runs after a wave can re-open an
+# approved task with the gate's output as feedback. To make that gate pass the
+# Player may have to make files the task document never named - the failing
+# end-to-end test's helpers, seed scripts beside the check - and the audit,
+# comparing the whole task with the task document, refused every such turn as
+# high. The task then stalled although the Player was doing what the round
+# asked. No rule about how many files, or which folder, can tell the files a
+# repair needs from unrelated work; the reviewer, who has the failing check in
+# front of it, can. So in a repair round, and only there:
+#
+#   * a non-protected extra file the ROUND made (one that was not in the
+#     repository when the round started) does not count towards the "three
+#     extra files is high" line. It is named, in a low discrepancy of its own,
+#     for the reviewer, whose prompt for the turn says it is a repair round and
+#     asks it to refuse the turn if any such file is not needed to make the
+#     failing check pass (AgentInvoker._build_coach_prompt);
+#   * a protected extra file (see _is_protected above) the round made is high,
+#     whatever else is true: a repair round never makes one unplanned;
+#   * an extra file an earlier, approved round made counts exactly as it did
+#     when that round was approved.
+#
+# The round is handed to the auditor in memory by the orchestrator that
+# re-opened the task (guardkit/orchestrator/repair_round.py); nothing on disk
+# makes a turn a repair round. Ordinary turns are not touched by any of this.
+
+_FOR_THE_REVIEWER_MESSAGE = (
+    "made by this repair round, for the reviewer to judge against the failing check"
+)
+_PROTECTED_IN_REPAIR_MESSAGE = "protected, made by this repair round"
+
+
+def _repair_round_split(
+    extra: Set[str],
+    existed_at_round_start: Set[str],
+) -> "tuple[Set[str], Set[str], Set[str]]":
+    """Split a repair round's extra files: ``(earlier, protected, for_reviewer)``.
+
+    ``earlier`` were in the repository when the round started and count as on
+    an ordinary turn; ``protected`` are protected files the round made, always
+    high; ``for_reviewer`` is every other file the round made. See the rule
+    above.
+    """
+    earlier = {path for path in extra if path in existed_at_round_start}
+    made = extra - earlier
+    protected = {path for path in made if _is_protected(path)}
+    return earlier, protected, made - protected
+
+
 class PlanAuditor:
     """Main auditor class that compares planned vs actual implementation."""
 
@@ -265,6 +313,7 @@ class PlanAuditor:
         self,
         workspace_root: Path = Path("."),
         path_exclusion: Optional[Callable[[str], bool]] = None,
+        repair_round: Optional[Any] = None,
     ):
         """
         Initialize plan auditor.
@@ -276,9 +325,14 @@ class PlanAuditor:
                 standalone auditor's existing behaviour. If the predicate
                 raises, the path remains in the audit so a broken exclusion can
                 never hide implementation scope.
+            repair_round: Set only when a gate re-opened this approved task:
+                a ``guardkit.orchestrator.repair_round.RepairRound`` handed
+                over in memory (see ``_repair_round_split``). ``None`` -
+                every ordinary turn - audits exactly as before.
         """
         self.workspace_root = workspace_root
         self.path_exclusion = path_exclusion
+        self.repair_round = repair_round
 
     def audit_implementation(
         self,
@@ -462,7 +516,10 @@ class PlanAuditor:
             "files_read": changed is not None,
             "total_loc": self._count_lines_of_code(plan),
             "dependencies": self._extract_dependencies() if scan_dependencies else [],
-            "duration_hours": self._calculate_duration(task_id)
+            "duration_hours": self._calculate_duration(task_id),
+            "repair_round": (
+                self._repair_round_facts(task_id) if changed is not None else None
+            ),
         }
 
     def _task_start_commit(self, task_id: Optional[str]) -> str:
@@ -478,6 +535,11 @@ class PlanAuditor:
         When there is no checkpoint file, nothing has been committed for this
         task yet, so the latest commit is the right place to measure from.
         """
+        first = self._first_checkpoint_commit(task_id)
+        return f"{first}^" if first else "HEAD"
+
+    def _first_checkpoint_commit(self, task_id: Optional[str]) -> Optional[str]:
+        """The commit of this task's first checkpoint, or ``None``."""
         if task_id:
             checkpoints = (
                 self.workspace_root
@@ -495,8 +557,58 @@ class PlanAuditor:
                 if isinstance(entries, list) and entries and isinstance(entries[0], dict):
                     commit = entries[0].get("commit_hash")
                     if isinstance(commit, str) and commit.strip():
-                        return f"{commit.strip()}^"
-        return "HEAD"
+                        return commit.strip()
+        return None
+
+    def _is_ancestor(self, older: str, newer: str) -> bool:
+        """Whether ``older`` is ``newer`` or one of its ancestors. False when
+        git cannot say."""
+        try:
+            done = run_git(
+                ["merge-base", "--is-ancestor", older, newer],
+                cwd=self.workspace_root,
+                check=False,
+                timeout=30,
+            )
+        except (subprocess.SubprocessError, FileNotFoundError, OSError):
+            return False
+        return done.returncode == 0
+
+    def _repair_round_facts(self, task_id: Optional[str]) -> Optional[Dict[str, Any]]:
+        """What the audit needs to know about a repair round, or ``None``.
+
+        ``None`` - the audit is an ordinary one - unless a repair round was
+        given AND it belongs to this task's history: the task's first
+        checkpoint is at or before the round's start, and the round's start is
+        at or before the worktree's current commit (a round whose start was
+        rolled back is audited as an ordinary turn). ``implicated_paths`` are
+        the files the gate's output names, matched against the repository as
+        it was when the round started.
+        """
+        round_ = self.repair_round
+        if round_ is None or not isinstance(round_.start_commit, str):
+            return None
+        start = round_.start_commit.strip()
+        if not start:
+            return None
+        first = self._first_checkpoint_commit(task_id)
+        if not first:
+            return None
+        if not (self._is_ancestor(first, start) and self._is_ancestor(start, "HEAD")):
+            return None
+        existed = self._paths_at_commit(start)
+        if existed is None:
+            return None
+        from guardkit.orchestrator.repair_round import implicated_paths
+
+        return {
+            "round_number": getattr(round_, "round_number", None),
+            "start_commit": start,
+            "existed_at_round_start": existed,
+            "implicated_paths": implicated_paths(
+                str(getattr(round_, "gate_output", "") or ""), existed
+            ),
+        }
 
     def _paths_at_commit(self, commit: str) -> Optional[Set[str]]:
         """Every file the repository held at ``commit``.
@@ -870,6 +982,17 @@ class PlanAuditor:
         beside = _beside_the_plan(extra_files, planned_anywhere)
         counted_extra = extra_files - beside
 
+        # A repair round's own rule (see _repair_round_split at the top of
+        # this file). Absent on every ordinary turn.
+        repair_facts = actual.get("repair_round")
+        protected_made: Set[str] = set()
+        for_reviewer: Set[str] = set()
+        if repair_facts and counted_extra:
+            counted_extra, protected_made, for_reviewer = _repair_round_split(
+                counted_extra,
+                set(repair_facts.get("existed_at_round_start") or ()),
+            )
+
         if counted_extra:
             severity = "medium" if len(counted_extra) <= 2 else "high"
             variance = (len(counted_extra) / max(len(planned_files), 1)) * 100
@@ -894,6 +1017,32 @@ class PlanAuditor:
                 planned=sorted(list(planned_files)),
                 actual=sorted(list(beside)),
                 variance=(len(beside) / max(len(planned_files), 1)) * 100,
+            ))
+
+        if protected_made:
+            discrepancies.append(Discrepancy(
+                category="files",
+                severity="high",
+                message=(
+                    f"{len(protected_made)} extra file(s) not in plan, "
+                    f"{_PROTECTED_IN_REPAIR_MESSAGE}"
+                ),
+                planned=sorted(list(planned_files)),
+                actual=sorted(list(protected_made)),
+                variance=(len(protected_made) / max(len(planned_files), 1)) * 100,
+            ))
+
+        if for_reviewer:
+            discrepancies.append(Discrepancy(
+                category="files",
+                severity="low",
+                message=(
+                    f"{len(for_reviewer)} extra file(s) not in plan, "
+                    f"{_FOR_THE_REVIEWER_MESSAGE}"
+                ),
+                planned=sorted(list(planned_files)),
+                actual=sorted(list(for_reviewer)),
+                variance=(len(for_reviewer) / max(len(planned_files), 1)) * 100,
             ))
 
         if missing_files:

@@ -902,6 +902,31 @@ def _feedback_issue_rank(issue: Dict[str, Any]) -> Tuple[int, int]:
     )
 
 
+def _waits_on_another_gate(issue: Dict[str, Any]) -> bool:
+    """Whether ``issue`` only says it is waiting for another gate.
+
+    The Coach's "Coverage is UNKNOWN" issue, when the project declares a
+    coverage command that was not run because another required gate failed
+    first, names that gate in ``details.waiting_on_gates``. It is still a
+    reason the turn was refused, but it is never the cause: a build on 19
+    October 2026 quoted it as the reason on every turn while the plan audit
+    was what refused them.
+    """
+    details = issue.get("details")
+    return (
+        issue.get("category") == "coverage_unknown"
+        and isinstance(details, dict)
+        and bool(details.get("waiting_on_gates"))
+    )
+
+
+def _feedback_issue_order(issue: Dict[str, Any]) -> Tuple[int, int, int]:
+    """:func:`_feedback_issue_rank`, then an issue that only waits on another
+    gate after the issues it waits on. The order a person and the Player are
+    shown issues in; whether an issue blocks is still decided by the rank."""
+    return (*_feedback_issue_rank(issue), 1 if _waits_on_another_gate(issue) else 0)
+
+
 def _feedback_issue_is_must_fix(issue: Dict[str, Any]) -> bool:
     """Whether an issue is a reason the turn was rejected.
 
@@ -1004,7 +1029,7 @@ def _coach_headline_issue(
     ``max_chars`` so a terminal message stays a terminal message.
     """
     honesty_categories = {"honesty", "claim_audit"}
-    ranked: List[Tuple[Tuple[int, Tuple[int, int], int, int], str, bool]] = []
+    ranked: List[Tuple[Tuple[int, Tuple[int, int, int], int, int], str, bool]] = []
     for index, issue in enumerate(_coach_report_issues(turn_record)):
         description = issue.get("description")
         if not isinstance(description, str) or not description.strip():
@@ -1015,7 +1040,7 @@ def _coach_headline_issue(
         blocking = _feedback_issue_is_must_fix(issue)
         key = (
             0 if blocking else 1,
-            _feedback_issue_rank(issue),
+            _feedback_issue_order(issue),
             1 if issue.get("category") in honesty_categories else 0,
             index,
         )
@@ -1024,6 +1049,35 @@ def _coach_headline_issue(
         return None
     _, text, blocking = min(ranked, key=lambda item: item[0])
     return text, blocking
+
+
+def _stall_refusal_line(turn_history: List["TurnRecord"]) -> str:
+    """One line naming what the reviewer refused the last turn for, or "".
+
+    The stall summary used to say only that the build could not make progress,
+    and the per-turn summary quoted whichever must-fix came first. In a
+    build on 19 October 2026 that was "Coverage is UNKNOWN", which only
+    waits on the plan audit; the plan audit was what refused every turn. This
+    quotes :func:`_coach_headline_issue` of the last turn, which puts an issue
+    that only waits on another gate after the gate it waits on. Ends with a
+    newline when not empty. Never raises.
+    """
+    try:
+        if not turn_history:
+            return ""
+        last = turn_history[-1]
+        headline = _coach_headline_issue(last)
+        if headline is None:
+            return ""
+        text, blocking = headline
+        if blocking:
+            return f'The reviewer refused turn {last.turn} for this: "{text}"\n'
+        return (
+            f"On turn {last.turn} the reviewer marked nothing as must-fix; "
+            f'its most serious note was this: "{text}"\n'
+        )
+    except Exception:  # noqa: BLE001 — a message never fails a build
+        return ""
 
 
 def _coach_first_issue_description(
@@ -2849,6 +2903,7 @@ class AutoBuildOrchestrator:
         smoke_command: Optional[str] = None,  # TASK-AB-COACHRUNPARITY01 (arm b)
         smoke_expected_exit: int = 0,  # TASK-AB-COACHRUNPARITY01 (arm b)
         feature_check_repair: Optional[Any] = None,  # whole-feature repair round
+        repair_round: Optional[Any] = None,  # gate-driven repair round, in memory
         sdk_timeout_is_override: Optional[bool] = None,
         expected_branch: Optional[str] = None,
         expected_branch_pinned: bool = False,
@@ -3083,6 +3138,11 @@ class AutoBuildOrchestrator:
         # plain early stop (``_plan_contradicts_check_stop``). None -> every
         # turn runs exactly as before.
         self._feature_check_repair: Optional[Any] = feature_check_repair
+        # Gate-driven repair round (20 October 2026): the ``RepairRound`` the
+        # feature orchestrator started when it re-opened this task, handed to
+        # this task's AgentInvoker for its plan audit and Coach prompt. Held in
+        # memory only; None on every other task (repair_round.py).
+        self._repair_round: Optional[Any] = repair_round
         # This task's whole-feature check record per Coach turn, read by the
         # early stop. Reset per _loop_phase invocation.
         self._whole_feature_check_by_turn: Dict[int, Dict[str, Any]] = {}
@@ -4975,6 +5035,11 @@ class AutoBuildOrchestrator:
         previous_feedback: Optional[str] = (
             self._get_last_feedback() if self.resume else self._seed_feedback
         )
+        # Gate-driven repair round (20 October 2026): the plan audit and the
+        # Coach prompt read it from the invoker; set for every loop, so an
+        # ordinary task's invoker never carries another task's round.
+        if self._agent_invoker is not None:
+            self._agent_invoker.repair_round = getattr(self, "_repair_round", None)
 
         # Initialize checkpoint manager if enabled
         if self.enable_checkpoints and self._checkpoint_manager is None:
@@ -11948,7 +12013,7 @@ class AutoBuildOrchestrator:
         # (AgentInvoker._parse_coach_feedback).
         ordered = sorted(
             (issue for issue in issues if isinstance(issue, dict)),
-            key=_feedback_issue_rank,
+            key=_feedback_issue_order,
         )
 
         # Build feedback from issues
@@ -12024,7 +12089,7 @@ class AutoBuildOrchestrator:
         """
         issues = coach_report.get("issues") or []
         if issues:
-            primary = min(issues, key=_feedback_issue_rank)
+            primary = min(issues, key=_feedback_issue_order)
             description = primary.get("description", "") or ""
             if description:
                 if len(description) > 80:
@@ -12622,6 +12687,7 @@ class AutoBuildOrchestrator:
             return (
                 f"Unrecoverable stall detected after {len(turn_history)} turn(s).\n"
                 f"AutoBuild cannot make forward progress.\n"
+                f"{_stall_refusal_line(turn_history)}"
                 f"Worktree preserved for inspection.\n"
                 f"Suggested action: {stall_hint}"
             )
@@ -12769,9 +12835,11 @@ class AutoBuildOrchestrator:
             stop_sentence = getattr(self, "_plan_contradicts_check_sentence", None)
             if stop_sentence:
                 return stop_sentence
+            refusal = _stall_refusal_line(turn_history).strip()
             return (
                 f"Unrecoverable stall detected after {len(turn_history)} turn(s). "
                 f"AutoBuild cannot make forward progress."
+                + (f" {refusal}" if refusal else "")
             )
 
         elif final_decision == "configuration_error":

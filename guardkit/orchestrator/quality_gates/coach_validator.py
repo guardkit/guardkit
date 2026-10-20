@@ -12603,12 +12603,24 @@ class CoachValidator:
             # the auditor; name the counted ones first so the Player is not
             # sent after its own tests and stylesheets.
             beside = set(plan_audit.get("extra_files_beside_the_plan") or [])
-            counted_extra = [f for f in extra_files if f not in beside]
+            # A repair round (20 October 2026): the non-protected files the
+            # round made are left to the reviewer's judgement, not counted.
+            for_reviewer = set(plan_audit.get("extra_files_for_the_reviewer") or [])
+            counted_extra = [
+                f for f in extra_files if f not in beside and f not in for_reviewer
+            ]
             if counted_extra:
                 preview = ", ".join(counted_extra[:3])
                 if len(counted_extra) > 3:
                     preview += f", ... (+{len(counted_extra) - 3} more)"
                 parts.append(f"— {len(counted_extra)} extra file(s): {preview}")
+            if plan_audit.get("repair_round"):
+                parts.append(
+                    "— this is a repair round after a gate failed: the other "
+                    "files it made are for the reviewer to judge, but a "
+                    "protected file the task document does not name is never "
+                    "made in a repair round"
+                )
             if beside and len(beside) < len(extra_files):
                 parts.append(
                     f"— and {len(beside)} planned file(s)' own test or "
