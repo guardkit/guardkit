@@ -3441,6 +3441,9 @@ class AutoBuildOrchestrator:
         # The files this task says it will create or change (20 October
         # 2026), read only by the task-start coverage check below.
         _declared_task_paths: List[str] = []
+        # Why the worktree's coverage command was not used at task start
+        # (it does nothing), when that is so.
+        _coverage_does_nothing: Optional[str] = None
         try:
             task_data = TaskLoader.load_task(task_id, repo_root=self.repo_root)
             frontmatter = task_data.get("frontmatter", {})
@@ -3607,7 +3610,14 @@ class AutoBuildOrchestrator:
                 # build committed to the worktree. A coverage command one of
                 # them declared is added to this task's pin (coverage only,
                 # and only when the pin has none).
-                self._carry_coverage_from_worktree(
+                if self._existing_worktree is None:
+                    # This orchestrator made the worktree: a new build, so an
+                    # older build's pinned coverage command (same worktree
+                    # name) is forgotten before anything reads it. A feature's
+                    # tasks share the feature orchestrator's record, which it
+                    # clears when it makes the feature worktree.
+                    self.discard_build_coverage_record(Path(worktree.path))
+                _, _coverage_does_nothing = self._carry_coverage_from_worktree(
                     task_id, worktree, component=component,
                     when="declared by earlier work in this build",
                 )
@@ -3751,6 +3761,10 @@ class AutoBuildOrchestrator:
                     task_id,
                 )
                 coverage_refusal = None
+            if coverage_refusal is not None and _coverage_does_nothing:
+                # The worktree declares a coverage command, but one that
+                # does nothing: say that, not "declares no coverage command".
+                coverage_refusal = _coverage_does_nothing
             if coverage_refusal is not None:
                 self._coverage_declaration_refusal = coverage_refusal
                 logger.error(
@@ -4259,6 +4273,86 @@ class AutoBuildOrchestrator:
             return load_toolchain_snapshot(task_id, Path(worktree.path)) is not None
         return True
 
+    #: The coverage command this BUILD first pinned from its worktree, kept
+    #: once per build beside the Coach documents snapshot (coach review 1,
+    #: 20 October 2026): every later task of the build reuses it and never
+    #: re-reads the worktree file, which any later Player can rewrite.
+    _BUILD_COVERAGE_RECORD = "build_coverage_command.json"
+
+    @classmethod
+    def _build_coverage_record_path(cls, worktree_path: Path) -> Path:
+        from guardkit.orchestrator.paths import TaskArtifactPaths
+
+        return TaskArtifactPaths.private_artifact_path(
+            worktree_path.name, cls._BUILD_COVERAGE_RECORD, worktree_path
+        )
+
+    @classmethod
+    def _read_build_coverage(
+        cls, worktree_path: Path, component: Optional[str]
+    ) -> Optional[Tuple[str, int]]:
+        """The build's first-pinned coverage command for this scope, or None."""
+        try:
+            path = cls._build_coverage_record_path(worktree_path)
+            if not path.is_file():
+                return None
+            entry = json.loads(path.read_text(encoding="utf-8")).get(component or "")
+            if not isinstance(entry, dict):
+                return None
+            command, timeout = entry.get("coverage"), entry.get("coverage_timeout")
+            if not isinstance(command, str) or not command.strip():
+                return None
+            if not isinstance(timeout, int) or isinstance(timeout, bool) or timeout <= 0:
+                timeout = 300
+            return command, timeout
+        except (OSError, ValueError, AttributeError) as exc:
+            logger.warning(
+                "Could not read this build's pinned coverage command (%s); the "
+                "worktree is not read in its place.", exc,
+            )
+            # Unreadable is not "none": never fall back to the live file.
+            raise
+
+    @classmethod
+    def _write_build_coverage(
+        cls,
+        worktree_path: Path,
+        component: Optional[str],
+        command: str,
+        timeout: int,
+        task_id: str,
+    ) -> None:
+        path = cls._build_coverage_record_path(worktree_path)
+        try:
+            data = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
+            if not isinstance(data, dict):
+                data = {}
+        except (OSError, ValueError):
+            data = {}
+        if (component or "") in data:
+            return  # the first one stays
+        data[component or ""] = {
+            "coverage": command,
+            "coverage_timeout": timeout,
+            "first_pinned_by": task_id,
+        }
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+    @classmethod
+    def discard_build_coverage_record(cls, worktree_path: Path) -> None:
+        """Forget an earlier build's coverage record when a NEW build's
+        worktree is made (the same rule as the Coach documents snapshot)."""
+        try:
+            path = cls._build_coverage_record_path(Path(worktree_path))
+            if path.exists():
+                path.unlink()
+        except (OSError, TypeError) as exc:
+            logger.warning(
+                "Could not clear an earlier build's coverage record for %s (%s)",
+                worktree_path, exc,
+            )
+
     def _carry_coverage_from_worktree(
         self,
         task_id: str,
@@ -4266,38 +4360,88 @@ class AutoBuildOrchestrator:
         *,
         component: Optional[str],
         when: str,
-    ) -> Optional[str]:
-        """Add the worktree's coverage command to this task's pin, if the pin
-        has none (20 October 2026). Returns the command added, or ``None``.
+    ) -> Tuple[Optional[str], Optional[str]]:
+        """Pin a coverage command for this task when its pin has none
+        (20 October 2026). Returns ``(command pinned, refusal)``.
 
-        Only the coverage command and its timeout are taken from the
-        worktree's ``.guardkit/config.yaml``; every other declared command
-        stays as pinned from the canonical repository, and a coverage command
-        already pinned is never replaced.
+        * A coverage command the canonical repository declares is pinned
+          already and always wins: nothing happens.
+        * Once a task of this build has pinned a command from the worktree,
+          every later task reuses that same command (the build's record) and
+          the worktree file is NOT read again: a later Player that rewrites
+          it cannot weaken the check for the tasks after it (coach review 1).
+          A different value in the worktree is logged and ignored.
+        * Otherwise the worktree's ``.guardkit/config.yaml`` is read once.
+          Only the coverage command and its timeout are taken from it; every
+          other command stays as pinned from the canonical repository. A
+          command that does nothing (``true``, ``:``, ``exit 0``, ``echo``…)
+          is not pinned: the returned refusal says why, and the caller stops
+          the task as a configuration error if it needs coverage.
         """
         from guardkit.orchestrator.toolchain_declaration import (
-            add_coverage_to_pin,
+            coverage_in,
+            coverage_view_of_pin,
+            declared_coverage_command,
+            does_nothing_command,
             load_toolchain_declaration,
+            pin_coverage_command,
         )
 
         worktree_path = Path(worktree.path)
-        added = add_coverage_to_pin(
-            task_id,
-            worktree_path,
-            load_toolchain_declaration(worktree_path),
-            component,
+        if declared_coverage_command(
+            coverage_view_of_pin(task_id, worktree_path), component
+        ):
+            return None, None
+        live = coverage_in(load_toolchain_declaration(worktree_path), component)
+        try:
+            recorded = self._read_build_coverage(worktree_path, component)
+        except (OSError, ValueError, AttributeError):
+            return None, None
+        if recorded is not None:
+            if live is not None and live[0] != recorded[0]:
+                logger.warning(
+                    "Task %s: the worktree's .guardkit/config.yaml now says "
+                    "coverage %r, but this build pinned %r first; the first one "
+                    "is kept, and the worktree value is ignored.",
+                    task_id, live[0], recorded[0],
+                )
+            added = pin_coverage_command(
+                task_id, worktree_path, recorded[0], recorded[1], component
+            )
+            if added:
+                logger.info(
+                    "Task %s: using this build's pinned coverage command %r.",
+                    task_id, added,
+                )
+            return added, None
+        if live is None:
+            return None, None
+        if does_nothing_command(live[0]):
+            refusal = (
+                f"The coverage command `{live[0]}` in .guardkit/config.yaml "
+                f"does nothing, so it cannot measure coverage and was not used. "
+                f"Declare a command that runs the tests with coverage and exits "
+                f"non-zero when the coverage threshold is missed."
+            )
+            logger.error("Task %s: %s", task_id, refusal)
+            return None, refusal
+        added = pin_coverage_command(
+            task_id, worktree_path, live[0], live[1], component
         )
         if added:
+            self._write_build_coverage(
+                worktree_path, component, live[0], live[1], task_id
+            )
             logger.warning(
                 "Task %s: the coverage command %r was %s and is now pinned for "
-                "this task. Only the coverage command is taken from the "
-                "worktree; every other declared command still comes from the "
-                "canonical repository.",
+                "this task and every later task of this build. Only the "
+                "coverage command is taken from the worktree; every other "
+                "declared command still comes from the canonical repository.",
                 task_id,
                 added,
                 when,
             )
-        return added
+        return added, None
 
     def _coverage_refusal_after_task_turn(
         self,
@@ -4313,7 +4457,8 @@ class AutoBuildOrchestrator:
         Returns ``None`` when there is nothing to check or a coverage command
         is now pinned for the task (the Coach then measures coverage with it
         on this very turn). Otherwise returns the same plain reason the
-        task-start check gives, worded for a stop after the turn.
+        task-start check gives, worded for a stop after the turn, or the
+        reason the command it wrote does nothing.
         """
         due = getattr(self, "_coverage_due_from_task", None)
         if not due:
@@ -4325,7 +4470,7 @@ class AutoBuildOrchestrator:
         )
 
         component = due.get("component")
-        self._carry_coverage_from_worktree(
+        _, do_nothing = self._carry_coverage_from_worktree(
             task_id, worktree, component=component,
             when=f"declared by this task's own turn {turn}",
         )
@@ -4333,7 +4478,7 @@ class AutoBuildOrchestrator:
         if declared_coverage_command(pinned, component):
             self._coverage_due_from_task = None
             return None
-        refusal = undeclared_coverage_refusal(
+        refusal = do_nothing or undeclared_coverage_refusal(
             task_type=task_type,
             toolchain=pinned,
             component=component,
@@ -10209,6 +10354,9 @@ class AutoBuildOrchestrator:
                 "Could not clear an earlier Coach documents snapshot for %s (%s)",
                 worktree_path, exc,
             )
+        # The build's pinned coverage command is the same kind of record
+        # (20 October 2026): a new build must not reuse an older one's.
+        cls.discard_build_coverage_record(worktree_path)
 
     def _reuse_coach_documents_snapshot(
         self, task_id: str, worktree: Worktree, snapshot: Path

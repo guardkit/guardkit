@@ -44,6 +44,7 @@ from guardkit.orchestrator.toolchain_declaration import (
     ToolchainDeclaration,
     add_coverage_to_pin,
     declares_config_file,
+    does_nothing_command,
     load_coverage_only_pin,
     load_toolchain_snapshot,
     toolchain_snapshot_paths,
@@ -121,7 +122,9 @@ def _earlier_wave_commits(worktree: Path, config: str) -> None:
     _git(worktree, "commit", "-q", "-m", "[guardkit-checkpoint] Turn 1 complete")
 
 
-def _orchestrator(tmp_path: Path, root: Path, worktree_path: Path):
+def _orchestrator(
+    tmp_path: Path, root: Path, worktree_path: Path, *, feature: bool = False
+):
     worktree = MagicMock(spec=Worktree)
     worktree.task_id = TASK
     worktree.path = worktree_path
@@ -143,23 +146,25 @@ def _orchestrator(tmp_path: Path, root: Path, worktree_path: Path):
         enable_pre_loop=False,
         enable_checkpoints=False,
         enable_context=False,
+        # A feature's tasks run in the feature's shared worktree, handed in.
+        existing_worktree=worktree if feature else None,
     )
     return orch
 
 
-def _player_result(turn: int) -> AgentInvocationResult:
+def _player_result(turn: int, task_id: str = TASK) -> AgentInvocationResult:
     return AgentInvocationResult(
-        task_id=TASK, turn=turn, agent_type="player", success=True,
-        report={"task_id": TASK, "turn": turn, "files_modified": [".guardkit/config.yaml"]},
+        task_id=task_id, turn=turn, agent_type="player", success=True,
+        report={"task_id": task_id, "turn": turn, "files_modified": [".guardkit/config.yaml"]},
         duration_seconds=1.0, error=None,
     )
 
 
-def _approve(turn: int) -> AgentInvocationResult:
+def _approve(turn: int, task_id: str = TASK) -> AgentInvocationResult:
     return AgentInvocationResult(
-        task_id=TASK, turn=turn, agent_type="coach", success=True,
+        task_id=task_id, turn=turn, agent_type="coach", success=True,
         report={
-            "task_id": TASK, "turn": turn, "decision": "approve", "issues": [],
+            "task_id": task_id, "turn": turn, "decision": "approve", "issues": [],
             "rationale": "coverage measured", "is_configuration_error": False,
         },
         duration_seconds=1.0, error=None,
@@ -191,17 +196,19 @@ class _Turns:
             (self.worktree / ".guardkit" / "config.yaml").write_text(
                 self.new_config, encoding="utf-8"
             )
-        return _player_result(kwargs.get("turn", self.player_turns))
+        return _player_result(
+            kwargs.get("turn", self.player_turns), kwargs.get("task_id", TASK)
+        )
 
     def coach(self, *args: Any, **kwargs: Any) -> AgentInvocationResult:
         validator = CoachValidator(str(self.worktree), task_id=kwargs["task_id"])
         self.coach_receipts.append(validator.run_declared_coverage())
         self.coach_test_commands.append(validator._declared_test_command())
         self.coach_had_declaration.append(validator._toolchain is not None)
-        return _approve(kwargs["turn"])
+        return _approve(kwargs["turn"], kwargs["task_id"])
 
 
-def _run_real_loop(orch: AutoBuildOrchestrator, turns: _Turns):
+def _run_real_loop(orch: AutoBuildOrchestrator, turns: _Turns, task_id: str = TASK):
     with patch.object(
         AutoBuildOrchestrator, "_invoke_player_safely",
         autospec=True, side_effect=lambda self, *a, **k: turns.player(*a, **k),
@@ -220,7 +227,7 @@ def _run_real_loop(orch: AutoBuildOrchestrator, turns: _Turns):
         new=AsyncMock(return_value=SimpleNamespace(status="skipped")),
     ):
         return orch.orchestrate(
-            task_id=TASK, requirements="Declare the coverage command",
+            task_id=task_id, requirements="Declare the coverage command",
             acceptance_criteria=["AC-001: coverage is declared"],
         )
 
@@ -575,3 +582,199 @@ class TestAddCoverageToPin:
             TASK, tmp_path,
             _decl(components={"api": {"cwd": "api", "coverage": "go cov"}}), "api",
         ) is None
+
+
+# ---------------------------------------------------------------------------
+# Coach review 1
+# ---------------------------------------------------------------------------
+
+
+def _add_task(root: Path, task_id: str, body: str, task_type: str = "feature") -> None:
+    """Another task of the same build, in the canonical tree's task folder."""
+    (root / "tasks" / "backlog" / f"{task_id}-more.md").write_text(
+        f"---\nid: {task_id}\ntitle: More work\ntask_type: {task_type}\n---\n\n"
+        f"# More\n\n{body}",
+        encoding="utf-8",
+    )
+
+
+class TestALaterTaskCannotWeakenCoverage:
+    """Once a task of the build has pinned a coverage command, every later
+    task reuses it and never re-reads the worktree file."""
+
+    def test_a_rewrite_to_true_does_not_reach_later_tasks(self, tmp_path: Path) -> None:
+        root = tmp_path / "proj"
+        _project(root, body=DECLARES_CONFIG)
+        _add_task(root, "TASK-SETUP-005", DECLARES_OTHER)
+        _add_task(root, "TASK-SETUP-006", DECLARES_OTHER)
+        worktree = _shared_worktree(root, tmp_path / "shared")
+
+        # Task 3 declares the command on its own turn.
+        first = _Turns(worktree, WITH_COVERAGE)
+        assert _run_real_loop(
+            _orchestrator(tmp_path, root, worktree, feature=True), first
+        ).final_decision == "approved"
+        assert first.coach_receipts[0]["command"] == COVERAGE_COMMAND
+
+        # Task 4's Player rewrites the file to a command that always passes.
+        weakened = (
+            'toolchain:\n  test: "true"\n  lint: "make lint"\n  coverage: "true"\n'
+        )
+        fourth = _Turns(worktree, weakened)
+        assert _run_real_loop(
+            _orchestrator(tmp_path, root, worktree, feature=True), fourth, "TASK-SETUP-005"
+        ).final_decision == "approved"
+        # Task 4 itself was measured with the build's pinned command.
+        assert fourth.coach_receipts[0]["command"] == COVERAGE_COMMAND
+
+        # Task 5 is measured with the first command, not "true".
+        fifth = _Turns(worktree, None)
+        result = _run_real_loop(
+            _orchestrator(tmp_path, root, worktree, feature=True), fifth, "TASK-SETUP-006"
+        )
+        assert result.final_decision == "approved", result.error
+        assert fifth.coach_receipts[0]["command"] == COVERAGE_COMMAND
+        assert load_toolchain_snapshot("TASK-SETUP-006", worktree).coverage == COVERAGE_COMMAND
+        assert load_toolchain_snapshot("TASK-SETUP-006", worktree).test == "make test"
+
+    def test_an_earlier_waves_command_is_recorded_on_first_read(
+        self, tmp_path: Path
+    ) -> None:
+        root = tmp_path / "proj"
+        _project(root, body=DECLARES_OTHER)
+        _add_task(root, "TASK-SETUP-005", DECLARES_OTHER)
+        worktree = _shared_worktree(root, tmp_path / "shared")
+        _earlier_wave_commits(worktree, WITH_COVERAGE)
+        assert _run_real_loop(
+            _orchestrator(tmp_path, root, worktree, feature=True), _Turns(worktree, None)
+        ).final_decision == "approved"
+        _earlier_wave_commits(worktree, NO_COVERAGE + '  coverage: "exit 0"\n')
+        later = _Turns(worktree, None)
+        assert _run_real_loop(
+            _orchestrator(tmp_path, root, worktree, feature=True), later, "TASK-SETUP-005"
+        ).final_decision == "approved"
+        assert later.coach_receipts[0]["command"] == COVERAGE_COMMAND
+
+    def test_a_canonically_pinned_command_means_the_worktree_is_not_read(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """With the canonical repository's coverage pinned, the worktree's
+        value (even a do-nothing one) is neither judged nor recorded."""
+        worktree = tmp_path / "shared"
+        (worktree / ".guardkit").mkdir(parents=True)
+        (worktree / ".guardkit" / "config.yaml").write_text(
+            'toolchain:\n  test: "make test"\n  coverage: "true"\n'
+        )
+        _pin(TASK, worktree, _decl(test="make test", coverage="make cov"))
+        orch = _orchestrator(tmp_path, worktree, worktree)
+        handle = MagicMock(spec=Worktree)
+        handle.path = worktree
+        with caplog.at_level("INFO"):
+            assert orch._carry_coverage_from_worktree(
+                TASK, handle, component=None, when="test"
+            ) == (None, None)
+        assert "does nothing" not in caplog.text
+        assert AutoBuildOrchestrator._read_build_coverage(worktree, None) is None
+        assert load_toolchain_snapshot(TASK, worktree).coverage == "make cov"
+
+    def test_a_new_build_forgets_the_record(self, tmp_path: Path) -> None:
+        worktree = tmp_path / "shared"
+        worktree.mkdir()
+        AutoBuildOrchestrator._write_build_coverage(
+            worktree, None, "make cov", 60, "TASK-X"
+        )
+        assert AutoBuildOrchestrator._read_build_coverage(worktree, None) == ("make cov", 60)
+        # The first one stays.
+        AutoBuildOrchestrator._write_build_coverage(worktree, None, "other", 9, "TASK-Y")
+        assert AutoBuildOrchestrator._read_build_coverage(worktree, None) == ("make cov", 60)
+        # A new feature worktree (the feature orchestrator's call) forgets it.
+        AutoBuildOrchestrator.discard_coach_documents_snapshot(worktree)
+        assert AutoBuildOrchestrator._read_build_coverage(worktree, None) is None
+
+    def test_a_new_single_task_build_does_not_reuse_an_older_record(
+        self, tmp_path: Path
+    ) -> None:
+        root = tmp_path / "proj"
+        _project(root, body=DECLARES_OTHER)
+        worktree = _shared_worktree(root, tmp_path / "shared")
+        AutoBuildOrchestrator._write_build_coverage(
+            worktree, None, "make stale-cov", 60, "TASK-OLD"
+        )
+        result = _run_real_loop(
+            _orchestrator(tmp_path, root, worktree), _Turns(worktree, None)
+        )
+        assert result.final_decision == "configuration_error"
+        assert "declares no coverage command" in result.error
+
+
+class TestDoNothingCoverageCommands:
+    @pytest.mark.parametrize(
+        "command",
+        ["true", " : ", "exit 0", "/bin/true", "echo coverage ok", "true && echo done",
+         "printf ok;", ""],
+    )
+    def test_refused(self, command) -> None:
+        assert does_nothing_command(command) is True
+
+    @pytest.mark.parametrize(
+        "command",
+        ["npm run coverage", "make coverage-check", COVERAGE_COMMAND,
+         "true && go test -cover ./...", "pytest --cov --cov-fail-under=80"],
+    )
+    def test_accepted(self, command) -> None:
+        assert does_nothing_command(command) is False
+
+    def test_the_declaring_task_writing_true_stops_after_its_turn(
+        self, tmp_path: Path
+    ) -> None:
+        root = tmp_path / "proj"
+        _project(root, body=DECLARES_CONFIG)
+        worktree = _shared_worktree(root, tmp_path / "shared")
+        orch = _orchestrator(tmp_path, root, worktree)
+        turns = _Turns(worktree, NO_COVERAGE + '  coverage: "true"\n')
+        result = _run_real_loop(orch, turns)
+        assert turns.player_turns == 1
+        assert turns.coach_receipts == []
+        assert result.final_decision == "configuration_error"
+        assert "The coverage command `true`" in result.error
+        assert "does nothing" in result.error
+        assert result.error.startswith("Stopped after the task's turn")
+        assert load_toolchain_snapshot(TASK, worktree).coverage is None
+
+    def test_an_earlier_wave_writing_true_stops_the_next_task_before_work(
+        self, tmp_path: Path
+    ) -> None:
+        root = tmp_path / "proj"
+        _project(root, body=DECLARES_OTHER)
+        worktree = _shared_worktree(root, tmp_path / "shared")
+        _earlier_wave_commits(worktree, NO_COVERAGE + '  coverage: ":"\n')
+        orch = _orchestrator(tmp_path, root, worktree)
+        turns = _Turns(worktree, None)
+        result = _run_real_loop(orch, turns)
+        assert turns.player_turns == 0
+        assert result.final_decision == "configuration_error"
+        assert "The coverage command `:`" in result.error
+        assert "does nothing" in result.error
+        assert AutoBuildOrchestrator._read_build_coverage(worktree, None) is None
+
+
+class TestTheConsoleLine:
+    """Coach review 1, surviving mutation B: the operator's console line for a
+    coverage stop after the turn names the coverage reason, never the
+    task_type advice."""
+
+    def test_after_turn_stop_prints_the_coverage_reason(self, tmp_path: Path) -> None:
+        root = tmp_path / "proj"
+        _project(root, body=DECLARES_CONFIG)
+        worktree = _shared_worktree(root, tmp_path / "shared")
+        orch = _orchestrator(tmp_path, root, worktree)
+        result = _run_real_loop(orch, _Turns(worktree, NO_COVERAGE))
+        assert result.final_decision == "configuration_error"
+        printed = " ".join(
+            str(arg)
+            for call in orch._progress_display.console.print.call_args_list
+            for arg in call.args
+        )
+        assert "declares no coverage command" in printed
+        assert "Fix the task_type" not in printed
+        assert "task file configuration issue" not in printed

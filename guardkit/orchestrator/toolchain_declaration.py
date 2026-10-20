@@ -782,50 +782,69 @@ def add_coverage_to_pin(
     the pin or not in ``source``, a component task has nothing pinned, or
     ``source`` declares no coverage for it. Never raises.
     """
+    found = coverage_in(source, component)
+    if found is None:
+        return None
+    return pin_coverage_command(task_id, worktree_path, found[0], found[1], component)
+
+
+def coverage_in(
+    source: Optional[ToolchainDeclaration], component: Optional[str] = None
+) -> Optional[Tuple[str, int]]:
+    """The coverage command and its timeout ``source`` declares for a task
+    (the component rule kept: a component's own, never the root's), or None.
+    """
+    command = declared_coverage_command(source, component)
+    if not command or source is None:
+        return None
+    if component:
+        declared = source.component(component)
+        if declared is None:
+            return None
+        return command, declared.coverage_timeout
+    return command, source.coverage_timeout
+
+
+def pin_coverage_command(
+    task_id: str,
+    worktree_path: Path,
+    command: str,
+    timeout: int,
+    component: Optional[str] = None,
+) -> Optional[str]:
+    """Pin ``command`` as this task's coverage command; the rules of
+    :func:`add_coverage_to_pin` (never replace; coverage only; the
+    coverage-only file when nothing is pinned). Never raises."""
     try:
         pinned = load_toolchain_snapshot(task_id, worktree_path)
         if pinned is None:
-            if component or source is None:
+            if component:
                 return None
             if load_coverage_only_pin(task_id, worktree_path) is not None:
-                return None
-            command = declared_coverage_command(source, None)
-            if not command:
                 return None
             path = _coverage_only_path(task_id, Path(worktree_path))
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(
                 json.dumps(
-                    {"coverage": command, "coverage_timeout": source.coverage_timeout},
-                    indent=2,
+                    {"coverage": command, "coverage_timeout": timeout}, indent=2
                 ),
                 encoding="utf-8",
             )
             return command
         if declared_coverage_command(pinned, component):
             return None
-        command = declared_coverage_command(source, component)
-        if not command or source is None:
-            return None
         if component:
-            from_source = source.component(component)
             target = pinned.component(component)
-            if from_source is None or target is None:
+            if target is None:
                 return None
             components = dict(pinned.components or {})
             components[component] = target.model_copy(
-                update={
-                    "coverage": command,
-                    "coverage_timeout": from_source.coverage_timeout,
-                }
+                update={"coverage": command, "coverage_timeout": timeout}
             )
             updated = pinned.model_copy(update={"components": components})
         else:
             updated = pinned.model_copy(
-                update={
-                    "coverage": command,
-                    "coverage_timeout": source.coverage_timeout,
-                }
+                update={"coverage": command, "coverage_timeout": timeout}
             )
         path = toolchain_snapshot_paths(task_id, worktree_path)["file"]
         path.write_text(
@@ -841,6 +860,38 @@ def add_coverage_to_pin(
             exc,
         )
         return None
+
+
+#: Commands that only ever succeed, whatever the code does (coach review 1,
+#: 20 October 2026). A coverage command made only of these measures nothing.
+_DO_NOTHING_COMMANDS = frozenset(
+    {"true", ":", "exit", "exit 0", "/bin/true", "/usr/bin/true"}
+)
+
+
+def does_nothing_command(command: Any) -> bool:
+    """True for a command that cannot measure anything: empty, or made only of
+    ``true``, ``:``, ``exit 0``, ``/bin/true`` or ``echo``/``printf`` steps,
+    joined by ``;``, ``&&``, ``||`` or new lines. Language-agnostic; it
+    catches only the crude case, never judges a real tool's command.
+    """
+    if not isinstance(command, str):
+        return True
+    steps = [
+        " ".join(step.split()).rstrip(";").strip()
+        for step in re.split(r"&&|\|\||;|\n", command)
+    ]
+    steps = [step for step in steps if step]
+    if not steps:
+        return True
+    for step in steps:
+        if step in _DO_NOTHING_COMMANDS:
+            continue
+        first = step.split()[0]
+        if first in {"echo", "printf"}:
+            continue
+        return False
+    return True
 
 
 def declares_config_file(paths: Iterable[Any]) -> bool:
@@ -1008,4 +1059,7 @@ __all__ = [
     "declares_config_file",
     "load_coverage_only_pin",
     "coverage_view_of_pin",
+    "coverage_in",
+    "pin_coverage_command",
+    "does_nothing_command",
 ]
