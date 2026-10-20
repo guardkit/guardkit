@@ -289,7 +289,8 @@ def starting_commit(worktree_path: Path) -> str:
 
 
 def files_changed_since(repo: Path, start_commit: str,
-                        timeout: Optional[float] = None) -> list[str]:
+                        timeout: Optional[float] = None,
+                        *, no_renames: bool = False) -> list[str]:
     """The repository-relative files that differ from ``start_commit`` right now.
 
     Two questions, because one is not enough. ``git diff`` names every tracked file
@@ -303,10 +304,18 @@ def files_changed_since(repo: Path, start_commit: str,
     quotes and escapes any name holding a non-ASCII character, a quote or a
     backslash, and the escaped name names no file on disk, so such a file was never
     read. Names are taken exactly as given, never trimmed.
+
+    ``no_renames`` (20 October 2026): git's rename detection names only the new
+    path of a renamed file. With it a rename is a deleted path and a new path,
+    and both are named; the repair round's audit asks for this so that moving a
+    protected file is seen as touching it. Off by default, so every other
+    caller gets exactly what it got before.
     """
     repo = Path(repo)
-    changed = _git(repo, "diff", "--name-only", "-z", start_commit, raw=True,
-                   timeout=timeout)
+    diff_args = ["diff", "--name-only", "-z"]
+    if no_renames:
+        diff_args.append("--no-renames")
+    changed = _git(repo, *diff_args, start_commit, raw=True, timeout=timeout)
     untracked = _git(repo, "ls-files", "--others", "--exclude-standard", "-z", raw=True,
                      timeout=timeout)
     names = (*changed.split(b"\0"), *untracked.split(b"\0"))

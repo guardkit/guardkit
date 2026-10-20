@@ -641,7 +641,9 @@ class PlanAuditor:
         try:
             from guardkit.orchestrator.arch_conformance import files_changed_since
 
-            since_start = files_changed_since(self.workspace_root, start)
+            # A rename is named as the path it left and the path it took, so
+            # moving a protected file away is seen as touching it.
+            since_start = files_changed_since(self.workspace_root, start, no_renames=True)
         except (ImportError, ValueError, OSError):
             return None
         changed_this_round = sorted(

@@ -523,6 +523,41 @@ class TestTheAuditInARepairRound:
         # Nor is one ever carried to a later round.
         assert "db/migrations/0002_items.sql" not in (approving.repair_round_inventory or ())
 
+    @pytest.mark.parametrize("committed", [True, False], ids=["committed", "staged"])
+    def test_renaming_a_protected_file_away_is_refused(
+        self, tmp_path: Path, committed: bool
+    ) -> None:
+        """git's rename detection names only the new path; a rename is the
+        path it left and the path it took, so the move is seen."""
+        repo = _make_repo(tmp_path, declare_create=False)
+        _write(repo, "deploy/Dockerfile", "FROM scratch\n")
+        _commit(repo, "the project's container file")
+        _write(repo, "web/src/App.tsx", "export const App = () => 'shelf';\n")
+        _checkpoint(repo, _commit(repo, "turn 1 checkpoint"))
+        round_ = _reopen(repo)
+        (repo / "scripts").mkdir(exist_ok=True)
+        _git(repo, "mv", "deploy/Dockerfile", "scripts/image-build")
+        if committed:
+            _commit(repo, "repair turn")
+
+        verdict = _verdict(repo, round_)
+
+        assert verdict["severity"] == "high", verdict
+        assert "deploy/Dockerfile" in verdict["extra_files"]
+        assert "deploy/Dockerfile" in verdict["repair_round"]["files_changed_this_round"]
+        assert "scripts/image-build" in verdict["repair_round"]["files_made_this_round"]
+        assert not _gate_passes(repo, verdict)
+
+    def test_other_callers_keep_gits_rename_detection(self, repo: Path) -> None:
+        """files_changed_since is unchanged unless the caller asks."""
+        from guardkit.orchestrator.arch_conformance import files_changed_since
+
+        start = _git(repo, "rev-parse", "HEAD")
+        _git(repo, "mv", "scripts/seed.sh", "scripts/seed-books.sh")
+        assert "scripts/seed.sh" not in files_changed_since(repo, start)
+        both = files_changed_since(repo, start, no_renames=True)
+        assert {"scripts/seed.sh", "scripts/seed-books.sh"} <= set(both)
+
     def test_starting_a_round_without_git_never_raises(self, tmp_path: Path) -> None:
         assert begin_repair_round(tmp_path / "no-repo", 2, GATE_OUTPUT) is None
 

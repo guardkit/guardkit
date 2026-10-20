@@ -207,12 +207,15 @@ def player_writing(
     files: Dict[str, str],
     seen_feedback: List[Optional[str]],
     invoker: AgentInvoker,
+    shell_step: Optional[Callable[[Path], None]] = None,
 ) -> Callable[..., AgentInvocationResult]:
     """The Player: writes ``files`` on disk and reports through the real writer
     of the task's own invoker (the one the orchestrator handed the round to)."""
 
     def _invoke_player_safely(*, task_id: str, turn: int, **kwargs: Any) -> AgentInvocationResult:
         seen_feedback.append(kwargs.get("feedback"))
+        if shell_step is not None:
+            shell_step(repo)  # what a shell command in the turn would do
         for rel, text in files.items():
             _write(repo, rel, text)
         report = {
@@ -269,12 +272,13 @@ def run_round(
     repair_round: Optional[RepairRound] = None,
     model_verdict: Optional[Dict[str, Any]] = None,
     requirements: str = "Show the reader's books on a shelf page.",
+    shell_step: Optional[Callable[[Path], None]] = None,
 ) -> Dict[str, Any]:
     prompts: List[str] = []
     orch = make_orchestrator(repo, seed_feedback, repair_round, prompts)
     seen: List[Optional[str]] = []
     orch._invoke_player_safely = player_writing(  # type: ignore[method-assign]
-        repo, files, seen, orch._agent_invoker
+        repo, files, seen, orch._agent_invoker, shell_step
     )
     worktree = SimpleNamespace(
         task_id=FEATURE_ID, path=repo, branch_name=BRANCH, base_branch="main"
@@ -329,6 +333,7 @@ def reopen_and_repair(
     fo: Optional[FeatureOrchestrator] = None,
     gate_output: str = GATE_OUTPUT,
     requirements: str = "Show the reader's books on a shelf page.",
+    shell_step: Optional[Callable[[Path], None]] = None,
 ) -> Dict[str, Any]:
     """The real gate-driven re-open; the repair round runs through the loop.
 
@@ -359,6 +364,7 @@ def reopen_and_repair(
             repair_round=kwargs.get("repair_round"),
             model_verdict=model_verdict,
             requirements=requirements,
+            shell_step=shell_step,
         ))
         # What the real _execute_task does after orchestrate().
         fo._remember_repair_approvals(task_.id, outcome["orchestrator"])
@@ -739,3 +745,37 @@ class TestCarriedApprovalsAreThisTasksOwn:
         )
         assert outcome["decision"] != "approved"
         assert outcome["fo"]._repair_approvals.get(TASK_ID) is None
+
+
+
+class TestARenameIsSeen:
+    def test_moving_the_dockerfile_away_is_refused_and_the_old_path_is_listed(
+        self, tmp_path: Path
+    ) -> None:
+        """A modify-only task's repair turn renames the project's Dockerfile.
+        git's rename detection would name only the new path; the repair
+        round's audit sees the path it left."""
+        repo = make_project(tmp_path, declare_create=False)
+        assert run_round(
+            repo, {"apps/web/src/App.tsx": "export const App = () => 1;\n"}
+        )["decision"] == "approved"
+
+        def _rename(root: Path) -> None:
+            (root / "scripts").mkdir(exist_ok=True)
+            _git(root, "mv", "deploy/Dockerfile", "scripts/image-build")
+
+        outcome = reopen_and_repair(
+            repo,
+            {"tests/e2e/sign-in.ts": "export const signIn = 1;\n"},
+            model_verdict=APPROVE,
+            shell_step=_rename,
+        )
+
+        assert outcome["decision"] != "approved"
+        block = _plan_audit(repo)
+        assert "deploy/Dockerfile" in block["repair_round"]["files_changed_this_round"]
+        assert "scripts/image-build" in block["repair_round"]["files_made_this_round"]
+        issues = _plan_audit_issues(outcome["history"])
+        assert issues and "deploy/Dockerfile" in issues[0]["description"]
+        # The reviewer was shown the path the file left, too.
+        assert "- `deploy/Dockerfile`" in _repair_section(outcome["prompts"])
