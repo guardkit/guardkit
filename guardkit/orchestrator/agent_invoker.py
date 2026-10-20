@@ -6715,20 +6715,28 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
             reported = self._langchain_reported_model(msg)
             if reported:
                 return reported
+            # 20 October 2026 (review round 1): the Claude SDK's own
+            # AssistantMessage and ResultMessage dataclasses carry no
+            # ``.type``, so the class is recognised by name as well. A
+            # ``.type`` of "assistant" / "result" is still accepted for the
+            # objects that do carry one.
+            kind = type(msg).__name__
+            msg_type = getattr(msg, "type", None)
+
             # Try AssistantMessage.model (SDK harness)
-            if hasattr(msg, "model") and hasattr(msg, "type"):
-                if getattr(msg, "type", None) == "assistant":
-                    model_val = getattr(msg, "model", None)
-                    if model_val and isinstance(model_val, str):
-                        return model_val
+            if kind == "AssistantMessage" or msg_type == "assistant":
+                model_val = getattr(msg, "model", None)
+                if model_val and isinstance(model_val, str):
+                    return model_val
 
             # Try ResultMessage.model_usage (keyed by model name)
-            if hasattr(msg, "model_usage") and hasattr(msg, "type"):
-                if getattr(msg, "type", None) == "result":
-                    model_usage = getattr(msg, "model_usage", None)
-                    if model_usage and isinstance(model_usage, dict) and len(model_usage) > 0:
-                        # Return first key (model name)
-                        return next(iter(model_usage.keys()))
+            if kind == "ResultMessage" or msg_type == "result":
+                model_usage = getattr(msg, "model_usage", None)
+                if model_usage and isinstance(model_usage, dict) and len(model_usage) > 0:
+                    # Return first key (model name)
+                    first = next(iter(model_usage.keys()))
+                    if isinstance(first, str) and first:
+                        return first
 
         return None
 

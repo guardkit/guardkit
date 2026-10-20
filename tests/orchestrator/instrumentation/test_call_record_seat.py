@@ -26,6 +26,8 @@ from typing import Any, List, Optional
 from unittest.mock import patch
 
 import pytest
+from claude_agent_sdk import AssistantMessage as SdkAssistantMessage
+from claude_agent_sdk import ResultMessage as SdkResultMessage
 from langchain_core.messages import AIMessage
 
 from guardkit.orchestrator.harness.adapter import (
@@ -49,25 +51,35 @@ class _StubHarness:
 
     supports_resume = False
 
-    def __init__(self, raw: Any) -> None:
+    def __init__(self, raw: Any, result_raw: Any = None) -> None:
         self.raw = raw
+        self.result_raw = result_raw
 
     async def invoke(self, **kwargs: Any):
         yield AssistantMessageEvent(text="done", raw=self.raw)
-        yield ResultMessageEvent(session_id=None, stop_reason="end_turn", usage=None)
+        yield ResultMessageEvent(
+            session_id=None, stop_reason="end_turn", usage=None, raw=self.result_raw
+        )
 
     async def cancel(self) -> None:  # pragma: no cover - not reached
         return None
 
 
-class _SdkAssistantMessage:
-    """The shape of a Claude SDK AssistantMessage that names its model."""
+def _sdk_assistant(model: str) -> SdkAssistantMessage:
+    """A real Claude SDK AssistantMessage (it has no ``.type``)."""
+    message = SdkAssistantMessage(content=[], model=model)
+    assert not hasattr(message, "type")
+    return message
 
-    type = "assistant"
 
-    def __init__(self, model: str) -> None:
-        self.model = model
-        self.content: List[Any] = []
+def _sdk_result(model_usage: Optional[dict]) -> SdkResultMessage:
+    """A real Claude SDK ResultMessage (it has no ``.type``)."""
+    message = SdkResultMessage(
+        subtype="success", duration_ms=10, duration_api_ms=8, is_error=False,
+        num_turns=1, session_id="session-1", model_usage=model_usage,
+    )
+    assert not hasattr(message, "type")
+    return message
 
 
 def _invoker(tmp_path: Path, emitter: NullEmitter, model_name: Optional[str]):
@@ -84,12 +96,14 @@ def _invoker(tmp_path: Path, emitter: NullEmitter, model_name: Optional[str]):
     )
 
 
-async def _one_turn(tmp_path: Path, raw: Any, model_name: Optional[str]) -> LLMCallEvent:
+async def _one_turn(
+    tmp_path: Path, raw: Any, model_name: Optional[str], result_raw: Any = None
+) -> LLMCallEvent:
     emitter = NullEmitter(capture=True)
     invoker = _invoker(tmp_path, emitter, model_name)
     with patch(
         "guardkit.orchestrator.agent_invoker.select_harness",
-        return_value=_StubHarness(raw),
+        return_value=_StubHarness(raw, result_raw),
     ):
         await invoker._invoke_with_role(
             prompt="TASK-SEAT-001 one turn",
@@ -158,11 +172,55 @@ class TestATurnRecordsItsRealSeat:
         monkeypatch.setenv("GUARDKIT_HARNESS", "sdk")
         monkeypatch.delenv("ANTHROPIC_BASE_URL", raising=False)
         event = await _one_turn(
-            tmp_path, _SdkAssistantMessage("claude-test-model-20261001"), "claude-test-model"
+            tmp_path, _sdk_assistant("claude-test-model-20261001"), "claude-test-model"
         )
         assert event.provider == "anthropic"
         assert event.model == "claude-test-model-20261001"
         assert event.requested_model == "claude-test-model"
+
+    @pytest.mark.asyncio
+    async def test_real_sdk_messages_on_a_local_route_record_the_served_model(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Review round 1: the SDK's real AssistantMessage carries no
+        ``.type``; the served model it names is recorded, not the alias."""
+        monkeypatch.setenv("GUARDKIT_HARNESS", "sdk")
+        monkeypatch.setenv("ANTHROPIC_BASE_URL", "http://10.9.8.7:4000")
+        event = await _one_turn(
+            tmp_path, _sdk_assistant("local-coder-27b"), ALIAS,
+            result_raw=_sdk_result({"local-coder-27b": {"inputTokens": 5}}),
+        )
+        assert event.provider == "local-vllm"
+        assert event.model == "local-coder-27b"
+        assert event.model != ALIAS
+        assert event.requested_model == ALIAS
+
+    @pytest.mark.asyncio
+    async def test_real_sdk_result_message_model_usage_is_read(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """With no assistant message naming a model, the real ResultMessage's
+        ``model_usage`` names the model that answered."""
+        monkeypatch.setenv("GUARDKIT_HARNESS", "sdk")
+        monkeypatch.setenv("ANTHROPIC_BASE_URL", "http://10.9.8.7:4000")
+        event = await _one_turn(
+            tmp_path, {"messages": []}, ALIAS,
+            result_raw=_sdk_result({"local-judge-9b": {"outputTokens": 3}}),
+        )
+        assert event.provider == "local-vllm"
+        assert event.model == "local-judge-9b"
+        assert event.requested_model == ALIAS
+
+    @pytest.mark.asyncio
+    async def test_real_sdk_result_without_usage_is_unknown(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        monkeypatch.setenv("GUARDKIT_HARNESS", "sdk")
+        monkeypatch.setenv("ANTHROPIC_BASE_URL", "http://10.9.8.7:4000")
+        event = await _one_turn(
+            tmp_path, {"messages": []}, ALIAS, result_raw=_sdk_result(None)
+        )
+        assert event.model == "unknown"
 
     @pytest.mark.asyncio
     async def test_sdk_turn_on_a_local_seat_is_not_called_anthropic(
