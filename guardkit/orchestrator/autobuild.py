@@ -42,6 +42,7 @@ Example:
 
 import asyncio
 import concurrent.futures
+import contextlib
 import hashlib
 import json
 import logging
@@ -4287,57 +4288,109 @@ class AutoBuildOrchestrator:
             worktree_path.name, cls._BUILD_COVERAGE_RECORD, worktree_path
         )
 
+    @staticmethod
+    def _build_coverage_entry(data: Any, component: Optional[str]) -> Optional[Tuple[str, int]]:
+        """One scope's ``(command, timeout)`` from the record's data, or None."""
+        entry = data.get(component or "") if isinstance(data, dict) else None
+        if not isinstance(entry, dict):
+            return None
+        command, timeout = entry.get("coverage"), entry.get("coverage_timeout")
+        if not isinstance(command, str) or not command.strip():
+            return None
+        if not isinstance(timeout, int) or isinstance(timeout, bool) or timeout <= 0:
+            timeout = 300
+        return command, timeout
+
     @classmethod
     def _read_build_coverage(
         cls, worktree_path: Path, component: Optional[str]
     ) -> Optional[Tuple[str, int]]:
-        """The build's first-pinned coverage command for this scope, or None."""
+        """The build's first-pinned coverage command for this scope, or None.
+
+        The record is only ever replaced whole (see
+        :meth:`_claim_build_coverage`), so a reader never sees a part-written
+        file. Raises when it exists but cannot be read: unreadable is not
+        "none", and the caller then never falls back to the live worktree file.
+        """
+        path = cls._build_coverage_record_path(worktree_path)
         try:
-            path = cls._build_coverage_record_path(worktree_path)
             if not path.is_file():
                 return None
-            entry = json.loads(path.read_text(encoding="utf-8")).get(component or "")
-            if not isinstance(entry, dict):
-                return None
-            command, timeout = entry.get("coverage"), entry.get("coverage_timeout")
-            if not isinstance(command, str) or not command.strip():
-                return None
-            if not isinstance(timeout, int) or isinstance(timeout, bool) or timeout <= 0:
-                timeout = 300
-            return command, timeout
-        except (OSError, ValueError, AttributeError) as exc:
+            return cls._build_coverage_entry(
+                json.loads(path.read_text(encoding="utf-8")), component
+            )
+        except (OSError, ValueError) as exc:
             logger.warning(
                 "Could not read this build's pinned coverage command (%s); the "
                 "worktree is not read in its place.", exc,
             )
-            # Unreadable is not "none": never fall back to the live file.
             raise
 
     @classmethod
-    def _write_build_coverage(
+    def _claim_build_coverage(
         cls,
         worktree_path: Path,
         component: Optional[str],
         command: str,
         timeout: int,
         task_id: str,
-    ) -> None:
+    ) -> Tuple[str, int]:
+        """Record ``command`` as this build's coverage command for the scope,
+        unless one is recorded already; return the one that stands.
+
+        Feature tasks of one wave run at the same time in one worktree (review
+        round 2). The read, the choice and the write are done under an
+        exclusive lock on a file beside the record, so two tasks cannot lose
+        each other's entries, and the record is replaced whole (written to a
+        temporary file, then renamed over it), so a reader never sees half of
+        it. The first command for each scope wins and is never overwritten;
+        the caller pins whatever this returns.
+        """
+        import tempfile
+
         path = cls._build_coverage_record_path(worktree_path)
-        try:
-            data = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
-            if not isinstance(data, dict):
-                data = {}
-        except (OSError, ValueError):
-            data = {}
-        if (component or "") in data:
-            return  # the first one stays
-        data[component or ""] = {
-            "coverage": command,
-            "coverage_timeout": timeout,
-            "first_pinned_by": task_id,
-        }
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        lock_path = path.with_name(path.name + ".lock")
+        with open(lock_path, "a+", encoding="utf-8") as lock:
+            try:
+                import fcntl
+            except ImportError:  # pragma: no cover - no fcntl on this system
+                fcntl = None  # type: ignore[assignment]
+                logger.warning(
+                    "No file locking on this system: this build's coverage "
+                    "record is written without a lock."
+                )
+            if fcntl is not None:
+                fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+            try:
+                data: Dict[str, Any] = {}
+                if path.is_file():
+                    loaded = json.loads(path.read_text(encoding="utf-8"))
+                    if isinstance(loaded, dict):
+                        data = loaded
+                standing = cls._build_coverage_entry(data, component)
+                if standing is not None:
+                    return standing
+                data[component or ""] = {
+                    "coverage": command,
+                    "coverage_timeout": timeout,
+                    "first_pinned_by": task_id,
+                }
+                handle, temporary = tempfile.mkstemp(
+                    dir=str(path.parent), prefix=path.name + ".", suffix=".tmp"
+                )
+                try:
+                    with os.fdopen(handle, "w", encoding="utf-8") as out:
+                        json.dump(data, out, indent=2)
+                    os.replace(temporary, path)
+                except BaseException:
+                    with contextlib.suppress(OSError):
+                        os.unlink(temporary)
+                    raise
+                return command, timeout
+            finally:
+                if fcntl is not None:
+                    fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
 
     @classmethod
     def discard_build_coverage_record(cls, worktree_path: Path) -> None:
@@ -4395,7 +4448,7 @@ class AutoBuildOrchestrator:
         live = coverage_in(load_toolchain_declaration(worktree_path), component)
         try:
             recorded = self._read_build_coverage(worktree_path, component)
-        except (OSError, ValueError, AttributeError):
+        except (OSError, ValueError):
             return None, None
         if recorded is not None:
             if live is not None and live[0] != recorded[0]:
@@ -4425,13 +4478,27 @@ class AutoBuildOrchestrator:
             )
             logger.error("Task %s: %s", task_id, refusal)
             return None, refusal
-        added = pin_coverage_command(
-            task_id, worktree_path, live[0], live[1], component
-        )
-        if added:
-            self._write_build_coverage(
+        try:
+            winner = self._claim_build_coverage(
                 worktree_path, component, live[0], live[1], task_id
             )
+        except (OSError, ValueError) as exc:
+            logger.warning(
+                "Task %s: this build's coverage record could not be written "
+                "(%s); no coverage command is pinned from the worktree.",
+                task_id, exc,
+            )
+            return None, None
+        if winner[0] != live[0]:
+            logger.warning(
+                "Task %s: another task of this build pinned coverage %r first; "
+                "that one is used, not the worktree's %r.",
+                task_id, winner[0], live[0],
+            )
+        added = pin_coverage_command(
+            task_id, worktree_path, winner[0], winner[1], component
+        )
+        if added:
             logger.warning(
                 "Task %s: the coverage command %r was %s and is now pinned for "
                 "this task and every later task of this build. Only the "

@@ -680,12 +680,14 @@ class TestALaterTaskCannotWeakenCoverage:
     def test_a_new_build_forgets_the_record(self, tmp_path: Path) -> None:
         worktree = tmp_path / "shared"
         worktree.mkdir()
-        AutoBuildOrchestrator._write_build_coverage(
+        assert AutoBuildOrchestrator._claim_build_coverage(
             worktree, None, "make cov", 60, "TASK-X"
-        )
+        ) == ("make cov", 60)
         assert AutoBuildOrchestrator._read_build_coverage(worktree, None) == ("make cov", 60)
-        # The first one stays.
-        AutoBuildOrchestrator._write_build_coverage(worktree, None, "other", 9, "TASK-Y")
+        # The first one stays, and the caller is told which one stands.
+        assert AutoBuildOrchestrator._claim_build_coverage(
+            worktree, None, "other", 9, "TASK-Y"
+        ) == ("make cov", 60)
         assert AutoBuildOrchestrator._read_build_coverage(worktree, None) == ("make cov", 60)
         # A new feature worktree (the feature orchestrator's call) forgets it.
         AutoBuildOrchestrator.discard_coach_documents_snapshot(worktree)
@@ -697,7 +699,7 @@ class TestALaterTaskCannotWeakenCoverage:
         root = tmp_path / "proj"
         _project(root, body=DECLARES_OTHER)
         worktree = _shared_worktree(root, tmp_path / "shared")
-        AutoBuildOrchestrator._write_build_coverage(
+        AutoBuildOrchestrator._claim_build_coverage(
             worktree, None, "make stale-cov", 60, "TASK-OLD"
         )
         result = _run_real_loop(
@@ -778,3 +780,248 @@ class TestTheConsoleLine:
         assert "declares no coverage command" in printed
         assert "Fix the task_type" not in printed
         assert "task file configuration issue" not in printed
+
+
+# ---------------------------------------------------------------------------
+# Review round 2
+# ---------------------------------------------------------------------------
+
+COMPONENTS_CANONICAL = (
+    'toolchain:\n  test: "make test"\n  components:\n'
+    '    web:\n      cwd: web\n      test: "npm test"\n'
+    '    api:\n      cwd: api\n      test: "go test ./..."\n'
+)
+
+
+def _components_with_coverage(web: str, api: str) -> str:
+    return (
+        'toolchain:\n  test: "make test"\n  components:\n'
+        f'    web:\n      cwd: web\n      test: "npm test"\n      coverage: "{web}"\n'
+        f'    api:\n      cwd: api\n      test: "go test ./..."\n      coverage: "{api}"\n'
+    )
+
+
+class TestTasksOfOneWaveAtTheSameTime:
+    """Feature tasks of one wave run at once in one worktree. Two tasks first
+    pinning different components' commands must both be recorded."""
+
+    def test_two_components_first_pinned_at_once_both_stand(
+        self, tmp_path: Path
+    ) -> None:
+        import threading
+        import time
+
+        from guardkit.orchestrator.toolchain_declaration import (
+            snapshot_task_toolchain,
+        )
+
+        root = tmp_path / "proj"
+        _project(root, body=DECLARES_OTHER, config=COMPONENTS_CANONICAL)
+        worktree = _shared_worktree(root, tmp_path / "shared")
+        _earlier_wave_commits(worktree, _components_with_coverage("make web-cov", "make api-cov"))
+        tasks = {"TASK-WEB-1": "web", "TASK-API-1": "api"}
+        for task_id in tasks:
+            snapshot_task_toolchain(task_id, worktree, root)
+        orch = _orchestrator(tmp_path, root, worktree, feature=True)
+        handle = MagicMock(spec=Worktree)
+        handle.path = worktree
+
+        # Hold each task inside the record's read-choose-write step for a
+        # while, and note when it was there: without the lock the two steps
+        # overlap and one task's entry is lost.
+        inside: List[tuple] = []
+        real_entry = AutoBuildOrchestrator._build_coverage_entry
+
+        def slow_entry(data, component):
+            began = time.monotonic()
+            time.sleep(0.3)
+            inside.append((began, time.monotonic()))
+            return real_entry(data, component)
+
+        start = threading.Barrier(len(tasks))
+        results: Dict[str, Any] = {}
+
+        def carry(task_id: str, component: str) -> None:
+            start.wait(timeout=10)
+            results[task_id] = orch._carry_coverage_from_worktree(
+                task_id, handle, component=component, when="test"
+            )
+
+        with patch.object(
+            AutoBuildOrchestrator, "_build_coverage_entry", staticmethod(slow_entry)
+        ):
+            threads = [
+                threading.Thread(target=carry, args=item) for item in tasks.items()
+            ]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join(timeout=30)
+
+        assert results == {
+            "TASK-WEB-1": ("make web-cov", None),
+            "TASK-API-1": ("make api-cov", None),
+        }
+        (a_start, a_end), (b_start, b_end) = sorted(inside)
+        assert a_end <= b_start  # one after the other, never at once
+        assert AutoBuildOrchestrator._read_build_coverage(worktree, "web") == ("make web-cov", 300)
+        assert AutoBuildOrchestrator._read_build_coverage(worktree, "api") == ("make api-cov", 300)
+
+        # A later Player rewrites both; a later task still gets the first one.
+        _earlier_wave_commits(worktree, _components_with_coverage("true", "exit 0"))
+        snapshot_task_toolchain("TASK-WEB-2", worktree, root)
+        assert orch._carry_coverage_from_worktree(
+            "TASK-WEB-2", handle, component="web", when="test"
+        ) == ("make web-cov", None)
+        assert load_toolchain_snapshot("TASK-WEB-2", worktree).component("web").coverage == "make web-cov"
+
+    def test_a_reader_never_sees_a_part_written_record(self, tmp_path: Path) -> None:
+        """The record is replaced whole: no temporary file is left, and the
+        file is complete JSON after every claim."""
+        worktree = tmp_path / "shared"
+        worktree.mkdir()
+        for index, scope in enumerate(["", "web", "api", "docs"]):
+            AutoBuildOrchestrator._claim_build_coverage(
+                worktree, scope or None, f"cov-{index}", 30, f"TASK-{index}"
+            )
+            record = AutoBuildOrchestrator._build_coverage_record_path(worktree)
+            assert json.loads(record.read_text())  # whole, readable
+            assert not list(record.parent.glob(record.name + ".*.tmp"))
+        assert AutoBuildOrchestrator._read_build_coverage(worktree, "api") == ("cov-2", 30)
+
+
+class TestASecondBuildOfTheSameTask:
+    """The coverage kept on its own (no `toolchain:` block) belongs to the
+    build that pinned it: a new build of the same task id never reuses it."""
+
+    def _rebuild(self, root: Path, where: Path, branch: str) -> Path:
+        _git(root, "worktree", "remove", "--force", str(where))
+        _git(root, "worktree", "add", "-q", "-b", branch, str(where))
+        # What the feature orchestrator does when it makes a feature worktree.
+        AutoBuildOrchestrator.discard_coach_documents_snapshot(where)
+        return where
+
+    def _layout(self, tmp_path: Path, body: str) -> tuple:
+        root = tmp_path / "proj"
+        _project(root, body=body, config=NO_TOOLCHAIN)
+        (root / ".gitignore").write_text(
+            ".guardkit/autobuild-private/\n.guardkit/worktrees/\n"
+        )
+        _git(root, "add", "-A")
+        _git(root, "commit", "-q", "-m", "ignore worktrees")
+        where = root / ".guardkit" / "worktrees" / "FEAT-SETUP"
+        worktree = _shared_worktree(root, where)
+        return root, worktree
+
+    def test_with_no_declaration_the_old_command_is_not_reused(
+        self, tmp_path: Path
+    ) -> None:
+        root, worktree = self._layout(tmp_path, DECLARES_CONFIG)
+        first = _run_real_loop(
+            _orchestrator(tmp_path, root, worktree, feature=True),
+            _Turns(worktree, NO_TOOLCHAIN + WITH_COVERAGE),
+        )
+        assert first.final_decision == "approved", first.error
+        assert load_coverage_only_pin(TASK, worktree) == (COVERAGE_COMMAND, 120)
+
+        # Build 2 of the same task: nothing declares coverage this time.
+        (next((root / "tasks" / "backlog").glob(f"{TASK}*.md"))).write_text(
+            f"---\nid: {TASK}\ntitle: Again\ntask_type: feature\n---\n\n{DECLARES_OTHER}"
+        )
+        worktree = self._rebuild(root, worktree, "autobuild/FEAT-SETUP-2")
+        turns = _Turns(worktree, None)
+        second = _run_real_loop(
+            _orchestrator(tmp_path, root, worktree, feature=True), turns
+        )
+        assert turns.player_turns == 0
+        assert second.final_decision == "configuration_error"
+        assert "declares no coverage command" in second.error
+        assert load_coverage_only_pin(TASK, worktree) is None
+
+    def test_a_changed_declaration_is_used_not_the_old_one(
+        self, tmp_path: Path
+    ) -> None:
+        root, worktree = self._layout(tmp_path, DECLARES_OTHER)
+        _earlier_wave_commits(worktree, NO_TOOLCHAIN + WITH_COVERAGE)
+        first = _Turns(worktree, None)
+        assert _run_real_loop(
+            _orchestrator(tmp_path, root, worktree, feature=True), first
+        ).final_decision == "approved"
+        assert first.coach_receipts[0]["command"] == COVERAGE_COMMAND
+
+        worktree = self._rebuild(root, worktree, "autobuild/FEAT-SETUP-2")
+        changed = "touch changed-ran.marker && exit 0"
+        _earlier_wave_commits(
+            worktree,
+            NO_TOOLCHAIN + f'toolchain:\n  coverage: "{changed}"\n',
+        )
+        second = _Turns(worktree, None)
+        result = _run_real_loop(
+            _orchestrator(tmp_path, root, worktree, feature=True), second
+        )
+        assert result.final_decision == "approved", result.error
+        assert second.coach_receipts[0]["command"] == changed
+        assert load_coverage_only_pin(TASK, worktree)[0] == changed
+
+    def test_only_a_fresh_snapshot_clears_it(self, tmp_path: Path) -> None:
+        """A resume never takes a fresh snapshot (orchestrate skips it on
+        resume), so a resume keeps it; a fresh snapshot of the task clears it."""
+        from guardkit.orchestrator.toolchain_declaration import (
+            pin_coverage_command,
+            snapshot_task_toolchain,
+        )
+
+        root = tmp_path / "proj"
+        (root / ".guardkit").mkdir(parents=True)
+        (root / ".guardkit" / "config.yaml").write_text(NO_TOOLCHAIN)
+        worktree = tmp_path / "shared"
+        worktree.mkdir()
+        assert pin_coverage_command(TASK, worktree, "make cov", 40) == "make cov"
+        assert load_coverage_only_pin(TASK, worktree) == ("make cov", 40)
+        assert load_coverage_only_pin(TASK, worktree) == ("make cov", 40)
+        snapshot_task_toolchain(TASK, worktree, root)
+        assert load_coverage_only_pin(TASK, worktree) is None
+
+
+class TestTheRecordIsWrittenSafely:
+    def test_a_failed_write_leaves_the_old_record_whole(self, tmp_path: Path) -> None:
+        worktree = tmp_path / "shared"
+        worktree.mkdir()
+        AutoBuildOrchestrator._claim_build_coverage(worktree, None, "make cov", 60, "T-1")
+
+        def broken_dump(data, out, **kwargs):
+            out.write('{"web": {"cov')
+            raise OSError("disk full")
+
+        with patch("json.dump", side_effect=broken_dump):
+            with pytest.raises(OSError):
+                AutoBuildOrchestrator._claim_build_coverage(
+                    worktree, "web", "npm run cov", 60, "T-2"
+                )
+        record = AutoBuildOrchestrator._build_coverage_record_path(worktree)
+        assert json.loads(record.read_text()) == {
+            "": {"coverage": "make cov", "coverage_timeout": 60, "first_pinned_by": "T-1"}
+        }
+        assert not list(record.parent.glob(record.name + ".*.tmp"))
+
+    def test_the_task_pins_the_command_that_won(self, tmp_path: Path) -> None:
+        """When another task of the wave recorded the scope's command between
+        this task's read and its claim, this task pins that one."""
+        worktree = tmp_path / "shared"
+        (worktree / ".guardkit").mkdir(parents=True)
+        (worktree / ".guardkit" / "config.yaml").write_text(
+            'toolchain:\n  test: "make test"\n  coverage: "make late-cov"\n'
+        )
+        _pin(TASK, worktree, _decl(test="make test"))
+        AutoBuildOrchestrator._claim_build_coverage(worktree, None, "make first-cov", 70, "T-0")
+        orch = _orchestrator(tmp_path, worktree, worktree, feature=True)
+        handle = MagicMock(spec=Worktree)
+        handle.path = worktree
+        with patch.object(
+            AutoBuildOrchestrator, "_read_build_coverage", return_value=None
+        ):
+            assert orch._carry_coverage_from_worktree(
+                TASK, handle, component=None, when="test"
+            ) == ("make first-cov", None)
+        pinned = load_toolchain_snapshot(TASK, worktree)
+        assert (pinned.coverage, pinned.coverage_timeout) == ("make first-cov", 70)

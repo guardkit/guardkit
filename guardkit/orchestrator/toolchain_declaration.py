@@ -608,8 +608,22 @@ def snapshot_task_toolchain(
     Returns the snapshot file path when a declaration was captured, else
     ``None`` (no declaration, or an error — both mean the build behaves
     exactly as it did before the declaration existed). Never raises.
+
+    A fresh snapshot is a new build of the task (a resume keeps its
+    snapshot and never comes here), so a coverage command an earlier build
+    of the same task id kept on its own (:func:`load_coverage_only_pin`) is
+    removed first (review round 2): it belonged to that build.
     """
     try:
+        try:
+            _coverage_only_path(task_id, Path(worktree_path)).unlink(missing_ok=True)
+        except OSError as exc:
+            logger.warning(
+                "Could not remove an earlier build's coverage-only pin for %s "
+                "(%s); that build's coverage command may be used again.",
+                task_id,
+                exc,
+            )
         declaration = load_toolchain_declaration(Path(repo_root))
         if declaration is None:
             # byte-equivalent no-op for every repo that has not opted in
