@@ -236,21 +236,39 @@ def ignored_protected_files(worktree_path: Path) -> Dict[str, str]:
 
 
 def _sha256_of(path: Path) -> str:
-    """The sha256 of a file's bytes (of a symlink's target text, for a link).
-    Raises ``RepairFactsUnavailable`` naming the path when it cannot be read;
-    there is no stand-in value that could compare equal."""
-    digest = hashlib.sha256()
+    """The fingerprint of a file's contents, as a sha256 hex digest.
+
+    For a regular file: the sha256 of its bytes. For a symlink: the link's own
+    text, the path the whole chain resolves to, and the sha256 of that
+    target's bytes, so a write THROUGH a symlinked ``.env`` (to a file that is
+    not protected itself) changes the fingerprint, and so does retargeting
+    the link. Raises ``RepairFactsUnavailable`` naming the file when it, or
+    a link's target, cannot be read - a dangling link, a loop, a directory or
+    a permission error; there is no stand-in value that could compare equal.
+    Only hashes are returned; the contents are never kept.
+    """
     try:
         if path.is_symlink():
-            digest.update(b"symlink:" + os.fsencode(os.readlink(path)))
+            link_text = os.readlink(path)
+            target = path.resolve(strict=True)  # follows the whole chain
+            digest = hashlib.sha256()
+            digest.update(b"symlink:" + os.fsencode(link_text) + b"\0")
+            digest.update(b"target:" + os.fsencode(str(target)) + b"\0")
+            digest.update(b"contents:" + _bytes_sha256(target).encode())
             return digest.hexdigest()
-        with open(path, "rb") as handle:
-            for chunk in iter(lambda: handle.read(1 << 20), b""):
-                digest.update(chunk)
-    except OSError as exc:
+        return _bytes_sha256(path)
+    except (OSError, RuntimeError) as exc:  # RuntimeError: a symlink loop (older Pythons)
         raise RepairFactsUnavailable(
             f"{path.name} could not be read to hash it ({type(exc).__name__})"
         ) from exc
+
+
+def _bytes_sha256(path: Path) -> str:
+    """The sha256 of a regular file's bytes. Raises ``OSError`` otherwise."""
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(chunk)
     return digest.hexdigest()
 
 

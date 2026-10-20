@@ -1191,3 +1191,82 @@ class TestEveryFailurePathFailsClosed:
         outcome = reopen_and_repair(repo, self.HELPER, model_verdict=APPROVE)
         assert outcome["repair_round"].unavailable is None
         assert outcome["decision"] == "approved", outcome["history"][-1].coach_result.report
+
+
+@pytest.mark.skipif(
+    hasattr(os, "geteuid") and os.geteuid() == 0, reason="root reads unreadable files"
+)
+class TestASymlinkedProtectedFile:
+    """A protected ignored file that is a symlink is fingerprinted by its link
+    text, the path the chain resolves to and the target's contents, so a
+    write through it or a retarget is seen; a target that cannot be read
+    refuses the turn."""
+
+    HELPER = {"tests/e2e/sign-in.ts": "export const signIn = 1;\n"}
+
+    def _round_one(self, tmp_path: Path, direct_mode: bool) -> Path:
+        repo = make_project(
+            tmp_path, declare_create=False, declare_modify=False, direct_mode=direct_mode
+        )
+        _write(repo, "build/out.txt", "A=1\n")  # ignored, not protected
+        (repo / ".env").symlink_to("build/out.txt")  # ignored, protected
+        first = run_round(repo, {"apps/web/src/App.tsx": "export const App = () => 1;\n"})
+        assert first["decision"] == "approved", first["history"][-1].coach_result.report
+        return repo
+
+    def _refused(self, repo: Path, outcome: Dict[str, Any], category: str) -> None:
+        assert outcome["decision"] != "approved"
+        report = outcome["history"][-1].coach_result.report
+        assert any(i.get("category") == category for i in report.get("issues", [])), report
+        private = TaskArtifactPaths.task_private_dir(TASK_ID, repo)
+        assert json.loads((private / "coach_turn_1.json").read_text())["decision"] == "feedback"
+        assert outcome["fo"]._repair_approvals.get(TASK_ID) is None
+
+    @pytest.mark.parametrize("direct_mode", [False, True], ids=["no-declarations", "direct-mode"])
+    def test_a_write_through_the_link_is_refused(self, tmp_path: Path, direct_mode: bool) -> None:
+        repo = self._round_one(tmp_path, direct_mode)
+        outcome = reopen_and_repair(
+            repo, self.HELPER, model_verdict=APPROVE,
+            shell_step=lambda root: (root / ".env").write_text("A=2\n"),
+        )
+        assert (repo / ".env").is_symlink()
+        self._refused(repo, outcome, "repair_round_protected")
+
+    @pytest.mark.parametrize("direct_mode", [False, True], ids=["no-declarations", "direct-mode"])
+    def test_an_unchanged_link_and_target_approve(self, tmp_path: Path, direct_mode: bool) -> None:
+        repo = self._round_one(tmp_path, direct_mode)
+        outcome = reopen_and_repair(repo, self.HELPER, model_verdict=APPROVE)
+        assert outcome["decision"] == "approved", outcome["history"][-1].coach_result.report
+
+    @pytest.mark.parametrize("direct_mode", [False, True], ids=["no-declarations", "direct-mode"])
+    def test_a_retargeted_link_is_refused(self, tmp_path: Path, direct_mode: bool) -> None:
+        repo = self._round_one(tmp_path, direct_mode)
+
+        def _retarget(root: Path) -> None:
+            _write(root, "build/other.txt", "A=1\n")  # the same contents
+            (root / ".env").unlink()
+            (root / ".env").symlink_to("build/other.txt")
+
+        outcome = reopen_and_repair(repo, self.HELPER, model_verdict=APPROVE, shell_step=_retarget)
+        self._refused(repo, outcome, "repair_round_protected")
+
+    @pytest.mark.parametrize("direct_mode", [False, True], ids=["no-declarations", "direct-mode"])
+    def test_a_dangling_link_is_refused_as_unreadable(self, tmp_path: Path, direct_mode: bool) -> None:
+        repo = self._round_one(tmp_path, direct_mode)
+        outcome = reopen_and_repair(
+            repo, self.HELPER, model_verdict=APPROVE,
+            shell_step=lambda root: (root / "build" / "out.txt").unlink(),
+        )
+        self._refused(repo, outcome, "repair_round_unreadable")
+
+    @pytest.mark.parametrize("direct_mode", [False, True], ids=["no-declarations", "direct-mode"])
+    def test_an_unreadable_target_is_refused_as_unreadable(
+        self, tmp_path: Path, direct_mode: bool
+    ) -> None:
+        repo = self._round_one(tmp_path, direct_mode)
+        outcome = reopen_and_repair(
+            repo, self.HELPER, model_verdict=APPROVE,
+            shell_step=lambda root: os.chmod(root / "build" / "out.txt", 0),
+        )
+        os.chmod(repo / "build" / "out.txt", 0o600)
+        self._refused(repo, outcome, "repair_round_unreadable")
