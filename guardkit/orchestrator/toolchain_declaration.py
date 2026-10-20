@@ -130,9 +130,10 @@ from __future__ import annotations
 
 import json
 import logging
+import posixpath
 import re
 from pathlib import Path, PurePosixPath
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterable, List, Optional
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
@@ -685,12 +686,104 @@ def declared_coverage_command(
     return toolchain.coverage or None
 
 
+def add_coverage_to_pin(
+    task_id: str,
+    worktree_path: Path,
+    source: Optional[ToolchainDeclaration],
+    component: Optional[str] = None,
+) -> Optional[str]:
+    """Add a coverage command to a task's pinned declaration, never replace one.
+
+    20 October 2026. A project with no coverage command gets one only when a
+    task writes it into ``.guardkit/config.yaml``. The pin is cut from the
+    canonical repository before the task starts, so it could not see that:
+    the task that wrote the command, and every task after it in the same
+    build, were judged as if nothing had been declared.
+
+    This copies ONLY the coverage command and its timeout from ``source``,
+    and ONLY when the pin declares none for this task (the root block, or the
+    task's component). A coverage command the pin already has is never
+    changed, and no other command (``test``, ``install`` and the rest) is
+    ever taken from ``source``: those still come from the canonical
+    repository alone. Once added, the command is pinned like the rest, so a
+    later turn cannot change it.
+
+    Returns the command added, or ``None`` when nothing was added: no pin,
+    the pin already declares coverage for this task, the task's component is
+    not in the pin or not in ``source``, or ``source`` declares no coverage
+    for it. Never raises.
+    """
+    try:
+        pinned = load_toolchain_snapshot(task_id, worktree_path)
+        if pinned is None:
+            return None
+        if declared_coverage_command(pinned, component):
+            return None
+        command = declared_coverage_command(source, component)
+        if not command or source is None:
+            return None
+        if component:
+            from_source = source.component(component)
+            target = pinned.component(component)
+            if from_source is None or target is None:
+                return None
+            components = dict(pinned.components or {})
+            components[component] = target.model_copy(
+                update={
+                    "coverage": command,
+                    "coverage_timeout": from_source.coverage_timeout,
+                }
+            )
+            updated = pinned.model_copy(update={"components": components})
+        else:
+            updated = pinned.model_copy(
+                update={
+                    "coverage": command,
+                    "coverage_timeout": source.coverage_timeout,
+                }
+            )
+        path = toolchain_snapshot_paths(task_id, worktree_path)["file"]
+        path.write_text(
+            json.dumps(updated.model_dump(mode="json"), indent=2),
+            encoding="utf-8",
+        )
+        return command
+    except Exception as exc:  # noqa: BLE001 - never crash a build over this
+        logger.warning(
+            "Could not add a coverage command to the pinned declaration for "
+            "%s (%s); the pin is left as it was.",
+            task_id,
+            exc,
+        )
+        return None
+
+
+def declares_config_file(paths: Iterable[Any]) -> bool:
+    """True when ``paths`` names the project's ``.guardkit/config.yaml``.
+
+    ``paths`` is what a task says it will create or change: its task
+    document's "Files to Create" / "Files to Modify" sections, or the
+    ``files_to_create`` / ``files_to_modify`` lists. Written forms such as
+    ``./.guardkit/config.yaml`` count; anything that is not a string is
+    ignored.
+    """
+    wanted = CONFIG_RELATIVE_PATH.as_posix()
+    for raw in paths:
+        if not isinstance(raw, str) or not raw.strip():
+            continue
+        text = raw.strip().strip("`").replace("\\", "/")
+        if posixpath.normpath(text) == wanted:
+            return True
+    return False
+
+
 def undeclared_coverage_refusal(
     *,
     task_type: Any,
     toolchain: Optional[ToolchainDeclaration],
     component: Optional[str] = None,
     implementation_mode: Any = None,
+    after_turn: bool = False,
 ) -> Optional[str]:
     """Say why a task can never pass because no coverage command is declared.
 
@@ -712,6 +805,10 @@ def undeclared_coverage_refusal(
     * the task is routed to the direct Player (``implementation_mode:
       direct``), the one named relaxation of the coverage gate;
     * a coverage command is declared for the task (root, or its component).
+
+    ``after_turn`` (20 October 2026) words the same reason for a task that
+    said it would change ``.guardkit/config.yaml``, was therefore given its
+    turn, and still left no coverage command declared.
     """
     from guardkit.models.task_types import (
         DEFAULT_PROFILES,
@@ -761,11 +858,19 @@ def undeclared_coverage_refusal(
     else:
         where = "(`toolchain.coverage`)"
         place = "under `toolchain:`"
+    if after_turn:
+        stopped = (
+            "this task said it would change .guardkit/config.yaml, so it was "
+            "given a turn to declare one, but after that turn the file still "
+            "declares none, and it was stopped there."
+        )
+    else:
+        stopped = "it was stopped before any work was done."
     return (
         f"This project declares no coverage command {where} in "
         f".guardkit/config.yaml, and a {type_words} needs measured coverage "
         f"to pass. Nothing else measures coverage, so this task cannot pass "
-        f"however good the code is; it was stopped before any work was done. "
+        f"however good the code is; {stopped} "
         f"To fix it, add "
         f'`coverage: "<command that exits 0 when the coverage threshold is '
         f'met>"` {place} in .guardkit/config.yaml, then run the task again. '
@@ -814,4 +919,6 @@ __all__ = [
     "load_toolchain_snapshot",
     "declared_coverage_command",
     "undeclared_coverage_refusal",
+    "add_coverage_to_pin",
+    "declares_config_file",
 ]

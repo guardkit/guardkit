@@ -14221,8 +14221,6 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
             ``{"create": ..., "modify": ...}`` as described above. Both are
             ``None`` when the task file cannot be found or read at all.
         """
-        import re as _re
-
         absent: Dict[str, Optional[List[str]]] = {"create": None, "modify": None}
 
         task_file = self._find_task_file(task_id)
@@ -14232,6 +14230,19 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
             content = task_file.read_text(errors="replace")
         except OSError:
             return absent
+        return self.declared_file_sections_in_text(content)
+
+    @staticmethod
+    def declared_file_sections_in_text(
+        content: str,
+    ) -> Dict[str, Optional[List[str]]]:
+        """The ``create`` / ``modify`` answer of
+        :meth:`_read_declared_file_sections`, read from a task document's text
+        (with or without its frontmatter). The one parser of those sections:
+        the orchestrator's task-start coverage check asks it too (20 October
+        2026).
+        """
+        import re as _re
 
         # Strip the frontmatter the same way the other readers here do, so
         # all of them see the same shape of body.
@@ -14254,7 +14265,9 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
             )
             if match is None:
                 continue
-            has_bullets, paths = self._paths_in_declared_section(match.group(1))
+            has_bullets, paths = AgentInvoker._paths_in_declared_section(
+                match.group(1)
+            )
             if not has_bullets:
                 # A heading with nothing at all under it is not a claim, it is
                 # an unfinished task document. The way to say "this task

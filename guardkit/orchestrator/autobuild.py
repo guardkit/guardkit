@@ -127,6 +127,10 @@ from guardkit.orchestrator.quality_gates.coach_evidence import (
     CoachEvidenceBundle,
 )
 
+#: The issue category of a task stopped after its turn because it was to
+#: declare the project's coverage command and did not (20 October 2026).
+UNDECLARED_COVERAGE_CAUSE = "undeclared_coverage"
+
 # TASK-AB-COACHSUBPROC01: env > config > default (subprocess) resolution for
 # the Coach's independent test-execution mode.
 from guardkit.orchestrator.quality_gates.coach_validator import (
@@ -3379,9 +3383,16 @@ class AutoBuildOrchestrator:
         # driven more than once, and the previous run's terminal must not be
         # named by this run's crash.
         self._last_captured_terminal = None
-        # Why this run stopped at task start because no coverage command is
-        # declared (19 October 2026); None unless it did.
+        # Why this run stopped because no coverage command is declared (19
+        # October 2026); None unless it did. The stop is at task start unless
+        # ``_coverage_refusal_after_turn`` says it came after the task's turn.
         self._coverage_declaration_refusal: Optional[str] = None
+        self._coverage_refusal_after_turn = False
+        # Set when a task that needs coverage, in a project that declares
+        # none, said it would change .guardkit/config.yaml: it is given its
+        # turn, and the coverage command is read from the worktree before the
+        # Coach judges that turn (20 October 2026). None otherwise.
+        self._coverage_due_from_task: Optional[Dict[str, Any]] = None
 
         # Emit task.started lifecycle event (TASK-INST-004)
         self._emit_task_started(task_id)
@@ -3427,9 +3438,15 @@ class AutoBuildOrchestrator:
         _verifier_raw: Any = None
         _test_ref_raw: Any = None
         _implementation_mode_raw: Any = None
+        # The files this task says it will create or change (20 October
+        # 2026), read only by the task-start coverage check below.
+        _declared_task_paths: List[str] = []
         try:
             task_data = TaskLoader.load_task(task_id, repo_root=self.repo_root)
             frontmatter = task_data.get("frontmatter", {})
+            _declared_task_paths = self._task_declared_paths(
+                task_data.get("content"), frontmatter
+            )
             _task_bo_raw = (
                 frontmatter["behavioural_oracle"]
                 if "behavioural_oracle" in frontmatter
@@ -3585,6 +3602,15 @@ class AutoBuildOrchestrator:
                 # Player-unreachable private dir — and the pinned copy is what
                 # executes for the whole build.
                 self._snapshot_toolchain_declaration(task_id, worktree)
+                # 20 October 2026: the pin above is cut from the canonical
+                # repository, which does not have what earlier tasks of this
+                # build committed to the worktree. A coverage command one of
+                # them declared is added to this task's pin (coverage only,
+                # and only when the pin has none).
+                self._carry_coverage_from_worktree(
+                    task_id, worktree, component=component,
+                    when="declared by earlier work in this build",
+                )
 
                 # The project's `launch:` block (settings and scratch folders
                 # for its commands' shells), pinned at the same point for the
@@ -3708,6 +3734,23 @@ class AutoBuildOrchestrator:
                 component=component,
                 implementation_mode=_implementation_mode_raw,
             )
+            if coverage_refusal is not None and self._task_declares_coverage_setup(
+                task_id, worktree, _declared_task_paths
+            ):
+                # 20 October 2026: this task's own work is to change
+                # .guardkit/config.yaml, which is where the missing command
+                # goes. It is given its turn; the command is read from the
+                # worktree before the Coach judges it, and the task stops
+                # then, with the same plain reason, if there is still none.
+                self._coverage_due_from_task = {"component": component}
+                logger.info(
+                    "Task %s needs a coverage command and none is declared, "
+                    "but it says it will change .guardkit/config.yaml, so it "
+                    "is not stopped: the coverage command is read from the "
+                    "worktree after its turn.",
+                    task_id,
+                )
+                coverage_refusal = None
             if coverage_refusal is not None:
                 self._coverage_declaration_refusal = coverage_refusal
                 logger.error(
@@ -4159,6 +4202,145 @@ class AutoBuildOrchestrator:
                 exc,
             )
             return None
+
+    @staticmethod
+    def _task_declared_paths(content: Any, frontmatter: Any) -> List[str]:
+        """The files a task says it will create or change (20 October 2026).
+
+        Read from the task document's "Files to Create" / "Files to Modify"
+        sections (the same parser the plan audit uses) and from the
+        ``files_to_create`` / ``files_to_modify`` frontmatter lists. Never
+        raises; anything unreadable is simply not a declared path.
+        """
+        paths: List[str] = []
+        try:
+            if isinstance(content, str) and content:
+                sections = AgentInvoker.declared_file_sections_in_text(content)
+                for key in ("create", "modify"):
+                    paths.extend(sections.get(key) or [])
+            if isinstance(frontmatter, dict):
+                for key in ("files_to_create", "files_to_modify"):
+                    listed = frontmatter.get(key)
+                    if isinstance(listed, list):
+                        paths.extend(p for p in listed if isinstance(p, str))
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.debug("Could not read the task's declared files: %s", exc)
+        return paths
+
+    def _task_declares_coverage_setup(
+        self,
+        task_id: str,
+        worktree: "Worktree",
+        declared_paths: List[str],
+    ) -> bool:
+        """May a task that needs coverage, in a project declaring none, have
+        its turn to declare it? (20 October 2026)
+
+        Yes only when the task says it will create or change
+        ``.guardkit/config.yaml`` and a declaration is pinned for it (the
+        command is added to that pin after the turn). A project with no
+        ``toolchain:`` block at all is not covered here: such a task is
+        stopped before any work, as before.
+        """
+        from guardkit.orchestrator.toolchain_declaration import (
+            declares_config_file,
+            load_toolchain_snapshot,
+        )
+
+        if not declares_config_file(declared_paths):
+            return False
+        return load_toolchain_snapshot(task_id, Path(worktree.path)) is not None
+
+    def _carry_coverage_from_worktree(
+        self,
+        task_id: str,
+        worktree: "Worktree",
+        *,
+        component: Optional[str],
+        when: str,
+    ) -> Optional[str]:
+        """Add the worktree's coverage command to this task's pin, if the pin
+        has none (20 October 2026). Returns the command added, or ``None``.
+
+        Only the coverage command and its timeout are taken from the
+        worktree's ``.guardkit/config.yaml``; every other declared command
+        stays as pinned from the canonical repository, and a coverage command
+        already pinned is never replaced.
+        """
+        from guardkit.orchestrator.toolchain_declaration import (
+            add_coverage_to_pin,
+            load_toolchain_declaration,
+        )
+
+        worktree_path = Path(worktree.path)
+        added = add_coverage_to_pin(
+            task_id,
+            worktree_path,
+            load_toolchain_declaration(worktree_path),
+            component,
+        )
+        if added:
+            logger.warning(
+                "Task %s: the coverage command %r was %s and is now pinned for "
+                "this task. Only the coverage command is taken from the "
+                "worktree; every other declared command still comes from the "
+                "canonical repository.",
+                task_id,
+                added,
+                when,
+            )
+        return added
+
+    def _coverage_refusal_after_task_turn(
+        self,
+        task_id: str,
+        turn: int,
+        worktree: "Worktree",
+        task_type: Optional[str],
+    ) -> Optional[str]:
+        """After the turn of a task that was to declare the coverage command,
+        pin what it declared, or say plainly that it declared none
+        (20 October 2026).
+
+        Returns ``None`` when there is nothing to check or a coverage command
+        is now pinned for the task (the Coach then measures coverage with it
+        on this very turn). Otherwise returns the same plain reason the
+        task-start check gives, worded for a stop after the turn.
+        """
+        due = getattr(self, "_coverage_due_from_task", None)
+        if not due:
+            return None
+        from guardkit.orchestrator.toolchain_declaration import (
+            declared_coverage_command,
+            load_toolchain_snapshot,
+            undeclared_coverage_refusal,
+        )
+
+        component = due.get("component")
+        self._carry_coverage_from_worktree(
+            task_id, worktree, component=component,
+            when=f"declared by this task's own turn {turn}",
+        )
+        pinned = load_toolchain_snapshot(task_id, Path(worktree.path))
+        if declared_coverage_command(pinned, component):
+            self._coverage_due_from_task = None
+            return None
+        refusal = undeclared_coverage_refusal(
+            task_type=task_type,
+            toolchain=pinned,
+            component=component,
+            after_turn=True,
+        ) or (
+            "This task said it would change .guardkit/config.yaml to declare "
+            "a coverage command, but after its turn none is declared."
+        )
+        self._coverage_due_from_task = None
+        self._coverage_declaration_refusal = refusal
+        self._coverage_refusal_after_turn = True
+        logger.error(
+            "Task %s stopped after turn %s: %s", task_id, turn, refusal,
+        )
+        return refusal
 
     def _resolve_task_component(
         self, task_id: str, raw: Any
@@ -5433,6 +5615,21 @@ class AutoBuildOrchestrator:
                         None,
                     )
                     error_detail = config_issue["description"] if config_issue else turn_record.feedback or "unknown configuration error"
+                    coverage_stop = getattr(
+                        self, "_coverage_declaration_refusal", None
+                    )
+                    if coverage_stop:
+                        # 20 October 2026: the task was to declare the
+                        # coverage command and did not. Not a task_type
+                        # problem; the reason already says what to add.
+                        logger.error(
+                            "Configuration error for %s: %s", task_id, coverage_stop
+                        )
+                        self._progress_display.console.print(
+                            f"\n[bold red]ERROR: Configuration error for {task_id}:[/bold red]\n"
+                            f"  {coverage_stop}\n"
+                        )
+                        return turn_history, "configuration_error"
                     logger.error(
                         f"Configuration error for {task_id}: {error_detail}. "
                         f"This is a task file issue — the Player cannot fix it."
@@ -9774,6 +9971,25 @@ class AutoBuildOrchestrator:
 
         start_time = time.time()
 
+        # 20 October 2026: a task given its turn to declare the project's
+        # coverage command (see orchestrate()) has that command pinned now, so
+        # this Coach measures coverage with it. If the turn declared none, the
+        # task ends here as a configuration error with the plain reason,
+        # instead of being refused "coverage is unknown" turn after turn.
+        coverage_refusal = self._coverage_refusal_after_task_turn(
+            task_id, turn, worktree, task_type
+        )
+        if coverage_refusal is not None:
+            return self._emit_synthetic_coach_feedback(
+                task_id=task_id,
+                turn=turn,
+                worktree=worktree,
+                rationale=coverage_refusal,
+                start_time=start_time,
+                category=UNDECLARED_COVERAGE_CAUSE,
+                is_configuration_error=True,
+            )
+
         # Retrieve job-specific context for Coach if enabled (TASK-GR6-006, TASK-FIX-GTP2)
         # Uses per-thread context loader to avoid cross-loop Neo4j errors
         context_prompt = ""
@@ -12732,11 +12948,18 @@ class AutoBuildOrchestrator:
                 (t for t in reversed(turn_history) if t.is_configuration_error), None
             )
             coverage_refusal = getattr(self, "_coverage_declaration_refusal", None)
-            if config_turn is None and coverage_refusal:
-                # Stopped at task start: no coverage command is declared and
-                # this task's type needs one. Not a task_type problem.
+            if coverage_refusal:
+                # No coverage command is declared and this task's type needs
+                # one. Not a task_type problem. Stopped at task start, or
+                # (20 October 2026) after the turn of a task that was to
+                # declare it and did not.
+                when = (
+                    "Stopped after the task's turn"
+                    if getattr(self, "_coverage_refusal_after_turn", False)
+                    else "Stopped before any model call"
+                )
                 return (
-                    f"Stopped before any model call: this task cannot pass "
+                    f"{when}: this task cannot pass "
                     f"without a declared coverage command.\n"
                     f"Detail: {coverage_refusal}\n"
                     f"Worktree preserved for inspection."
@@ -12881,14 +13104,16 @@ class AutoBuildOrchestrator:
             config_turn = next(
                 (t for t in reversed(turn_history) if t.is_configuration_error), None
             )
+            coverage_refusal = getattr(self, "_coverage_declaration_refusal", None)
+            if coverage_refusal:
+                if getattr(self, "_coverage_refusal_after_turn", False):
+                    return f"Stopped after the task's turn: {coverage_refusal}"
+                return f"Stopped before any model call: {coverage_refusal}"
             if config_turn and config_turn.feedback:
                 return (
                     f"Configuration error: {config_turn.feedback}. "
                     f"Fix the task_type in the task .md file and retry."
                 )
-            coverage_refusal = getattr(self, "_coverage_declaration_refusal", None)
-            if coverage_refusal:
-                return f"Stopped before any model call: {coverage_refusal}"
             documents_refusal = getattr(self, "_project_documents_refusal", None)
             if documents_refusal:
                 return f"Stopped before any model call: {documents_refusal}"
