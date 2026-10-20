@@ -64,7 +64,8 @@ the biggest single process, so the whole build was lost. Three changes:
   command (then runs it exactly as ``shell=True`` would, with ``exec``); a
   program run directly gets it from GuardKit straight after it starts, so
   anything it starts in its first moments may miss it.
-* A factory launch (``GUARDKIT_FACTORY_LAUNCH`` set) runs no project command
+* A factory launch (``GUARDKIT_FACTORY_LAUNCH`` set to any value but exactly
+  empty) runs no project command
   where any of ``/proc``, ``os.waitid`` or a pidfd is missing: it raises
   :class:`CleanupUnavailableError` (an ``OSError``) before the command
   starts, naming what is missing. A person's own run goes on with the
@@ -690,14 +691,20 @@ def _end_without_proc(proc: subprocess.Popen) -> None:
             time.sleep(_LOOK_INTERVAL_SECONDS)
 
 
-#: Set (to any non-empty value) when the factory launched this GuardKit
-#: (``guardkit.knowledge.memory_project.FACTORY_LAUNCH_ENV``, read the same
-#: way as ``harness.selector`` reads it).
+#: Set when the factory launched this GuardKit
+#: (``guardkit.knowledge.memory_project.FACTORY_LAUNCH_ENV``).
 _FACTORY_LAUNCH_ENV = "GUARDKIT_FACTORY_LAUNCH"
 
 
 def _is_factory_launch() -> bool:
-    return bool(str(os.environ.get(_FACTORY_LAUNCH_ENV) or "").strip())
+    """The rule of ``m0_fence.is_factory_launch`` (the fence branch), mirrored
+    exactly: any value at all is a factory launch, whitespace and
+    ``0``/``false`` included; only unset or exactly empty is a person's own
+    run. A value nobody can read as "on" must never switch the refusal off.
+    (Mirrored rather than imported, so this module stays importable where
+    that function does not exist yet; keep the two in step.)"""
+    value = os.environ.get(_FACTORY_LAUNCH_ENV)
+    return value is not None and value != ""
 
 
 class CleanupUnavailableError(OSError):

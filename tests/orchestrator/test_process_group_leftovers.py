@@ -531,12 +531,21 @@ class TestCleanupCapability:
         warnings = [r for r in caplog.records if "may be left running" in r.getMessage()]
         assert len(warnings) == 1
 
-    @pytest.mark.parametrize("value", ["", "   "])
     def test_an_empty_factory_signal_is_not_a_factory_launch(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, missing: None
+    ) -> None:
+        monkeypatch.setenv("GUARDKIT_FACTORY_LAUNCH", "")
+        assert _run(tmp_path, "echo ok").stdout == "ok\n"
+
+    @pytest.mark.parametrize("value", ["   ", "0", "false"])
+    def test_any_other_factory_signal_is_a_factory_launch_and_refused(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, missing: None, value: str
     ) -> None:
+        # Whitespace or "0" can never switch the refusal off.
         monkeypatch.setenv("GUARDKIT_FACTORY_LAUNCH", value)
-        assert _run(tmp_path, "echo ok").stdout == "ok\n"
+        with pytest.raises(process_group.CleanupUnavailableError):
+            _run(tmp_path, "touch ran")
+        assert not (tmp_path / "ran").exists()
 
 
 class TestWithoutWaitid:
