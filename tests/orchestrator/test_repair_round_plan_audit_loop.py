@@ -447,8 +447,13 @@ class TestARepairRoundCanDoItsJob:
             round_number=2,
             start_commit=outcome["head_at_re_open"],
             gate_output=GATE_OUTPUT,
-            ignored_protected=(),
+            protected_fingerprints=outcome["repair_round"].protected_fingerprints,
         )
+        # Fingerprints only, of every protected path: tracked ones here.
+        # (.guardkit/ and the factory's git lock are the factory's own.)
+        assert [path for path, _ in outcome["repair_round"].protected_fingerprints] == [
+            ".gitignore", "deploy/Dockerfile"
+        ]
         private = TaskArtifactPaths.task_private_dir(TASK_ID, repo)
         assert not list(private.glob("repair_round*"))
         assert outcome["seen"][0] == GATE_OUTPUT
@@ -1048,8 +1053,8 @@ class TestIgnoredProtectedFiles:
         outcome = reopen_and_repair(repo, self.HELPER, model_verdict=APPROVE)
         assert outcome["decision"] == "approved", outcome["history"][-1].coach_result.report
         # Recorded by path and hash only.
-        recorded = dict(outcome["repair_round"].ignored_protected)
-        assert list(recorded) == [".env"] and SECRET not in recorded[".env"]
+        recorded = dict(outcome["repair_round"].protected_fingerprints)
+        assert ".env" in recorded and SECRET not in recorded[".env"]
         self._no_secret_anywhere(repo, outcome)
 
     @pytest.mark.parametrize("direct_mode", [False, True], ids=["no-declarations", "direct-mode"])
@@ -1069,14 +1074,14 @@ class TestIgnoredProtectedFiles:
         repo = self._round_one(tmp_path, direct_mode, env=None)
         from guardkit.orchestrator import repair_round as rr
 
-        real = rr.ignored_protected_files
+        real = rr.protected_fingerprints
         calls = {"n": 0}
 
         def _second_listing_fails(worktree_path: Path) -> Any:
             calls["n"] += 1
             return real(worktree_path) if calls["n"] == 1 else None
 
-        monkeypatch.setattr(rr, "ignored_protected_files", _second_listing_fails)
+        monkeypatch.setattr(rr, "protected_fingerprints", _second_listing_fails)
         outcome = reopen_and_repair(repo, self.HELPER, model_verdict=APPROVE)
         assert outcome["decision"] != "approved"
         report = outcome["history"][-1].coach_result.report
@@ -1270,3 +1275,83 @@ class TestASymlinkedProtectedFile:
         )
         os.chmod(repo / "build" / "out.txt", 0o600)
         self._refused(repo, outcome, "repair_round_unreadable")
+
+
+
+@pytest.mark.skipif(
+    hasattr(os, "geteuid") and os.geteuid() == 0, reason="root reads unreadable files"
+)
+class TestATrackedProtectedSymlink:
+    """Every protected path is fingerprinted whatever git thinks of it: a
+    committed protected symlink to an ignored target is followed too."""
+
+    HELPER = {"tests/e2e/sign-in.ts": "export const signIn = 1;\n"}
+
+    def _round_one(self, tmp_path: Path, direct_mode: bool) -> Path:
+        repo = make_project(
+            tmp_path, declare_create=False, declare_modify=False, direct_mode=direct_mode
+        )
+        _write(repo, "build/out.txt", "FROM scratch\n")  # ignored, not protected
+        (repo / "deploy" / "Dockerfile").unlink()
+        (repo / "deploy" / "Dockerfile").symlink_to("../build/out.txt")
+        _git(repo, "add", "-A")
+        _git(repo, "commit", "-q", "-m", "the container file is a link to the build output")
+        first = run_round(repo, {"apps/web/src/App.tsx": "export const App = () => 1;\n"})
+        assert first["decision"] == "approved", first["history"][-1].coach_result.report
+        return repo
+
+    def _refused(self, repo: Path, outcome: Dict[str, Any], category: str) -> None:
+        assert outcome["decision"] != "approved"
+        report = outcome["history"][-1].coach_result.report
+        assert any(i.get("category") == category for i in report.get("issues", [])), report
+        private = TaskArtifactPaths.task_private_dir(TASK_ID, repo)
+        assert json.loads((private / "coach_turn_1.json").read_text())["decision"] == "feedback"
+        assert outcome["fo"]._repair_approvals.get(TASK_ID) is None
+
+    @pytest.mark.parametrize("direct_mode", [False, True], ids=["no-declarations", "direct-mode"])
+    def test_a_write_through_a_tracked_link_is_refused(
+        self, tmp_path: Path, direct_mode: bool
+    ) -> None:
+        repo = self._round_one(tmp_path, direct_mode)
+        outcome = reopen_and_repair(
+            repo, self.HELPER, model_verdict=APPROVE,
+            shell_step=lambda root: (root / "deploy" / "Dockerfile").write_text("FROM busybox\n"),
+        )
+        # git sees nothing: the link is unchanged and its target is ignored.
+        assert _git(repo, "status", "--porcelain", "--", "deploy/Dockerfile") == ""
+        self._refused(repo, outcome, "repair_round_protected")
+
+    @pytest.mark.parametrize("direct_mode", [False, True], ids=["no-declarations", "direct-mode"])
+    def test_an_unchanged_tracked_link_approves(self, tmp_path: Path, direct_mode: bool) -> None:
+        repo = self._round_one(tmp_path, direct_mode)
+        outcome = reopen_and_repair(repo, self.HELPER, model_verdict=APPROVE)
+        assert outcome["decision"] == "approved", outcome["history"][-1].coach_result.report
+
+    @pytest.mark.parametrize("direct_mode", [False, True], ids=["no-declarations", "direct-mode"])
+    def test_a_tracked_link_with_an_unreadable_target_is_refused_as_unreadable(
+        self, tmp_path: Path, direct_mode: bool
+    ) -> None:
+        repo = self._round_one(tmp_path, direct_mode)
+        outcome = reopen_and_repair(
+            repo, self.HELPER, model_verdict=APPROVE,
+            shell_step=lambda root: os.chmod(root / "build" / "out.txt", 0),
+        )
+        os.chmod(repo / "build" / "out.txt", 0o600)
+        self._refused(repo, outcome, "repair_round_unreadable")
+
+    @pytest.mark.parametrize("direct_mode", [False, True], ids=["no-declarations", "direct-mode"])
+    def test_a_deleted_tracked_protected_file_is_a_protected_change(
+        self, tmp_path: Path, direct_mode: bool
+    ) -> None:
+        """A tracked path the worktree no longer has is absent from the
+        fingerprints (a change), not an unreadable record."""
+        repo = self._round_one(tmp_path, direct_mode)
+        outcome = reopen_and_repair(
+            repo, self.HELPER, model_verdict=APPROVE,
+            shell_step=lambda root: (root / "deploy" / "Dockerfile").unlink(),
+        )
+        self._refused(repo, outcome, "repair_round_protected")
+        report = outcome["history"][-1].coach_result.report
+        assert not any(
+            i.get("category") == "repair_round_unreadable" for i in report.get("issues", [])
+        )

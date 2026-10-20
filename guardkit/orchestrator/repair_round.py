@@ -74,10 +74,10 @@ class RepairRound:
     start_commit: str
     gate_output: str
     approved_by_earlier_repairs: FrozenSet[str] = frozenset()
-    #: Every protected file git ignores, as it stood at the re-open: path and
-    #: sha256 of its bytes, nothing else (``ignored_protected_files``). Never
-    #: the contents.
-    ignored_protected: Tuple[Tuple[str, str], ...] = ()
+    #: Every protected path in the worktree as it stood at the re-open -
+    #: tracked, untracked or ignored, file or symlink - as path and
+    #: fingerprint only (``protected_fingerprints``). Never the contents.
+    protected_fingerprints: Tuple[Tuple[str, str], ...] = ()
     #: Why the round's facts could not be established at the re-open, or
     #: ``None`` when they were. A round that is unavailable is still a repair
     #: round: every one of its turns is refused (the unreadable-record
@@ -151,8 +151,8 @@ def begin_repair_round(
 ) -> RepairRound:
     """The repair round a re-open starts. Always a round; never raises.
 
-    Reads HEAD of the worktree, the round's start, and the protected files git
-    ignores. ``approved_by_earlier_repairs`` are the non-protected files this
+    Reads HEAD of the worktree, the round's start, and the fingerprint of
+    every protected path in it. ``approved_by_earlier_repairs`` are the non-protected files this
     task's earlier repair rounds showed the reviewer on the turns it approved
     (``FeatureOrchestrator._remember_repair_approvals``); never another
     task's files, and never a protected file. If anything cannot be
@@ -163,7 +163,7 @@ def begin_repair_round(
     approved = frozenset(str(path) for path in approved_by_earlier_repairs if path)
     try:
         head = git_head(worktree_path)
-        ignored = ignored_protected_files(worktree_path)
+        fingerprints = protected_fingerprints(worktree_path)
     except Exception as exc:  # noqa: BLE001 — becomes an explicit unavailable round
         reason = str(exc) if isinstance(exc, RepairFactsUnavailable) else type(exc).__name__
         logger.warning(
@@ -182,7 +182,7 @@ def begin_repair_round(
         start_commit=head,
         gate_output=str(gate_output or ""),
         approved_by_earlier_repairs=approved,
-        ignored_protected=tuple(sorted(ignored.items())),
+        protected_fingerprints=tuple(sorted(fingerprints.items())),
     )
 
 
@@ -198,40 +198,57 @@ def git_head(worktree_path: Path) -> str:
     return head
 
 
-def ignored_protected_files(worktree_path: Path) -> Dict[str, str]:
-    """Every protected file git ignores, as ``{path: sha256 of its bytes}``.
+#: Files the factory itself writes at any depth of a worktree while a turn
+#: runs (the checkpoint manager's git lock). Never the Player's work.
+_FACTORY_OWNED_NAMES = frozenset({".guardkit-git.lock"})
 
-    git's own view of changes says nothing about an ignored file, so an
-    ignored ``.env`` a repair round makes, edits or deletes would never be
-    seen. This lists the ignored files (``git ls-files --others --ignored
-    --exclude-standard``), keeps the protected ones (the plan audit's
-    ``_is_protected``), leaves out what the audit never counts (installed
-    packages, caches, the factory's own records) and hashes each one. The
-    contents are read only to hash them: they are never kept, logged or
-    shown. Raises ``RepairFactsUnavailable`` if the listing or any one hash
-    cannot be taken.
+
+def protected_fingerprints(worktree_path: Path) -> Dict[str, str]:
+    """Every protected path in the worktree, as ``{path: fingerprint}``.
+
+    One rule, whatever git thinks of a path: tracked, untracked or ignored,
+    regular file or symlink. git's own view of changes misses an ignored
+    ``.env``, and a write through a tracked protected symlink to an ignored
+    target changes nothing git can see; a fingerprint of every protected path
+    catches both. The listing is ``git ls-files --cached --others`` with no
+    exclusions (so ignored files are in it), kept to the protected paths (the
+    plan audit's ``_is_protected``), leaving out only what the audit never
+    counts (installed packages, caches, the factory's own records) and the
+    factory's own git lock file. A listed
+    path that is no longer on disk (a deleted tracked file) is simply absent,
+    which reads as a change. The fingerprint is ``_sha256_of``: contents are
+    read only to hash them and are never kept, logged or shown. Raises
+    ``RepairFactsUnavailable`` if the listing or any one fingerprint cannot be
+    taken.
     """
     try:
         from installer.core.commands.lib.plan_audit import PlanAuditor, _is_protected
 
         done = run_git(
-            ["ls-files", "--others", "--ignored", "--exclude-standard", "-z"],
+            ["ls-files", "--cached", "--others", "-z"],
             cwd=Path(worktree_path),
             check=False,
-            timeout=60,
+            timeout=120,
         )
     except Exception as exc:  # noqa: BLE001
         raise RepairFactsUnavailable(
-            f"the ignored files could not be listed ({type(exc).__name__})"
+            f"the worktree's files could not be listed ({type(exc).__name__})"
         ) from exc
     if done.returncode != 0:
-        raise RepairFactsUnavailable("the ignored files could not be listed")
+        raise RepairFactsUnavailable("the worktree's files could not be listed")
     auditor = PlanAuditor()
     found: Dict[str, str] = {}
     for path in done.stdout.split("\0"):
-        if not path or not _is_protected(path) or auditor._is_excluded(Path(path)):
+        if not path or path in found:
             continue
-        found[path] = _sha256_of(Path(worktree_path) / path)
+        if not _is_protected(path) or auditor._is_excluded(Path(path)):
+            continue
+        if path.rsplit("/", 1)[-1] in _FACTORY_OWNED_NAMES:
+            continue
+        full = Path(worktree_path) / path
+        if not os.path.lexists(full):
+            continue  # a tracked file this worktree no longer has
+        found[path] = _sha256_of(full)
     return found
 
 
@@ -272,10 +289,10 @@ def _bytes_sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def ignored_protected_changes(
+def protected_fingerprint_changes(
     before: Iterable[Tuple[str, str]], now: Dict[str, str]
 ) -> Set[str]:
-    """The ignored protected files made, changed or deleted between two
-    complete listings. Pure."""
+    """The protected paths made, changed or deleted between two complete
+    fingerprint listings. Pure."""
     then = dict(before)
     return {path for path in set(then) | set(now) if then.get(path) != now.get(path)}

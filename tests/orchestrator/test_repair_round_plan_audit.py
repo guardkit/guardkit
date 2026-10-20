@@ -297,8 +297,10 @@ class TestTheAuditInARepairRound:
         round_ = _reopen(repo)
         assert round_ == RepairRound(
             round_number=2, start_commit=start, gate_output=GATE_OUTPUT,
-            ignored_protected=(),
+            protected_fingerprints=round_.protected_fingerprints,
         )
+        # Every protected path, whatever git thinks of it: here, .gitignore.
+        assert [path for path, _ in round_.protected_fingerprints] == [".gitignore"]
 
     def test_extra_files_are_left_to_the_reviewer_and_all_named(self, repo: Path) -> None:
         _approve_round_one(repo)

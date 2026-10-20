@@ -4719,8 +4719,9 @@ Turn: {turn}
         * ``{"unavailable": reason}`` in a repair round whose facts cannot be
           established, whatever the cause - the round was unavailable at the
           re-open, the task's checkpoint record is missing or unreadable, the
-          round is not in this task's history, git cannot answer, the ignored
-          protected files cannot be listed or hashed, or anything raised.
+          round is not in this task's history, git cannot answer, the
+          protected paths cannot be listed or fingerprinted, or anything
+          raised.
           ``_enforce_repair_round_protected`` then refuses the turn;
         * the review otherwise.
 
@@ -4745,8 +4746,8 @@ Turn: {turn}
             return _unavailable(f"at the re-open: {round_.unavailable}")
         try:
             from guardkit.orchestrator.repair_round import (
-                ignored_protected_changes,
-                ignored_protected_files,
+                protected_fingerprint_changes,
+                protected_fingerprints,
             )
             from guardkit.tasks.state_bridge import TaskStateBridge
             from installer.core.commands.lib.plan_audit import (
@@ -4782,15 +4783,19 @@ Turn: {turn}
             existed = set(facts.get("existed_at_round_start") or ())
             changed_this_round = list(facts.get("changed_this_round") or ())
             beyond = [p for p in changed_this_round if p not in declared_paths]
-            # Protected files git ignores (a .env) are invisible to the
-            # listing above: compared, by path and hash only, with what the
-            # re-open recorded. Raises if the listing or a hash cannot be had.
-            ignored_touched = ignored_protected_changes(
-                round_.ignored_protected, ignored_protected_files(self.worktree_path)
+            # Every protected path, whatever git thinks of it (tracked,
+            # untracked or ignored, file or symlink), compared by fingerprint
+            # with what the re-open recorded: a write through a symlink or to
+            # an ignored .env is seen. Raises if any read fails.
+            fingerprint_touched = protected_fingerprint_changes(
+                round_.protected_fingerprints, protected_fingerprints(self.worktree_path)
             )
             protected = sorted(
                 _repair_round_protected(changed_this_round, declared_paths)
-                | {p for p in ignored_touched if p not in declared_paths}
+                | {
+                    p for p in fingerprint_touched
+                    if p not in declared_paths and not _excluded(p)
+                }
             )
             self.repair_round_inventory = frozenset(
                 path for path in beyond if not _is_protected(path)
