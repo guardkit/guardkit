@@ -1315,6 +1315,30 @@ class TestProcGoneAfterTheSelfTest:
         # The escaped child was ended by the bounded emergency clean-up.
         assert not _alive(_pid(tmp_path, "bg.pid"))
 
+    def test_proc_lost_at_the_fallback_never_reduces_a_factory_cleanup(
+        self, tmp_path: Path, started: List[int], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        if shutil.which("setsid", path=_ENV["PATH"]) is None:
+            pytest.skip("no setsid program")
+        monkeypatch.setattr(process_group, "_SELF_TEST_PASSED", [True])
+        availability = iter((True, False))
+        monkeypatch.setattr(
+            process_group, "_proc_available", lambda: next(availability)
+        )
+        with pytest.raises(
+            process_group.CleanupUnavailableError,
+            match="was ended because /proc became unavailable while the command ran",
+        ):
+            _run(
+                tmp_path,
+                "setsid sh -c 'echo $$ > bg.pid; exec sleep 300' >/dev/null 2>&1 & "
+                + _WAIT_FOR.format(name="bg.pid"),
+            )
+        monkeypatch.undo()
+        # The first check saw /proc. Losing it at the fallback still took the
+        # bounded emergency path, which ended the escaped child.
+        assert not _alive(_pid(tmp_path, "bg.pid"))
+
     def test_an_unrelated_process_is_untouched(
         self, tmp_path: Path, started: List[int], monkeypatch: pytest.MonkeyPatch
     ) -> None:

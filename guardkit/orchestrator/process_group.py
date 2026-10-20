@@ -1474,7 +1474,15 @@ def _run(
                 _quoted(args),
             )
         elif not _proc_available():
-            _end_without_proc(proc)  # a person's own run only (checked above)
+            # /proc can disappear between the factory check above and this
+            # fallback.  Re-check the launch kind at the fallback itself: a
+            # factory launch must never take the reduced, group-only path.
+            if _is_factory_launch():
+                raise _cleanup_failure(
+                    "/proc became unavailable while the command ran",
+                    before_launch=False,
+                )
+            _end_without_proc(proc)
         elif _anything_left(proc, entry, since):
             ended = _end_group(proc, grace, entry, since)
             if ended.seen:
