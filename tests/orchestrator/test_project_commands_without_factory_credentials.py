@@ -214,8 +214,11 @@ def test_the_helper_builds_from_nothing(project: Project) -> None:
     declaration = LaunchDeclaration(settings=("STANDIN_SETTING",), scratch=("STANDIN_CACHE",))
     env = pce.project_command_environment(project.repo, declaration)
     expected = {"PATH", "HOME", "TMPDIR", "STANDIN_SETTING", "STANDIN_CACHE", "GUARDKIT_RUN_OWNER"}
+    # 19 October 2026: tools run once instead of waiting or watching.
+    expected.add("CI")
     expected |= {n for n in os.environ if n in ("LANG", "LC_ALL") or n.startswith("LC_")}
     assert set(env) == expected
+    assert env["CI"] == "true"
     _assert_no_sentinel(env, "the helper")
     scratch = project.repo / ".git" / BUILDER_SCRATCH_DIRNAME
     for name in ("HOME", "TMPDIR"):
@@ -1430,6 +1433,10 @@ ALLOWED: Dict[Tuple[str, str], str] = {
     ("orchestrator/process_group.py", "run_project_command"): (
         "generic runner (subprocess.run's shape, a process group of its own); "
         "every call is checked"
+    ),
+    ("orchestrator/process_group.py", "_self_test_command"): (
+        "the clean-up's own self-test: GuardKit's own Python with a fixed "
+        "one-name environment (PATH), no project code"
     ),
     ("orchestrator/live_gate/executor.py", "run"): (
         "runs a gate script with the caller's environment; the one production "

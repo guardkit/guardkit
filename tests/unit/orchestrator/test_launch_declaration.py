@@ -834,7 +834,11 @@ class TestReliabilityRequirements:
 
         root, worktree = repo
         _write_config(root, None)
-        cmd = "env | LC_ALL=C sort"
+        # Each command carries its own marker (process_group, 19 October
+        # 2026), a fresh value every time, so it is left out of the compare.
+        from guardkit.orchestrator.process_group import COMMAND_MARKER_NAME
+
+        cmd = f"env | grep -v '^{COMMAND_MARKER_NAME}=' | LC_ALL=C sort"
 
         today = run_feature_check_command(cmd, cwd=worktree, timeout=30)
         with_root = run_feature_check_command(
