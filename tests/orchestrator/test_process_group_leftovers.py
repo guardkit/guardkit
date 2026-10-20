@@ -563,6 +563,7 @@ class TestCleanupCapability:
             )
         assert not (tmp_path / "ran").exists()
 
+    @pytest.mark.personal_run
     def test_a_persons_own_run_goes_on_with_one_warning(
         self,
         tmp_path: Path,
@@ -580,6 +581,7 @@ class TestCleanupCapability:
         warnings = [r for r in caplog.records if "may be left running" in r.getMessage()]
         assert len(warnings) == 1
 
+    @pytest.mark.personal_run
     def test_an_empty_factory_signal_is_not_a_factory_launch(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, missing: None
     ) -> None:
