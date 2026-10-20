@@ -1434,6 +1434,10 @@ ALLOWED: Dict[Tuple[str, str], str] = {
         "generic runner (subprocess.run's shape, a process group of its own); "
         "every call is checked"
     ),
+    ("orchestrator/process_group.py", "_self_test"): (
+        "the clean-up's own self-test: GuardKit's own Python with a fixed "
+        "one-name environment (PATH), no project code"
+    ),
     ("orchestrator/live_gate/executor.py", "run"): (
         "runs a gate script with the caller's environment; the one production "
         "caller, LiveGateRunner, builds it with the helper"

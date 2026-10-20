@@ -65,10 +65,17 @@ the biggest single process, so the whole build was lost. Three changes:
   program run directly gets it in the child before ``exec``
   (:func:`_first_in_line_before_exec`), so nothing it starts escapes it.
 * A factory launch (``m0_fence.is_factory_launch``) runs no project command
-  where any of ``/proc``, ``os.waitid`` or a pidfd is missing: it raises
-  :class:`CleanupUnavailableError` (an ``OSError``) before the command
-  starts, naming what is missing. A person's own run goes on with the
-  reduced clean-up below and one warning.
+  until the real clean-up has passed an END-TO-END SELF-TEST in this process
+  (:func:`_self_test`, cached on success): a tiny command leaves a process in
+  a session of its own, is stopped exactly as a project command is, and the
+  process must be gone. That proves the ``/proc`` listing and record reads,
+  ``waitid`` and the pidfd calls together. A failure raises
+  :class:`CleanupUnavailableError` (an ``OSError``, ``errno`` ENOSYS, the
+  reason as ``strerror``) before the command starts. Any of those failing
+  later, mid-run, ends that command the same way (the group by its pinned
+  number, the rest through pidfds) instead of falling back to a reduced or
+  silently empty clean-up. A person's own run keeps the reduced clean-up
+  below, with one warning.
 * Without ``/proc`` (macOS) the command's group alone is signalled when it
   returns, and nothing is counted. Without a working ``os.waitid`` (macOS
   before Python 3.13, or a filter that refuses the call) the leader's exit
@@ -87,6 +94,7 @@ import selectors
 import signal
 import subprocess
 import sys
+import threading
 import time
 import uuid
 from dataclasses import dataclass
@@ -165,10 +173,8 @@ def _leader_state(proc: subprocess.Popen) -> str:
         # waitid refused (a filter): the leader's state cannot be read, so
         # the command cannot be watched safely. Never read as "running",
         # which could wait for ever.
-        raise CleanupUnavailableError(
-            exc.errno or errno.ENOSYS,
-            f"waitid was refused while watching a project command "
-            f"({exc.strerror or exc}), so it cannot be watched safely",
+        raise _cleanup_failure(
+            _refused("waitid", True, exc), before_launch=False
         ) from exc
     return _RUNNING if info is None else _EXITED
 
@@ -278,7 +284,16 @@ def _stat_fields(pid: int) -> Optional[Tuple[str, int, int, int]]:
             data = fh.read()
         rest = data[data.rindex(b")") + 2 :].split()
         return rest[0].decode(), int(rest[2]), int(rest[3]), int(rest[19])
-    except (OSError, ValueError, IndexError):
+    except (FileNotFoundError, ProcessLookupError, ValueError, IndexError):
+        return None  # gone, or never there
+    except OSError as exc:
+        # A record that cannot be read is not an absent process: on a factory
+        # launch the command cannot be watched safely.
+        if _is_factory_launch():
+            raise _cleanup_failure(
+                f"a process record in /proc could not be read ({exc.strerror or exc})",
+                before_launch=False,
+            ) from exc
         return None
 
 
@@ -326,10 +341,23 @@ def _look(
     pgid: int, entry: Optional[bytes], since: Optional[int]
 ) -> Tuple[Set[int], Set[int]]:
     """``(every live process of the command but the leader, those of them
-    outside its group)``. Without a listing, both are empty."""
+    outside its group)``. Without a listing: on a factory launch
+    :class:`CleanupUnavailableError`, on a person's own run both empty and a
+    warning."""
     try:
         names = os.listdir("/proc")
-    except OSError:
+    except OSError as exc:
+        # A listing that cannot be made is not an empty one: on a factory
+        # launch it ends the command; on a person's own run it is said.
+        if _is_factory_launch():
+            raise _cleanup_failure(
+                f"/proc could not be listed ({exc.strerror or exc})", before_launch=False
+            ) from exc
+        logger.warning(
+            "/proc could not be listed (%s), so what a project command left "
+            "running cannot be found or stopped.",
+            exc.strerror or exc,
+        )
         return set(), set()
     members: Set[int] = set()
     outside: Set[int] = set()
@@ -421,9 +449,10 @@ def _signal_outside(
     process, not a number: if the process ends and its number is handed to
     another one after the pidfd is opened, the signal finds the ended process
     and goes nowhere. No process is ever signalled by number alone (Codex
-    review, 19 October 2026): where a pidfd cannot be had (a kernel older
-    than Linux 5.3, or a security filter that refuses the call) the process
-    is left alone, and the caller says so.
+    review, 19 October 2026): where a pidfd cannot be had or signalled
+    through, the process is left alone; on a factory launch that ends the
+    command with :class:`CleanupUnavailableError`, on a person's own run the
+    caller says so.
     """
     refused: Set[int] = set()
     for pid in pids:
@@ -431,6 +460,7 @@ def _signal_outside(
             handle = _pidfd_open(pid)
         except OSError as exc:
             if exc.errno != errno.ESRCH:  # ESRCH: it has gone
+                _refusal_mid_run(_refused("pidfd_open", _has_wrapper("os"), exc), exc)
                 refused.add(pid)
             continue
         try:
@@ -440,10 +470,22 @@ def _signal_outside(
             # Only ESRCH means it ended after it was pinned; anything else (a
             # refusal) means it was not signalled.
             if exc.errno != errno.ESRCH:
+                if isinstance(exc, CleanupUnavailableError):
+                    raise
+                _refusal_mid_run(
+                    _refused("pidfd_send_signal", _has_wrapper("signal"), exc), exc
+                )
                 refused.add(pid)
         finally:
             os.close(handle)
     return refused
+
+
+def _refusal_mid_run(reason: str, cause: OSError) -> None:
+    """On a factory launch a refused pidfd call ends the command; on a
+    person's own run the process is reported as not stopped."""
+    if _is_factory_launch():
+        raise _cleanup_failure(reason, before_launch=False) from cause
 
 
 def _signal_group(pgid: int, sig: int) -> None:
@@ -808,10 +850,34 @@ def _is_factory_launch() -> bool:
 
 
 class CleanupUnavailableError(OSError):
-    """A factory build's project command was not run: this system cannot
-    stop everything such a command leaves (an ``OSError`` with ``errno`` and
-    ``strerror`` set, so a caller that treats "could not start" as the
-    command's failure, and reports ``strerror``, says why)."""
+    """This system cannot stop everything a project command leaves (an
+    ``OSError`` with ``errno`` ENOSYS and the plain sentence as ``strerror``,
+    so a caller that treats "could not start" as the command's failure, and
+    reports ``strerror``, says why). ``reason`` is the clause alone."""
+
+    reason: str = ""
+
+
+_ADVICE = (
+    "Run the factory where /proc can be read and waitid, pidfd_open and "
+    "pidfd_send_signal are allowed (Linux 5.3 or later)."
+)
+
+
+def _cleanup_failure(reason: str, *, before_launch: bool) -> CleanupUnavailableError:
+    if before_launch:
+        text = (
+            f"The factory does not run project commands here: {reason}, so what a "
+            f"command leaves running could not all be stopped safely. {_ADVICE}"
+        )
+    else:
+        text = (
+            f"A project command was ended because {reason}, so what it left "
+            f"running could not all be stopped safely. {_ADVICE}"
+        )
+    error = CleanupUnavailableError(errno.ENOSYS, text)
+    error.reason = reason
+    return error
 
 
 def _refused(call: str, wrapper: bool, exc: OSError) -> str:
@@ -860,27 +926,122 @@ def _missing_capability() -> Optional[str]:
 
 _CAPABILITY: List[Optional[str]] = []
 _WARNED: List[bool] = []
+#: The self-test's success, once per process (a later failure mid-run ends
+#: that command, so a stale success is safe).
+_SELF_TEST_PASSED: List[bool] = []
+_SELF_TEST_LOCK = threading.Lock()
+_IN_SELF_TEST = threading.local()
+
+#: The self-test's command: it starts one process that moves into a session
+#: of its own (carrying the command's marker, as every process of a command
+#: does), lets go of the output and outlives the command; the command prints
+#: that process's pid and the marker, then returns.
+_SELF_TEST_CODE = (
+    "import os, time\n"
+    "pid = os.fork()\n"
+    "if pid == 0:\n"
+    "    os.setsid()\n"
+    "    null = os.open(os.devnull, os.O_RDWR)\n"
+    "    for fd in (0, 1, 2):\n"
+    "        os.dup2(null, fd)\n"
+    "    time.sleep(30)\n"
+    "    os._exit(0)\n"
+    f"print(pid, os.environ.get({COMMAND_MARKER_NAME!r}, ''), flush=True)\n"
+)
+
+
+def _self_test() -> Optional[str]:
+    """Run the real clean-up end to end once; ``None`` when it worked, else
+    the plain reason.
+
+    A tiny command leaves a process in a session of its own; the command is
+    run, and stopped, exactly as a project command is. Afterwards the left
+    process must be gone (its pid no longer pins a process, or pins one that
+    is not this command's) and nothing carrying the command's marker may be
+    left in ``/proc``. That proves, on this system, the ``/proc`` listing
+    and record reads, ``waitid`` and the pidfd calls the clean-up needs.
+    """
+    _IN_SELF_TEST.active = True
+    try:
+        try:
+            done = run_project_command(
+                [sys.executable, "-I", "-c", _SELF_TEST_CODE],
+                env={"PATH": os.defpath},
+                cwd="/",
+                capture_output=True,
+                text=True,
+                timeout=30,
+                grace=1.0,
+            )
+        except CleanupUnavailableError as exc:
+            return exc.reason or str(exc)
+        except Exception as exc:  # noqa: BLE001 - any failure refuses
+            return f"the clean-up self-test could not run ({type(exc).__name__}: {exc})"
+        words = (done.stdout or "").split()
+        if done.returncode != 0 or len(words) != 2 or not words[0].isdigit():
+            return f"the clean-up self-test's command did not run (exit {done.returncode})"
+        entry = _marker_entry(words[1])
+        left = []
+        try:
+            for name in os.listdir("/proc"):
+                if not name.isdigit():
+                    continue
+                fields = _stat_fields(int(name))
+                if (
+                    fields is not None
+                    and fields[0] not in ("Z", "X")
+                    and _carries_marker(int(name), entry)
+                ):
+                    left.append(int(name))
+        except CleanupUnavailableError as exc:
+            return exc.reason or str(exc)
+        except OSError as exc:
+            return f"/proc could not be listed ({exc.strerror or exc})"
+        if left:
+            for pid in left:  # best effort: pinned, never by number
+                try:
+                    handle = _pidfd_open(pid)
+                except OSError:
+                    continue
+                try:
+                    _pidfd_send_signal(handle, signal.SIGKILL)
+                except OSError:
+                    pass
+                finally:
+                    os.close(handle)
+            return (
+                "the clean-up self-test's left-behind process was still running "
+                "after the stop"
+            )
+        return None
+    finally:
+        _IN_SELF_TEST.active = False
 
 
 def _check_capability() -> None:
-    """Worked out once per process. On a factory launch with something
-    missing, refuse the command before it starts (a factory build must leave
-    nothing running, Codex review 19 October 2026); on a person's own run,
-    warn once and go on with the reduced clean-up."""
+    """Before a command starts. On a factory launch the real clean-up must
+    have passed its end-to-end self-test in this process (run once, cached
+    on success only), else :class:`CleanupUnavailableError`; any failure
+    later, mid-run, ends that command (``before_launch=False``). On a
+    person's own run, what is missing is worked out once and warned about
+    once, and the reduced clean-up goes on."""
+    if getattr(_IN_SELF_TEST, "active", False):
+        return
+    if _is_factory_launch():
+        if _SELF_TEST_PASSED:
+            return
+        with _SELF_TEST_LOCK:
+            if _SELF_TEST_PASSED:
+                return
+            reason = _self_test()
+            if reason is None:
+                _SELF_TEST_PASSED.append(True)
+                return
+        raise _cleanup_failure(reason, before_launch=True)
     if not _CAPABILITY:
         _CAPABILITY.append(_missing_capability())
     missing = _CAPABILITY[0]
-    if missing is None:
-        return
-    if _is_factory_launch():
-        raise CleanupUnavailableError(
-            errno.ENOSYS,
-            f"The factory does not run project commands here: {missing}, so what "
-            "a command leaves running could not all be stopped safely. Run the "
-            "factory with a Python and a Linux kernel (5.3 or later) that allow "
-            "pidfd_open and pidfd_send_signal."
-        )
-    if not _WARNED:
+    if missing is not None and not _WARNED:
         _WARNED.append(True)
         logger.warning(
             "Here %s, so a process a project command moves out of its process "
@@ -908,10 +1069,7 @@ def _waitid_problem() -> Optional[str]:
     except ChildProcessError:
         return None
     except OSError as exc:
-        return (
-            f"waitid is refused here by the kernel or a security filter "
-            f"({exc.strerror or exc})"
-        )
+        return _refused("waitid", True, exc)
     return None
 
 
@@ -946,7 +1104,9 @@ def _run(
     On return or timeout every process of the command is ended before the
     leader is collected, and the log names what was stopped.
     """
-    if not _can_wait_without_collecting():
+    if not _is_factory_launch() and not _can_wait_without_collecting():
+        # A person's own run only: a factory launch never takes the reduced
+        # path (its self-test proved waitid; a refusal later ends the command).
         return _run_without_waitid(proc, input=input, timeout=timeout, grace=grace)
     entry = _marker_entry(marker)
     exchange: Optional[_Exchange] = None
@@ -990,9 +1150,7 @@ def _run(
         try:
             _end_group(proc, 0.0, entry, since)
         except Exception:  # noqa: BLE001 - e.g. waitid refused mid-run
-            # The leader is not collected, so its group's number is still
-            # this command's.
-            _signal_group(proc.pid, signal.SIGKILL)
+            _end_hard(proc, entry, since)
         finally:
             if exchange is not None:
                 exchange.close()
@@ -1002,6 +1160,30 @@ def _run(
     _collect(proc)
     stdout, stderr = exchange.output()
     return stdout, stderr, timed_out
+
+
+def _end_hard(proc: subprocess.Popen, entry: Optional[bytes], since: Optional[int]) -> None:
+    """End the command after a failure while watching it, without waitid.
+
+    This process never collects the leader before this, so its number (the
+    group's and the session's) is still this command's: the group is sent
+    SIGKILL by that number, and each process of the command outside the
+    group (in the session, or carrying the marker) is sent SIGKILL through a
+    pidfd, checked after pinning. A few looks, bounded; every failure here
+    is swallowed (the caller reports the original one).
+    """
+    _signal_group(proc.pid, signal.SIGKILL)
+    deadline = time.monotonic() + _GRACE_SECONDS
+    while time.monotonic() < deadline:
+        try:
+            _members, outside = _look(proc.pid, entry, since)
+            if not outside:
+                return
+            if _signal_outside(outside, proc.pid, entry, since, signal.SIGKILL):
+                return  # refused: nothing more can be done safely
+        except Exception:  # noqa: BLE001
+            return
+        time.sleep(_LOOK_INTERVAL_SECONDS)
 
 
 def _run_without_waitid(
