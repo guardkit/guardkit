@@ -483,3 +483,50 @@ def test_timeout_fence_forces_failed_finalization_after_late_approval(
     assert result.tasks_completed == 1
     assert result.tasks_failed == 0
     assert "timed out" in (result.error or "")
+
+
+def test_bare_object_direct_finalization_defaults_to_clear_fence(
+    tmp_path: Path,
+) -> None:
+    configured = _make_orchestrator(tmp_path)
+    orchestrator = FeatureOrchestrator.__new__(FeatureOrchestrator)
+    orchestrator.__dict__.update(configured.__dict__)
+    orchestrator.__dict__.pop("_feature_timeout_fence", None)
+    worktree = _make_worktree(tmp_path)
+    feature, _ = _make_feature(
+        [["TASK-001"], ["TASK-002"]],
+        smoke=SmokeGates(
+            after_wave=1,
+            command="true",
+            expected_exit=0,
+            timeout=5,
+        ),
+    )
+    partial_wave = WaveExecutionResult(
+        wave_number=1,
+        task_ids=["TASK-001"],
+        results=[
+            TaskExecutionResult(
+                task_id="TASK-001",
+                success=True,
+                total_turns=1,
+                final_decision="approved",
+            )
+        ],
+        all_succeeded=True,
+    )
+
+    with (
+        patch.object(orchestrator, "_display_summary"),
+        patch.object(orchestrator, "_write_code_checks_summary"),
+        patch(
+            "guardkit.orchestrator.feature_orchestrator.FeatureLoader.save_feature",
+        ),
+    ):
+        result = orchestrator._finalize_phase(feature, [partial_wave], worktree)
+
+    assert result.status == "paused"
+    assert result.success is False
+    assert result.tasks_completed == 1
+    assert result.tasks_failed == 0
+    assert orchestrator._timeout_fence_is_set() is False

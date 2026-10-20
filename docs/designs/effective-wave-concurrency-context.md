@@ -369,7 +369,7 @@ non-quarantined files:
 
 | Propagation control | File home |
 | --- | --- |
-| Effective-concurrency arithmetic and scheduler-to-Feature context | `tests/unit/test_parallel_strategy.py` and `tests/unit/test_feature_orchestrator.py` |
+| Effective-concurrency arithmetic and scheduler-to-Feature context, including same-area serialization and runnable filtering | `tests/unit/test_parallel_strategy.py`, `tests/unit/test_feature_orchestrator.py`, `tests/unit/test_wave_same_area_sequencing.py`, and `tests/unit/orchestrator/test_feature_orchestrator_skip.py` |
 | Feature-to-AutoBuild forwarding | `tests/unit/test_feature_orchestrator.py` |
 | Primary and legacy Coach forwarding | `tests/orchestrator/test_behavioural_oracle_threading.py` |
 | Deterministic Phase-4 forwarding | `tests/unit/orchestrator/test_specialist_wave_size_threading.py` |

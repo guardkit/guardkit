@@ -375,6 +375,7 @@ async def test_timeout_fence_allows_inflight_sibling_but_refuses_third_task(
     sibling_started = threading.Event()
     release_first = threading.Event()
     first_finished = threading.Event()
+    worker_errors = []
     started = []
 
     def _worker(task, _feature, _worktree, **kwargs):
@@ -385,6 +386,9 @@ async def test_timeout_fence_allows_inflight_sibling_but_refuses_third_task(
             first_started.set()
             try:
                 assert release_first.wait(2)
+            except BaseException as exc:
+                worker_errors.append(exc)
+                raise
             finally:
                 first_finished.set()
         else:
@@ -429,3 +433,4 @@ async def test_timeout_fence_allows_inflight_sibling_but_refuses_third_task(
     finally:
         release_first.set()
         assert first_finished.wait(2), "timed-out worker leaked from the test"
+        assert worker_errors == []

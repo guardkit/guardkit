@@ -317,8 +317,8 @@ def test_timeout_during_smoke_retry_terminates_without_another_gate_run(tmp_path
     rerun = WaveExecutionResult(
         wave_number=1,
         task_ids=["TASK-A"],
-        results=[TaskExecutionResult("TASK-A", False, 0, "timeout")],
-        all_succeeded=False,
+        results=[TaskExecutionResult("TASK-A", True, 1, "approved_late")],
+        all_succeeded=True,
     )
 
     def _timeout_rerun(*args, **kwargs):

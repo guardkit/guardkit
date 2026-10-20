@@ -395,14 +395,16 @@ class TestIsolationRouting:
                 mock_sdk.side_effect = _fake_sdk
 
                 with patch("subprocess.run") as mock_run:
-                    validator.run_independent_tests(
+                    result = validator.run_independent_tests(
                         task_work_results=_passing_task_work_results(),
                         task={"task_type": "feature"},
                         turn=1,
                     )
 
+        assert result is isolated_result
+        mock_sdk.assert_called_once()
         mock_isolated.assert_not_called()
-        # SDK path was attempted; isolation not invoked regardless of outcome
+        mock_run.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

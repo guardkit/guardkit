@@ -22,6 +22,7 @@ Two things this file is careful about:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from io import StringIO
@@ -33,7 +34,10 @@ import yaml
 from rich.console import Console
 
 from guardkit.cli.display import WaveProgressDisplay
-from guardkit.orchestrator.feature_orchestrator import FeatureOrchestrator
+from guardkit.orchestrator.feature_orchestrator import (
+    FeatureOrchestrator,
+    TaskExecutionResult,
+)
 from guardkit.orchestrator.parallel_strategy import (
     SAME_AREA_DEFAULT,
     SAME_AREA_ENV_VAR,
@@ -784,6 +788,55 @@ class TestBannerAgreesWithTheDecision:
         )
         display.start_wave(1, task_ids, max_parallel=display_value)
         assert "(parallel: 1)" in strip_ansi(output.getvalue())
+
+    def test_overlapping_wave_dispatches_effective_one(
+        self, mock_detect, tmp_path, mock_worktree_manager
+    ):
+        from guardkit.orchestrator.feature_loader import FeatureLoader
+
+        frontmatter = {
+            "TASK-TS-001": "files_to_modify:\n  - src/users/router.ts\n",
+            "TASK-TS-002": "files_to_modify:\n  - src/users/schemas.ts\n",
+        }
+        orch, task_ids, display_value, executor_value = self._wave(
+            tmp_path,
+            mock_worktree_manager,
+            frontmatter,
+        )
+        assert display_value == executor_value == 1
+        template = mock_worktree_manager.create.return_value
+        feature = FeatureLoader.load_feature(template.task_id, repo_root=tmp_path)
+        worktree = type(template)(
+            task_id=template.task_id,
+            branch_name=template.branch_name,
+            path=tmp_path,
+            base_branch=template.base_branch,
+        )
+        seen = {}
+
+        def _execute(task, *_args, **kwargs):
+            seen[task.id] = (
+                kwargs["wave_size"],
+                kwargs["effective_concurrency"],
+                kwargs["shares_working_copy"],
+            )
+            return TaskExecutionResult(
+                task_id=task.id,
+                success=True,
+                total_turns=1,
+                final_decision="approved",
+            )
+
+        with patch.object(orch, "_execute_task", side_effect=_execute):
+            results = asyncio.run(
+                orch._execute_wave_parallel(1, task_ids, feature, worktree)
+            )
+
+        assert all(result.success for result in results)
+        assert seen == {
+            "TASK-TS-001": (2, 1, False),
+            "TASK-TS-002": (2, 1, False),
+        }
 
     def test_independent_wave_banner_says_what_the_executor_allows(
         self, mock_detect, tmp_path, mock_worktree_manager

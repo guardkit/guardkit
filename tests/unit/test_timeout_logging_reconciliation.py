@@ -499,6 +499,7 @@ async def test_timeout_fence_refuses_queued_peer_while_real_checkout_check_lives
     entered_real_check = threading.Event()
     release_real_check = threading.Event()
     worker_finished = threading.Event()
+    worker_errors = []
     started = []
 
     def _real_checkout_worker(task, _feature, _worktree, **kwargs):
@@ -528,6 +529,9 @@ async def test_timeout_fence_refuses_queued_peer_while_real_checkout_check_lives
                 total_turns=1,
                 final_decision="approved",
             )
+        except BaseException as exc:
+            worker_errors.append(exc)
+            raise
         finally:
             worker_finished.set()
 
@@ -559,6 +563,7 @@ async def test_timeout_fence_refuses_queued_peer_while_real_checkout_check_lives
     finally:
         release_real_check.set()
         assert worker_finished.wait(2), "timed-out worker leaked from the test"
+        assert worker_errors == []
 
 
 @pytest.mark.asyncio

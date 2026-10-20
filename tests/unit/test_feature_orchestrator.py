@@ -1308,8 +1308,6 @@ Test requirements.
             task,
             sample_feature,
             mock_worktree,
-            wave_size=2,
-            effective_concurrency=1,
         )
 
         # Verify task executed successfully
@@ -1572,7 +1570,13 @@ Test requirements.
         mock_orch.orchestrate.return_value = mock_result
         mock_orch_class.return_value = mock_orch
 
-        result = orchestrator._execute_task(task, sample_feature, mock_worktree)
+        result = orchestrator._execute_task(
+            task,
+            sample_feature,
+            mock_worktree,
+            wave_size=2,
+            effective_concurrency=1,
+        )
 
         # Verify task executed successfully
         assert result.success is True
@@ -1772,6 +1776,48 @@ def test_timeout_fence_defaults_clear_and_public_invocation_resets_reused_object
         orchestrator.orchestrate("FEATURE-MISSING")
 
     assert orchestrator._timeout_fence_is_set() is False
+
+
+@pytest.mark.asyncio
+async def test_bare_object_direct_wave_dispatch_defaults_to_clear_fence(
+    temp_repo, parallel_feature, mock_worktree, mock_worktree_manager
+):
+    configured = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+        max_parallel=1,
+    )
+    bare = FeatureOrchestrator.__new__(FeatureOrchestrator)
+    bare.__dict__.update(configured.__dict__)
+    bare.__dict__.pop("_feature_timeout_fence", None)
+
+    with patch.object(
+        bare,
+        "_execute_task",
+        side_effect=lambda task, *_args, **_kwargs: TaskExecutionResult(
+            task_id=task.id,
+            success=True,
+            total_turns=1,
+            final_decision="approved",
+        ),
+    ) as execute_task, patch.object(
+        bare,
+        "_wave_task_paths",
+        return_value={
+            "TASK-P-001": ["src/a/one.py"],
+            "TASK-P-002": ["src/b/two.py"],
+        },
+    ):
+        results = await bare._execute_wave_parallel(
+            1,
+            ["TASK-P-001", "TASK-P-002"],
+            parallel_feature,
+            mock_worktree,
+        )
+
+    assert [result.final_decision for result in results] == ["approved", "approved"]
+    assert execute_task.call_count == 2
+    assert bare._timeout_fence_is_set() is False
 
 
 @pytest.mark.asyncio
@@ -2090,6 +2136,38 @@ async def test_dependency_failed_tasks_skipped_in_parallel(temp_repo, sample_fea
 
         # Verify _execute_task was never called
         mock_execute.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_dependency_filtering_resolves_effective_concurrency_from_runnable_calls(
+    temp_repo, sample_feature, mock_worktree, mock_worktree_manager
+):
+    orchestrator = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+    )
+    sample_feature.tasks[0].status = "failed"
+    sample_feature.tasks[2].dependencies = []
+
+    with patch.object(orchestrator, "_execute_task") as execute_task:
+        execute_task.return_value = TaskExecutionResult(
+            task_id="TASK-T-003",
+            success=True,
+            total_turns=1,
+            final_decision="approved",
+        )
+        results = await orchestrator._execute_wave_parallel(
+            2,
+            ["TASK-T-002", "TASK-T-003"],
+            sample_feature,
+            mock_worktree,
+        )
+
+    assert [result.final_decision for result in results] == ["skipped", "approved"]
+    execute_task.assert_called_once()
+    assert execute_task.call_args.kwargs["wave_size"] == 2
+    assert execute_task.call_args.kwargs["effective_concurrency"] == 1
+    assert execute_task.call_args.kwargs["shares_working_copy"] is False
 
 
 # ============================================================================

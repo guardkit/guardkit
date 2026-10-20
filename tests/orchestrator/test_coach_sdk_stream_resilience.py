@@ -30,7 +30,7 @@ and the fallback-log block in ``run_independent_tests``.
 
 import logging
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import AsyncMock, patch, MagicMock
 
 import pytest
 
@@ -93,7 +93,13 @@ class FakeAsyncGen:
         return None
 
 
-def _make_validator(tmp_path: Path, test_command: str = "pytest tests/dummy.py") -> CoachValidator:
+def _make_validator(
+    tmp_path: Path,
+    test_command: str = "pytest tests/dummy.py",
+    *,
+    wave_size: int = 1,
+    effective_concurrency: int | None = None,
+) -> CoachValidator:
     worktree = tmp_path / "worktree"
     worktree.mkdir()
     return CoachValidator(
@@ -103,7 +109,8 @@ def _make_validator(tmp_path: Path, test_command: str = "pytest tests/dummy.py")
         task_id="TASK-TEST-7A09",
         coach_test_execution="sdk",
         matching_strategy="text",
-        wave_size=1,
+        wave_size=wave_size,
+        effective_concurrency=effective_concurrency,
         # M0 effective-seat fence (leg-invocation stage-2 §3): the Coach's SDK
         # test-execution path builds a harness, so it must name a seat. Without
         # one it falls to a frontier default and select_harness refuses.
@@ -469,7 +476,7 @@ class TestAC_A_FallbackLogStructuredShape:
     def test_process_error_fallback_log_contains_exit_code_and_stderr(
         self, tmp_path, caplog, monkeypatch
     ):
-        validator = _make_validator(tmp_path)
+        validator = _make_validator(tmp_path, wave_size=2, effective_concurrency=2)
 
         stderr_text = (
             "bundled CLI crashed: out of memory\n"
@@ -481,8 +488,7 @@ class TestAC_A_FallbackLogStructuredShape:
             stderr=stderr_text,
         )
 
-        async def failing_sdk(self, test_cmd):
-            raise transport_err
+        failing_sdk = AsyncMock(side_effect=transport_err)
 
         # Neutralise the subprocess fallback so the test does not
         # actually run pytest — we only care about the log line the SDK
@@ -501,11 +507,11 @@ class TestAC_A_FallbackLogStructuredShape:
                 CoachValidator,
                 "_run_tests_via_sdk",
                 new=failing_sdk,
-            ):
+            ), patch.object(validator, "_run_isolated_tests") as isolated:
                 with patch(
-                    "guardkit.orchestrator.quality_gates.coach_validator.subprocess.run",
+                    "guardkit.orchestrator.quality_gates.coach_validator.process_group.run_project_command",
                     return_value=fake_completed,
-                ):
+                ) as subprocess_run:
                     result = validator.run_independent_tests(
                         task_work_results={},
                         task=None,
@@ -514,6 +520,11 @@ class TestAC_A_FallbackLogStructuredShape:
 
         # Fallback path returned the subprocess result.
         assert result.tests_passed is True
+        failing_sdk.assert_awaited_once_with("pytest tests/dummy.py")
+        subprocess_run.assert_called()
+        # The SDK exception retains use_sdk=True. Even in a concurrent wave,
+        # its existing subprocess fallback does not enter snapshot isolation.
+        isolated.assert_not_called()
 
         # Exactly one warning should be the new structured fallback log.
         fallback_warnings = [
