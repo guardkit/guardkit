@@ -207,48 +207,60 @@ def protected_fingerprints(worktree_path: Path) -> Dict[str, str]:
     """Every protected path in the worktree, as ``{path: fingerprint}``.
 
     One rule, whatever git thinks of a path: tracked, untracked or ignored,
-    regular file or symlink. git's own view of changes misses an ignored
-    ``.env``, and a write through a tracked protected symlink to an ignored
-    target changes nothing git can see; a fingerprint of every protected path
-    catches both. The listing is ``git ls-files --cached --others`` with no
-    exclusions (so ignored files are in it), kept to the protected paths (the
-    plan audit's ``_is_protected``), leaving out only what the audit never
-    counts (installed packages, caches, the factory's own records) and the
-    factory's own git lock file. A listed
-    path that is no longer on disk (a deleted tracked file) is simply absent,
-    which reads as a change. The fingerprint is ``_sha256_of``: contents are
-    read only to hash them and are never kept, logged or shown. Raises
-    ``RepairFactsUnavailable`` if the listing or any one fingerprint cannot be
-    taken.
+    regular file or symlink, and inside a nested repository, a submodule or
+    an ignored folder alike. The listing is a plain walk of the filesystem
+    (``os.walk``, not following directory symlinks, so a loop is impossible),
+    independent of git: git collapses an untracked nested repository into one
+    entry, and says nothing about a write through a symlink. The walk skips
+    only what the plan audit never counts (installed packages, caches, any
+    ``.git`` folder, the factory's own records - ``PlanAuditor._is_excluded``)
+    and the worktree's own ``.git`` entry, and the factory's git lock file. It
+    keeps the protected paths (``_is_protected``) and fingerprints each with
+    ``_sha256_of``: contents are read only to hash them and are never kept,
+    logged or shown. Raises ``RepairFactsUnavailable`` if any directory
+    cannot be read or any one fingerprint cannot be taken.
     """
-    try:
-        from installer.core.commands.lib.plan_audit import PlanAuditor, _is_protected
+    from installer.core.commands.lib.plan_audit import PlanAuditor, _is_protected
 
-        done = run_git(
-            ["ls-files", "--cached", "--others", "-z"],
-            cwd=Path(worktree_path),
-            check=False,
-            timeout=120,
-        )
-    except Exception as exc:  # noqa: BLE001
-        raise RepairFactsUnavailable(
-            f"the worktree's files could not be listed ({type(exc).__name__})"
-        ) from exc
-    if done.returncode != 0:
-        raise RepairFactsUnavailable("the worktree's files could not be listed")
+    root = Path(worktree_path)
+    if not root.is_dir():
+        raise RepairFactsUnavailable("the worktree could not be read")
     auditor = PlanAuditor()
+    walk_errors: List[OSError] = []
     found: Dict[str, str] = {}
-    for path in done.stdout.split("\0"):
-        if not path or path in found:
-            continue
-        if not _is_protected(path) or auditor._is_excluded(Path(path)):
-            continue
-        if path.rsplit("/", 1)[-1] in _FACTORY_OWNED_NAMES:
-            continue
-        full = Path(worktree_path) / path
-        if not os.path.lexists(full):
-            continue  # a tracked file this worktree no longer has
-        found[path] = _sha256_of(full)
+
+    def _relative(directory: str, name: str) -> str:
+        rel_dir = os.path.relpath(directory, root)
+        return name if rel_dir == "." else f"{rel_dir}/{name}".replace(os.sep, "/")
+
+    for directory, dirnames, filenames in os.walk(
+        root, topdown=True, onerror=walk_errors.append, followlinks=False
+    ):
+        entries = list(filenames)
+        kept_dirs: List[str] = []
+        for name in dirnames:
+            rel = _relative(directory, name)
+            if rel == ".git":
+                continue  # the worktree's own repository
+            if os.path.islink(os.path.join(directory, name)):
+                entries.append(name)  # a link to a folder: an entry, never followed
+                continue
+            if auditor._is_excluded(Path(rel) / "_"):
+                continue  # a folder the audit never counts
+            kept_dirs.append(name)
+        dirnames[:] = kept_dirs
+        for name in entries:
+            rel = _relative(directory, name)
+            if rel == ".git" or name in _FACTORY_OWNED_NAMES:
+                continue
+            if not _is_protected(rel) or auditor._is_excluded(Path(rel)):
+                continue
+            found[rel] = _sha256_of(root / rel)
+    if walk_errors:
+        raise RepairFactsUnavailable(
+            f"{len(walk_errors)} folder(s) of the worktree could not be read "
+            f"({type(walk_errors[0]).__name__})"
+        )
     return found
 
 

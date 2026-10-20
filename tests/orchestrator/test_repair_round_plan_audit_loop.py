@@ -1355,3 +1355,100 @@ class TestATrackedProtectedSymlink:
         assert not any(
             i.get("category") == "repair_round_unreadable" for i in report.get("issues", [])
         )
+
+
+@pytest.mark.skipif(
+    hasattr(os, "geteuid") and os.geteuid() == 0, reason="root reads unreadable files"
+)
+class TestANestedRepository:
+    """git lists an untracked nested repository as one entry; the walk of the
+    filesystem goes inside it, so a protected file there is fingerprinted."""
+
+    HELPER = {"tests/e2e/sign-in.ts": "export const signIn = 1;\n"}
+    ENV = "build/local/.env"
+
+    def _round_one(self, tmp_path: Path, direct_mode: bool, env: Optional[str]) -> Path:
+        repo = make_project(
+            tmp_path, declare_create=False, declare_modify=False, direct_mode=direct_mode
+        )
+        nested = repo / "build" / "local"  # ignored (build/), with its own .git
+        nested.mkdir(parents=True)
+        _git(nested, "init", "-q")
+        if env is not None:
+            _write(repo, self.ENV, env)
+        # git itself sees the nested repository only as one folder.
+        assert self.ENV not in _git(repo, "ls-files", "--cached", "--others")
+        first = run_round(repo, {"apps/web/src/App.tsx": "export const App = () => 1;\n"})
+        assert first["decision"] == "approved", first["history"][-1].coach_result.report
+        return repo
+
+    def _refused(self, repo: Path, outcome: Dict[str, Any], category: str) -> None:
+        assert outcome["decision"] != "approved"
+        report = outcome["history"][-1].coach_result.report
+        issues = [i for i in report.get("issues", []) if i.get("category") == category]
+        assert issues, report
+        if category == "repair_round_protected":
+            assert self.ENV in issues[0]["details"]["protected"]
+        private = TaskArtifactPaths.task_private_dir(TASK_ID, repo)
+        assert json.loads((private / "coach_turn_1.json").read_text())["decision"] == "feedback"
+        assert outcome["fo"]._repair_approvals.get(TASK_ID) is None
+
+    @pytest.mark.parametrize("direct_mode", [False, True], ids=["no-declarations", "direct-mode"])
+    def test_a_created_env_inside_is_refused(self, tmp_path: Path, direct_mode: bool) -> None:
+        repo = self._round_one(tmp_path, direct_mode, env=None)
+        outcome = reopen_and_repair(
+            repo, {**self.HELPER, self.ENV: "A=1\n"}, model_verdict=APPROVE
+        )
+        self._refused(repo, outcome, "repair_round_protected")
+
+    @pytest.mark.parametrize("direct_mode", [False, True], ids=["no-declarations", "direct-mode"])
+    def test_a_modified_env_inside_is_refused(self, tmp_path: Path, direct_mode: bool) -> None:
+        repo = self._round_one(tmp_path, direct_mode, env="A=1\n")
+        outcome = reopen_and_repair(
+            repo, {**self.HELPER, self.ENV: "A=2\n"}, model_verdict=APPROVE
+        )
+        self._refused(repo, outcome, "repair_round_protected")
+
+    @pytest.mark.parametrize("direct_mode", [False, True], ids=["no-declarations", "direct-mode"])
+    def test_a_deleted_env_inside_is_refused(self, tmp_path: Path, direct_mode: bool) -> None:
+        repo = self._round_one(tmp_path, direct_mode, env="A=1\n")
+        outcome = reopen_and_repair(
+            repo, self.HELPER, model_verdict=APPROVE,
+            shell_step=lambda root: (root / self.ENV).unlink(),
+        )
+        self._refused(repo, outcome, "repair_round_protected")
+
+    @pytest.mark.parametrize("direct_mode", [False, True], ids=["no-declarations", "direct-mode"])
+    def test_an_unchanged_env_inside_approves(self, tmp_path: Path, direct_mode: bool) -> None:
+        repo = self._round_one(tmp_path, direct_mode, env="A=1\n")
+        outcome = reopen_and_repair(repo, self.HELPER, model_verdict=APPROVE)
+        assert outcome["decision"] == "approved", outcome["history"][-1].coach_result.report
+        assert self.ENV in dict(outcome["repair_round"].protected_fingerprints)
+
+    @pytest.mark.parametrize("direct_mode", [False, True], ids=["no-declarations", "direct-mode"])
+    def test_an_unreadable_env_inside_is_refused(self, tmp_path: Path, direct_mode: bool) -> None:
+        repo = self._round_one(tmp_path, direct_mode, env="A=1\n")
+        outcome = reopen_and_repair(
+            repo, self.HELPER, model_verdict=APPROVE,
+            shell_step=lambda root: os.chmod(root / self.ENV, 0),
+        )
+        os.chmod(repo / self.ENV, 0o600)
+        self._refused(repo, outcome, "repair_round_unreadable")
+
+    @pytest.mark.parametrize("direct_mode", [False, True], ids=["no-declarations", "direct-mode"])
+    def test_an_unreadable_folder_is_refused(self, tmp_path: Path, direct_mode: bool) -> None:
+        repo = self._round_one(tmp_path, direct_mode, env="A=1\n")
+        outcome = reopen_and_repair(
+            repo, self.HELPER, model_verdict=APPROVE,
+            shell_step=lambda root: os.chmod(root / "build" / "local", 0),
+        )
+        os.chmod(repo / "build" / "local", 0o755)
+        self._refused(repo, outcome, "repair_round_unreadable")
+
+    def test_a_folder_symlink_loop_is_not_followed(self, tmp_path: Path) -> None:
+        from guardkit.orchestrator.repair_round import protected_fingerprints
+
+        repo = make_project(tmp_path)
+        (repo / "build").mkdir(exist_ok=True)
+        (repo / "build" / "loop").symlink_to("..")
+        assert set(protected_fingerprints(repo)) == {".gitignore", "deploy/Dockerfile"}
