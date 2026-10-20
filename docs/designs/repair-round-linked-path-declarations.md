@@ -31,6 +31,8 @@ After collection, the caller treats the protected records as authoritative. It m
 
 This deliberately tightens alias-only declarations. For example, when `infra/config.txt` links to `build/runtime/config.txt`, declaring only `infra/config.txt` no longer permits changing the target. The task must declare `build/runtime/config.txt`. Declaring every observed alias also no longer permits that change. The refusal names the actual path, with aliases as explanatory context. This also tightens link-only retargeting: for `.env -> build/a.txt` retargeted to `build/b.txt`, when these targets are protected only through that link, declaring `.env` alone refuses even if both target files keep the same bytes. Declare `.env`, `build/a.txt` and `build/b.txt` to authorize the link and the protected-set membership changes. When both targets remain independently protected, only the changed link record needs a declaration. This conservative rule avoids snapshotting every otherwise unprotected file.
 
+Any folder alias, including one whose own name is not protected, exposes protected logical paths inside a package directory. For example, a vendor link into an installed package exposes that package's manifest and README; changing those files during a repair requires declaring their actual paths.
+
 The ordinary non-repair path, task declaration parsing, external paths, factory-owned records and project code remain outside this change. The previous real-path positive controls stay valid. Alias-only positive controls become refusals paired with actual-path positive controls; this is an explicit contract change, not a hidden relaxation of a failed assertion.
 
 ## Acceptance
@@ -49,4 +51,4 @@ Through the existing approving-model loop, in both supported modes:
 
 Run the focused folder-link and neighboring repair-round suites, then full integration and unit/orchestrator counts, only through `dell-test` without xdist. Reuse the recorded baseline failures by exact identity; any new failure requires diagnosis. Record exact commands, imports, commit identities and results in the existing private evidence folder.
 
-The implementation review continues at round 4 with every previous finding and disposition. The earlier alias-only acceptance is explicitly superseded by this reviewed rule. The separate design checkpoint does not reset implementation history or accept the current code. Aim for one bounded repair followed by the assembled review; if another blocking defect requires a different rule, report that concrete scope before another speculative pass.
+This rule supersedes the earlier alias-only permission. The acceptance controls above describe the supported behavior.
