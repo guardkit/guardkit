@@ -34,8 +34,10 @@ effective_concurrency =
     min(runnable_count, resolved_cap)       when the resolved cap is positive
 ```
 
-A cap of zero retains its existing meaning of unlimited. An empty queue starts
-no task and passes no concurrency context.
+A missing, zero, or negative cap retains its existing meaning of unlimited.
+This follows the current `parallel_strategy` contract; the repair adds no new
+cap validation. An empty queue starts no task and passes no concurrency
+context.
 
 Use `effective_concurrency` only to decide whether non-SDK independent tests
 need the parallel-wave isolated copy. Keep `wave_size` nominal and keep every
@@ -54,6 +56,14 @@ use_isolated_test_copy = test_isolation_concurrency > 1
 The optional value must propagate to every `CoachValidator` that can call
 `run_independent_tests`, including deterministic Phase 4 and both primary
 and legacy Coach paths.
+
+`AutoBuildOrchestrator` and `CoachValidator` both accept positional
+construction today. Their new optional input must therefore be keyword-only
+where practical or appended at the end of the existing positional signature.
+It must never shift an existing positional binding. Production propagation
+uses the explicit keyword in either case. The same placement rule applies to
+every changed callable signature in the propagation chain, including
+`_execute_task` and `_invoke_coach_safely`.
 
 The conservative fallback is part of the contract. A direct caller that sends
 `wave_size=2` but no scheduler fact must remain isolated. The existing
@@ -100,6 +110,12 @@ The new optional value follows the existing internal call chain:
    concurrency when selecting the isolated-copy or real-worktree subprocess
    path.
 
+This selection applies only to the ordinary non-SDK subprocess branch. In the
+existing SDK exception fallback, `use_sdk` remains true and the fallback
+subprocess already skips snapshot creation. Preserve that behavior exactly:
+do not reset `use_sdk`, route the fallback through the snapshot branch, or
+claim that effective concurrency chooses every possible execution root.
+
 The following consumers retain nominal `wave_size` behavior:
 
 - `CoachValidator.is_parallel`;
@@ -127,6 +143,8 @@ coverage. It is not used as an implicit test-isolation override.
   path.
 - A direct or older caller that omits the new value falls back to nominal
   `wave_size`; its current isolation behavior is unchanged.
+- Existing positional construction of AutoBuild and CoachValidator retains
+  every binding; the new value is optional and passed by keyword.
 - A three-task group capped at two supplies effective two. Nominal reporting
   still says three.
 - Test failures still fail. The execution root changes only when the scheduler
@@ -176,7 +194,9 @@ test-command change is required.
 - Three runnable tasks capped at two pass nominal three, effective two, and
   true.
 - The helper preserves zero-as-unlimited behavior and reports no overlap for
-  fewer than two runnable tasks.
+  fewer than two runnable tasks. Missing and negative caps also retain their
+  current unlimited meaning. Controls cover an empty queue, one runnable
+  task, caps of one and two, and a cap greater than the runnable count.
 - Nominal task identifiers and existing display, queue, completion, and event
   values are unchanged.
 
@@ -196,6 +216,18 @@ test-command change is required.
   isolates, proving conservative compatibility.
 - A validator with `wave_size=1` and no explicit value still uses the real
   worktree.
+- Existing positional calls into the changed propagation chain retain their
+  current bindings; focused tests pin this compatibility where AutoBuild,
+  CoachValidator, `_execute_task`, or `_invoke_coach_safely` are exercised
+  positionally. Omission and explicit `None` both retain the nominal fallback.
+- A successful or failed SDK result continues to return directly without
+  entering subprocess snapshot selection.
+- If the configured SDK path raises and falls back to a subprocess, the
+  current `use_sdk=true` state continues to skip snapshot creation. Explicit
+  effective concurrency does not change that pre-existing execution root.
+- Component, infrastructure, custom-base, and LangGraph cases that force
+  `use_sdk=false` continue through the ordinary subprocess snapshot rule and
+  use effective concurrency when it is explicitly present.
 - Existing nominal-parallel controls for contention classification,
   conditional approval, runtime parity, non-Python routing, and whole-feature
   repair remain unchanged.
@@ -208,13 +240,14 @@ After implementation, run focused controls on the Dell through `dell-test`,
 without xdist and with candidate source first on `PYTHONPATH`:
 
 ```text
-~/.local/bin/dell-test timeout 1800 env PYTHONPATH=<candidate>/src:<candidate> <venv>/bin/python -m pytest -q -p no:xdist -p no:cacheprovider -o addopts= tests/unit/test_feature_orchestrator.py tests/unit/test_wave_same_area_sequencing.py tests/integration/test_parallel_wave_isolation.py tests/orchestrator/test_direct_mode_timeouts.py tests/orchestrator/test_declared_toolchain_detection.py
+~/.local/bin/dell-test timeout 1800 env PYTHONPATH=<candidate>/src:<candidate> <venv>/bin/python -m pytest -q -p no:xdist -p no:cacheprovider -o addopts= tests/unit/test_parallel_strategy.py tests/unit/test_feature_orchestrator.py tests/unit/test_wave_same_area_sequencing.py tests/unit/orchestrator/test_specialist_wave_size_threading.py tests/integration/test_parallel_wave_isolation.py tests/orchestrator/test_direct_mode_timeouts.py tests/orchestrator/test_declared_toolchain_detection.py
 ```
 
-Then run the repository's normal broader orchestrator suite through the same
-wrapper. Preserve the exact candidate commit, command, result count, and raw
-log. Compare any failure against the unchanged pinned base before changing
-the design or weakening a control.
+If focused results expose a regression concern, run the established broader
+`tests/orchestrator` path through the same wrapper. Preserve the exact
+candidate commit, command, result count, and raw log. Compare any failure
+against the unchanged pinned base before changing the design or weakening a
+control.
 
 ## Review
 
