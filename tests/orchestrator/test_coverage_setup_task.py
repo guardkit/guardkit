@@ -677,6 +677,69 @@ class TestALaterTaskCannotWeakenCoverage:
         assert AutoBuildOrchestrator._read_build_coverage(worktree, None) is None
         assert load_toolchain_snapshot(TASK, worktree).coverage == "make cov"
 
+    def test_each_component_has_its_own_entry(self, tmp_path: Path) -> None:
+        """Coach review 2 (P12): a component's command is recorded under that
+        component, a later task of the same component reuses it, and a root
+        task never sees it."""
+        from guardkit.orchestrator.toolchain_declaration import snapshot_task_toolchain
+
+        root = tmp_path / "proj"
+        _project(
+            root, body=DECLARES_OTHER,
+            config=COMPONENTS_CANONICAL,
+        )
+        worktree = _shared_worktree(root, tmp_path / "shared")
+        _earlier_wave_commits(
+            worktree,
+            _components_with_coverage("make web-cov", "make api-cov").replace(
+                '  test: "make test"\n', '  test: "make test"\n  coverage: "make root-cov"\n', 1
+            ),
+        )
+        orch = _orchestrator(tmp_path, root, worktree, feature=True)
+        handle = MagicMock(spec=Worktree)
+        handle.path = worktree
+        for task_id in ("TASK-WEB-1", "TASK-WEB-2", "TASK-ROOT-1"):
+            snapshot_task_toolchain(task_id, worktree, root)
+        assert orch._carry_coverage_from_worktree(
+            "TASK-WEB-1", handle, component="web", when="test"
+        ) == ("make web-cov", None)
+        assert AutoBuildOrchestrator._read_build_coverage(worktree, "web")[0] == "make web-cov"
+        assert AutoBuildOrchestrator._read_build_coverage(worktree, None) is None
+        # The worktree changes; the later web task keeps the first command.
+        _earlier_wave_commits(worktree, _components_with_coverage("make web-other", "x"))
+        assert orch._carry_coverage_from_worktree(
+            "TASK-WEB-2", handle, component="web", when="test"
+        ) == ("make web-cov", None)
+        # A root task finds no root entry and never takes the component's.
+        assert orch._carry_coverage_from_worktree(
+            "TASK-ROOT-1", handle, component=None, when="test"
+        ) == (None, None)
+        assert load_toolchain_snapshot("TASK-ROOT-1", worktree).coverage is None
+
+    def test_an_unreadable_record_never_falls_back_to_the_live_file(
+        self, tmp_path: Path
+    ) -> None:
+        """Coach review 2 (P15)."""
+        worktree = tmp_path / "shared"
+        (worktree / ".guardkit").mkdir(parents=True)
+        (worktree / ".guardkit" / "config.yaml").write_text(
+            'toolchain:\n  test: "make test"\n  coverage: "make live-cov"\n'
+        )
+        _pin(TASK, worktree, _decl(test="make test"))
+        record = AutoBuildOrchestrator._build_coverage_record_path(worktree)
+        record.parent.mkdir(parents=True, exist_ok=True)
+        record.write_text('{"": {"coverage": "make first')
+        # Reading it says "unreadable", never "nothing recorded".
+        with pytest.raises(ValueError):
+            AutoBuildOrchestrator._read_build_coverage(worktree, None)
+        orch = _orchestrator(tmp_path, worktree, worktree, feature=True)
+        handle = MagicMock(spec=Worktree)
+        handle.path = worktree
+        assert orch._carry_coverage_from_worktree(
+            TASK, handle, component=None, when="test"
+        ) == (None, None)
+        assert load_toolchain_snapshot(TASK, worktree).coverage is None
+
     def test_a_new_build_forgets_the_record(self, tmp_path: Path) -> None:
         worktree = tmp_path / "shared"
         worktree.mkdir()
@@ -713,7 +776,12 @@ class TestDoNothingCoverageCommands:
     @pytest.mark.parametrize(
         "command",
         ["true", " : ", "exit 0", "/bin/true", "echo coverage ok", "true && echo done",
-         "printf ok;", ""],
+         "printf ok;", "",
+         # Coach review 2: a last step that cannot fail, after ; or || or a
+         # new line, makes the whole command exit 0 whatever came before.
+         "npx vitest run --coverage || true", "npm test; true", "npm test; exit 0",
+         "npm run coverage || exit 0", "npm run coverage\ntrue",
+         "npm run coverage || echo skipped"],
     )
     def test_refused(self, command) -> None:
         assert does_nothing_command(command) is True
@@ -721,7 +789,10 @@ class TestDoNothingCoverageCommands:
     @pytest.mark.parametrize(
         "command",
         ["npm run coverage", "make coverage-check", COVERAGE_COMMAND,
-         "true && go test -cover ./...", "pytest --cov --cov-fail-under=80"],
+         "true && go test -cover ./...", "pytest --cov --cov-fail-under=80",
+         # Still fails when the first step fails.
+         "npm run coverage && true", "npm run coverage && echo done",
+         "true || npm run coverage"],
     )
     def test_accepted(self, command) -> None:
         assert does_nothing_command(command) is False
@@ -1025,3 +1096,66 @@ class TestTheRecordIsWrittenSafely:
             ) == ("make first-cov", None)
         pinned = load_toolchain_snapshot(TASK, worktree)
         assert (pinned.coverage, pinned.coverage_timeout) == ("make first-cov", 70)
+
+
+class TestCoachReviewTwo:
+    def test_a_fresh_snapshot_drops_an_older_builds_declaration(
+        self, tmp_path: Path
+    ) -> None:
+        """A project that removed its toolchain block between builds is not
+        judged by the older build's pinned declaration."""
+        from guardkit.orchestrator.toolchain_declaration import snapshot_task_toolchain
+
+        root = tmp_path / "proj"
+        (root / ".guardkit").mkdir(parents=True)
+        (root / ".guardkit" / "config.yaml").write_text(WITH_COVERAGE)
+        worktree = tmp_path / "shared"
+        worktree.mkdir()
+        snapshot_task_toolchain(TASK, worktree, root)
+        assert load_toolchain_snapshot(TASK, worktree).coverage == COVERAGE_COMMAND
+        (root / ".guardkit" / "config.yaml").write_text(NO_TOOLCHAIN)
+        snapshot_task_toolchain(TASK, worktree, root)
+        assert load_toolchain_snapshot(TASK, worktree) is None
+
+    def test_the_coachs_stale_probe(self, tmp_path: Path) -> None:
+        """Coach review 2's probe_stale.py, as a test: build 2 of the same task
+        in a new feature worktree of the same name sees nothing."""
+        from guardkit.orchestrator.toolchain_declaration import (
+            coverage_view_of_pin,
+            pin_coverage_command,
+            snapshot_task_toolchain,
+        )
+
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        subprocess.run(["git", "init", "-q", str(repo)], check=True)
+        (repo / ".guardkit").mkdir()
+        (repo / ".guardkit" / "config.yaml").write_text(NO_TOOLCHAIN)
+        wt = repo / ".guardkit" / "worktrees" / "FEAT-1"
+        wt.mkdir(parents=True)
+        snapshot_task_toolchain("TASK-A", wt, repo)
+        assert pin_coverage_command("TASK-A", wt, "npm run cov-from-rejected-build", 300)
+        AutoBuildOrchestrator.discard_coach_documents_snapshot(wt)
+        snapshot_task_toolchain("TASK-A", wt, repo)
+        assert coverage_view_of_pin("TASK-A", wt) is None
+        assert load_coverage_only_pin("TASK-A", wt) is None
+
+    def test_each_work_leg_forgets_an_earlier_legs_record(self, tmp_path: Path) -> None:
+        """The task-work route hands its reused checkout in as the worktree;
+        building a leg's orchestrator forgets an earlier leg's record."""
+        import threading
+
+        from guardkit.orchestrator import work_runner
+
+        checkout = tmp_path / "checkout"
+        checkout.mkdir()
+        subprocess.run(["git", "init", "-q", str(checkout)], check=True)
+        AutoBuildOrchestrator._claim_build_coverage(checkout, None, "true-ish", 30, "LEG-1")
+        assert AutoBuildOrchestrator._read_build_coverage(checkout, None) is not None
+        handle = MagicMock(spec=Worktree)
+        handle.path = checkout
+        work_runner._build_orchestrator(
+            repo_root=checkout, worktree=handle, max_turns=1, sdk_timeout=60,
+            leg_budget=120, timeout_event=threading.Event(), model=None,
+        )
+        assert AutoBuildOrchestrator._read_build_coverage(checkout, None) is None

@@ -610,20 +610,28 @@ def snapshot_task_toolchain(
     exactly as it did before the declaration existed). Never raises.
 
     A fresh snapshot is a new build of the task (a resume keeps its
-    snapshot and never comes here), so a coverage command an earlier build
-    of the same task id kept on its own (:func:`load_coverage_only_pin`) is
-    removed first (review round 2): it belonged to that build.
+    snapshot and never comes here), so whatever an earlier build of the same
+    task id pinned is removed first (review round 2, coach review 2): the
+    coverage command it kept on its own (:func:`load_coverage_only_pin`) and
+    its pinned declaration. Otherwise a project that has no `toolchain:`
+    block now would be judged by an older build's pin.
     """
     try:
-        try:
-            _coverage_only_path(task_id, Path(worktree_path)).unlink(missing_ok=True)
-        except OSError as exc:
-            logger.warning(
-                "Could not remove an earlier build's coverage-only pin for %s "
-                "(%s); that build's coverage command may be used again.",
-                task_id,
-                exc,
-            )
+        stale = (
+            _coverage_only_path(task_id, Path(worktree_path)),
+            toolchain_snapshot_paths(task_id, Path(worktree_path))["file"],
+        )
+        for path in stale:
+            try:
+                path.unlink(missing_ok=True)
+            except OSError as exc:
+                logger.warning(
+                    "Could not remove an earlier build's pin %s for %s (%s); "
+                    "it may be used again.",
+                    path,
+                    task_id,
+                    exc,
+                )
         declaration = load_toolchain_declaration(Path(repo_root))
         if declaration is None:
             # byte-equivalent no-op for every repo that has not opted in
@@ -884,28 +892,39 @@ _DO_NOTHING_COMMANDS = frozenset(
 
 
 def does_nothing_command(command: Any) -> bool:
-    """True for a command that cannot measure anything: empty, or made only of
-    ``true``, ``:``, ``exit 0``, ``/bin/true`` or ``echo``/``printf`` steps,
-    joined by ``;``, ``&&``, ``||`` or new lines. Language-agnostic; it
-    catches only the crude case, never judges a real tool's command.
+    """True for a coverage command that cannot fail, so measures nothing.
+
+    The rule (language-agnostic, not a shell parser; coach reviews 1 and 2):
+    the command is split into steps at ``;``, ``&&``, ``||`` and new lines.
+    A step "does nothing" when it is ``true``, ``:``, ``exit``, ``exit 0``,
+    ``/bin/true``, ``/usr/bin/true``, or an ``echo``/``printf`` step. The
+    command is refused when
+
+    * it is empty, or every step does nothing; or
+    * its LAST step does nothing and comes after ``;``, ``||`` or a new line
+      (``X || true``, ``X; exit 0``): it then exits 0 whatever ``X`` did.
+      ``X && true`` is accepted, because it still fails when ``X`` fails.
     """
     if not isinstance(command, str):
         return True
-    steps = [
-        " ".join(step.split()).rstrip(";").strip()
-        for step in re.split(r"&&|\|\||;|\n", command)
-    ]
-    steps = [step for step in steps if step]
-    if not steps:
+    parts = re.split(r"(&&|\|\||;|\n)", command)
+    steps = [" ".join(part.split()) for part in parts[0::2]]
+    joins = parts[1::2]
+
+    def nothing(step: str) -> bool:
+        return (
+            step in _DO_NOTHING_COMMANDS
+            or step.split()[0] in {"echo", "printf"}
+        )
+
+    pairs = [(steps[0], None)] + list(zip(steps[1:], joins))
+    pairs = [(step, join) for step, join in pairs if step]
+    if not pairs:
         return True
-    for step in steps:
-        if step in _DO_NOTHING_COMMANDS:
-            continue
-        first = step.split()[0]
-        if first in {"echo", "printf"}:
-            continue
-        return False
-    return True
+    if all(nothing(step) for step, _ in pairs):
+        return True
+    last_step, last_join = pairs[-1]
+    return nothing(last_step) and last_join in {";", "||", "\n"}
 
 
 def declares_config_file(paths: Iterable[Any]) -> bool:

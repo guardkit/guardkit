@@ -132,6 +132,35 @@ from guardkit.orchestrator.quality_gates.coach_evidence import (
 #: declare the project's coverage command and did not (20 October 2026).
 UNDECLARED_COVERAGE_CAUSE = "undeclared_coverage"
 
+#: The coverage command a BUILD first pinned from its worktree, kept once per
+#: build beside the Coach documents snapshot (coach review 1, 20 October
+#: 2026); see ``AutoBuildOrchestrator._carry_coverage_from_worktree``.
+BUILD_COVERAGE_RECORD = "build_coverage_command.json"
+
+
+def build_coverage_record_path(worktree_path: Path) -> Path:
+    """Where a build's coverage record lives: the build's private folder,
+    keyed by the worktree's name, outside the worktree on the normal layout."""
+    from guardkit.orchestrator.paths import TaskArtifactPaths
+
+    worktree_path = Path(worktree_path)
+    return TaskArtifactPaths.private_artifact_path(
+        worktree_path.name, BUILD_COVERAGE_RECORD, worktree_path
+    )
+
+
+def discard_build_coverage_record(worktree_path: Any) -> None:
+    """Forget a build's coverage record (a new build is starting). Never raises."""
+    try:
+        path = build_coverage_record_path(Path(worktree_path))
+        if path.exists():
+            path.unlink()
+    except (OSError, TypeError) as exc:
+        logger.warning(
+            "Could not clear an earlier build's coverage record for %s (%s)",
+            worktree_path, exc,
+        )
+
 # TASK-AB-COACHSUBPROC01: env > config > default (subprocess) resolution for
 # the Coach's independent test-execution mode.
 from guardkit.orchestrator.quality_gates.coach_validator import (
@@ -4274,19 +4303,10 @@ class AutoBuildOrchestrator:
             return load_toolchain_snapshot(task_id, Path(worktree.path)) is not None
         return True
 
-    #: The coverage command this BUILD first pinned from its worktree, kept
-    #: once per build beside the Coach documents snapshot (coach review 1,
-    #: 20 October 2026): every later task of the build reuses it and never
-    #: re-reads the worktree file, which any later Player can rewrite.
-    _BUILD_COVERAGE_RECORD = "build_coverage_command.json"
 
     @classmethod
     def _build_coverage_record_path(cls, worktree_path: Path) -> Path:
-        from guardkit.orchestrator.paths import TaskArtifactPaths
-
-        return TaskArtifactPaths.private_artifact_path(
-            worktree_path.name, cls._BUILD_COVERAGE_RECORD, worktree_path
-        )
+        return build_coverage_record_path(worktree_path)
 
     @staticmethod
     def _build_coverage_entry(data: Any, component: Optional[str]) -> Optional[Tuple[str, int]]:
@@ -4396,15 +4416,7 @@ class AutoBuildOrchestrator:
     def discard_build_coverage_record(cls, worktree_path: Path) -> None:
         """Forget an earlier build's coverage record when a NEW build's
         worktree is made (the same rule as the Coach documents snapshot)."""
-        try:
-            path = cls._build_coverage_record_path(Path(worktree_path))
-            if path.exists():
-                path.unlink()
-        except (OSError, TypeError) as exc:
-            logger.warning(
-                "Could not clear an earlier build's coverage record for %s (%s)",
-                worktree_path, exc,
-            )
+        discard_build_coverage_record(worktree_path)
 
     def _carry_coverage_from_worktree(
         self,

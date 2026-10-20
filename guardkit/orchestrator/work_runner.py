@@ -1047,8 +1047,17 @@ def _build_orchestrator(
     Imported lazily so ``guardkit --help`` does not pay for the orchestrator's
     import graph.
     """
-    from guardkit.orchestrator.autobuild import AutoBuildOrchestrator  # noqa: PLC0415
+    from guardkit.orchestrator.autobuild import (  # noqa: PLC0415
+        AutoBuildOrchestrator,
+        discard_build_coverage_record,
+    )
 
+    # 20 October 2026 (coach review 2): a work leg runs in a checkout that
+    # later legs reuse, handed in as the worktree, so the record of the
+    # coverage command a build first pinned would outlive this leg. Each leg
+    # is its own build: an earlier leg's record (perhaps from a rejected,
+    # rolled-back turn) is forgotten here.
+    discard_build_coverage_record(getattr(worktree, "path", None))
     return AutoBuildOrchestrator(
         repo_root=repo_root,
         existing_worktree=worktree,
