@@ -133,7 +133,7 @@ import logging
 import posixpath
 import re
 from pathlib import Path, PurePosixPath
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
@@ -686,6 +686,68 @@ def declared_coverage_command(
     return toolchain.coverage or None
 
 
+# A coverage command added for a task whose canonical repository declared NO
+# `toolchain:` block (20 October 2026, review round 1). It is kept in its own
+# file beside the pin, never turned into a declaration: with no `toolchain:`
+# block pinned, the test command and everything else keep their
+# no-declaration behaviour, and only coverage is known.
+_COVERAGE_ONLY_FILE = "coverage-only.json"
+
+
+def _coverage_only_path(task_id: str, worktree_path: Path) -> Path:
+    return toolchain_snapshot_paths(task_id, worktree_path)["dir"] / _COVERAGE_ONLY_FILE
+
+
+def load_coverage_only_pin(
+    task_id: str, worktree_path: Path
+) -> Optional[Tuple[str, int]]:
+    """The coverage command (and its timeout) pinned for a task whose
+    canonical repository declared no ``toolchain:`` block, or ``None``.
+
+    Read only when no declaration is pinned. Never raises.
+    """
+    try:
+        path = _coverage_only_path(task_id, Path(worktree_path))
+        if not path.exists():
+            return None
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        command = raw.get("coverage") if isinstance(raw, dict) else None
+        timeout = raw.get("coverage_timeout") if isinstance(raw, dict) else None
+        if not isinstance(command, str) or not command.strip():
+            return None
+        if not isinstance(timeout, int) or isinstance(timeout, bool) or timeout <= 0:
+            timeout = _DEFAULT_TIMEOUT
+        return command, timeout
+    except Exception as exc:  # noqa: BLE001 - unreadable is absent
+        logger.warning(
+            "Could not read the pinned coverage command for %s (%s); treating "
+            "it as absent.",
+            task_id,
+            exc,
+        )
+        return None
+
+
+def coverage_view_of_pin(
+    task_id: str, worktree_path: Path
+) -> Optional[ToolchainDeclaration]:
+    """What a task's pin says about coverage, as a declaration, or ``None``.
+
+    The pinned declaration when there is one. Otherwise, when only a coverage
+    command was pinned (see :func:`load_coverage_only_pin`), a declaration
+    holding that command alone. For coverage decisions ONLY (the task-start
+    check and the after-turn check): it is never handed to the Coach as the
+    project's declaration.
+    """
+    pinned = load_toolchain_snapshot(task_id, worktree_path)
+    if pinned is not None:
+        return pinned
+    only = load_coverage_only_pin(task_id, worktree_path)
+    if only is None:
+        return None
+    return ToolchainDeclaration(coverage=only[0], coverage_timeout=only[1])
+
+
 def add_coverage_to_pin(
     task_id: str,
     worktree_path: Path,
@@ -708,15 +770,38 @@ def add_coverage_to_pin(
     repository alone. Once added, the command is pinned like the rest, so a
     later turn cannot change it.
 
-    Returns the command added, or ``None`` when nothing was added: no pin,
-    the pin already declares coverage for this task, the task's component is
-    not in the pin or not in ``source``, or ``source`` declares no coverage
-    for it. Never raises.
+    When the canonical repository declared no ``toolchain:`` block at all,
+    so nothing is pinned (review round 1), the command is kept in a file of
+    its own beside the pin (:func:`load_coverage_only_pin`), for a task that
+    names no component. It is never turned into a declaration, so the test
+    command keeps its no-declaration behaviour and is never taken from
+    ``source``. A coverage command already kept there is never replaced.
+
+    Returns the command added, or ``None`` when nothing was added: the pin
+    already declares coverage for this task, the task's component is not in
+    the pin or not in ``source``, a component task has nothing pinned, or
+    ``source`` declares no coverage for it. Never raises.
     """
     try:
         pinned = load_toolchain_snapshot(task_id, worktree_path)
         if pinned is None:
-            return None
+            if component or source is None:
+                return None
+            if load_coverage_only_pin(task_id, worktree_path) is not None:
+                return None
+            command = declared_coverage_command(source, None)
+            if not command:
+                return None
+            path = _coverage_only_path(task_id, Path(worktree_path))
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(
+                json.dumps(
+                    {"coverage": command, "coverage_timeout": source.coverage_timeout},
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
+            return command
         if declared_coverage_command(pinned, component):
             return None
         command = declared_coverage_command(source, component)
@@ -921,4 +1006,6 @@ __all__ = [
     "undeclared_coverage_refusal",
     "add_coverage_to_pin",
     "declares_config_file",
+    "load_coverage_only_pin",
+    "coverage_view_of_pin",
 ]

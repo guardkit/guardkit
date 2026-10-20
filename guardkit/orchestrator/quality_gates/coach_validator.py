@@ -1943,6 +1943,18 @@ class CoachValidator:
             )
 
             self._toolchain = load_toolchain_snapshot(task_id, self.worktree_path)
+        # 20 October 2026: a coverage command pinned for a task whose
+        # canonical repository declared no `toolchain:` block (a task that
+        # set coverage up, or an earlier one in the same build). Only the
+        # coverage gate reads it; with no declaration pinned, every other
+        # command keeps its no-declaration behaviour.
+        self._coverage_only: Optional[Tuple[str, int]] = None
+        if self._toolchain is None and task_id:
+            from guardkit.orchestrator.toolchain_declaration import (
+                load_coverage_only_pin,
+            )
+
+            self._coverage_only = load_coverage_only_pin(task_id, self.worktree_path)
         if self._toolchain is not None:
             logger.info(
                 "CoachValidator honouring the repo's declared toolchain "
@@ -10471,12 +10483,15 @@ class CoachValidator:
         if self._component:
             return None
         if self._toolchain is None:
-            return None
+            only = getattr(self, "_coverage_only", None)
+            return only[0] if only else None
         return self._toolchain.coverage or None
 
     def _declared_coverage_timeout(self) -> int:
         """The declared coverage command's bound, in seconds."""
         source = self._component_toolchain or self._toolchain
+        if source is None and getattr(self, "_coverage_only", None):
+            return self._coverage_only[1]
         timeout = getattr(source, "coverage_timeout", None)
         return int(timeout) if isinstance(timeout, int) and timeout > 0 else 300
 

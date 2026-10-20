@@ -3735,7 +3735,7 @@ class AutoBuildOrchestrator:
                 implementation_mode=_implementation_mode_raw,
             )
             if coverage_refusal is not None and self._task_declares_coverage_setup(
-                task_id, worktree, _declared_task_paths
+                task_id, worktree, _declared_task_paths, component=component
             ):
                 # 20 October 2026: this task's own work is to change
                 # .guardkit/config.yaml, which is where the missing command
@@ -4174,9 +4174,11 @@ class AutoBuildOrchestrator:
         command, or ``None`` when it can (19 October 2026).
 
         Reads the PINNED declaration, the same one the Coach reads
-        (``load_toolchain_snapshot``), so the answer here is the answer the
-        Coach would give after every turn. A failure to decide is ``None``:
-        the task then runs exactly as it did before this check existed.
+        (``load_toolchain_snapshot``), or the coverage command pinned on its
+        own when no declaration is (``coverage_view_of_pin``, 20 October
+        2026), so the answer here is the answer the Coach would give after
+        every turn. A failure to decide is ``None``: the task then runs
+        exactly as it did before this check existed.
         """
         if self.ablation_mode:
             # Ablation runs skip the Coach and approve every turn, so the
@@ -4184,13 +4186,13 @@ class AutoBuildOrchestrator:
             return None
         try:
             from guardkit.orchestrator.toolchain_declaration import (
-                load_toolchain_snapshot,
+                coverage_view_of_pin,
                 undeclared_coverage_refusal,
             )
 
             return undeclared_coverage_refusal(
                 task_type=task_type,
-                toolchain=load_toolchain_snapshot(task_id, Path(worktree.path)),
+                toolchain=coverage_view_of_pin(task_id, Path(worktree.path)),
                 component=component,
                 implementation_mode=implementation_mode,
             )
@@ -4232,15 +4234,19 @@ class AutoBuildOrchestrator:
         task_id: str,
         worktree: "Worktree",
         declared_paths: List[str],
+        *,
+        component: Optional[str] = None,
     ) -> bool:
         """May a task that needs coverage, in a project declaring none, have
         its turn to declare it? (20 October 2026)
 
-        Yes only when the task says it will create or change
-        ``.guardkit/config.yaml`` and a declaration is pinned for it (the
-        command is added to that pin after the turn). A project with no
-        ``toolchain:`` block at all is not covered here: such a task is
-        stopped before any work, as before.
+        Yes when the task says it will create or change
+        ``.guardkit/config.yaml``. The command it writes is added after the
+        turn: to the pinned declaration, or, when the project declared no
+        ``toolchain:`` block at all, kept on its own beside the pin (review
+        round 1). A task naming a component in a project with nothing pinned
+        is the one exception: its component cannot be resolved by the Coach
+        whatever the turn writes, so it is stopped before any work as before.
         """
         from guardkit.orchestrator.toolchain_declaration import (
             declares_config_file,
@@ -4249,7 +4255,9 @@ class AutoBuildOrchestrator:
 
         if not declares_config_file(declared_paths):
             return False
-        return load_toolchain_snapshot(task_id, Path(worktree.path)) is not None
+        if component:
+            return load_toolchain_snapshot(task_id, Path(worktree.path)) is not None
+        return True
 
     def _carry_coverage_from_worktree(
         self,
@@ -4311,8 +4319,8 @@ class AutoBuildOrchestrator:
         if not due:
             return None
         from guardkit.orchestrator.toolchain_declaration import (
+            coverage_view_of_pin,
             declared_coverage_command,
-            load_toolchain_snapshot,
             undeclared_coverage_refusal,
         )
 
@@ -4321,7 +4329,7 @@ class AutoBuildOrchestrator:
             task_id, worktree, component=component,
             when=f"declared by this task's own turn {turn}",
         )
-        pinned = load_toolchain_snapshot(task_id, Path(worktree.path))
+        pinned = coverage_view_of_pin(task_id, Path(worktree.path))
         if declared_coverage_command(pinned, component):
             self._coverage_due_from_task = None
             return None

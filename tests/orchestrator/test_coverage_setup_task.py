@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+from types import SimpleNamespace
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -43,6 +44,7 @@ from guardkit.orchestrator.toolchain_declaration import (
     ToolchainDeclaration,
     add_coverage_to_pin,
     declares_config_file,
+    load_coverage_only_pin,
     load_toolchain_snapshot,
     toolchain_snapshot_paths,
 )
@@ -178,6 +180,10 @@ class _Turns:
         self.new_config = new_config
         self.player_turns = 0
         self.coach_receipts: List[Optional[Dict[str, Any]]] = []
+        # What each Coach saw as the project's declared test command, and
+        # whether it held a declaration at all.
+        self.coach_test_commands: List[Optional[str]] = []
+        self.coach_had_declaration: List[bool] = []
 
     def player(self, *args: Any, **kwargs: Any) -> AgentInvocationResult:
         self.player_turns += 1
@@ -190,6 +196,8 @@ class _Turns:
     def coach(self, *args: Any, **kwargs: Any) -> AgentInvocationResult:
         validator = CoachValidator(str(self.worktree), task_id=kwargs["task_id"])
         self.coach_receipts.append(validator.run_declared_coverage())
+        self.coach_test_commands.append(validator._declared_test_command())
+        self.coach_had_declaration.append(validator._toolchain is not None)
         return _approve(kwargs["turn"])
 
 
@@ -204,6 +212,12 @@ def _run_real_loop(orch: AutoBuildOrchestrator, turns: _Turns):
         AutoBuildOrchestrator, "_resolve_tests_required", return_value=False,
     ), patch.object(
         AutoBuildOrchestrator, "_build_player_summary", return_value="Player ok",
+    ), patch(
+        # The orchestrator's own Phase-4 test specialist is not the subject
+        # here (in a project with no declared test command it would start a
+        # model call); it reports "skipped", so Phase 5 does not run either.
+        "guardkit.orchestrator.specialist_invocations.invoke_test_orchestrator",
+        new=AsyncMock(return_value=SimpleNamespace(status="skipped")),
     ):
         return orch.orchestrate(
             task_id=TASK, requirements="Declare the coverage command",
@@ -310,20 +324,96 @@ class TestATaskThatDeclaresTheCommand:
         assert result.final_decision == "approved", result.error
         assert turns.coach_receipts[0]["command"] == COVERAGE_COMMAND
 
-    def test_a_project_with_no_toolchain_block_still_stops_before_work(
+
+
+NO_TOOLCHAIN = "memory:\n  project: demo\n"
+
+
+class TestAProjectWithNoToolchainBlock:
+    """Review round 1: the first declaration can be made through a build too.
+    Only the coverage command is ever taken from the worktree; the test
+    command keeps its no-declaration behaviour."""
+
+    def test_first_time_setup_is_measured_on_the_same_turn(
         self, tmp_path: Path
     ) -> None:
-        """Nothing is pinned to add the command to, so the task is stopped as
-        before, with the message that says what to add."""
         root = tmp_path / "proj"
-        _project(root, body=DECLARES_CONFIG, config="memory:\n  project: demo\n")
+        _project(root, body=DECLARES_CONFIG, config=NO_TOOLCHAIN)
         worktree = _shared_worktree(root, tmp_path / "shared")
         orch = _orchestrator(tmp_path, root, worktree)
-        turns = _Turns(worktree, WITH_COVERAGE)
+        # The turn writes a whole toolchain block, test command included.
+        turns = _Turns(worktree, NO_TOOLCHAIN + WITH_COVERAGE)
+        result = _run_real_loop(orch, turns)
+
+        assert turns.player_turns == 1
+        assert result.final_decision == "approved", result.error
+        receipt = turns.coach_receipts[0]
+        assert receipt["command"] == COVERAGE_COMMAND
+        assert receipt["coverage_met"] is True
+        assert (worktree / "coverage-ran.marker").exists()
+        # The test command the turn wrote was NOT taken: no declaration is
+        # pinned, so the Coach holds none and declares no test command.
+        assert turns.coach_had_declaration == [False]
+        assert turns.coach_test_commands == [None]
+        assert load_toolchain_snapshot(TASK, worktree) is None
+        assert load_coverage_only_pin(TASK, worktree) == (COVERAGE_COMMAND, 120)
+
+    def test_still_absent_after_the_turn_stops_there(self, tmp_path: Path) -> None:
+        root = tmp_path / "proj"
+        _project(root, body=DECLARES_CONFIG, config=NO_TOOLCHAIN)
+        worktree = _shared_worktree(root, tmp_path / "shared")
+        orch = _orchestrator(tmp_path, root, worktree)
+        turns = _Turns(worktree, NO_TOOLCHAIN + 'toolchain:\n  test: "make test"\n')
+        result = _run_real_loop(orch, turns)
+
+        assert turns.player_turns == 1
+        assert turns.coach_receipts == []
+        assert result.final_decision == "configuration_error"
+        assert result.error.startswith("Stopped after the task's turn")
+        assert "after that turn the file still declares none" in result.error
+        assert load_coverage_only_pin(TASK, worktree) is None
+
+    def test_an_earlier_wave_adding_the_first_declaration_is_seen(
+        self, tmp_path: Path
+    ) -> None:
+        root = tmp_path / "proj"
+        _project(root, body=DECLARES_OTHER, config=NO_TOOLCHAIN)
+        worktree = _shared_worktree(root, tmp_path / "shared")
+        _earlier_wave_commits(worktree, NO_TOOLCHAIN + WITH_COVERAGE)
+        orch = _orchestrator(tmp_path, root, worktree)
+        turns = _Turns(worktree, None)
+        result = _run_real_loop(orch, turns)
+
+        assert turns.player_turns == 1
+        assert result.final_decision == "approved", result.error
+        assert turns.coach_receipts[0]["command"] == COVERAGE_COMMAND
+        assert turns.coach_had_declaration == [False]
+        assert turns.coach_test_commands == [None]
+
+    def test_without_the_file_it_still_stops_before_work(self, tmp_path: Path) -> None:
+        root = tmp_path / "proj"
+        _project(root, body=DECLARES_OTHER, config=NO_TOOLCHAIN)
+        worktree = _shared_worktree(root, tmp_path / "shared")
+        orch = _orchestrator(tmp_path, root, worktree)
+        turns = _Turns(worktree, NO_TOOLCHAIN + WITH_COVERAGE)
         result = _run_real_loop(orch, turns)
         assert turns.player_turns == 0
-        assert result.final_decision == "configuration_error"
         assert "stopped before any work was done" in result.error
+
+    def test_a_component_task_with_nothing_pinned_is_not_offered_a_turn(
+        self, tmp_path: Path
+    ) -> None:
+        """With nothing pinned the Coach cannot resolve any component, so the
+        turn is not offered (a real task naming an undeclared component
+        already fails at task load)."""
+        orch = _orchestrator(tmp_path, tmp_path, tmp_path)
+        worktree = MagicMock(spec=Worktree)
+        worktree.path = tmp_path
+        paths = [".guardkit/config.yaml"]
+        assert orch._task_declares_coverage_setup(TASK, worktree, paths) is True
+        assert orch._task_declares_coverage_setup(
+            TASK, worktree, paths, component="web"
+        ) is False
 
 
 class TestEarlierWorkInTheSameBuild:
@@ -439,8 +529,26 @@ class TestAddCoverageToPin:
         assert add_coverage_to_pin(TASK, tmp_path, _decl(coverage="true")) is None
         assert load_toolchain_snapshot(TASK, tmp_path).coverage == "make cov"
 
-    def test_nothing_without_a_pin_or_a_source_command(self, tmp_path: Path) -> None:
-        assert add_coverage_to_pin(TASK, tmp_path, _decl(coverage="x")) is None
+    def test_nothing_pinned_keeps_coverage_alone(self, tmp_path: Path) -> None:
+        source = _decl(test="true", coverage="make cov", coverage_timeout=45)
+        assert add_coverage_to_pin(TASK, tmp_path, source, "web") is None
+        assert add_coverage_to_pin(TASK, tmp_path, source) == "make cov"
+        assert load_toolchain_snapshot(TASK, tmp_path) is None
+        assert load_coverage_only_pin(TASK, tmp_path) == ("make cov", 45)
+        # Never replaced.
+        assert add_coverage_to_pin(TASK, tmp_path, _decl(coverage="true")) is None
+        assert load_coverage_only_pin(TASK, tmp_path) == ("make cov", 45)
+        validator = CoachValidator(str(tmp_path), task_id=TASK)
+        assert validator._toolchain is None
+        assert validator._declared_test_command() is None
+        assert validator._declared_coverage_command() == "make cov"
+        assert validator._declared_coverage_timeout() == 45
+        # A component task never borrows it.
+        assert CoachValidator(
+            str(tmp_path), task_id=TASK, component="web"
+        )._declared_coverage_command() is None
+
+    def test_nothing_without_a_source_command(self, tmp_path: Path) -> None:
         _pin(TASK, tmp_path, _decl(test="make test"))
         assert add_coverage_to_pin(TASK, tmp_path, None) is None
         assert add_coverage_to_pin(TASK, tmp_path, _decl(test="t")) is None
