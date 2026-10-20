@@ -2267,6 +2267,8 @@ class AgentInvoker:
     #: front of the reviewer (what the round made or changed beyond the task
     #: document). Read by the orchestrator when the reviewer approves the turn.
     repair_round_inventory: Optional[FrozenSet[str]] = None
+    #: This Coach turn's repair-round review (``_repair_round_review``).
+    _repair_review: Optional[Dict[str, Any]] = None
 
     # Class-level lock to serialise git operations across parallel tasks (TASK-FIX-VL04)
     _git_lock = threading.RLock()
@@ -3235,6 +3237,13 @@ class AgentInvoker:
                     gather_timeout=gather_timeout,
                 )
 
+            # A gate-driven repair round (20 October 2026): what the round
+            # made, changed or deleted beyond the task document, read from git
+            # on every repair-round turn whatever audit path the task takes.
+            # The prompt's repair section and the protected-file refusal below
+            # both come from this one step.
+            self._repair_review = self._repair_round_review(task_id)
+
             # Build prompt for Coach with verification context.
             prompt = self._build_coach_prompt(
                 task_id, turn, requirements, player_report, honesty_verification,
@@ -3250,7 +3259,7 @@ class AgentInvoker:
             # 2026): in a repair round the plan audit leaves the extra files to
             # the reviewer, so a reviewer that has not seen them all, and the
             # failing check, must not judge the turn.
-            repair_sections = self._repair_round_sections(evidence_bundle)
+            repair_sections = self._repair_round_sections(self._repair_review)
             if repair_sections and not any(
                 section in prompt for section in repair_sections
             ):
@@ -3606,6 +3615,18 @@ class AgentInvoker:
             self._reconcile_coach_narrative_with_records(
                 decision=decision,
                 evidence_bundle=evidence_bundle,
+                task_id=task_id,
+                turn=turn,
+                coach_output_path=coach_output_path,
+            )
+
+            # Last, so no guard above can promote past it (20 October 2026):
+            # a repair round that made, changed or deleted a protected file
+            # the task document does not name is refused, whatever the
+            # reviewer said and whatever audit path the task took.
+            self._enforce_repair_round_protected(
+                decision=decision,
+                review=self._repair_review,
                 task_id=task_id,
                 turn=turn,
                 coach_output_path=coach_output_path,
@@ -4326,7 +4347,9 @@ that criterion is NOT satisfied for approval purposes.
         )
         # 20 October 2026: in a gate-driven repair round only, the extra files
         # for the reviewer to judge against the failing gate. "" otherwise.
-        repair_round_section = self._render_repair_round_section(evidence_bundle)
+        repair_round_section = self._render_repair_round_section(
+            getattr(self, "_repair_review", None)
+        )
 
         # Build criteria verification example (legacy only — v4 uses findings[])
         verification_example = ""
@@ -4581,7 +4604,7 @@ Turn: {turn}
             # A repair round's section that did not survive is tried once more
             # with only the gate's output cut shorter; the file lists are never
             # cut. invoke_coach refuses the turn if it still did not survive.
-            sections = self._repair_round_sections(evidence_bundle)
+            sections = self._repair_round_sections(getattr(self, "_repair_review", None))
             if sections and not any(section in prompt for section in sections):
                 shorter = sections[-1]
                 prompt = self._trim_synthesis_prompt(
@@ -4608,37 +4631,31 @@ Turn: {turn}
 
     def _render_repair_round_section(
         self,
-        evidence_bundle: Optional["CoachEvidenceBundle"],
+        review: Optional[Dict[str, Any]],
         gate_output_limit: Optional[int] = None,
     ) -> str:
         """Render ``## This is a repair round``, or ``""`` (20 October 2026).
 
-        Present only when this invoker was handed a repair round in memory. In
-        a repair round the plan audit does not refuse the turn for how many
-        extra files the round made (plan_audit._repair_round_split); this
-        section puts in front of the reviewer every file the round changed
-        that the task document does not name (read from git since the round
-        started, see ``_plan_audit_against_task_document``), says which ones
-        the failing gate's output names, shows the end of that output, and
-        asks the reviewer to refuse the turn if any of them is not needed to
-        make the failing check pass. Every file is listed; only the gate's
-        output is ever cut. Protected files are refused by the audit whatever
-        the reviewer decides. ``invoke_coach`` does not run the model unless
-        this section reaches it whole.
+        ``review`` is :meth:`_repair_round_review` for this turn, ``None``
+        outside a repair round. The section puts in front of the reviewer
+        every file the round made, changed or deleted that the task document
+        does not name, says which ones the failing gate's output names, shows
+        the end of that output, and asks the reviewer to refuse the turn if
+        any of them is not needed to make the failing check pass. Every file
+        is listed; only the gate's output is ever cut. ``invoke_coach`` does
+        not run the model unless this section reaches it whole, and refuses a
+        protected file whatever the reviewer decides.
         """
         round_ = getattr(self, "repair_round", None)
-        if round_ is None:
+        if round_ is None or not review:
             return ""
         from guardkit.orchestrator.feature_check import cut_tail
         from guardkit.orchestrator.repair_round import GATE_OUTPUT_PROMPT_LIMIT
 
         limit = GATE_OUTPUT_PROMPT_LIMIT if gate_output_limit is None else gate_output_limit
-        audit = getattr(evidence_bundle, "plan_audit", None)
-        audit = audit if isinstance(audit, dict) else {}
-        facts = audit.get("repair_round") if isinstance(audit.get("repair_round"), dict) else {}
-        named = set(facts.get("files_the_gate_names") or [])
-        made = sorted(facts.get("files_made_this_round") or [])
-        changed = sorted(facts.get("files_changed_this_round") or [])
+        named = set(review.get("files_the_gate_names") or [])
+        made = sorted(review.get("files_made_this_round") or [])
+        changed = sorted(review.get("files_changed_this_round") or [])
 
         def _listed(paths: List[str]) -> List[str]:
             if not paths:
@@ -4660,14 +4677,14 @@ Turn: {turn}
             "",
             "For each file listed below, decide whether it is needed to make the "
             "failing check pass. If any of them is unrelated product work, refuse "
-            "the turn (feedback, must_fix) and name the file. Protected files "
+            "the turn (feedback, must_fix) and name the file. A protected file "
             "(migrations, container, dependency, deploy and environment files) "
-            "are refused by the plan audit whatever you decide.",
+            "made, changed or deleted here is refused whatever you decide.",
             "",
             "Files this round made that the task document does not name:",
             *_listed(made),
             "",
-            "Existing files this round changed that the task document does not name:",
+            "Existing files this round changed or deleted that the task document does not name:",
             *_listed(changed),
             "",
             "The failing check's output, as the builder was given it (the end of it):",
@@ -4678,18 +4695,128 @@ Turn: {turn}
         ]
         return "\n".join(lines)
 
-    def _repair_round_sections(
-        self, evidence_bundle: Optional["CoachEvidenceBundle"]
-    ) -> Tuple[str, ...]:
+    def _repair_round_sections(self, review: Optional[Dict[str, Any]]) -> Tuple[str, ...]:
         """The repair-round section as it may be sent: whole, then with only
         the gate's output cut shorter. ``()`` outside a repair round."""
-        full = self._render_repair_round_section(evidence_bundle)
+        full = self._render_repair_round_section(review)
         if not full:
             return ()
         short = self._render_repair_round_section(
-            evidence_bundle, gate_output_limit=self._REPAIR_SECTION_SHORT_GATE_OUTPUT
+            review, gate_output_limit=self._REPAIR_SECTION_SHORT_GATE_OUTPUT
         )
         return (full,) if short == full else (full, short)
+
+    def _repair_round_review(self, task_id: str) -> Optional[Dict[str, Any]]:
+        """What this repair-round turn made, changed or deleted, from git.
+
+        Runs on every repair-round turn before the Coach, whatever audit path
+        the task takes (a task document with file sections, a player's note,
+        or no declaration at all). ``None`` outside a repair round, and when
+        the round does not belong to this task's history or git cannot say
+        (``PlanAuditor._repair_round_facts``), in which case the plan audit is
+        an ordinary one too. Renames are a removed path and a new path. Never
+        raises. Sets :attr:`repair_round_inventory` (the non-protected files
+        listed) for the orchestrator to carry if the reviewer approves.
+        """
+        self.repair_round_inventory = None
+        round_ = getattr(self, "repair_round", None)
+        if round_ is None:
+            return None
+        try:
+            from guardkit.tasks.state_bridge import TaskStateBridge
+            from installer.core.commands.lib.plan_audit import (
+                PlanAuditor,
+                _is_protected,
+                _repair_round_protected,
+            )
+
+            declared = self._read_declared_file_sections(task_id)
+            declared, _, _ = self._resolve_bare_declared_names(declared)
+            declared_paths = set(declared.get("create") or []) | set(
+                declared.get("modify") or []
+            )
+            induced = TaskStateBridge.orchestrator_induced_paths_for(
+                task_id, repo_root=self.worktree_path
+            )
+
+            def _excluded(path: str) -> bool:
+                return path in induced or _is_orchestrator_managed_path(
+                    path, worktree_path=self.worktree_path
+                )
+
+            facts = PlanAuditor(
+                workspace_root=self.worktree_path,
+                path_exclusion=_excluded,
+                repair_round=round_,
+            )._repair_round_facts(task_id)
+            if not facts:
+                return None
+            existed = set(facts.get("existed_at_round_start") or ())
+            changed_this_round = list(facts.get("changed_this_round") or ())
+            beyond = [p for p in changed_this_round if p not in declared_paths]
+            protected = sorted(_repair_round_protected(changed_this_round, declared_paths))
+            self.repair_round_inventory = frozenset(
+                path for path in beyond if not _is_protected(path)
+            )
+            return {
+                "round_number": facts.get("round_number"),
+                "start_commit": facts.get("start_commit"),
+                "files_the_gate_names": sorted(facts.get("implicated_paths") or []),
+                "files_made_this_round": sorted(p for p in beyond if p not in existed),
+                "files_changed_this_round": sorted(p for p in beyond if p in existed),
+                "protected": protected,
+            }
+        except Exception as exc:  # noqa: BLE001 — never fails a Coach turn
+            logger.warning(
+                "[%s] The repair round's changes could not be read (%s); the "
+                "turn is judged as an ordinary one.",
+                task_id, type(exc).__name__,
+            )
+            return None
+
+    def _enforce_repair_round_protected(
+        self,
+        *,
+        decision: Dict[str, Any],
+        review: Optional[Dict[str, Any]],
+        task_id: str,
+        turn: int,
+        coach_output_path: "Path",
+    ) -> None:
+        """Refuse a repair-round turn that touched a protected file.
+
+        Deterministic, and the last guard: an ``approve`` becomes
+        ``feedback`` with a must_fix naming the files, and a ``feedback``
+        gains the same must_fix. Re-persisted to ``coach_turn_N.json``.
+        """
+        protected = list((review or {}).get("protected") or [])
+        if not protected:
+            return
+        issue = {
+            "severity": "must_fix",
+            "category": "repair_round_protected",
+            "description": (
+                f"This repair round made, changed or deleted {len(protected)} "
+                "protected file(s) the task document does not name: "
+                + ", ".join(protected)
+                + ". A repair round never does; put them back as they were."
+            ),
+            "details": {"protected": protected},
+        }
+        issues = decision.setdefault("issues", [])
+        if not any(i.get("category") == "repair_round_protected" for i in issues if isinstance(i, dict)):
+            issues.append(issue)
+        if decision.get("decision") == "approve":
+            logger.warning(
+                "[%s] Turn %s: the reviewer approved, but the repair round "
+                "touched protected file(s) %s; refused.",
+                task_id, turn, ", ".join(protected),
+            )
+            decision["decision"] = "feedback"
+            decision["rationale"] = issue["description"]
+        self._persist_coach_decision(
+            decision, coach_output_path, tag="REPAIR-ROUND-PROTECTED"
+        )
 
     # 18 October 2026: how much of one run's output (stdout and stderr
     # together) the whole-feature check section shows.
@@ -14450,8 +14577,6 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
         whether or not the player also wrote its own note of what it intended
         to touch. A build graded against its own note is not graded.
         """
-        # Set again below only by a repair round's audit of this turn.
-        self.repair_round_inventory = None
         declared = self._read_declared_file_sections(task_id)
         if declared["create"] is not None or declared["modify"] is not None:
             return self._plan_audit_against_task_document(task_id, declared)
@@ -14891,14 +15016,6 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                 path for path in repair_facts.get("changed_this_round") or []
                 if path not in declared_paths
             ]
-            from installer.core.commands.lib.plan_audit import _is_protected
-
-            # What the reviewer is shown on this turn; if it approves the
-            # turn, these (never a protected file) are carried, in memory, to
-            # this task's next repair round.
-            self.repair_round_inventory = frozenset(
-                path for path in beyond if not _is_protected(path)
-            )
             block["repair_round"] = {
                 "round_number": repair_facts.get("round_number"),
                 "start_commit": repair_facts.get("start_commit"),

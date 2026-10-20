@@ -78,7 +78,10 @@ def _write(repo: Path, rel: str, text: str = "// invented\n") -> None:
 
 
 def make_project(
-    tmp_path: Path, declare_modify: bool = True, declare_create: bool = True
+    tmp_path: Path,
+    declare_modify: bool = True,
+    declare_create: bool = True,
+    direct_mode: bool = False,
 ) -> Path:
     """A small invented web project on its feature branch."""
     repo = tmp_path / "main" / ".guardkit" / "worktrees" / FEATURE_ID
@@ -106,7 +109,8 @@ def make_project(
         "title: Build the shelf page\n"
         "status: in_progress\n"
         "task_type: scaffolding\n"
-        "---\n\n# Build the shelf page\n\n"
+        + ("implementation_mode: direct\n" if direct_mode else "")
+        + "---\n\n# Build the shelf page\n\n"
         + (
             "## Files to Create\n\n" + "".join(f"- `{p}`\n" for p in PLANNED_CREATE)
             if declare_create
@@ -238,6 +242,12 @@ def player_writing(
         folder = repo / ".guardkit" / "autobuild" / task_id
         folder.mkdir(parents=True, exist_ok=True)
         (folder / f"player_turn_{turn}.json").write_text(json.dumps(report, indent=2))
+        if invoker._get_implementation_mode(task_id) == "direct":
+            invoker._write_direct_mode_results(task_id, report, success=True)
+            return AgentInvocationResult(
+                task_id=task_id, turn=turn, agent_type="player", success=True,
+                report=report, duration_seconds=60.0,
+            )
         invoker._write_task_work_results(
             task_id,
             {
@@ -779,3 +789,61 @@ class TestARenameIsSeen:
         assert issues and "deploy/Dockerfile" in issues[0]["description"]
         # The reviewer was shown the path the file left, too.
         assert "- `deploy/Dockerfile`" in _repair_section(outcome["prompts"])
+
+
+class TestEveryAuditPathGetsTheReview:
+    """The repair review and the protected refusal run on every repair-round
+    turn before the Coach, whatever audit path the task takes."""
+
+    @pytest.mark.parametrize(
+        "direct_mode", [False, True], ids=["no-declarations", "direct-mode"]
+    )
+    def test_a_migration_is_refused_and_an_unrelated_edit_is_listed(
+        self, tmp_path: Path, direct_mode: bool
+    ) -> None:
+        # No "files to create", no "files to modify", no saved plan, and no
+        # path in the acceptance criteria: the plan audit has nothing to
+        # compare and is skipped (or, in direct mode, not run at all).
+        repo = make_project(
+            tmp_path, declare_create=False, declare_modify=False, direct_mode=direct_mode
+        )
+        first = run_round(repo, {"apps/web/src/App.tsx": "export const App = () => 1;\n"})
+        assert first["decision"] == "approved", first["history"][-1].coach_result.report
+
+        outcome = reopen_and_repair(
+            repo,
+            {
+                "tests/e2e/sign-in.ts": "export const signIn = 1;\n",
+                "apps/api/src/server.ts": "export const serve = () => 2; // billing\n",
+                "db/migrations/0003_seed_books.sql": "insert into books values (1);\n",
+            },
+            model_verdict=APPROVE,
+        )
+
+        section = _repair_section(outcome["prompts"])
+        assert "- `apps/api/src/server.ts`" in section
+        assert "- `tests/e2e/sign-in.ts`" in section
+        assert outcome["decision"] != "approved"
+        report = outcome["history"][-1].coach_result.report
+        assert report["decision"] == "feedback"
+        protected = [
+            i for i in report.get("issues", []) if i.get("category") == "repair_round_protected"
+        ]
+        assert protected and "db/migrations/0003_seed_books.sql" in protected[0]["description"]
+        assert protected[0]["severity"] == "must_fix"
+        # The turn record on disk says the same (the late-approval reader).
+        private = TaskArtifactPaths.task_private_dir(TASK_ID, repo)
+        assert json.loads((private / "coach_turn_1.json").read_text())["decision"] == "feedback"
+        # Nothing was carried: the turn was not approved.
+        assert outcome["fo"]._repair_approvals.get(TASK_ID) is None
+
+    def test_without_a_protected_file_the_reviewers_approval_stands(self, tmp_path: Path) -> None:
+        repo = make_project(tmp_path, declare_create=False, declare_modify=False)
+        assert run_round(
+            repo, {"apps/web/src/App.tsx": "export const App = () => 1;\n"}
+        )["decision"] == "approved"
+        outcome = reopen_and_repair(
+            repo, {"tests/e2e/sign-in.ts": "export const signIn = 1;\n"}, model_verdict=APPROVE
+        )
+        assert outcome["decision"] == "approved"
+        assert outcome["fo"]._repair_approvals[TASK_ID] == {"tests/e2e/sign-in.ts"}

@@ -253,6 +253,8 @@ def _audit(root: Path, repair_round: Optional[RepairRound] = None) -> AgentInvok
     invoker = AgentInvoker(worktree_path=root, max_turns_per_agent=1, sdk_timeout_seconds=10)
     invoker.repair_round = repair_round
     invoker.last_verdict = invoker._compute_plan_audit_verdict(TASK_ID)  # type: ignore[attr-defined]
+    # The step every repair-round Coach turn runs before the model.
+    invoker.last_review = invoker._repair_round_review(TASK_ID)  # type: ignore[attr-defined]
     return invoker
 
 
@@ -423,11 +425,14 @@ class TestTheAuditInARepairRound:
         # A file the task document names is the task's own work: not listed.
         _write(repo, "web/src/ShelfPage.tsx", "export const ShelfPage = () => 2;\n")
 
-        verdict = _verdict(repo, round_)
+        turn = _audit(repo, round_)
+        verdict = turn.last_verdict  # type: ignore[attr-defined]
+        review = turn.last_review  # type: ignore[attr-defined]
 
         assert verdict["extra_modifications"] == []  # the ordinary audit is silent
-        assert verdict["repair_round"]["files_changed_this_round"] == ["api/src/server.ts"]
-        assert verdict["repair_round"]["files_made_this_round"] == ["tests/e2e/sign-in.ts"]
+        for listed in (verdict["repair_round"], review):
+            assert listed["files_changed_this_round"] == ["api/src/server.ts"]
+            assert listed["files_made_this_round"] == ["tests/e2e/sign-in.ts"]
 
     def test_a_later_re_entry_does_not_recount_what_a_repair_approved(
         self, repo: Path
@@ -614,14 +619,13 @@ class TestTheReviewersPrompt:
     def _section(self, repair_round: Optional[RepairRound]) -> str:
         invoker = AgentInvoker(worktree_path=Path("/nonexistent"))
         invoker.repair_round = repair_round
-        bundle = SimpleNamespace(plan_audit={
-            "repair_round": {
-                "files_the_gate_names": ["tests/e2e/shelf.spec.ts"],
-                "files_made_this_round": ["scripts/seed-owner.sh", "api/billing/invoice.ts"],
-                "files_changed_this_round": ["tests/e2e/shelf.spec.ts"],
-            },
-        })
-        return invoker._render_repair_round_section(bundle)
+        review = {
+            "files_the_gate_names": ["tests/e2e/shelf.spec.ts"],
+            "files_made_this_round": ["scripts/seed-owner.sh", "api/billing/invoice.ts"],
+            "files_changed_this_round": ["tests/e2e/shelf.spec.ts"],
+            "protected": [],
+        }
+        return invoker._render_repair_round_section(review)
 
     def test_a_repair_round_asks_the_reviewer_to_judge_every_file(self) -> None:
         text = self._section(RepairRound(2, "abc", GATE_OUTPUT))
