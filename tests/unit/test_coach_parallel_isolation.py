@@ -16,6 +16,7 @@ independent-test failures when multiple tasks share the same worktree.
 """
 
 import sys
+import inspect
 from pathlib import Path
 from unittest.mock import MagicMock, patch, call
 import subprocess
@@ -31,18 +32,50 @@ from guardkit.orchestrator.quality_gates.coach_validator import (
 )
 
 
+def test_effective_concurrency_is_end_appended_on_positional_apis() -> None:
+    from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
+    from guardkit.orchestrator.feature_orchestrator import FeatureOrchestrator
+    from guardkit.orchestrator.specialist_invocations import (
+        _deterministic_phase_4_block,
+        _run_deterministic_phase_4,
+        invoke_test_orchestrator,
+    )
+
+    changed_callables = (
+        AutoBuildOrchestrator.__init__,
+        AutoBuildOrchestrator._invoke_coach_safely,
+        AutoBuildOrchestrator._invoke_coach_legacy,
+        AutoBuildOrchestrator._invoke_coach_primary,
+        FeatureOrchestrator._execute_task,
+        CoachValidator.__init__,
+        _run_deterministic_phase_4,
+        _deterministic_phase_4_block,
+        invoke_test_orchestrator,
+    )
+    for changed_callable in changed_callables:
+        assert list(inspect.signature(changed_callable).parameters)[-1] == (
+            "effective_concurrency"
+        )
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 
-def _make_validator(tmp_path: Path, wave_size: int = 1, test_cmd: str = "pytest tests/ -v") -> CoachValidator:
+def _make_validator(
+    tmp_path: Path,
+    wave_size: int = 1,
+    test_cmd: str = "pytest tests/ -v",
+    effective_concurrency: int | None = None,
+) -> CoachValidator:
     """Create a minimal CoachValidator for parallel isolation testing."""
     validator = CoachValidator(
         worktree_path=str(tmp_path),
         task_id="TASK-ABFIX-005",
         test_command=test_cmd,
         wave_size=wave_size,
+        effective_concurrency=effective_concurrency,
     )
     # Force subprocess execution mode so isolation path is reachable
     validator._coach_test_execution = "subprocess"
@@ -145,7 +178,9 @@ class TestClassifyFailureParallelWave:
 
     def test_no_output_parallel_returns_contention(self, tmp_path: Path) -> None:
         """No test output + parallel (wave_size=2) → ("parallel_contention", "high")."""
-        validator = _make_validator(tmp_path, wave_size=2)
+        validator = _make_validator(
+            tmp_path, wave_size=2, effective_concurrency=2
+        )
         assert validator._classify_test_failure(None) == ("parallel_contention", "high")
 
     def test_unmatched_output_serial_returns_code_na(self, tmp_path: Path) -> None:
@@ -235,6 +270,88 @@ class TestIsolationRouting:
         mock_run.assert_not_called()
         assert result.tests_passed is True
 
+    def test_nominal_parallel_effective_one_uses_real_checkout(
+        self, tmp_path: Path
+    ) -> None:
+        validator = _make_validator(
+            tmp_path, wave_size=2, effective_concurrency=1
+        )
+
+        with patch.object(validator, "_run_isolated_tests") as mock_isolated:
+            with patch(
+                "subprocess.run", return_value=_make_completed_process()
+            ) as mock_run:
+                validator.run_independent_tests(
+                    task_work_results=_passing_task_work_results(),
+                    task={"task_type": "feature"},
+                    turn=1,
+                )
+
+        mock_isolated.assert_not_called()
+        mock_run.assert_called_once()
+        assert validator.is_parallel is True
+        assert validator.test_isolation_concurrency == 1
+
+    def test_explicit_none_keeps_nominal_parallel_isolation(
+        self, tmp_path: Path
+    ) -> None:
+        validator = _make_validator(
+            tmp_path, wave_size=2, effective_concurrency=None
+        )
+        isolated_result = _make_isolated_result(tests_passed=True)
+
+        with patch.object(
+            validator, "_run_isolated_tests", return_value=isolated_result
+        ) as mock_isolated:
+            validator.run_independent_tests(
+                task_work_results=_passing_task_work_results(),
+                task={"task_type": "feature"},
+                turn=1,
+            )
+
+        mock_isolated.assert_called_once()
+        assert validator.test_isolation_concurrency == 2
+
+    def test_serialized_declared_git_command_runs_in_real_checkout(
+        self, tmp_path: Path
+    ) -> None:
+        subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+        validator = _make_validator(
+            tmp_path,
+            wave_size=2,
+            effective_concurrency=1,
+            test_cmd="git rev-parse --is-inside-work-tree",
+        )
+
+        result = validator.run_independent_tests(
+            task_work_results=_passing_task_work_results(),
+            task={"task_type": "feature"},
+            turn=1,
+        )
+
+        assert result.tests_passed is True
+        assert "true" in result.raw_output.lower()
+
+    def test_genuine_parallel_failure_is_not_retried_in_worktree(
+        self, tmp_path: Path
+    ) -> None:
+        validator = _make_validator(
+            tmp_path, wave_size=2, effective_concurrency=2
+        )
+        isolated_result = _make_isolated_result(tests_passed=False)
+
+        with patch.object(
+            validator, "_run_isolated_tests", return_value=isolated_result
+        ), patch("subprocess.run") as mock_run:
+            result = validator.run_independent_tests(
+                task_work_results=_passing_task_work_results(),
+                task={"task_type": "feature"},
+                turn=1,
+            )
+
+        assert result is isolated_result
+        mock_run.assert_not_called()
+
     def test_serial_subprocess_bypasses_isolation(self, tmp_path: Path) -> None:
         """wave_size=1 + subprocess mode → subprocess.run is called, not _run_isolated_tests()."""
         validator = _make_validator(tmp_path, wave_size=1)
@@ -260,7 +377,9 @@ class TestIsolationRouting:
         # the SDK path is only taken when GUARDKIT_HARNESS=sdk is in scope.
         # Pin it so this test exercises the sdk-bypasses-isolation branch.
         monkeypatch.setenv("GUARDKIT_HARNESS", "sdk")
-        validator = _make_validator(tmp_path, wave_size=2)
+        validator = _make_validator(
+            tmp_path, wave_size=2, effective_concurrency=2
+        )
         # Override to SDK mode
         validator._coach_test_execution = "sdk"
 

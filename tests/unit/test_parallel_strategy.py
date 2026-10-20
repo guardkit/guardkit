@@ -26,8 +26,30 @@ from guardkit.orchestrator.gpu_monitor import (
 from guardkit.orchestrator.parallel_strategy import (
     MaxParallelMode,
     ParallelConfig,
+    effective_concurrency,
     resolve_max_parallel,
+    tasks_run_at_the_same_time,
 )
+
+
+@pytest.mark.parametrize(
+    ("tasks", "cap", "expected"),
+    [
+        (0, None, 0),
+        (1, None, 1),
+        (2, None, 2),
+        (2, 0, 2),
+        (2, -1, 2),
+        (2, 1, 1),
+        (3, 2, 2),
+        (2, 8, 2),
+    ],
+)
+def test_effective_concurrency_matches_existing_cap_contract(
+    tasks, cap, expected
+):
+    assert effective_concurrency(tasks, cap) == expected
+    assert tasks_run_at_the_same_time(tasks, cap) is (expected > 1)
 
 
 # ============================================================================

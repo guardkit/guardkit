@@ -697,6 +697,21 @@ def resolve_max_parallel(
     return config.static_value
 
 
+def effective_concurrency(
+    tasks_to_run: int, max_parallel: Optional[int]
+) -> int:
+    """Return how many runnable tasks may overlap in this wave.
+
+    ``None`` and values ``<= 0`` retain the existing unlimited-cap meaning.
+    Empty waves return zero and therefore produce no task context.
+    """
+    if tasks_to_run <= 0:
+        return 0
+    if max_parallel is None or max_parallel <= 0:
+        return tasks_to_run
+    return min(tasks_to_run, max_parallel)
+
+
 def tasks_run_at_the_same_time(
     tasks_to_run: int, max_parallel: Optional[int]
 ) -> bool:
@@ -709,9 +724,7 @@ def tasks_run_at_the_same_time(
     1, or a single task to run — never has two tasks changing the shared
     working copy at once.
     """
-    if tasks_to_run < 2:
-        return False
-    return max_parallel is None or max_parallel <= 0 or max_parallel > 1
+    return effective_concurrency(tasks_to_run, max_parallel) > 1
 
 
 def bound_concurrency(

@@ -364,6 +364,33 @@ class TestRunPostWaveWiringGate:
         assert outcome.terminate is True
         assert outcome.final_wave_result is rejected
 
+    @_requires_guardkitfactory
+    def test_timeout_during_wiring_retry_terminates_immediately(self, tmp_path):
+        orch = _orchestrator(tmp_path)
+        orch._wiring_gate_max_retries = 1
+        wr = _wave_result(["TASK-A"])
+        timed_out = _wave_result(["TASK-A"], all_succeeded=False)
+
+        def _timeout_rerun(*args, **kwargs):
+            orch._set_timeout_fence()
+            return timed_out
+
+        with patch.object(
+            orch, "_wave_authored_files", return_value=(["a.py"], [])
+        ), patch(
+            "guardkitfactory.wiring.analyze_wiring",
+            return_value=_wiring_dict(seam_findings=[_SEAM]),
+        ), patch.object(
+            orch, "_execute_wave", side_effect=_timeout_rerun
+        ) as execute_wave:
+            outcome = orch._run_post_wave_wiring_gate(
+                1, ["TASK-A"], MagicMock(), MagicMock(path=str(tmp_path)), wr
+            )
+
+        execute_wave.assert_called_once()
+        assert outcome.terminate is True
+        assert outcome.final_wave_result is timed_out
+
 
 # ============================================================================
 # 5. _wiring_gate_record — unread input is never "ran and found nothing"

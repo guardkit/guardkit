@@ -1826,6 +1826,7 @@ class CoachValidator:
         in_autobuild_context: bool = False,  # WS3-S1 Q1 SPLIT (hard-abort)
         toolchain: Optional["ToolchainDeclaration"] = None,  # TS-lane D.1b
         component: Optional[str] = None,  # per-component seam
+        effective_concurrency: Optional[int] = None,
     ):
         """
         Initialize CoachValidator.
@@ -2123,6 +2124,11 @@ class CoachValidator:
         # pytest --basetemp; None -> per-path defaults (see _basetemp_context).
         self._basetemp_context: Optional[str] = basetemp_context
         self.wave_size = max(1, int(wave_size))
+        self.effective_concurrency: Optional[int] = (
+            int(effective_concurrency)
+            if effective_concurrency is not None
+            else None
+        )
         # Set for the length of one check when an isolated (parallel-wave)
         # attempt could not START and the check is being run in the real
         # worktree instead. Read and cleared by
@@ -2179,6 +2185,13 @@ class CoachValidator:
     def is_parallel(self) -> bool:
         """Return True when this Coach is running in a parallel wave (wave_size > 1)."""
         return self.wave_size > 1
+
+    @property
+    def test_isolation_concurrency(self) -> int:
+        """Concurrency used only for independent-test snapshot selection."""
+        if self.effective_concurrency is not None:
+            return self.effective_concurrency
+        return self.wave_size
 
     def _detect_source_file_contention(
         self,
@@ -8078,9 +8091,11 @@ class CoachValidator:
             # Parallel wave isolation (TASK-ABFIX-005): run tests in temp directory
             # snapshot to prevent spurious failures from concurrent worktree mutations.
             # Applied when wave_size > 1 and not using SDK (SDK already runs in isolation).
-            if self.is_parallel and not use_sdk:
+            if self.test_isolation_concurrency > 1 and not use_sdk:
                 logger.info(
-                    f"[TASK-ABFIX-005] Parallel wave detected (wave_size={self.wave_size}), "
+                    "[TASK-ABFIX-005] Concurrent test execution detected "
+                    f"(wave_size={self.wave_size}, "
+                    f"effective_concurrency={self.effective_concurrency}), "
                     f"running tests in an isolated copy beside the worktree"
                 )
                 isolated = self._run_isolated_tests(test_cmd)

@@ -13,6 +13,8 @@ Coverage Target: >=85%
 
 import asyncio
 import os
+import threading
+import time
 from pathlib import Path
 from unittest.mock import MagicMock, patch, AsyncMock
 
@@ -24,6 +26,12 @@ from guardkit.cli.main import cli
 from guardkit.orchestrator.feature_orchestrator import (
     FeatureOrchestrator,
     TaskExecutionResult,
+)
+from guardkit.orchestrator.feature_loader import (
+    Feature,
+    FeatureExecution,
+    FeatureOrchestration,
+    FeatureTask,
 )
 from guardkit.orchestrator.parallel_strategy import bound_concurrency
 
@@ -318,3 +326,106 @@ class TestBoundConcurrencyWaveDispatch:
         # Close un-awaited coroutines to avoid ResourceWarning.
         for c in coros:
             c.close()
+
+
+@pytest.mark.asyncio
+async def test_timeout_fence_allows_inflight_sibling_but_refuses_third_task(
+    tmp_path, monkeypatch
+):
+    """A cap-two timeout leaves the sibling alone and fences the queue."""
+    monkeypatch.setenv("GUARDKIT_AUTOBUILD_TASK_TIMEOUT_FLOOR", "0")
+    tasks = [
+        FeatureTask(
+            id=f"TASK-CAP-00{number}",
+            name=f"Task {number}",
+            file_path=Path(f"tasks/backlog/TASK-CAP-00{number}.md"),
+            complexity=2,
+            dependencies=[],
+            status="pending",
+            implementation_mode="task-work",
+            estimated_minutes=1,
+        )
+        for number in (1, 2, 3)
+    ]
+    feature = Feature(
+        id="FEATURE-CAP-TIMEOUT",
+        name="Capped timeout",
+        description="Test",
+        created="2025-01-01T00:00:00Z",
+        status="planned",
+        complexity=3,
+        estimated_tasks=3,
+        tasks=tasks,
+        orchestration=FeatureOrchestration(
+            parallel_groups=[[task.id for task in tasks]],
+            estimated_duration_minutes=1,
+            recommended_parallel=2,
+        ),
+        execution=FeatureExecution(),
+    )
+    worktree = MagicMock()
+    worktree.path = tmp_path
+    orchestrator = FeatureOrchestrator(
+        repo_root=tmp_path,
+        worktree_manager=MagicMock(),
+        task_timeout=1,
+        max_parallel=2,
+    )
+    first_started = threading.Event()
+    sibling_started = threading.Event()
+    release_first = threading.Event()
+    first_finished = threading.Event()
+    started = []
+
+    def _worker(task, _feature, _worktree, **kwargs):
+        started.append(task.id)
+        assert kwargs["effective_concurrency"] == 2
+        assert kwargs["shares_working_copy"] is True
+        if task.id == "TASK-CAP-001":
+            first_started.set()
+            try:
+                assert release_first.wait(2)
+            finally:
+                first_finished.set()
+        else:
+            sibling_started.set()
+            assert first_started.wait(1)
+            for _ in range(100):
+                if orchestrator._timeout_fence_is_set():
+                    break
+                time.sleep(0.01)
+            assert orchestrator._timeout_fence_is_set()
+        return TaskExecutionResult(
+            task_id=task.id,
+            success=True,
+            total_turns=1,
+            final_decision="approved",
+        )
+
+    def _task_timeout(_task_data, task_id, **_kwargs):
+        return 0.1 if task_id == "TASK-CAP-001" else 1
+
+    monkeypatch.setattr(orchestrator, "_resolve_task_timeout", _task_timeout)
+    try:
+        with patch(
+            "guardkit.orchestrator.feature_orchestrator.TaskLoader.load_task",
+            return_value={},
+        ), patch.object(
+            orchestrator, "_wave_task_paths", return_value={}
+        ), patch.object(
+            orchestrator, "_execute_task", side_effect=_worker
+        ):
+            results = await orchestrator._execute_wave_parallel(
+                1, [task.id for task in tasks], feature, worktree
+            )
+            assert first_started.is_set()
+            assert sibling_started.is_set()
+            assert started == ["TASK-CAP-001", "TASK-CAP-002"]
+            by_id = {result.task_id: result for result in results}
+            assert by_id["TASK-CAP-001"].final_decision == "timeout"
+            assert by_id["TASK-CAP-002"].final_decision == "approved"
+            assert by_id["TASK-CAP-003"].final_decision == "error"
+            assert by_id["TASK-CAP-003"].total_turns == 0
+    finally:
+        release_first.set()
+        assert first_finished.wait(2), "timed-out worker leaked from the test"

@@ -1304,7 +1304,13 @@ Test requirements.
         mock_orch.orchestrate.return_value = mock_result
         mock_orch_class.return_value = mock_orch
 
-        result = orchestrator._execute_task(task, sample_feature, mock_worktree)
+        result = orchestrator._execute_task(
+            task,
+            sample_feature,
+            mock_worktree,
+            wave_size=2,
+            effective_concurrency=1,
+        )
 
         # Verify task executed successfully
         assert result.success is True
@@ -1574,6 +1580,8 @@ Test requirements.
         # Verify enable_pre_loop was passed to AutoBuildOrchestrator
         call_kwargs = mock_orch_class.call_args[1]
         assert call_kwargs.get("enable_pre_loop") is False
+        assert call_kwargs["wave_size"] == 2
+        assert call_kwargs["effective_concurrency"] == 1
 
 
 def test_execute_task_enable_pre_loop_from_task_frontmatter(
@@ -1722,7 +1730,11 @@ async def test_execute_wave_parallel_says_whether_tasks_share_the_working_copy(
     seen = {}
 
     def mock_execute_task(task, feature, worktree, **kwargs):
-        seen[task.id] = (kwargs.get("wave_size"), kwargs.get("shares_working_copy"))
+        seen[task.id] = (
+            kwargs.get("wave_size"),
+            kwargs.get("effective_concurrency"),
+            kwargs.get("shares_working_copy"),
+        )
         return TaskExecutionResult(
             task_id=task.id, success=True, total_turns=1, final_decision="approved"
         )
@@ -1736,9 +1748,30 @@ async def test_execute_wave_parallel_says_whether_tasks_share_the_working_copy(
         )
 
     assert seen == {
-        "TASK-P-001": (2, expected),
-        "TASK-P-002": (2, expected),
+        "TASK-P-001": (2, 2 if max_parallel is None else 1, expected),
+        "TASK-P-002": (2, 2 if max_parallel is None else 1, expected),
     }
+
+
+def test_timeout_fence_defaults_clear_and_public_invocation_resets_reused_object(
+    temp_repo, mock_worktree_manager
+):
+    bare = FeatureOrchestrator.__new__(FeatureOrchestrator)
+    assert bare._timeout_fence_is_set() is False
+
+    orchestrator = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+    )
+    orchestrator._set_timeout_fence()
+    with patch.object(
+        orchestrator,
+        "_setup_phase",
+        side_effect=FeatureNotFoundError("missing"),
+    ), pytest.raises(FeatureNotFoundError):
+        orchestrator.orchestrate("FEATURE-MISSING")
+
+    assert orchestrator._timeout_fence_is_set() is False
 
 
 @pytest.mark.asyncio
@@ -2023,6 +2056,9 @@ async def test_completed_tasks_skipped_in_parallel(temp_repo, parallel_feature, 
         p002_result = next(r for r in results if r.task_id == "TASK-P-002")
         assert p002_result.success is True
         mock_execute.assert_called_once()  # Only P-002 executed
+        assert mock_execute.call_args.kwargs["wave_size"] == 2
+        assert mock_execute.call_args.kwargs["effective_concurrency"] == 1
+        assert mock_execute.call_args.kwargs["shares_working_copy"] is False
 
 
 @pytest.mark.asyncio

@@ -2961,6 +2961,7 @@ class AutoBuildOrchestrator:
         sdk_timeout_is_override: Optional[bool] = None,
         expected_branch: Optional[str] = None,
         expected_branch_pinned: bool = False,
+        effective_concurrency: Optional[int] = None,
     ):
         """
         Initialize AutoBuildOrchestrator.
@@ -3219,6 +3220,11 @@ class AutoBuildOrchestrator:
         # "Unknown error occurred" (TASK-FIX-TBXMSG01).
         self._timeout_budget_remaining: Optional[float] = None
         self.wave_size: int = max(1, int(wave_size))  # Parallel wave context (TASK-ABFIX-005)
+        self.effective_concurrency: Optional[int] = (
+            int(effective_concurrency)
+            if effective_concurrency is not None
+            else None
+        )
         self.shares_working_copy: bool = bool(shares_working_copy)  # FEAT-2C42
         # TASK-FIX-A7B2: Wave-shared map of per-task file edits, populated as
         # each Player finishes. Coach reads peer entries (everyone but self) to
@@ -6899,6 +6905,7 @@ class AutoBuildOrchestrator:
                             # whole-suite guard defers to the LLM specialist in a
                             # parallel wave; it needs the real wave size here.
                             wave_size=self.wave_size,
+                            effective_concurrency=self.effective_concurrency,
                             # Per-component seam: the task's component selector
                             # (already resolved and validated in ``run()``, and
                             # in scope here as this turn's parameter) so the
@@ -7161,6 +7168,7 @@ class AutoBuildOrchestrator:
             consumer_context=consumer_context,
             remaining_budget=coach_remaining_budget,
             wave_size=self.wave_size,
+            effective_concurrency=self.effective_concurrency,
             peer_changed_files=peer_changed_files_snapshot,
             behavioural_oracle=behavioural_oracle,  # TS-lane D.1a
             component=component,  # per-component seam
@@ -10143,6 +10151,7 @@ class AutoBuildOrchestrator:
         peer_changed_files: Optional[Dict[str, Any]] = None,
         behavioural_oracle: Optional[Any] = None,
         component: Optional[str] = None,  # per-component seam
+        effective_concurrency: Optional[int] = None,
     ) -> AgentInvocationResult:
         """
         Invoke Coach agent with comprehensive error handling.
@@ -10361,6 +10370,7 @@ class AutoBuildOrchestrator:
                 behavioural_oracle=behavioural_oracle,  # TS-lane D.1a
                 component=component,  # per-component seam
                 project_documents=project_documents,
+                effective_concurrency=effective_concurrency,
             )
 
         return self._invoke_coach_primary(
@@ -10382,6 +10392,7 @@ class AutoBuildOrchestrator:
             behavioural_oracle=behavioural_oracle,  # TS-lane D.1a
             component=component,  # per-component seam
             project_documents=project_documents,
+            effective_concurrency=effective_concurrency,
         )
 
     #: The captured set, kept once per BUILD (keyed by the worktree's name: the
@@ -10814,6 +10825,7 @@ class AutoBuildOrchestrator:
         behavioural_oracle: Optional[Any] = None,
         component: Optional[str] = None,  # per-component seam
         project_documents: tuple = (),
+        effective_concurrency: Optional[int] = None,
     ) -> AgentInvocationResult:
         """Legacy Coach flow: CoachValidator decides, LLM Coach is exception fallback.
 
@@ -10859,6 +10871,7 @@ class AutoBuildOrchestrator:
                 coach_test_execution=coach_test_execution,
                 matching_strategy=matching_strategy,
                 wave_size=wave_size,
+                effective_concurrency=effective_concurrency,
                 turn=turn,
                 peer_changed_files=peer_changed_files,
                 model_name=self._model_name,  # TASK-FIX-LGFM3
@@ -11087,6 +11100,7 @@ class AutoBuildOrchestrator:
         behavioural_oracle: Optional[Any] = None,
         component: Optional[str] = None,  # per-component seam
         project_documents: tuple = (),
+        effective_concurrency: Optional[int] = None,
     ) -> AgentInvocationResult:
         """Primary Coach flow (TASK-HMIG-008R): LLM Coach is the decision-maker.
 
@@ -11132,6 +11146,7 @@ class AutoBuildOrchestrator:
             coach_test_execution=coach_test_execution,
             matching_strategy=matching_strategy,
             wave_size=wave_size,
+            effective_concurrency=effective_concurrency,
             turn=turn,
             peer_changed_files=peer_changed_files,
             model_name=self._model_name,  # TASK-FIX-LGFM3

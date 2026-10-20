@@ -171,6 +171,46 @@ class TestInterWaveBootstrapHook:
         mock_bootstrap.assert_called_once_with(worktree, feature=feature)
         assert len(results) == 2
 
+    def test_timeout_fence_stops_next_wave_and_final_gates_even_when_continuing(
+        self, tmp_path: Path
+    ) -> None:
+        orchestrator = _make_orchestrator(tmp_path)
+        orchestrator.stop_on_failure = False
+        worktree = _make_worktree(tmp_path)
+        feature, task_map = _make_feature([["TASK-001"], ["TASK-002"]])
+        feature.smoke_gates = None
+
+        def _timed_out_first_wave(*args, **kwargs):
+            orchestrator._set_timeout_fence()
+            # Models a last-task late approval: the task record itself passed,
+            # but the invocation fence must still stop all later dispatch.
+            return _successful_wave_result(1, ["TASK-001"])
+
+        with (
+            patch.object(orchestrator, "_preflight_check"),
+            patch.object(orchestrator, "_bootstrap_environment") as bootstrap,
+            patch.object(
+                orchestrator, "_execute_wave", side_effect=_timed_out_first_wave
+            ) as execute_wave,
+            patch.object(orchestrator, "_mark_wave_completed"),
+            patch.object(orchestrator, "_run_final_wave_boot_smoke") as boot,
+            patch.object(orchestrator, "_run_feature_check") as feature_check,
+            patch(
+                "guardkit.orchestrator.feature_orchestrator.FeatureLoader.find_task",
+                side_effect=lambda f, tid: task_map.get(tid),
+            ),
+            patch(
+                "guardkit.orchestrator.feature_orchestrator.FeatureLoader.save_feature",
+            ),
+        ):
+            results = orchestrator._wave_phase(feature, worktree)
+
+        assert len(results) == 1
+        assert execute_wave.call_count == 1
+        bootstrap.assert_not_called()
+        boot.assert_not_called()
+        feature_check.assert_not_called()
+
     def test_bootstrap_not_called_for_wave_1(self, tmp_path: Path) -> None:
         """_bootstrap_environment is NOT called before the first wave."""
         orchestrator = _make_orchestrator(tmp_path)

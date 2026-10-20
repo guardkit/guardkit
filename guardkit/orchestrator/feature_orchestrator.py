@@ -200,6 +200,7 @@ from guardkit.orchestrator.parallel_strategy import (
     apply_feature_recommended_parallel,
     bound_concurrency,
     collect_wave_task_paths,
+    effective_concurrency,
     resolve_max_parallel,
     tasks_run_at_the_same_time,
 )
@@ -1157,6 +1158,10 @@ class FeatureOrchestrator:
         # Red-baseline retro (L12 item 1): the wave-0 baseline probe result,
         # a session-scoped observation (NOT the F2 ledger).
         self._measured_baseline: Optional[BaselineResult] = None
+        # A feature-level timeout can leave its ``to_thread`` worker alive after
+        # the semaphore slot is released. Keep later dispatch fenced for the
+        # rest of this public invocation; ``orchestrate`` resets it explicitly.
+        self._feature_timeout_fence: bool = False
 
         logger.info(
             f"FeatureOrchestrator initialized: repo={self.repo_root}, "
@@ -1190,6 +1195,31 @@ class FeatureOrchestrator:
             logger.info(f"Raised file descriptor limit: {soft} → {new_soft}")
         except (ValueError, OSError) as e:
             logger.warning(f"Could not raise file descriptor limit: {e}")
+
+    _TIMEOUT_FENCE_REASON = (
+        "Feature invocation stopped after a task timed out; later work was not started"
+    )
+
+    def _timeout_fence_is_set(self) -> bool:
+        """Read the invocation fence safely for normal and bare test objects."""
+        return bool(getattr(self, "_feature_timeout_fence", False))
+
+    def _set_timeout_fence(self) -> None:
+        """Prevent new work from starting for the rest of this invocation."""
+        self._feature_timeout_fence = True
+
+    def _timeout_fence_result(self, task_id: str) -> TaskExecutionResult:
+        """Return the ordinary failed result for work refused after a timeout."""
+        return TaskExecutionResult(
+            task_id=task_id,
+            success=False,
+            total_turns=0,
+            final_decision="error",
+            error=(
+                f"Task {task_id} did not start because another task in its wave "
+                "timed out"
+            ),
+        )
 
     def orchestrate(
         self,
@@ -1235,6 +1265,9 @@ class FeatureOrchestrator:
         >>> # Run specific task only
         >>> result = orchestrator.orchestrate("FEAT-A1B2", specific_task="TASK-001")
         """
+        # New public invocation, including resume on a reused object. Internal
+        # entry points deliberately do not clear an existing timeout fence.
+        self._feature_timeout_fence = False
         logger.info(f"Starting feature orchestration for {feature_id}")
 
         try:
@@ -2651,6 +2684,9 @@ The detailed specifications are in the task markdown file.
         for wave_number, task_ids in enumerate(
             feature.orchestration.parallel_groups, 1
         ):
+            if self._timeout_fence_is_set():
+                logger.error(self._TIMEOUT_FENCE_REASON)
+                break
             # Inter-wave bootstrap: re-detect and install new dependencies
             # (e.g., Wave 1 may have created pyproject.toml that Wave 2 needs)
             if wave_number > 1:
@@ -2710,6 +2746,12 @@ The detailed specifications are in the task markdown file.
                 # Fallback to basic display
                 status = "[green]✓ PASSED[/green]" if wave_result.all_succeeded else "[red]✗ FAILED[/red]"
                 console.print(f"  Wave {wave_number} {status}: {passed} passed, {failed} failed")
+
+            # A feature-level timeout may leave the old worker alive. Do not
+            # start a gate, repair, bootstrap, or later wave under that worker.
+            if self._timeout_fence_is_set():
+                logger.error(self._TIMEOUT_FENCE_REASON)
+                break
 
             # Check for stop-on-failure
             if not wave_result.all_succeeded and self.stop_on_failure:
@@ -2783,6 +2825,9 @@ The detailed specifications are in the task markdown file.
             )
             if wave_result.all_succeeded and not smoke_blocked:
                 self._mark_wave_completed(feature, wave_number)
+
+        if self._timeout_fence_is_set():
+            return wave_results
 
         # Start-up checks, after the last wave (WS3-S3 check 2d, spec §4.3).
         # Everything above proves the tests pass. This proves the thing the
@@ -3152,6 +3197,17 @@ The detailed specifications are in the task markdown file.
                 self._feature_check_repair_for_wave = None
             wave_results[-1] = wave_result
             last_wave = wave_result
+            if self._timeout_fence_is_set():
+                logger.error(self._TIMEOUT_FENCE_REASON)
+                return self._finish_feature_check(
+                    feature,
+                    worktree,
+                    declaration,
+                    attempts,
+                    wave_results,
+                    status=FEATURE_CHECK_FAILED,
+                    stopped_because=self._TIMEOUT_FENCE_REASON,
+                )
             if self._wave_display:
                 passed = sum(1 for r in wave_result.results if r.success)
                 failed = len(wave_result.results) - passed
@@ -3821,6 +3877,11 @@ The detailed specifications are in the task markdown file.
                 wave_number, task_ids, feature, worktree,
                 seed_feedback=smoke_feedback, attempt=attempt,
             )
+            if self._timeout_fence_is_set():
+                logger.error(self._TIMEOUT_FENCE_REASON)
+                return SmokeGatePhaseOutcome(
+                    terminate=True, final_wave_result=wave_result
+                )
             # Refresh the wave-completion display for the re-run (S1).
             if self._wave_display:
                 passed = sum(1 for r in wave_result.results if r.success)
@@ -4519,6 +4580,17 @@ The detailed specifications are in the task markdown file.
                 wave_number, task_ids, feature, worktree,
                 seed_feedback=wiring_feedback, attempt=attempt,
             )
+            if self._timeout_fence_is_set():
+                logger.error(self._TIMEOUT_FENCE_REASON)
+                return WiringGatePhaseOutcome(
+                    terminate=True,
+                    final_wave_result=wave_result,
+                    record=code_check_group_record(
+                        wave_number,
+                        state=CODE_CHECK_NOT_CHECKED,
+                        reason=self._TIMEOUT_FENCE_REASON,
+                    ),
+                )
             if self._wave_display:
                 passed = sum(1 for r in wave_result.results if r.success)
                 failed = len(wave_result.results) - passed
@@ -4814,16 +4886,48 @@ The detailed specifications are in the task markdown file.
             shares_working_copy = tasks_run_at_the_same_time(
                 len(queued_calls), effective_max_parallel
             )
+            resolved_effective_concurrency = effective_concurrency(
+                len(queued_calls), effective_max_parallel
+            )
+
+            async def _dispatch_queued_call(
+                task: FeatureTask,
+                task_id: str,
+                call_timeout: int,
+                call_kwargs: Dict[str, Any],
+            ) -> TaskExecutionResult:
+                # This coroutine is awaited only after bound_concurrency has
+                # acquired the real semaphore slot. A timed-out predecessor
+                # sets the sticky fence before releasing that slot.
+                if self._timeout_fence_is_set():
+                    return self._timeout_fence_result(task_id)
+                try:
+                    return await asyncio.wait_for(
+                        asyncio.to_thread(
+                            self._execute_task,
+                            task,
+                            feature,
+                            worktree,
+                            shares_working_copy=shares_working_copy,
+                            effective_concurrency=resolved_effective_concurrency,
+                            **call_kwargs,
+                        ),
+                        timeout=call_timeout,
+                    )
+                except asyncio.TimeoutError:
+                    self._set_timeout_fence()
+                    raise
+
             tasks_to_execute = [
-                asyncio.wait_for(
-                    asyncio.to_thread(
-                        self._execute_task, task, feature, worktree,
-                        shares_working_copy=shares_working_copy,
-                        **call_kwargs,
-                    ),
-                    timeout=call_timeout,
+                _dispatch_queued_call(
+                    task,
+                    task_id,
+                    call_timeout,
+                    call_kwargs,
                 )
-                for task, call_timeout, call_kwargs in queued_calls
+                for (task, call_timeout, call_kwargs), task_id in zip(
+                    queued_calls, task_id_mapping
+                )
             ]
 
             # Apply concurrency bound if max_parallel is set.
@@ -6138,6 +6242,7 @@ The detailed specifications are in the task markdown file.
         shares_working_copy: bool = False,
         feature_check_repair: Optional[FeatureCheckRepair] = None,
         repair_round: Optional[RepairRound] = None,
+        effective_concurrency: Optional[int] = None,
     ) -> TaskExecutionResult:
         """
         Execute single task using AutoBuildOrchestrator with shared worktree.
@@ -6231,6 +6336,7 @@ The detailed specifications are in the task markdown file.
                 ),
                 timeout_multiplier=self.timeout_multiplier,  # TASK-FIX-VL05
                 wave_size=wave_size,  # Parallel wave context for Coach isolation (TASK-ABFIX-005)
+                effective_concurrency=effective_concurrency,
                 # FEAT-2C42: True only when other tasks of the wave change
                 # the working copy at the same time as this one.
                 shares_working_copy=shares_working_copy,
@@ -6692,7 +6798,11 @@ The detailed specifications are in the task markdown file.
 
         # Determine final status
         final_status: Literal["completed", "failed", "paused"]
-        if tasks_failed == 0 and tasks_completed == len(feature.tasks) and not smoke_gate_failed:
+        timeout_fenced = self._timeout_fence_is_set()
+        if timeout_fenced:
+            final_status = "failed"
+            success = False
+        elif tasks_failed == 0 and tasks_completed == len(feature.tasks) and not smoke_gate_failed:
             final_status = "completed"
             success = True
         elif tasks_failed > 0 or smoke_gate_failed:
@@ -6886,7 +6996,9 @@ The detailed specifications are in the task markdown file.
                 None
                 if success
                 else (
-                    twin_error
+                    self._TIMEOUT_FENCE_REASON
+                    if timeout_fenced
+                    else twin_error
                     if twin_error is not None
                     else feature_check_error
                     if feature_check_error is not None

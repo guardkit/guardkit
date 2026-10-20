@@ -1588,6 +1588,7 @@ def _run_deterministic_phase_4(
     turn: Optional[int],
     wave_size: int = 1,
     component: Optional[str] = None,
+    effective_concurrency: Optional[int] = None,
 ) -> Optional[dict[str, Any]]:
     """The deterministic Phase-4 block, with what its run ran against.
 
@@ -1608,6 +1609,7 @@ def _run_deterministic_phase_4(
         wave_size=wave_size,
         component=component,
         evidence_sink=sink,
+        effective_concurrency=effective_concurrency,
     )
     if isinstance(block, dict) and isinstance(sink.get("run_evidence"), dict):
         block["run_evidence"] = sink["run_evidence"]
@@ -1624,6 +1626,7 @@ def _deterministic_phase_4_block(
     wave_size: int = 1,
     component: Optional[str] = None,
     evidence_sink: Optional[dict[str, Any]] = None,
+    effective_concurrency: Optional[int] = None,
 ) -> Optional[dict[str, Any]]:
     """Execute Phase-4 tests deterministically and return a phase_4 block.
 
@@ -1710,6 +1713,7 @@ def _deterministic_phase_4_block(
             # wave size — without it the runner believes wave_size=1 and would
             # run a parallel wave's sibling tests.
             wave_size=wave_size,
+            effective_concurrency=effective_concurrency,
             # TASK-AB-BASETEMP01: label the per-run pytest --basetemp so a
             # leaked tmp dir is attributable to the deterministic Phase-4
             # runner rather than the Coach's own independent run.
@@ -2050,6 +2054,7 @@ async def invoke_test_orchestrator(
     turn: Optional[int] = None,
     wave_size: int = 1,
     component: Optional[str] = None,
+    effective_concurrency: Optional[int] = None,
 ) -> SpecialistInvocationResult:
     """Run the Phase 4 test-orchestrator specialist under orchestrator control.
 
@@ -2129,6 +2134,7 @@ async def invoke_test_orchestrator(
             turn=turn,
             wave_size=wave_size,
             component=component,
+            effective_concurrency=effective_concurrency,
         )
         if det_block is not None:
             _write_specialist_results(specialist_results_path, det_block)

@@ -438,3 +438,40 @@ def test_failing_smoke_marks_feature_failed(tmp_path: Path) -> None:
     assert result.success is False
     assert result.error is not None
     assert "smoke" in result.error.lower()
+
+
+def test_timeout_fence_forces_failed_finalization_after_late_approval(
+    tmp_path: Path,
+) -> None:
+    orchestrator = _make_orchestrator(tmp_path)
+    orchestrator._set_timeout_fence()
+    worktree = _make_worktree(tmp_path)
+    feature, _ = _make_feature([["TASK-001"]])
+    feature.tasks = [feature.tasks[0]]
+    approved_late = WaveExecutionResult(
+        wave_number=1,
+        task_ids=["TASK-001"],
+        results=[
+            TaskExecutionResult(
+                task_id="TASK-001",
+                success=True,
+                total_turns=1,
+                final_decision="approved_late",
+            )
+        ],
+        all_succeeded=True,
+    )
+
+    with (
+        patch.object(orchestrator, "_display_summary"),
+        patch(
+            "guardkit.orchestrator.feature_orchestrator.FeatureLoader.save_feature",
+        ),
+    ):
+        result = orchestrator._finalize_phase(feature, [approved_late], worktree)
+
+    assert result.status == "failed"
+    assert result.success is False
+    assert result.tasks_completed == 1
+    assert result.tasks_failed == 0
+    assert "timed out" in (result.error or "")

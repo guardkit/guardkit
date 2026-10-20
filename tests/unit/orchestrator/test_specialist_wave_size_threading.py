@@ -50,9 +50,11 @@ def test_run_deterministic_phase_4_threads_wave_size_into_coach_validator(
         sdk_timeout=300,
         turn=1,
         wave_size=3,
+        effective_concurrency=1,
     )
 
     assert captured.get("wave_size") == 3
+    assert captured.get("effective_concurrency") == 1
     assert block is not None and block["status"] == "passed"
 
 
@@ -87,6 +89,7 @@ def test_run_deterministic_phase_4_defaults_wave_size_to_one(tmp_path, monkeypat
         turn=1,
     )
     assert captured.get("wave_size") == 1
+    assert captured.get("effective_concurrency") is None
 
 
 def test_invoke_test_orchestrator_forwards_wave_size_to_deterministic_runner(
@@ -122,8 +125,10 @@ def test_invoke_test_orchestrator_forwards_wave_size_to_deterministic_runner(
             agent_invoker=invoker,
             turn=1,
             wave_size=4,
+            effective_concurrency=2,
         )
     )
 
     assert captured.get("wave_size") == 4
+    assert captured.get("effective_concurrency") == 2
     assert result.status == "passed"

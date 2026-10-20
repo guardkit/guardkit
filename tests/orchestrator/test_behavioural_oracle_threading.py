@@ -213,6 +213,8 @@ def _capture_coach_task_dict(
     *,
     behavioural_oracle: Any = None,
     legacy: bool = False,
+    effective_concurrency: Optional[int] = None,
+    constructor_kwargs: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Return the task dict ``_invoke_coach_safely`` hands to CoachValidator.
 
@@ -246,10 +248,33 @@ def _capture_coach_task_dict(
             worktree=mock_worktree,
             acceptance_criteria=["AC1"],
             behavioural_oracle=behavioural_oracle,
+            wave_size=2 if effective_concurrency is not None else 1,
+            effective_concurrency=effective_concurrency,
         )
+        if constructor_kwargs is not None:
+            constructor_kwargs.update(mock_cv.call_args.kwargs)
 
     assert captured, "the Coach validator was never handed a task dict"
     return captured[0]
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+def test_both_coach_paths_receive_effective_concurrency(
+    orchestrator: AutoBuildOrchestrator,
+    mock_worktree: Mock,
+    legacy: bool,
+) -> None:
+    captured: Dict[str, Any] = {}
+    _capture_coach_task_dict(
+        orchestrator,
+        mock_worktree,
+        legacy=legacy,
+        effective_concurrency=1,
+        constructor_kwargs=captured,
+    )
+
+    assert captured["wave_size"] == 2
+    assert captured["effective_concurrency"] == 1
 
 
 # ============================================================================

@@ -246,10 +246,10 @@ Production changes are limited to the internal context path:
 
 New focused controls belong in the existing parallel-strategy,
 feature-orchestrator, timeout, gate, specialist invocation, and Coach
-isolation suites. Mandatory validation covers every existing test under
-`tests/unit`, `tests/integration`, `tests/orchestrator`, and `tests/seam`; this
-avoids relying on a hand-maintained list while the fence touches dispatch,
-timeout, gate, and finalization paths. No product, isolated-copy
+isolation suites. Mandatory validation runs every non-quarantined test under
+`tests/unit`, `tests/integration`, `tests/orchestrator`, and `tests/seam` and
+records the quarantine skips; this avoids relying on a hand-maintained list
+while the fence touches dispatch, timeout, gate, and finalization paths. No product, isolated-copy
 implementation, feature schema, CLI setting, or product test-command change is
 required.
 
@@ -363,6 +363,17 @@ new nodes; the mandatory root runs below remain the regression boundary.
 | Finalization forces failure while preserving task records and counts | `tests/integration/autobuild/test_smoke_gate_blocks_wave.py` |
 | A second public invocation resets the fence on the same object | `tests/unit/test_feature_orchestrator.py` |
 | Fresh normal and bare objects keep direct dispatch and finalization behavior | `tests/unit/test_feature_orchestrator.py` and `tests/orchestrator/test_feature_check_three_outcomes.py` |
+
+The propagation and compatibility controls also live in named,
+non-quarantined files:
+
+| Propagation control | File home |
+| --- | --- |
+| Effective-concurrency arithmetic and scheduler-to-Feature context | `tests/unit/test_parallel_strategy.py` and `tests/unit/test_feature_orchestrator.py` |
+| Feature-to-AutoBuild forwarding | `tests/unit/test_feature_orchestrator.py` |
+| Primary and legacy Coach forwarding | `tests/orchestrator/test_behavioural_oracle_threading.py` |
+| Deterministic Phase-4 forwarding | `tests/unit/orchestrator/test_specialist_wave_size_threading.py` |
+| Positional compatibility, omitted/`None` fallback, and subprocess snapshot choice | `tests/unit/test_coach_parallel_isolation.py` |
 
 ### Later test execution
 
