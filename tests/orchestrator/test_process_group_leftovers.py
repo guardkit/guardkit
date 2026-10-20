@@ -1168,6 +1168,87 @@ class TestTheSelfTestSeesForItself:
         assert "[guardkit]" not in (proc.stderr or "")
         assert all("a-secret-token" not in w for w in warnings)
 
+    @staticmethod
+    def _refuse_metadata(monkeypatch: pytest.MonkeyPatch, which) -> None:
+        """Refuse both the environment and its metadata for the pids
+        ``which`` names (a filter, not concealment)."""
+        real_open, real_stat = open, os.stat
+
+        def guarded_open(path, *args, **kwargs):
+            text = str(path)
+            if text.startswith("/proc/") and text.endswith(("/environ", "/status")):
+                if which(int(text.split("/")[2])):
+                    raise PermissionError(errno.EACCES, "Permission denied")
+            return real_open(path, *args, **kwargs)
+
+        def guarded_stat(path, *args, **kwargs):
+            text = str(path)
+            if text.startswith("/proc/") and text.endswith("/environ"):
+                if which(int(text.split("/")[2])):
+                    raise PermissionError(errno.EACCES, "Permission denied")
+            return real_stat(path, *args, **kwargs)
+
+        monkeypatch.setattr(process_group, "open", guarded_open, raising=False)
+        monkeypatch.setattr(process_group.os, "stat", guarded_stat)
+
+    def test_refused_metadata_mid_run_ends_a_factory_command(
+        self, tmp_path: Path, started: List[int], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        if shutil.which("setsid", path=_ENV["PATH"]) is None:
+            pytest.skip("no setsid program")
+
+        def escapee(pid: int) -> bool:
+            file = tmp_path / "bg.pid"
+            return file.exists() and file.read_text().strip() == str(pid)
+
+        monkeypatch.setattr(process_group, "_SELF_TEST_PASSED", [True])
+        self._refuse_metadata(monkeypatch, escapee)
+        with pytest.raises(
+            process_group.CleanupUnavailableError,
+            match="was ended because a process's /proc metadata could not be read",
+        ):
+            _run(
+                tmp_path,
+                "setsid sh -c 'echo $$ > bg.pid; exec sleep 300' >/dev/null 2>&1 & "
+                + _WAIT_FOR.format(name="bg.pid"),
+            )
+
+    @pytest.mark.personal_run
+    def test_refused_metadata_on_a_persons_run_is_said(
+        self,
+        tmp_path: Path,
+        started: List[int],
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        if shutil.which("setsid", path=_ENV["PATH"]) is None:
+            pytest.skip("no setsid program")
+
+        def escapee(pid: int) -> bool:
+            file = tmp_path / "bg.pid"
+            return file.exists() and file.read_text().strip() == str(pid)
+
+        monkeypatch.setattr(process_group, "_CAPABILITY", [None])
+        self._refuse_metadata(monkeypatch, escapee)
+        with caplog.at_level(logging.WARNING, logger=process_group.__name__):
+            proc = _run(
+                tmp_path,
+                "setsid sh -c 'echo $$ > bg.pid; exec sleep 300' >/dev/null 2>&1 & "
+                + _WAIT_FOR.format(name="bg.pid") + "; echo ok",
+            )
+        monkeypatch.undo()
+        assert proc.stdout == "ok\n"
+        assert "/proc metadata could not be read" in caplog.text
+
+    def test_refused_metadata_is_named_in_the_warning_not_hidden(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        own = os.getpid()
+        self._refuse_metadata(monkeypatch, lambda pid: pid == own)
+        assert process_group._why_uninspectable(own) == (
+            "its /proc metadata could not be read (Permission denied)"
+        )
+
     def test_processes_refused_by_design_are_told_apart(self) -> None:
         # This process: could be a command's. PID 1 (another user's): not.
         assert process_group._could_be_this_commands(os.getpid())
@@ -1182,6 +1263,28 @@ class TestTheSelfTestSeesForItself:
         self._deny_environ(monkeypatch, lambda pid: True)
         monkeypatch.setattr(process_group, "_could_be_this_commands", lambda pid: False)
         assert process_group._carries_marker(os.getpid(), b"\0X=y\0") is False
+
+
+@linux_only
+class TestTheSelfTestReportsTheRealCause:
+    """Codex review, 20 October 2026: a self-test that fails before its
+    process starts reports the worker's actual exception, not "did not
+    start"."""
+
+    def test_a_missing_waitid_on_a_factory_launch_is_named(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delattr(os, "waitid")
+        monkeypatch.setattr(process_group, "_SELF_TEST_PASSED", [])
+        with pytest.raises(process_group.CleanupUnavailableError) as caught:
+            _run(tmp_path, "touch ran")
+        monkeypatch.undo()
+
+        assert caught.value.reason.startswith(
+            "the clean-up self-test could not run (AttributeError: "
+        )
+        assert "waitid" in caught.value.reason
+        assert not (tmp_path / "ran").exists()
 
 
 @pytest.mark.personal_run

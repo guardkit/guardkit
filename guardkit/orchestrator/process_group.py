@@ -344,6 +344,31 @@ def _status_fields(pid: int) -> Dict[str, str]:
     return fields
 
 
+def _status_fields_checked(pid: int) -> Dict[str, str]:
+    """``/proc/<pid>/status`` as fields; raises on any failure to read it
+    (``FileNotFoundError``/``ProcessLookupError`` when it has gone)."""
+    with open(f"/proc/{pid}/status", encoding="ascii", errors="replace") as fh:
+        text = fh.read()
+    fields = {}
+    for line in text.splitlines():
+        name, _, value = line.partition(":")
+        fields[name] = value.strip()
+    return fields
+
+
+def _metadata_unreadable(exc: OSError) -> None:
+    """A process's environment and its ``/proc`` metadata both cannot be
+    read, and it has not gone: on a factory launch that ends the command (it
+    could be one of the command's, and nothing can tell); on a person's own
+    run it is said."""
+    reason = f"a process's /proc metadata could not be read ({exc.strerror or exc})"
+    if _is_factory_launch():
+        raise _cleanup_failure(reason, before_launch=False) from exc
+    logger.warning(
+        "%s, so whether it is a project command's own could not be told.", reason.capitalize()
+    )
+
+
 def _could_be_this_commands(pid: int) -> bool:
     """Whether a process whose environment cannot be read may still be one
     of this command's, so that the refusal is a failure, not a boundary.
@@ -358,9 +383,13 @@ def _could_be_this_commands(pid: int) -> bool:
     try:
         if os.stat(f"/proc/{pid}/environ").st_uid != os.geteuid():
             return False
-    except OSError:
-        return False
-    theirs, ours = _status_fields(pid), _status_fields(os.getpid())
+        theirs = _status_fields_checked(pid)
+    except (FileNotFoundError, ProcessLookupError):
+        return False  # gone
+    except OSError as exc:
+        _metadata_unreadable(exc)
+        return True  # a person's run: not knowing counts as possibly ours
+    ours = _status_fields(os.getpid())
     if not theirs or not ours:
         return True  # not knowing counts as possibly ours
     if len(theirs.get("NSpid", "").split()) != len(ours.get("NSpid", "").split()):
@@ -396,9 +425,13 @@ def _why_uninspectable(pid: int) -> Optional[str]:
     try:
         if os.stat(f"/proc/{pid}/environ").st_uid != os.geteuid():
             return "its /proc records belong to another user, or it is not dumpable"
-    except OSError:
-        return None
-    theirs, ours = _status_fields(pid), _status_fields(os.getpid())
+        theirs = _status_fields_checked(pid)
+    except (FileNotFoundError, ProcessLookupError):
+        return None  # gone
+    except OSError as exc:
+        # Never silent: named, though it cannot be told apart.
+        return f"its /proc metadata could not be read ({exc.strerror or exc})"
+    ours = _status_fields(os.getpid())
     if not theirs or not ours:
         return None
     if len(theirs.get("NSpid", "").split()) != len(ours.get("NSpid", "").split()):
@@ -1197,6 +1230,14 @@ def _self_test_command(folder: str, outcome: Dict[str, Any]) -> None:
         outcome["error"] = exc
 
 
+def _self_test_error_reason(error: BaseException) -> str:
+    """The plain reason for the self-test's command failing with ``error``:
+    a capability failure's own clause, else the exception as it is."""
+    if isinstance(error, CleanupUnavailableError):
+        return error.reason or str(error)
+    return f"the clean-up self-test could not run ({type(error).__name__}: {error})"
+
+
 def _self_test() -> Optional[str]:
     """Run the real clean-up end to end once; ``None`` when it worked, else
     the plain reason.
@@ -1230,8 +1271,8 @@ def _self_test() -> Optional[str]:
         if not child_file.exists():
             worker.join(_SELF_TEST_WAIT_SECONDS + 60)
             error = outcome.get("error")
-            if isinstance(error, CleanupUnavailableError):
-                return error.reason or str(error)
+            if error is not None:
+                return _self_test_error_reason(error)
             problem = "the clean-up self-test's process did not start"
         else:
             pid = int(child_file.read_text(encoding="ascii"))
@@ -1248,13 +1289,15 @@ def _self_test() -> Optional[str]:
         worker.join(_SELF_TEST_WAIT_SECONDS + 60)
         if worker.is_alive():
             return problem or "the clean-up self-test's command did not finish"
+        error = outcome.get("error")
+        if error is not None and not isinstance(error, CleanupUnavailableError):
+            # A crash in the command's run is the real cause: reported as it
+            # is, before any consequence the independent check saw.
+            return _self_test_error_reason(error)
         if problem is not None:
             return problem
-        error = outcome.get("error")
-        if isinstance(error, CleanupUnavailableError):
-            return error.reason or str(error)
         if error is not None:
-            return f"the clean-up self-test could not run ({type(error).__name__}: {error})"
+            return _self_test_error_reason(error)
         done = outcome["done"]
         words = (done.stdout or "").split()
         printed = f"\0{COMMAND_MARKER_NAME}={words[1]}\0".encode() if len(words) == 2 else b""
