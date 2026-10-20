@@ -52,8 +52,8 @@ the biggest single process, so the whole build was lost. Three changes:
   number stay this command's throughout. A process outside the group is
   pinned (a pidfd) and checked again before it is signalled, so a number
   handed to another process in between is never signalled. No process is
-  signalled by number alone: where no pidfd can be had, a process outside
-  the group is left running and the log says so plainly. A process that
+  signalled by number alone: where no pidfd can be had or signalled through,
+  a process outside the group is left running and the log says so plainly. A process that
   keeps the output open after the leader has exited no longer holds the
   caller until the time limit: after ``_PIPE_GRACE_SECONDS`` it is ended and
   the output so far is returned.
@@ -338,7 +338,8 @@ def _signal_outside(
     pids: Set[int], pgid: int, entry: Optional[bytes], since: Optional[int], sig: int
 ) -> Set[int]:
     """Signal each of the command's processes outside its group; return those
-    that could not be pinned, and so were not signalled.
+    that could not be pinned or whose signal was refused, and so were not
+    signalled.
 
     Each is pinned first (a pidfd) and checked again. A pidfd names one
     process, not a number: if the process ends and its number is handed to
@@ -362,8 +363,11 @@ def _signal_outside(
         try:
             if _belongs(pid, pgid, entry, since) is not None:
                 signal.pidfd_send_signal(handle, sig)
-        except OSError:
-            pass  # it ended after it was pinned
+        except OSError as exc:
+            # Only ESRCH means it ended after it was pinned; anything else (a
+            # refusal) means it was not signalled.
+            if exc.errno != errno.ESRCH:
+                refused.add(pid)
         finally:
             os.close(handle)
     return refused
@@ -719,8 +723,8 @@ def _missing_capability() -> Optional[str]:
 
     Ending a process that left the command's group needs ``/proc`` (to find
     it), ``os.waitid`` (to keep the leader uncollected meanwhile) and a pidfd
-    (to signal that one process and no other). The pidfd is tried on this
-    process itself.
+    that can be opened and signalled through (to signal that one process and
+    no other). Both are tried on this process itself.
     """
     if not Path("/proc/self/stat").exists():
         return "/proc (to find a command's processes)"
@@ -732,7 +736,14 @@ def _missing_capability() -> Optional[str]:
         return "pidfd support in this Python"
     except OSError as exc:
         return f"pidfd_open (refused here: {exc.strerror or exc})"
-    os.close(handle)
+    try:
+        # Signal 0 checks that signalling through a pidfd is allowed too (a
+        # filter may allow opening one and refuse sending).
+        signal.pidfd_send_signal(handle, 0)
+    except OSError as exc:
+        return f"pidfd_send_signal (refused here: {exc.strerror or exc})"
+    finally:
+        os.close(handle)
     return None
 
 
@@ -780,7 +791,8 @@ def _not_safe_sentence(count: int) -> str:
         return ""
     return (
         f" {_processes(count).capitalize()} outside the command's process group "
-        f"could not be stopped safely on this system (no pidfd), so "
+        f"could not be stopped safely on this system (it does not allow "
+        f"signalling one process through a pidfd), so "
         f"{'it is' if count == 1 else 'they are'} still running."
     )
 

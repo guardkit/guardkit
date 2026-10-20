@@ -248,8 +248,39 @@ class TestLeftoversAreEnded:
         assert (
             "left 2 processes running; 1 was stopped. 1 process outside the "
             "command's process group could not be stopped safely on this system "
-            "(no pidfd), so it is still running."
+            "(it does not allow signalling one process through a pidfd), so it is "
+            "still running."
         ) in caplog.text
+
+    def test_a_refused_signal_through_a_pidfd_is_reported_not_counted(
+        self,
+        tmp_path: Path,
+        started: List[int],
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        # The pidfd opens but the signal is refused (EPERM): the process was
+        # not signalled, so it is reported as still running, never as gone.
+        if shutil.which("setsid", path=_ENV["PATH"]) is None:
+            pytest.skip("no setsid program")
+
+        def refused(_handle: int, _sig: int) -> None:
+            raise PermissionError(errno.EPERM, "refused by a filter")
+
+        monkeypatch.setattr(process_group.signal, "pidfd_send_signal", refused)
+        with caplog.at_level(logging.WARNING, logger=process_group.__name__):
+            _run(
+                tmp_path,
+                "sleep 300 >/dev/null 2>&1 & echo $! > bg.pid; "
+                "setsid sh -c 'echo $$ > inner.pid; exec sleep 300' >/dev/null 2>&1 & "
+                + _WAIT_FOR.format(name="inner.pid"),
+                grace=0.3,
+            )
+        monkeypatch.undo()
+
+        assert not _alive(_pid(tmp_path, "bg.pid"))
+        assert _alive(_pid(tmp_path, "inner.pid"))
+        assert "left 2 processes running; 1 was stopped. 1 process outside" in caplog.text
 
     def test_a_number_reused_after_pinning_is_never_signalled(
         self, started: List[int], monkeypatch: pytest.MonkeyPatch
@@ -492,6 +523,24 @@ class TestCleanupCapability:
 
         monkeypatch.setattr(process_group.os, "pidfd_open", refused)
         assert process_group._missing_capability() == self._MISSING
+
+    @linux_only
+    def test_a_refused_signal_through_a_pidfd_is_named_and_refuses_a_factory_launch(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # A filter may allow opening a pidfd and refuse signalling through it.
+        def refused(_handle: int, _sig: int) -> None:
+            raise PermissionError(errno.EPERM, "Operation not permitted")
+
+        monkeypatch.setattr(process_group.signal, "pidfd_send_signal", refused)
+        monkeypatch.setattr(process_group, "_CAPABILITY", [])
+        monkeypatch.setenv("GUARDKIT_FACTORY_LAUNCH", "build-x")
+        expected = "pidfd_send_signal (refused here: Operation not permitted)"
+
+        assert process_group._missing_capability() == expected
+        with pytest.raises(process_group.CleanupUnavailableError, match="pidfd_send_signal"):
+            _run(tmp_path, "touch ran")
+        assert not (tmp_path / "ran").exists()
 
     def test_a_factory_launch_runs_no_project_command(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, missing: None
