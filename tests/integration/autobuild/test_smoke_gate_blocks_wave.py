@@ -446,7 +446,15 @@ def test_timeout_fence_forces_failed_finalization_after_late_approval(
     orchestrator = _make_orchestrator(tmp_path)
     orchestrator._set_timeout_fence()
     worktree = _make_worktree(tmp_path)
-    feature, _ = _make_feature([["TASK-001"]])
+    feature, _ = _make_feature(
+        [["TASK-001"]],
+        smoke=SmokeGates(
+            after_wave=1,
+            command="true",
+            expected_exit=0,
+            timeout=5,
+        ),
+    )
     feature.tasks = [feature.tasks[0]]
     approved_late = WaveExecutionResult(
         wave_number=1,
