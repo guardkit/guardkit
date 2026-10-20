@@ -377,7 +377,7 @@ non-quarantined files:
 
 ### Later test execution
 
-After implementation, run the new exact nodes first on the Dell through
+After implementation, run the new exact nodes first through
 `dell-test`, without xdist and with candidate source first on `PYTHONPATH`.
 Then run all four mandatory roots as separate commands:
 
