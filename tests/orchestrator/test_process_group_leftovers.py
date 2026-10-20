@@ -468,6 +468,77 @@ class TestCommandsGoFirstWhenMemoryRunsOut:
         assert session == shell
 
 
+class TestCleanupCapability:
+    """A factory build must leave nothing running: where a command's
+    leftovers cannot all be stopped safely, a factory launch's project
+    commands are refused before they start; a person's own run goes on with
+    the reduced clean-up and one warning."""
+
+    _MISSING = "pidfd_open (refused here: Operation not permitted)"
+
+    @pytest.fixture
+    def missing(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(process_group, "_CAPABILITY", [self._MISSING])
+        monkeypatch.setattr(process_group, "_WARNED", [])
+
+    @linux_only
+    def test_this_system_has_everything_needed(self) -> None:
+        assert process_group._missing_capability() is None
+
+    @linux_only
+    def test_a_refused_pidfd_is_named(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        def refused(_pid: int) -> int:
+            raise PermissionError(errno.EPERM, "Operation not permitted")
+
+        monkeypatch.setattr(process_group.os, "pidfd_open", refused)
+        assert process_group._missing_capability() == self._MISSING
+
+    def test_a_factory_launch_runs_no_project_command(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, missing: None
+    ) -> None:
+        monkeypatch.setenv("GUARDKIT_FACTORY_LAUNCH", "build-x")
+        for run in (
+            lambda: _run(tmp_path, "touch ran"),
+            lambda: run_in_own_group(
+                "touch ran", shell=True, cwd=tmp_path, env=dict(_ENV), timeout=30
+            ),
+        ):
+            with pytest.raises(process_group.CleanupUnavailableError) as caught:
+                run()
+            assert isinstance(caught.value, OSError)
+            assert str(caught.value) == (
+                "The factory does not run project commands here: this system lacks "
+                f"{self._MISSING}, so what a command leaves running could not all be "
+                "stopped safely. Run the factory on a current Linux kernel (5.3 or "
+                "later) where pidfd_open is allowed."
+            )
+        assert not (tmp_path / "ran").exists()
+
+    def test_a_persons_own_run_goes_on_with_one_warning(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        missing: None,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        monkeypatch.delenv("GUARDKIT_FACTORY_LAUNCH", raising=False)
+        with caplog.at_level(logging.WARNING, logger=process_group.__name__):
+            first = _run(tmp_path, "touch ran; echo ok")
+            second = _run(tmp_path, "echo ok")
+
+        assert first.stdout == second.stdout == "ok\n"
+        assert (tmp_path / "ran").exists()
+        warnings = [r for r in caplog.records if "may be left running" in r.getMessage()]
+        assert len(warnings) == 1
+
+    @pytest.mark.parametrize("value", ["", "   "])
+    def test_an_empty_factory_signal_is_not_a_factory_launch(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, missing: None, value: str
+    ) -> None:
+        monkeypatch.setenv("GUARDKIT_FACTORY_LAUNCH", value)
+        assert _run(tmp_path, "echo ok").stdout == "ok\n"
+
+
 class TestWithoutWaitid:
     """macOS before Python 3.13 has no ``os.waitid``: commands still run (with
     ``communicate()``, as before), and a timeout still ends the group."""

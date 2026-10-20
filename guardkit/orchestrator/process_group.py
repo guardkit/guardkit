@@ -64,6 +64,11 @@ the biggest single process, so the whole build was lost. Three changes:
   command (then runs it exactly as ``shell=True`` would, with ``exec``); a
   program run directly gets it from GuardKit straight after it starts, so
   anything it starts in its first moments may miss it.
+* A factory launch (``GUARDKIT_FACTORY_LAUNCH`` set) runs no project command
+  where any of ``/proc``, ``os.waitid`` or a pidfd is missing: it raises
+  :class:`CleanupUnavailableError` (an ``OSError``) before the command
+  starts, naming what is missing. A person's own run goes on with the
+  reduced clean-up below and one warning.
 * Without ``/proc`` (macOS) the command's group alone is signalled when it
   returns, and nothing is counted. Without ``os.waitid`` (macOS before
   Python 3.13) the leader's exit cannot be read without collecting it, so
@@ -88,6 +93,7 @@ from typing import IO, Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple,
 
 __all__ = [
     "COMMAND_MARKER_NAME",
+    "CleanupUnavailableError",
     "GroupRun",
     "end_process_group",
     "leader_exit_code",
@@ -684,6 +690,75 @@ def _end_without_proc(proc: subprocess.Popen) -> None:
             time.sleep(_LOOK_INTERVAL_SECONDS)
 
 
+#: Set (to any non-empty value) when the factory launched this GuardKit
+#: (``guardkit.knowledge.memory_project.FACTORY_LAUNCH_ENV``, read the same
+#: way as ``harness.selector`` reads it).
+_FACTORY_LAUNCH_ENV = "GUARDKIT_FACTORY_LAUNCH"
+
+
+def _is_factory_launch() -> bool:
+    return bool(str(os.environ.get(_FACTORY_LAUNCH_ENV) or "").strip())
+
+
+class CleanupUnavailableError(OSError):
+    """A factory build's project command was not run: this system cannot
+    stop everything such a command leaves (an ``OSError``, so a caller that
+    treats "could not start" as the command's failure says so)."""
+
+
+def _missing_capability() -> Optional[str]:
+    """What this system lacks to end everything a command leaves, in plain
+    words, or ``None``.
+
+    Ending a process that left the command's group needs ``/proc`` (to find
+    it), ``os.waitid`` (to keep the leader uncollected meanwhile) and a pidfd
+    (to signal that one process and no other). The pidfd is tried on this
+    process itself.
+    """
+    if not Path("/proc/self/stat").exists():
+        return "/proc (to find a command's processes)"
+    if not _can_wait_without_collecting():
+        return "os.waitid (Python 3.13 or later on macOS)"
+    try:
+        handle = os.pidfd_open(os.getpid())
+    except AttributeError:
+        return "pidfd support in this Python"
+    except OSError as exc:
+        return f"pidfd_open (refused here: {exc.strerror or exc})"
+    os.close(handle)
+    return None
+
+
+_CAPABILITY: List[Optional[str]] = []
+_WARNED: List[bool] = []
+
+
+def _check_capability() -> None:
+    """Worked out once per process. On a factory launch with something
+    missing, refuse the command before it starts (a factory build must leave
+    nothing running, Codex review 19 October 2026); on a person's own run,
+    warn once and go on with the reduced clean-up."""
+    if not _CAPABILITY:
+        _CAPABILITY.append(_missing_capability())
+    missing = _CAPABILITY[0]
+    if missing is None:
+        return
+    if _is_factory_launch():
+        raise CleanupUnavailableError(
+            "The factory does not run project commands here: this system lacks "
+            f"{missing}, so what a command leaves running could not all be "
+            "stopped safely. Run the factory on a current Linux kernel (5.3 or "
+            "later) where pidfd_open is allowed."
+        )
+    if not _WARNED:
+        _WARNED.append(True)
+        logger.warning(
+            "This system lacks %s, so a process a project command moves out of "
+            "its process group may be left running after the command.",
+            missing,
+        )
+
+
 def _can_wait_without_collecting() -> bool:
     """Whether ``os.waitid`` exists. macOS has it only from Python 3.13."""
     try:
@@ -821,6 +896,7 @@ def run_in_own_group(
     replaced. Raises ``OSError`` when the command cannot be started at all,
     as ``subprocess.run`` does.
     """
+    _check_capability()
     argv, command_env, marker, since = _prepare(args, shell=shell, env=env)
     proc = subprocess.Popen(
         argv,
@@ -882,6 +958,7 @@ def run_project_command(
         stdout = stderr = subprocess.PIPE
     if input is not None and stdin is None:
         stdin = subprocess.PIPE
+    _check_capability()
     argv, command_env, marker, since = _prepare(args, shell=shell, env=env)
     proc = subprocess.Popen(
         argv,
