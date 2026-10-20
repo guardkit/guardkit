@@ -1633,10 +1633,15 @@ class WorktreeCheckpointManager:
         Raises:
             subprocess.CalledProcessError: If git reset fails
         """
-        checkpoint = self._find_checkpoint(turn)
-        if not checkpoint:
-            logger.warning(f"No checkpoint found for turn {turn}")
+        # Only this round's checkpoints are rollback targets (20 October
+        # 2026): a repair round numbers its turns from 1 again, so a turn
+        # number alone can name an earlier, approved round's checkpoint, and
+        # resetting to it would throw away approved work.
+        index = self._find_checkpoint_index(turn, current_round_only=True)
+        if index is None:
+            logger.warning(f"No checkpoint found for turn {turn} in this round")
             return False
+        checkpoint = self.checkpoints[index]
 
         logger.info(
             f"Rolling back {self.task_id} to turn {turn} "
@@ -1681,8 +1686,9 @@ class WorktreeCheckpointManager:
             # already succeeded.
             self._rollback_evidence_repos(checkpoint)
 
-            # Remove checkpoints after rollback point
-            self.checkpoints = [cp for cp in self.checkpoints if cp.turn <= turn]
+            # Remove checkpoints after rollback point (by position: turn
+            # numbers repeat once a gate has re-opened the task)
+            self.checkpoints = self.checkpoints[: index + 1]
             self._save_checkpoints()
 
             logger.info(
@@ -1752,10 +1758,15 @@ class WorktreeCheckpointManager:
         This method scans checkpoints in reverse order to find the last clean
         state for rollback.
 
+        Only this round's checkpoints are searched (see
+        :meth:`_current_round_start`): the turn number returned is the one
+        :meth:`rollback_to` resolves, and an earlier round's turn number would
+        name a different checkpoint.
+
         Returns:
             Turn number of last passing checkpoint, or None if none found
         """
-        for checkpoint in reversed(self.checkpoints):
+        for checkpoint in reversed(self._current_round()):
             # Only an explicit pass is a rollback target. ``None`` (unknown)
             # is not a known-good state (TASK-FIX-CKPTTESTRED01).
             if checkpoint.tests_passed is True:
@@ -1801,8 +1812,46 @@ class WorktreeCheckpointManager:
     # Private Helper Methods
     # ========================================================================
 
+    def _current_round_start(self) -> int:
+        """Where this round's checkpoints begin in the list.
+
+        A gate that fails after a task was approved re-opens it for a repair
+        round, and the round numbers its turns from 1 again, so one task's
+        list can read ``[1, 2, 1, 2, 3, 4]`` (20 October 2026). Every round
+        starts at turn 1 and a resumed round continues its numbering, so this
+        round starts at the last checkpoint for turn 1 (the start of the list
+        when there is none).
+        """
+        for index in range(len(self.checkpoints) - 1, -1, -1):
+            if self.checkpoints[index].turn == 1:
+                return index
+        return 0
+
+    def _current_round(self) -> List[Checkpoint]:
+        """This round's checkpoints, oldest first."""
+        return self.checkpoints[self._current_round_start():]
+
+    def _find_checkpoint_index(
+        self, turn: int, current_round_only: bool = False
+    ) -> Optional[int]:
+        """The position of the checkpoint for ``turn``, this round first.
+
+        The latest matching checkpoint of this round; failing that, unless
+        ``current_round_only``, the latest matching one of an earlier round.
+        """
+        start = self._current_round_start()
+        for index in range(len(self.checkpoints) - 1, start - 1, -1):
+            if self.checkpoints[index].turn == turn:
+                return index
+        if current_round_only:
+            return None
+        for index in range(start - 1, -1, -1):
+            if self.checkpoints[index].turn == turn:
+                return index
+        return None
+
     def _find_checkpoint(self, turn: int) -> Optional[Checkpoint]:
-        """Find checkpoint by turn number.
+        """Find checkpoint by turn number, preferring this round's.
 
         Args:
             turn: Turn number
@@ -1810,10 +1859,8 @@ class WorktreeCheckpointManager:
         Returns:
             Checkpoint if found, None otherwise
         """
-        for checkpoint in self.checkpoints:
-            if checkpoint.turn == turn:
-                return checkpoint
-        return None
+        index = self._find_checkpoint_index(turn)
+        return None if index is None else self.checkpoints[index]
 
     def _rollback_evidence_repos(self, checkpoint: Checkpoint) -> None:
         """Hard-reset declared sibling repos to their hash in ``checkpoint``.
