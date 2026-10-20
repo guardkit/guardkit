@@ -90,10 +90,12 @@ required inputs:
    from `len(queued_calls)` and the resolved cap.
 4. `tasks_run_at_the_same_time` derives its answer from the same helper, so
    `shares_working_copy` and effective concurrency cannot drift.
-5. A sticky per-feature-invocation timeout flag starts clear at the entry to
-   each public `orchestrate` call. A small async dispatch wrapper runs
-   inside the actual `bound_concurrency` slot and checks the flag before it
-   creates `to_thread` or calls `_execute_task`.
+5. A sticky per-feature-invocation timeout flag is initialized clear in
+   `FeatureOrchestrator.__init__`. All reads use a clear-by-default accessor so
+   bare objects and direct internal callers retain their current behavior.
+   Only entry to a public `orchestrate` call resets the flag. A small async
+   dispatch wrapper runs inside the actual `bound_concurrency` slot and checks
+   the flag before it creates `to_thread` or calls `_execute_task`.
 6. The wrapper otherwise awaits the existing
    `wait_for(to_thread(...), timeout)` unchanged. If that raises
    `TimeoutError`, the wrapper sets the flag and re-raises before the outer
@@ -102,6 +104,8 @@ required inputs:
    `TaskExecutionResult` with `final_decision="error"`, zero turns, and an
    error stating that the task did not start because another task in its wave
    timed out. It does not start a Player, Coach, subprocess, or worker thread.
+   Its existing `started_at` remains the queue timestamp; this repair does not
+   redefine or clear persisted timestamp fields.
 8. Every dispatch owner checks the same flag immediately after its wave
    return: `_wave_phase` for normal waves, the smoke and wiring retry helpers,
    and `_run_feature_check` for whole-feature repair. `_wave_phase` also
@@ -197,6 +201,11 @@ Its existing timeout behavior is outside this snapshot repair.
   path.
 - A direct or older caller that omits the new value falls back to nominal
   `wave_size`; its current isolation behavior is unchanged.
+- A fresh normally constructed orchestrator and a bare object created without
+  `__init__` both read the timeout fence as clear. Direct
+  `_execute_wave_parallel` and `_finalize_phase` calls therefore retain their
+  current behavior unless a public invocation or timeout has set the fence.
+  Internal entry points do not reset an already-set fence.
 - Existing positional construction of AutoBuild and CoachValidator retains
   every binding; the new value is optional and passed by keyword.
 - A three-task group capped at two supplies effective two. Nominal reporting
@@ -235,10 +244,14 @@ Production changes are limited to the internal context path:
   conservative fallback and use the resolved value only for isolated-copy
   selection.
 
-Focused tests belong in the existing parallel-strategy, feature-orchestrator,
-same-area sequencing, specialist invocation, and Coach isolation suites. No
-product, isolated-copy implementation, feature schema, CLI setting, or
-test-command change is required.
+New focused controls belong in the existing parallel-strategy,
+feature-orchestrator, timeout, gate, specialist invocation, and Coach
+isolation suites. Mandatory validation covers every existing test under
+`tests/unit`, `tests/integration`, `tests/orchestrator`, and `tests/seam`; this
+avoids relying on a hand-maintained list while the fence touches dispatch,
+timeout, gate, and finalization paths. No product, isolated-copy
+implementation, feature schema, CLI setting, or product test-command change is
+required.
 
 ## Acceptance controls
 
@@ -277,7 +290,9 @@ test-command change is required.
   policy. A late approval does not clear the guard or launch an unstarted peer.
 - Did-not-start peers are never `deferred` or successful. The standard false
   result path persists them as failed and leaves them eligible for a later
-  resume.
+  resume. Their `started_at` field remains the existing queue time; status,
+  `final_decision="error"`, zero turns, and the explicit error reason truthfully
+  record that execution did not start.
 - Existing timeout-event and cancellation-event timing is unchanged.
 - The sticky fence stops the next wave even with `stop_on_failure=false` and
   prevents post-wave smoke, wiring, final boot-smoke, whole-feature check, and
@@ -287,6 +302,9 @@ test-command change is required.
   reports the feature invocation failed with a timeout-stop reason.
 - A second public `orchestrate` call on the same object, including a resume,
   starts with a clear fence. The first invocation's fence does not poison it.
+- Direct `_execute_wave_parallel` and `_finalize_phase` calls on a fresh
+  ordinary object and an `__new__`-constructed bare object observe a clear
+  default and preserve their existing result and finalization behavior.
 - Source inspection records the runtime's 300-second default-executor shutdown
   bound; no test waits for that duration. The design makes no claim that the
   old worker is quiescent when the invocation returns, and adds no join or kill.
@@ -326,23 +344,45 @@ test-command change is required.
 - `shares_working_copy=false` without explicit effective concurrency does not
   alter isolation.
 
+### New fence-control homes
+
+Each new control has an explicit existing file home. This table locates the
+new nodes; the mandatory root runs below remain the regression boundary.
+
+| Control | File home |
+| --- | --- |
+| Cap-one timeout with a still-running real-worktree check; queued peer does not start | `tests/unit/test_timeout_logging_reconciliation.py` |
+| Cap-two timeout with an already-running sibling and an unstarted third task | `tests/unit/test_max_parallel.py` |
+| Did-not-start result is false/error/zero-turn, never deferred, and retains queue-time `started_at` | `tests/unit/orchestrator/test_feature_orchestrator_skip.py` |
+| Late approval cannot clear the fence | `tests/unit/test_timeout_logging_reconciliation.py` |
+| `stop_on_failure=false` cannot start the next wave or inter-wave bootstrap | `tests/unit/test_inter_wave_bootstrap.py` |
+| Smoke feedback retry cannot re-enter dispatch | `tests/unit/orchestrator/test_smoke_feedback_retry.py` |
+| Wiring-gate retry cannot re-enter dispatch | `tests/unit/orchestrator/test_wiring_gate.py` |
+| Whole-feature repair cannot re-enter dispatch | `tests/orchestrator/test_feature_check.py` |
+| Final boot smoke and feature check do not run after a timeout | `tests/orchestrator/test_boot_smoke_wiring.py` and `tests/orchestrator/test_feature_check_three_outcomes.py` |
+| Finalization forces failure while preserving task records and counts | `tests/integration/autobuild/test_smoke_gate_blocks_wave.py` |
+| A second public invocation resets the fence on the same object | `tests/unit/test_feature_orchestrator.py` |
+| Fresh normal and bare objects keep direct dispatch and finalization behavior | `tests/unit/test_feature_orchestrator.py` and `tests/orchestrator/test_feature_check_three_outcomes.py` |
+
 ### Later test execution
 
-After implementation, run focused controls on the Dell through `dell-test`,
-without xdist and with candidate source first on `PYTHONPATH`:
+After implementation, run the new exact nodes first on the Dell through
+`dell-test`, without xdist and with candidate source first on `PYTHONPATH`.
+Then run all four mandatory roots as separate commands:
 
 ```text
-~/.local/bin/dell-test timeout 1800 env PYTHONPATH=<candidate>/src:<candidate> <venv>/bin/python -m pytest -q -p no:xdist -p no:cacheprovider -o addopts= tests/unit/test_parallel_strategy.py tests/unit/test_feature_orchestrator.py tests/unit/test_wave_same_area_sequencing.py tests/unit/orchestrator/test_specialist_wave_size_threading.py tests/unit/orchestrator/test_specialist_component_threading.py tests/unit/orchestrator/test_specialist_invocations.py tests/unit/orchestrator/test_smoke_feedback_retry.py tests/unit/orchestrator/test_wiring_gate.py tests/orchestrator/test_feature_check.py
-~/.local/bin/dell-test timeout 1800 env PYTHONPATH=<candidate>/src:<candidate> <venv>/bin/python -m pytest -q -p no:xdist -p no:cacheprovider -o addopts= tests/unit/test_coach_parallel_isolation.py tests/unit/test_coach_check_could_not_run.py tests/integration/test_parallel_wave_isolation.py tests/orchestrator/test_coach_sdk_stream_resilience.py tests/orchestrator/test_per_component_toolchain.py tests/orchestrator/test_declared_toolchain_detection.py
-~/.local/bin/dell-test timeout 1800 env PYTHONPATH=<candidate>/src:<candidate> <venv>/bin/python -m pytest -q -p no:xdist -p no:cacheprovider -o addopts= tests/unit/test_autobuild_orchestrator.py tests/orchestrator/test_behavioural_oracle_threading.py tests/orchestrator/test_llm_coach_primary.py tests/seam/test_autobuild_coach.py tests/orchestrator/test_direct_mode_timeouts.py
+~/.local/bin/dell-test timeout 3600 env PYTHONPATH=<candidate>/src:<candidate> <venv>/bin/python -m pytest -q -p no:xdist -p no:cacheprovider -o addopts= tests/unit
+~/.local/bin/dell-test timeout 3600 env PYTHONPATH=<candidate>/src:<candidate> <venv>/bin/python -m pytest -q -p no:xdist -p no:cacheprovider -o addopts= tests/integration
+~/.local/bin/dell-test timeout 3600 env PYTHONPATH=<candidate>/src:<candidate> <venv>/bin/python -m pytest -q -p no:xdist -p no:cacheprovider -o addopts= tests/orchestrator
+~/.local/bin/dell-test timeout 3600 env PYTHONPATH=<candidate>/src:<candidate> <venv>/bin/python -m pytest -q -p no:xdist -p no:cacheprovider -o addopts= tests/seam
 ```
 
-All three commands are mandatory. Run new exact nodes first, then these file
-sets. If focused results expose a regression concern, run the established
-broader `tests/orchestrator` path through the same wrapper. Preserve the exact
-candidate commit, command, result count, and raw log. Compare any failure
-against the unchanged pinned base before changing the design or weakening a
-control.
+All four root commands are mandatory. Preserve each exact command, candidate
+commit, complete pass/fail/skip count, exit status, elapsed time, and raw log.
+Reproduce every candidate failure against the unchanged pinned base with the
+same root or exact failing nodes before changing production logic or weakening
+a control. Report unexecuted tests honestly if a bounded command does not
+complete.
 
 ## Review
 
