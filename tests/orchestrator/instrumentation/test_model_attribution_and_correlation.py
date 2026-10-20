@@ -152,8 +152,10 @@ class TestModelAttribution:
         assert events[0].model == "claude-sonnet-4-20250514"
 
     @pytest.mark.asyncio
-    async def test_model_from_flag_when_set(self):
-        """Model from configured flag takes precedence."""
+    async def test_server_reported_model_wins_over_the_flag(self, monkeypatch):
+        """The model the server reports wins; the flag is kept as
+        ``requested_model`` (20 October 2026)."""
+        monkeypatch.setenv("GUARDKIT_HARNESS", "sdk")
         invoker = AgentInvoker(worktree_path="/tmp/test")
         invoker._emitter = MockEmitter()
 
@@ -175,12 +177,13 @@ class TestModelAttribution:
 
         events = invoker._emitter.get_events_by_type(LLMCallEvent)
         assert len(events) == 1
-        # Configured model takes precedence
-        assert events[0].model == "custom-model-override"
+        assert events[0].model == "claude-sonnet-4-20250514"
+        assert events[0].requested_model == "custom-model-override"
 
     @pytest.mark.asyncio
-    async def test_model_fallback_to_default_only_when_no_source(self):
-        """Default only when neither flag nor server-resolved available."""
+    async def test_model_unknown_only_when_no_source(self, monkeypatch):
+        """'unknown' only when neither flag nor server-reported model exists."""
+        monkeypatch.setenv("GUARDKIT_HARNESS", "sdk")
         invoker = AgentInvoker(worktree_path="/tmp/test")
         invoker._emitter = MockEmitter()
 
@@ -200,8 +203,7 @@ class TestModelAttribution:
 
         events = invoker._emitter.get_events_by_type(LLMCallEvent)
         assert len(events) == 1
-        # Only falls back to default when no other source
-        assert events[0].model == "default"
+        assert events[0].model == "unknown"
 
 
 # ============================================================================

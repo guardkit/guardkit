@@ -125,10 +125,12 @@ class TestModelAttribution:
         assert event.model != "default"
 
     @pytest.mark.asyncio
-    async def test_llm_call_event_prefers_configured_model(
-        self, agent_invoker_with_emitter, sdk_assistant_message
+    async def test_llm_call_event_prefers_the_server_reported_model(
+        self, agent_invoker_with_emitter, sdk_assistant_message, monkeypatch
     ):
-        """Configured model takes precedence over server-resolved."""
+        """The server-reported model wins; the configured one is kept as
+        ``requested_model`` (20 October 2026)."""
+        monkeypatch.setenv("GUARDKIT_HARNESS", "sdk")
         invoker, emitter = agent_invoker_with_emitter
 
         invoker._emit_llm_call_event(
@@ -144,13 +146,16 @@ class TestModelAttribution:
         await asyncio.sleep(0.01)
 
         event = emitter.emit.call_args[0][0]
-        assert event.model == "custom-model-override"
+        assert event.model == sdk_assistant_message.model
+        assert event.model != "custom-model-override"
+        assert event.requested_model == "custom-model-override"
 
     @pytest.mark.asyncio
-    async def test_llm_call_event_falls_back_to_default_only_when_necessary(
-        self, agent_invoker_with_emitter
+    async def test_llm_call_event_is_unknown_only_when_necessary(
+        self, agent_invoker_with_emitter, monkeypatch
     ):
-        """Falls back to 'default' only when neither configured nor server-resolved available."""
+        """'unknown' only when neither configured nor server-reported is available."""
+        monkeypatch.setenv("GUARDKIT_HARNESS", "sdk")
         invoker, emitter = agent_invoker_with_emitter
 
         empty_msg = MagicMock()
@@ -169,7 +174,7 @@ class TestModelAttribution:
         await asyncio.sleep(0.01)
 
         event = emitter.emit.call_args[0][0]
-        assert event.model == "default"
+        assert event.model == "unknown"
 
 
 class TestCorrelationIdentity:

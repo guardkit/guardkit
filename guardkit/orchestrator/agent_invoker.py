@@ -52,7 +52,6 @@ from guardkit.orchestrator.exceptions import (
 from guardkit.orchestrator.instrumentation.emitter import NullEmitter
 from guardkit.orchestrator.instrumentation.llm_instrumentation import (
     classify_error,
-    detect_provider,
     extract_token_usage,
     measure_latency,
     sanitise_tool_name,
@@ -6706,8 +6705,16 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         Priority:
             1. AssistantMessage.model (SDK harness)
             2. First key in ResultMessage.model_usage (both harnesses)
+            3. A LangChain message's ``response_metadata`` (``model_name`` or
+               ``model``), the name the model server put in its reply: the
+               LangGraph harness hands back a graph state
+               (``{"messages": [...]}``) or a single message (20 October
+               2026). The last message that names one wins.
         """
         for msg in response_messages:
+            reported = self._langchain_reported_model(msg)
+            if reported:
+                return reported
             # Try AssistantMessage.model (SDK harness)
             if hasattr(msg, "model") and hasattr(msg, "type"):
                 if getattr(msg, "type", None) == "assistant":
@@ -6724,6 +6731,35 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                         return next(iter(model_usage.keys()))
 
         return None
+
+    @staticmethod
+    def _langchain_reported_model(msg: Any) -> Optional[str]:
+        """The model a LangChain reply (or graph state) says answered, or None.
+
+        Reads ``response_metadata["model_name"]`` / ``["model"]``, which
+        LangChain's chat clients fill from the server's own reply. A graph
+        state dict is searched from its last message back.
+        """
+
+        def _named(item: Any) -> Optional[str]:
+            metadata = getattr(item, "response_metadata", None)
+            if not isinstance(metadata, dict):
+                return None
+            for key in ("model_name", "model"):
+                value = metadata.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+            return None
+
+        if isinstance(msg, dict):
+            messages = msg.get("messages")
+            if isinstance(messages, list):
+                for item in reversed(messages):
+                    named = _named(item)
+                    if named:
+                        return named
+            return None
+        return _named(msg)
 
     def _emit_llm_call_event(
         self,
@@ -6765,16 +6801,32 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
             # Read current attempt from instance or default to 1
             attempt = getattr(self, "_current_attempt", None) or 1
 
-            # TASK-OBS-9F43 AC-1: Prefer server-resolved model
-            # Priority: configured model -> server-resolved -> "default"
-            resolved_model = model
-            if resolved_model is None:
-                # Try to extract from response messages
-                server_model = self._extract_server_resolved_model(response_messages)
-                resolved_model = server_model if server_model else "default"
+            # 20 October 2026: record where the call went and the model that
+            # answered, never a client default. Until then the configured
+            # model name won and the provider was read from
+            # ANTHROPIC_BASE_URL alone, so a factory turn (an OpenAI-
+            # compatible client on a local model seat, asked for the CLI's
+            # default model name) was recorded as an Anthropic call to that
+            # Anthropic model. Now:
+            # * provider: the route the harness really took (seat_for_record);
+            # * model: the name the server reported when it reported one;
+            #   else the requested name when a vendor's own API served it
+            #   (that API serves exactly the model named); else "unknown";
+            # * requested_model: the name GuardKit asked for, as sent.
+            from guardkit.orchestrator.harness.selector import seat_for_record
 
-            # Detect provider from environment base URL
-            base_url = os.environ.get("ANTHROPIC_BASE_URL", "")
+            seat = seat_for_record(model)
+            server_model = self._extract_server_resolved_model(response_messages)
+            if server_model:
+                resolved_model = server_model
+            elif seat.requested_model and seat.provider in ("anthropic", "openai"):
+                prefix, sep, bare = seat.requested_model.partition(":")
+                resolved_model = (
+                    bare if sep and prefix.strip().lower() == seat.provider
+                    else seat.requested_model
+                )
+            else:
+                resolved_model = "unknown"
 
             event = LLMCallEvent(
                 run_id=run_id,
@@ -6782,8 +6834,9 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                 agent_role=agent_type,
                 attempt=attempt,
                 timestamp=datetime.now().isoformat(),
-                provider=detect_provider(base_url, resolved_model),
+                provider=seat.provider,
                 model=resolved_model,
+                requested_model=seat.requested_model,
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
                 latency_ms=latency_ms,

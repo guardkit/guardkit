@@ -9,6 +9,7 @@ decoupled and has zero dependencies on the SDK invocation module.
 
 Functions:
     detect_provider      - Classify LLM provider from base URL / model
+    provider_for_route   - Where a call went, from its client and base URL
     extract_token_usage  - Pull (input_tokens, output_tokens) from SDK messages
     measure_latency      - Context manager for wall-clock timing in milliseconds
     classify_error       - Map SDK exceptions to controlled vocabulary
@@ -106,6 +107,55 @@ def detect_provider(base_url: Optional[str], model: Optional[str]) -> str:
         return "local-vllm"
 
     return "anthropic"
+
+
+#: The vendor hosts each client reaches when no base URL is set, and the host
+#: suffix that still means that vendor's own API.
+_VENDOR_HOST_SUFFIX = {
+    "anthropic": "anthropic.com",
+    "openai": "openai.com",
+}
+
+
+def provider_for_route(client: Optional[str], base_url: Optional[str]) -> str:
+    """Where a call went, from the client that made it and its base URL.
+
+    20 October 2026. :func:`detect_provider` read only ``ANTHROPIC_BASE_URL``
+    and called anything it did not recognise ``"anthropic"``, so the
+    factory's turns, made by an OpenAI-compatible client against a local
+    model seat, were recorded as Anthropic calls. This judges the route the
+    call actually took:
+
+    * ``client`` is the client library the harness used: ``"anthropic"``
+      (the Claude SDK, or a LangChain ``anthropic:`` model) or ``"openai"``
+      (a LangChain ``openai:`` model, which every bare alias becomes on the
+      LangGraph harness). Any other client is ``"unknown"``.
+    * No base URL means the client's own vendor API: that vendor.
+    * A base URL on a local seat (:func:`guardkit.orchestrator.m0_fence.
+      is_local_seat_host`, the one statement of "local") is
+      ``"local-vllm"``.
+    * A base URL on the client's own vendor's host is that vendor.
+    * Anything else (another host, or a URL with no readable host) is
+      ``"unknown"``: never a guessed vendor.
+    """
+    from urllib.parse import urlparse
+
+    from guardkit.orchestrator.m0_fence import is_local_seat_host
+
+    if client not in _VENDOR_HOST_SUFFIX:
+        return "unknown"
+    url = (base_url or "").strip()
+    if not url:
+        return client
+    host = (urlparse(url).hostname or "").lower()
+    if not host:
+        return "unknown"
+    if is_local_seat_host(host):
+        return "local-vllm"
+    suffix = _VENDOR_HOST_SUFFIX[client]
+    if host == suffix or host.endswith("." + suffix):
+        return client
+    return "unknown"
 
 
 # ============================================================================
@@ -280,6 +330,7 @@ def sanitise_tool_name(raw_name: str) -> str:
 __all__ = [
     "LatencyResult",
     "detect_provider",
+    "provider_for_route",
     "extract_token_usage",
     "measure_latency",
     "classify_error",

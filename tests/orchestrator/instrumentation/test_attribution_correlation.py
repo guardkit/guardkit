@@ -125,9 +125,16 @@ def test_extract_server_resolved_model_returns_none_when_unavailable(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_emit_llm_call_uses_configured_model_first(tmp_path):
-    """AC-1: Configured model takes precedence over server-resolved."""
+async def test_emit_llm_call_records_the_server_reported_model_first(
+    tmp_path, monkeypatch
+):
+    """The model the server says answered wins over the configured name (20
+    October 2026: a configured name can be an alias a proxy maps to another
+    model). The configured name is kept as ``requested_model``."""
     import asyncio
+
+    monkeypatch.setenv("GUARDKIT_HARNESS", "sdk")
+    monkeypatch.delenv("ANTHROPIC_BASE_URL", raising=False)
     from guardkit.orchestrator.agent_invoker import AgentInvoker
 
     emitter = CaptureEmitter()
@@ -156,7 +163,9 @@ async def test_emit_llm_call_uses_configured_model_first(tmp_path):
 
     llm_events = [e for e in emitter.captured_events if isinstance(e, LLMCallEvent)]
     assert len(llm_events) == 1
-    assert llm_events[0].model == "claude-sonnet-4-5-20250929"
+    assert llm_events[0].model == "claude-4-opus-20250514"
+    assert llm_events[0].requested_model == "claude-sonnet-4-5-20250929"
+    assert llm_events[0].provider == "anthropic"
 
 
 @pytest.mark.asyncio
@@ -194,9 +203,13 @@ async def test_emit_llm_call_uses_server_resolved_when_no_config(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_emit_llm_call_defaults_to_default_when_no_sources(tmp_path):
-    """AC-1: Literal 'default' appears only when no model source is available."""
+async def test_emit_llm_call_records_unknown_when_no_sources(tmp_path, monkeypatch):
+    """With no configured model and nothing reported by the server, the SDK's
+    bundled CLI picked a model this process cannot name: 'unknown', never a
+    made-up default (20 October 2026; it was the literal 'default')."""
     import asyncio
+
+    monkeypatch.setenv("GUARDKIT_HARNESS", "sdk")
     from guardkit.orchestrator.agent_invoker import AgentInvoker
 
     emitter = CaptureEmitter()
@@ -221,7 +234,8 @@ async def test_emit_llm_call_defaults_to_default_when_no_sources(tmp_path):
 
     llm_events = [e for e in emitter.captured_events if isinstance(e, LLMCallEvent)]
     assert len(llm_events) == 1
-    assert llm_events[0].model == "default"
+    assert llm_events[0].model == "unknown"
+    assert llm_events[0].requested_model is None
 
 
 # ============================================================================

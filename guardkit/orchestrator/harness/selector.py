@@ -107,6 +107,75 @@ def is_anthropic_sdk_run(env_var: str = "GUARDKIT_HARNESS") -> bool:
     return host == "anthropic.com" or host.endswith(".anthropic.com")
 
 
+@dataclass(frozen=True)
+class SeatRecord:
+    """What a model call's record says about where it went (20 October 2026).
+
+    ``harness`` is the harness this process runs on; ``requested_model`` the
+    model name as that harness sends it (``None`` when none is asked for);
+    ``provider`` where the call went, in the event vocabulary.
+    """
+
+    harness: str
+    requested_model: str | None
+    provider: str
+
+
+def seat_for_record(model: Any, env: Any = None) -> SeatRecord:
+    """Describe the seat a call with ``model`` goes to, for its record.
+
+    Uses the same rules the harnesses use to place the call, so the record
+    says what was called rather than what a client defaults to:
+
+    * ``sdk``: the Claude SDK, routed by ``ANTHROPIC_BASE_URL``. With no
+      model the bundled CLI picks one this process cannot name, so
+      ``requested_model`` is ``None``.
+    * ``langgraph``: the model as :func:`_translate_kwargs_for_langgraph`
+      sends it (a bare alias becomes ``openai:<alias>``, routed by
+      ``OPENAI_BASE_URL``; ``anthropic:`` goes to ``ANTHROPIC_API_URL`` or
+      ``ANTHROPIC_BASE_URL``). With no model DeepAgents builds its own
+      default, which :data:`m0_fence.LANGGRAPH_DEFAULT_SEAT` names.
+    * any other harness name, or a model that is not a name (a model
+      object): provider ``"unknown"``.
+
+    Never raises.
+    """
+    from guardkit.orchestrator.instrumentation.llm_instrumentation import (
+        provider_for_route,
+    )
+    from guardkit.orchestrator.m0_fence import LANGGRAPH_DEFAULT_SEAT
+
+    settings = os.environ if env is None else env
+    name = str(settings.get("GUARDKIT_HARNESS", DEFAULT_HARNESS)).lower()
+    named = model if isinstance(model, str) and model.strip() else None
+    if name == "sdk":
+        if model is not None and named is None:
+            return SeatRecord(name, None, "unknown")
+        return SeatRecord(
+            name,
+            named,
+            provider_for_route("anthropic", settings.get("ANTHROPIC_BASE_URL")),
+        )
+    if name == "langgraph":
+        if model is None:
+            requested = LANGGRAPH_DEFAULT_SEAT
+        elif named is None:
+            return SeatRecord(name, None, "unknown")
+        else:
+            requested = _translate_kwargs_for_langgraph({"model": named})["model"]
+        client = requested.partition(":")[0].strip().lower()
+        if client == "openai":
+            base_url = settings.get("OPENAI_BASE_URL")
+        elif client == "anthropic":
+            base_url = settings.get("ANTHROPIC_API_URL") or settings.get(
+                "ANTHROPIC_BASE_URL"
+            )
+        else:
+            base_url = None
+        return SeatRecord(name, requested, provider_for_route(client, base_url))
+    return SeatRecord(name, named, "unknown")
+
+
 def _translate_kwargs_for_langgraph(harness_kwargs: dict[str, Any]) -> dict[str, Any]:
     """Map orchestrator-side SDK-shaped kwargs onto :class:`LangGraphHarness`'s signature.
 
@@ -1480,6 +1549,8 @@ def select_harness(
 
 __all__ = [
     "DEFAULT_HARNESS",
+    "SeatRecord",
+    "seat_for_record",
     "provided_scratch_root",
     "SUPPORTED_HARNESSES",
     "resolve_harness_name",

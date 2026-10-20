@@ -19,7 +19,7 @@ Controlled Vocabularies:
     - AgentRole: player | coach | resolver | router
     - FailureCategory: knowledge_gap | context_missing | spec_ambiguity | ...
     - PromptProfile: digest_only | digest+graphiti | digest+rules_bundle | ...
-    - LLMProvider: anthropic | openai | local-vllm
+    - LLMProvider: anthropic | openai | local-vllm | unknown
     - LLMCallStatus: ok | error
     - LLMCallErrorType: rate_limited | timeout | tool_error | other
     - GraphitiQueryType: context_loader | nearest_neighbours | adr_lookup
@@ -89,8 +89,13 @@ PromptProfile = Literal[
 ]
 """Controlled vocabulary for prompt composition profiles."""
 
-LLMProvider = Literal["anthropic", "openai", "local-vllm"]
-"""Supported LLM providers."""
+LLMProvider = Literal["anthropic", "openai", "local-vllm", "unknown"]
+"""Supported LLM providers.
+
+``local-vllm`` is any model server on a local seat (the M0 fence's rule of
+what "local" means), whatever software serves it. ``unknown`` (20 October
+2026) is written when the call's route cannot be told, rather than guessing a
+vendor."""
 
 LLMCallStatus = Literal["ok", "error"]
 """LLM call outcome status."""
@@ -164,8 +169,16 @@ class LLMCallEvent(BaseEvent):
     for cost tracking and performance analysis.
 
     Attributes:
-        provider: LLM provider (anthropic, openai, local-vllm).
-        model: Model identifier string.
+        provider: Where the call went: anthropic, openai (the vendors'
+            own APIs), local-vllm (a model server on a local seat) or
+            unknown.
+        model: The model that answered: the name the server reported when
+            it reported one; otherwise the requested model when a vendor's
+            own API served it; otherwise ``"unknown"``. Never a client
+            default the call did not use (20 October 2026).
+        requested_model: The model name GuardKit asked the harness for, as
+            the harness sent it (``openai:<alias>`` on the LangGraph route),
+            or ``None`` when it asked for none.
         input_tokens: Number of input tokens (>= 0).
         output_tokens: Number of output tokens (>= 0).
         latency_ms: Total latency in milliseconds.
@@ -183,7 +196,13 @@ class LLMCallEvent(BaseEvent):
     provider: LLMProvider = Field(
         description="LLM provider: anthropic, openai, local-vllm"
     )
-    model: str = Field(description="Model identifier string")
+    model: str = Field(
+        description="The model that answered, or 'unknown' when it cannot be told"
+    )
+    requested_model: Optional[str] = Field(
+        None,
+        description="The model name GuardKit asked the harness for, as sent",
+    )
     input_tokens: int = Field(
         ge=0, description="Number of input tokens (>= 0)"
     )
