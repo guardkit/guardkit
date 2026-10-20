@@ -12604,8 +12604,11 @@ class CoachValidator:
             # sent after its own tests and stylesheets.
             beside = set(plan_audit.get("extra_files_beside_the_plan") or [])
             # A repair round (20 October 2026): the non-protected files the
-            # round made are left to the reviewer's judgement, not counted.
-            for_reviewer = set(plan_audit.get("extra_files_for_the_reviewer") or [])
+            # round made are left to the reviewer's judgement, and those an
+            # earlier approved repair round made are not counted again.
+            for_reviewer = set(plan_audit.get("extra_files_for_the_reviewer") or []) | set(
+                plan_audit.get("extra_files_approved_by_a_repair") or []
+            )
             counted_extra = [
                 f for f in extra_files if f not in beside and f not in for_reviewer
             ]

@@ -378,6 +378,7 @@ from installer.core.commands.lib.phase_execution import (
     execute_phase_5_5_plan_audit,
 )
 from installer.core.commands.lib.plan_audit import (
+    _APPROVED_BY_A_REPAIR_MESSAGE as _PLAN_AUDIT_APPROVED_BY_A_REPAIR,
     _FOR_THE_REVIEWER_MESSAGE as _PLAN_AUDIT_FOR_THE_REVIEWER,
 )
 
@@ -3241,6 +3242,33 @@ class AgentInvoker:
                 project_documents=documents,
             )
 
+            # A repair round's section must reach the model whole (20 October
+            # 2026): in a repair round the plan audit leaves the extra files to
+            # the reviewer, so a reviewer that has not seen them all, and the
+            # failing check, must not judge the turn.
+            repair_sections = self._repair_round_sections(evidence_bundle)
+            if repair_sections and not any(
+                section in prompt for section in repair_sections
+            ):
+                sentence = (
+                    "This repair round's review section could not be kept whole "
+                    "in the Coach prompt (the prompt limit would have cut it), so "
+                    "the Coach was not run: the reviewer must see every file the "
+                    "round changed, and the failing check, before the turn can "
+                    "be judged. Raise GUARDKIT_COACH_SYNTHESIS_MAX_CHARS, or "
+                    "shorten the task's requirements, so the prompt fits."
+                )
+                logger.error("[%s] Coach turn %s refused: %s", task_id, turn, sentence)
+                return AgentInvocationResult(
+                    task_id=task_id,
+                    turn=turn,
+                    agent_type="coach",
+                    success=False,
+                    report={},
+                    duration_seconds=time.time() - start_time,
+                    error=sentence,
+                )
+
             # The documents section must reach the model byte for byte: the
             # synthesis trimmer protects it, and this check proves it after
             # trimming, by hash, before the model is called.
@@ -4537,14 +4565,29 @@ Turn: {turn}
         if synthesis:
             # The whole-feature check section sits right after the project
             # documents and is protected with them: never trimmed.
+            untrimmed = prompt
             prompt = self._trim_synthesis_prompt(
-                prompt,
+                untrimmed,
                 protected_section=(
                     project_documents_section
                     + whole_feature_check_section
                     + repair_round_section
                 ),
             )
+            # A repair round's section that did not survive is tried once more
+            # with only the gate's output cut shorter; the file lists are never
+            # cut. invoke_coach refuses the turn if it still did not survive.
+            sections = self._repair_round_sections(evidence_bundle)
+            if sections and not any(section in prompt for section in sections):
+                shorter = sections[-1]
+                prompt = self._trim_synthesis_prompt(
+                    untrimmed.replace(repair_round_section, shorter, 1),
+                    protected_section=(
+                        project_documents_section
+                        + whole_feature_check_section
+                        + shorter
+                    ),
+                )
 
         return prompt
 
@@ -4554,19 +4597,30 @@ Turn: {turn}
     # its tools; the synthesis Coach has no tools, so it is given their text.
     # ------------------------------------------------------------------
 
+    #: In a repair round the end of the gate's output is cut to this many
+    #: characters when the full section does not fit the synthesis budget;
+    #: the file lists are never cut (20 October 2026).
+    _REPAIR_SECTION_SHORT_GATE_OUTPUT = 1000
+
     def _render_repair_round_section(
-        self, evidence_bundle: Optional["CoachEvidenceBundle"]
+        self,
+        evidence_bundle: Optional["CoachEvidenceBundle"],
+        gate_output_limit: Optional[int] = None,
     ) -> str:
         """Render ``## This is a repair round``, or ``""`` (20 October 2026).
 
         Present only when this invoker was handed a repair round in memory. In
         a repair round the plan audit does not refuse the turn for how many
         extra files the round made (plan_audit._repair_round_split); this
-        section puts every one in front of the reviewer, says which ones the
-        failing gate's output names, shows the end of that output, and asks
-        the reviewer to refuse the turn if any of them is not needed to make
-        the failing check pass. Protected files are refused by the audit
-        whatever the reviewer decides.
+        section puts in front of the reviewer every file the round changed
+        that the task document does not name (read from git since the round
+        started, see ``_plan_audit_against_task_document``), says which ones
+        the failing gate's output names, shows the end of that output, and
+        asks the reviewer to refuse the turn if any of them is not needed to
+        make the failing check pass. Every file is listed; only the gate's
+        output is ever cut. Protected files are refused by the audit whatever
+        the reviewer decides. ``invoke_coach`` does not run the model unless
+        this section reaches it whole.
         """
         round_ = getattr(self, "repair_round", None)
         if round_ is None:
@@ -4574,12 +4628,13 @@ Turn: {turn}
         from guardkit.orchestrator.feature_check import cut_tail
         from guardkit.orchestrator.repair_round import GATE_OUTPUT_PROMPT_LIMIT
 
+        limit = GATE_OUTPUT_PROMPT_LIMIT if gate_output_limit is None else gate_output_limit
         audit = getattr(evidence_bundle, "plan_audit", None)
         audit = audit if isinstance(audit, dict) else {}
         facts = audit.get("repair_round") if isinstance(audit.get("repair_round"), dict) else {}
         named = set(facts.get("files_the_gate_names") or [])
-        made = sorted(audit.get("extra_files_for_the_reviewer") or [])
-        changed = sorted(audit.get("extra_modifications") or [])
+        made = sorted(facts.get("files_made_this_round") or [])
+        changed = sorted(facts.get("files_changed_this_round") or [])
 
         def _listed(paths: List[str]) -> List[str]:
             if not paths:
@@ -4608,16 +4663,29 @@ Turn: {turn}
             "Files this round made that the task document does not name:",
             *_listed(made),
             "",
-            "Existing files this task changed that the task document does not name:",
+            "Existing files this round changed that the task document does not name:",
             *_listed(changed),
             "",
             "The failing check's output, as the builder was given it (the end of it):",
             "~~~text",
-            cut_tail(round_.gate_output or "", GATE_OUTPUT_PROMPT_LIMIT) or "(nothing)",
+            cut_tail(round_.gate_output or "", limit) or "(nothing)",
             "~~~",
             "",
         ]
         return "\n".join(lines)
+
+    def _repair_round_sections(
+        self, evidence_bundle: Optional["CoachEvidenceBundle"]
+    ) -> Tuple[str, ...]:
+        """The repair-round section as it may be sent: whole, then with only
+        the gate's output cut shorter. ``()`` outside a repair round."""
+        full = self._render_repair_round_section(evidence_bundle)
+        if not full:
+            return ()
+        short = self._render_repair_round_section(
+            evidence_bundle, gate_output_limit=self._REPAIR_SECTION_SHORT_GATE_OUTPUT
+        )
+        return (full,) if short == full else (full, short)
 
     # 18 October 2026: how much of one run's output (stdout and stderr
     # together) the whole-feature check section shows.
@@ -14502,6 +14570,7 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
         extra_files: List[str] = []
         extra_beside_the_plan: List[str] = []
         extra_for_the_reviewer: List[str] = []
+        extra_approved_by_a_repair: List[str] = []
         missing_files: List[str] = []
         extra_modifications: List[str] = []
         missing_modifications: List[str] = []
@@ -14539,6 +14608,8 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                 if disc.severity == "low":
                     if _PLAN_AUDIT_FOR_THE_REVIEWER in disc.message:
                         extra_for_the_reviewer = named
+                    elif _PLAN_AUDIT_APPROVED_BY_A_REPAIR in disc.message:
+                        extra_approved_by_a_repair = named
                     else:
                         extra_beside_the_plan = named
             elif disc.category == "files" and (
@@ -14578,6 +14649,9 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
             # non-protected extra files the round made, recorded as low and
             # left to the reviewer's judgement. In extra_files too.
             "extra_files_for_the_reviewer": extra_for_the_reviewer,
+            # The extra files an earlier, approved repair round of this task
+            # made: not counted again. In extra_files too.
+            "extra_files_approved_by_a_repair": extra_approved_by_a_repair,
             "missing_files": missing_files,
             "extra_modifications": extra_modifications,
             "missing_modifications": missing_modifications,
@@ -14800,13 +14874,23 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
             # The evidence the reviewer is asked to judge (see
             # _repair_round_prompt_section): every file the round touched
             # beyond the task document, and which of them the gate named.
+            # The inventory comes from git since the round started, against
+            # every declared path - not from the discrepancies above, which
+            # say nothing about edits when the task document has no "files to
+            # modify" section.
             named_by_gate = set(repair_facts.get("implicated_paths") or [])
-            touched = set(block["extra_files"]) | set(block["extra_modifications"])
+            existed = set(repair_facts.get("existed_at_round_start") or ())
+            declared_paths = set(every_declared_path)
+            beyond = [
+                path for path in repair_facts.get("changed_this_round") or []
+                if path not in declared_paths
+            ]
             block["repair_round"] = {
                 "round_number": repair_facts.get("round_number"),
                 "start_commit": repair_facts.get("start_commit"),
                 "files_the_gate_names": sorted(named_by_gate),
-                "extra_files_the_gate_names": sorted(touched & named_by_gate),
+                "files_made_this_round": sorted(p for p in beyond if p not in existed),
+                "files_changed_this_round": sorted(p for p in beyond if p in existed),
             }
 
         declared_count = len(every_declared_path)

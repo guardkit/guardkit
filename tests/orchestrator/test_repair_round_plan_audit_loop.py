@@ -77,7 +77,7 @@ def _write(repo: Path, rel: str, text: str = "// invented\n") -> None:
     path.write_text(text)
 
 
-def make_project(tmp_path: Path) -> Path:
+def make_project(tmp_path: Path, declare_modify: bool = True) -> Path:
     """A small invented web project on its feature branch."""
     repo = tmp_path / "main" / ".guardkit" / "worktrees" / FEATURE_ID
     repo.mkdir(parents=True)
@@ -106,8 +106,11 @@ def make_project(tmp_path: Path) -> Path:
         "---\n\n# Build the shelf page\n\n"
         "## Files to Create\n\n"
         + "".join(f"- `{p}`\n" for p in PLANNED_CREATE)
-        + "\n## Files to Modify\n\n"
-        + "".join(f"- `{p}`\n" for p in PLANNED_MODIFY)
+        + (
+            "\n## Files to Modify\n\n" + "".join(f"- `{p}`\n" for p in PLANNED_MODIFY)
+            if declare_modify
+            else ""
+        )
         + "\n## Acceptance Criteria\n\n"
         + "".join(f"- [ ] {c}\n" for c in CRITERIA),
     )
@@ -259,6 +262,7 @@ def run_round(
     seed_feedback: Optional[str] = None,
     repair_round: Optional[RepairRound] = None,
     model_verdict: Optional[Dict[str, Any]] = None,
+    requirements: str = "Show the reader's books on a shelf page.",
 ) -> Dict[str, Any]:
     prompts: List[str] = []
     orch = make_orchestrator(repo, seed_feedback, repair_round, prompts)
@@ -275,7 +279,7 @@ def run_round(
     ):
         history, decision = orch._loop_phase(
             task_id=TASK_ID,
-            requirements="Show the reader's books on a shelf page.",
+            requirements=requirements,
             acceptance_criteria=CRITERIA,
             worktree=worktree,
             task_type="scaffolding",
@@ -309,10 +313,18 @@ REPAIR_THAT_WANDERS = {
 
 
 def reopen_and_repair(
-    repo: Path, files: Dict[str, str], model_verdict: Optional[Dict[str, Any]] = None
+    repo: Path,
+    files: Dict[str, str],
+    model_verdict: Optional[Dict[str, Any]] = None,
+    *,
+    fo: Optional[FeatureOrchestrator] = None,
+    gate_output: str = GATE_OUTPUT,
+    requirements: str = "Show the reader's books on a shelf page.",
 ) -> Dict[str, Any]:
-    """The real gate-driven re-open; the repair round runs through the loop."""
-    fo = FeatureOrchestrator(
+    """The real gate-driven re-open; the repair round runs through the loop.
+
+    Pass the same ``fo`` to re-open the task again, as a later gate does."""
+    fo = fo or FeatureOrchestrator(
         repo_root=repo.parents[2], worktree_manager=MagicMock(), quiet=True
     )
     worktree = Worktree(
@@ -337,6 +349,7 @@ def reopen_and_repair(
             seed_feedback=kwargs.get("seed_feedback"),
             repair_round=kwargs.get("repair_round"),
             model_verdict=model_verdict,
+            requirements=requirements,
         ))
         return TaskExecutionResult(
             task_id=task_.id,
@@ -355,9 +368,10 @@ def reopen_and_repair(
             patch.object(fo, "_update_feature"):
         asyncio.run(
             fo._execute_wave_parallel(
-                2, [TASK_ID], feature, worktree, seed_feedback=GATE_OUTPUT
+                2, [TASK_ID], feature, worktree, seed_feedback=gate_output
             )
         )
+    outcome["fo"] = fo
     return outcome
 
 
@@ -520,3 +534,114 @@ class TestTheLegacyCoachHasNoReviewer:
             and "GUARDKIT_COACH_LEGACY=1" in record.getMessage()
             for record in caplog.records
         )
+
+
+class TestTheReviewerSeesEveryChange:
+    def test_an_unplanned_edit_reaches_the_reviewer_without_a_modify_section(
+        self, tmp_path: Path
+    ) -> None:
+        """The task declares only files to create, so the ordinary audit says
+        nothing about edits; the unrelated edit still reaches the reviewer,
+        and its refusal blocks the approval."""
+        repo = make_project(tmp_path, declare_modify=False)
+        assert run_round(repo, ROUND_ONE)["decision"] == "approved"
+        refuse = deepcopy(REFUSE_UNRELATED)
+        refuse["issues"][0]["description"] = (
+            "apps/api/src/server.ts was changed to add billing, which the "
+            "failing check does not need"
+        )
+        outcome = reopen_and_repair(
+            repo,
+            {
+                "tests/e2e/sign-in.ts": "export const signIn = 1;\n",
+                "apps/api/src/server.ts": "export const serve = () => 2; // billing\n",
+            },
+            model_verdict=refuse,
+        )
+
+        section = _repair_section(outcome["prompts"])
+        assert "- `apps/api/src/server.ts`" in section
+        assert _plan_audit(repo)["extra_modifications"] == []  # ordinary audit silent
+        assert outcome["decision"] != "approved"
+
+
+class TestSequentialReEntries:
+    def test_a_second_gate_does_not_recount_what_the_first_repair_approved(
+        self, approved_round_one: Path
+    ) -> None:
+        repo = approved_round_one
+        first = reopen_and_repair(repo, REPAIR_NEAR_THE_FAILURE)
+        assert first["decision"] == "approved"
+        # Another gate (say the wiring gate after the smoke gate) re-opens it.
+        second = reopen_and_repair(
+            repo,
+            {"tests/e2e/shelf.spec.ts": "test('wired', () => {});\n"},
+            fo=first["fo"],
+            gate_output="The wiring check failed: tests/e2e/shelf.spec.ts:9:1",
+        )
+
+        assert second["repair_round"].round_number == 3
+        assert {
+            "scripts/seed-owner.sh", "scripts/seed-sample-book.sh",
+            "tests/e2e/sign-in.ts", "apps/web/src/test-render.tsx",
+        } <= second["repair_round"].approved_by_earlier_repairs
+        assert second["decision"] == "approved", second["history"][-1].coach_result.report
+        block = _plan_audit(repo)
+        assert block["status"] == "passed"
+        assert "apps/web/src/test-render.tsx" in block["extra_files_approved_by_a_repair"]
+
+
+class TestTheReviewSectionMustReachTheModel:
+    """In a repair round the audit leaves the extra files to the reviewer, so
+    the Coach is not run unless the whole section reaches the model."""
+
+    REFUSED = "review section could not be kept whole"
+
+    def _coach_error(self, outcome: Dict[str, Any]) -> str:
+        return str(getattr(outcome["history"][-1].coach_result, "error", "") or "")
+
+    def test_an_oversized_section_refuses_the_turn(
+        self, approved_round_one: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        repo = approved_round_one
+        monkeypatch.setattr(AgentInvoker, "_COACH_SYNTHESIS_MAX_CHARS", 5000)
+        many = {
+            f"tests/e2e/fixtures/generated-fixture-number-{n:04d}.json": "{}\n"
+            for n in range(300)
+        }
+        outcome = reopen_and_repair(repo, many)
+
+        assert outcome["decision"] != "approved"
+        assert not any(p.startswith("You are the Coach agent") for p in outcome["prompts"])
+        assert self.REFUSED in self._coach_error(outcome)
+
+    def test_an_oversized_prefix_refuses_the_turn(
+        self, approved_round_one: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        repo = approved_round_one
+        monkeypatch.setattr(AgentInvoker, "_COACH_SYNTHESIS_MAX_CHARS", 20000)
+        outcome = reopen_and_repair(
+            repo, REPAIR_NEAR_THE_FAILURE, requirements="Show the shelf. " * 3000
+        )
+
+        assert outcome["decision"] != "approved"
+        assert not any(p.startswith("You are the Coach agent") for p in outcome["prompts"])
+        assert self.REFUSED in self._coach_error(outcome)
+
+    def test_a_long_gate_output_is_cut_and_every_file_is_still_listed(
+        self, approved_round_one: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        repo = approved_round_one
+        monkeypatch.setattr(AgentInvoker, "_COACH_SYNTHESIS_MAX_CHARS", 6000)
+        long_output = GATE_OUTPUT + "".join(
+            f"  noise line {n} from the check runner\n" for n in range(400)
+        )
+        outcome = reopen_and_repair(repo, REPAIR_NEAR_THE_FAILURE, gate_output=long_output)
+
+        section = _repair_section(outcome["prompts"])
+        for path in ("scripts/seed-owner.sh", "scripts/seed-sample-book.sh",
+                     "tests/e2e/sign-in.ts", "apps/web/src/test-render.tsx"):
+            assert f"- `{path}`" in section
+        assert "noise line 399" in section  # the end of the output is kept
+        assert "noise line 100 " not in section  # the rest was cut
+        assert outcome["decision"] == "approved"

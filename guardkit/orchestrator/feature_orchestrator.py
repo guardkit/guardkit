@@ -1088,6 +1088,10 @@ class FeatureOrchestrator:
         # ``_execute_wave`` threads it to each task beside ``smoke_command``;
         # every other wave sees None.
         self._feature_check_repair_for_wave: Optional[FeatureCheckRepair] = None
+        # Each task's latest gate-driven repair round, in memory only (20
+        # October 2026; repair_round.py): the next re-open of the task carries
+        # its approved files forward.
+        self._last_repair_round: Dict[str, RepairRound] = {}
         # 21 September 2026. What the check after each group of tasks found, or
         # could not look at. Until today its result was printed and dropped, so
         # by merge time nobody could tell "found nothing" from "never looked".
@@ -4646,13 +4650,19 @@ The detailed specifications are in the task markdown file.
                 # (20 October 2026; see repair_round.py): its number, where it
                 # starts and the gate's output, handed down IN MEMORY to this
                 # task's orchestrator. Nothing on disk says so. Never fails.
+                # This task's previous repair round, if a gate re-opened it
+                # before: the files that round had approved are carried
+                # forward, so a later gate's re-entry does not recount them.
+                last_rounds = self.__dict__.setdefault("_last_repair_round", {})
                 started = begin_repair_round(
                     worktree.path,
                     (archived_round + 1) if archived_round else None,
                     seed_feedback,
+                    previous=last_rounds.get(task_id),
                 )
                 if started is not None:
                     repair_rounds[task_id] = started
+                    last_rounds[task_id] = started
             if task.status == "completed":
                 if self._wave_display:
                     self._wave_display.update_task_status(

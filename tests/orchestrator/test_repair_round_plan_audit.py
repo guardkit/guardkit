@@ -117,19 +117,24 @@ class TestImplicatedPaths:
 
 class TestTheSplit:
     def test_each_kind_of_file(self) -> None:
-        earlier, protected, for_reviewer = _repair_round_split(
+        counted, approved, protected, for_reviewer = _repair_round_split(
             {
-                "web/src/format.ts",          # made by the approved round
+                "web/src/format.ts",          # made by the ordinary approved round
                 "db/migrations/0001_x.sql",   # made by the approved round, protected
+                "tests/e2e/helpers.ts",       # made by an earlier, approved repair round
                 "scripts/seed-owner.sh",      # made by this round
                 "api/billing/invoice.ts",     # made by this round
                 "scripts/Dockerfile",         # made by this round, protected
                 "tests/e2e/.env.test",        # made by this round, protected
             },
-            existed_at_round_start={"web/src/format.ts", "db/migrations/0001_x.sql"},
+            existed_at_round_start={
+                "web/src/format.ts", "db/migrations/0001_x.sql", "tests/e2e/helpers.ts",
+            },
+            approved_by_repairs={"tests/e2e/helpers.ts", "db/migrations/0001_x.sql"},
         )
-        # The approved round's files count as they did when it was approved.
-        assert earlier == {"web/src/format.ts", "db/migrations/0001_x.sql"}
+        # The ordinary round's files count as they did when it was approved.
+        assert counted == {"web/src/format.ts", "db/migrations/0001_x.sql"}
+        assert approved == {"tests/e2e/helpers.ts"}
         assert protected == {"scripts/Dockerfile", "tests/e2e/.env.test"}
         assert for_reviewer == {"scripts/seed-owner.sh", "api/billing/invoice.ts"}
 
@@ -171,6 +176,10 @@ def _checkpoint(root: Path, *commits: str) -> None:
 
 @pytest.fixture
 def repo(tmp_path: Path) -> Path:
+    return _make_repo(tmp_path)
+
+
+def _make_repo(tmp_path: Path, declare_modify: bool = True) -> Path:
     root = tmp_path / "repo"
     root.mkdir()
     _git(root, "init", "-q", "-b", "autobuild/FEAT-SHELF")
@@ -190,8 +199,11 @@ def repo(tmp_path: Path) -> Path:
         f"id: {TASK_ID}\ntitle: Build the shelf page\nstatus: in_progress\n"
         "---\n\n## Files to Create\n\n"
         + "".join(f"- `{p}`\n" for p in PLANNED_CREATE)
-        + "\n## Files to Modify\n\n"
-        + "".join(f"- `{p}`\n" for p in PLANNED_MODIFY)
+        + (
+            "\n## Files to Modify\n\n" + "".join(f"- `{p}`\n" for p in PLANNED_MODIFY)
+            if declare_modify
+            else ""
+        )
         + "\n## Acceptance Criteria\n\n- [ ] The shelf page lists books.\n",
     )
     _commit(root, "base")
@@ -281,7 +293,8 @@ class TestTheAuditInARepairRound:
             "round_number": 2,
             "start_commit": round_.start_commit,
             "files_the_gate_names": ["scripts/check-feature.sh", "tests/e2e/shelf.spec.ts"],
-            "extra_files_the_gate_names": ["tests/e2e/shelf.spec.ts"],
+            "files_made_this_round": made,
+            "files_changed_this_round": ["scripts/seed.sh", "tests/e2e/shelf.spec.ts"],
         }
         assert _gate_passes(repo, verdict)
 
@@ -369,6 +382,57 @@ class TestTheAuditInARepairRound:
         assert verdict["severity"] == "high"
         assert "repair_round" not in verdict
 
+    def test_an_edit_the_task_document_does_not_name_reaches_the_inventory(
+        self, tmp_path: Path
+    ) -> None:
+        """A task that declares only files to create says nothing about edits,
+        so the ordinary audit lists none; the reviewer's inventory still has
+        every file git says the round changed."""
+        repo = _make_repo(tmp_path, declare_modify=False)
+        for path in PLANNED_CREATE:
+            _write(repo, path)
+        _checkpoint(repo, _commit(repo, "turn 1 checkpoint"))
+        round_ = _reopen(repo)
+        _write(repo, "tests/e2e/sign-in.ts", "export const s = 1;\n")
+        _write(repo, "api/src/server.ts", "export const serve = 2; // billing tweak\n")
+        # A file the task document names is the task's own work: not listed.
+        _write(repo, "web/src/ShelfPage.tsx", "export const ShelfPage = () => 2;\n")
+
+        verdict = _verdict(repo, round_)
+
+        assert verdict["extra_modifications"] == []  # the ordinary audit is silent
+        assert verdict["repair_round"]["files_changed_this_round"] == ["api/src/server.ts"]
+        assert verdict["repair_round"]["files_made_this_round"] == ["tests/e2e/sign-in.ts"]
+
+    def test_a_later_re_entry_does_not_recount_what_a_repair_approved(
+        self, repo: Path
+    ) -> None:
+        """Ordinary approval, a repair round approved with four new files, then
+        another gate's re-entry: the four are not counted again."""
+        _approve_round_one(repo)
+        first_repair = _reopen(repo)
+        _write_all(repo, NEAR_THE_FAILURE)
+        assert _verdict(repo, first_repair)["status"] == "passed"
+        _commit(repo, "repair round approved")
+
+        second_repair = begin_repair_round(repo, 3, "Smoke check failed: tests/e2e/shelf.spec.ts", previous=first_repair)
+        assert second_repair is not None
+        assert {
+            "scripts/seed-owner.sh", "scripts/seed-sample-book.sh",
+            "tests/e2e/sign-in.ts", "web/src/test-render.tsx",
+        } <= second_repair.approved_by_earlier_repairs
+        _write(repo, "tests/e2e/shelf.spec.ts", "test('again', () => {});\n")
+
+        verdict = _verdict(repo, second_repair)
+
+        assert verdict["status"] == "passed", verdict
+        assert verdict["extra_files_approved_by_a_repair"] == [
+            "scripts/seed-owner.sh", "scripts/seed-sample-book.sh",
+            "tests/e2e/sign-in.ts", "web/src/test-render.tsx",
+        ]
+        # Without the carried approvals the same re-entry would be high.
+        assert _verdict(repo, begin_repair_round(repo, 3, "x"))["severity"] == "high"
+
     def test_starting_a_round_without_git_never_raises(self, tmp_path: Path) -> None:
         assert begin_repair_round(tmp_path / "no-repo", 2, GATE_OUTPUT) is None
 
@@ -426,9 +490,11 @@ class TestTheReviewersPrompt:
         invoker = AgentInvoker(worktree_path=Path("/nonexistent"))
         invoker.repair_round = repair_round
         bundle = SimpleNamespace(plan_audit={
-            "extra_files_for_the_reviewer": ["scripts/seed-owner.sh", "api/billing/invoice.ts"],
-            "extra_modifications": ["tests/e2e/shelf.spec.ts"],
-            "repair_round": {"files_the_gate_names": ["tests/e2e/shelf.spec.ts"]},
+            "repair_round": {
+                "files_the_gate_names": ["tests/e2e/shelf.spec.ts"],
+                "files_made_this_round": ["scripts/seed-owner.sh", "api/billing/invoice.ts"],
+                "files_changed_this_round": ["tests/e2e/shelf.spec.ts"],
+            },
         })
         return invoker._render_repair_round_section(bundle)
 

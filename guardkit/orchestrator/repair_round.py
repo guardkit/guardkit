@@ -15,19 +15,22 @@ Player was doing what the round asked.
 WHAT IT DOES
 ------------
 At the re-open the feature orchestrator makes a :class:`RepairRound` - the
-round's number, the commit the round starts from (HEAD at the re-open) and the
-gate's output - and hands it, in memory, down the call chain it controls:
+round's number, the commit the round starts from (HEAD at the re-open), the
+gate's output, and the files earlier approved repair rounds of the task
+changed - and hands it, in memory, down the call chain it controls:
 ``_execute_task`` -> ``AutoBuildOrchestrator`` -> its ``AgentInvoker``. Nothing
 is written to disk for it and nothing on disk is read back, so there is
 nothing a Player could write to make a turn look like a repair round.
 
 In a repair round the plan audit does not refuse a turn for the number of
-extra files the round made. It names every one, and which of them the gate's
-output names (:func:`implicated_paths`), and the Coach's prompt for the turn
-says it is a repair round for the failing check and asks the reviewer to
-refuse the turn if any extra file is not needed to make that check pass. A
-protected file the round made (migration, Dockerfile, lockfile, .env ...) is
-still refused by the audit itself. Ordinary turns have no repair round and are
+extra files the round made. The Coach's prompt for the turn lists every file
+the round changed that the task document does not name - read from git since
+the round's start, whatever the ordinary audit reports - marks the ones the
+gate's output names (:func:`implicated_paths`), says it is a repair round for
+the failing check and asks the reviewer to refuse the turn if any of them is
+not needed to make that check pass. If that section cannot reach the model
+whole, the Coach is not run. A protected file the round made (migration,
+Dockerfile, lockfile, .env ...) is still refused by the audit itself. Ordinary turns have no repair round and are
 audited exactly as before. A resumed build starts without one, so its turns
 are audited as ordinary turns.
 
@@ -42,7 +45,7 @@ import re
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, List, Optional, Set
+from typing import FrozenSet, Iterable, List, Optional, Set
 
 from guardkit.lib.project_git import run_git
 
@@ -60,12 +63,16 @@ class RepairRound:
     whose approved predecessor's turn files went into ``round-1/`` (see
     ``turn_rounds``); it is for the record and the prompt only. ``start_commit`` is HEAD at the
     re-open: the candidate the gate failed. ``gate_output`` is the feedback the
-    Player was given, the gate's own words.
+    Player was given, the gate's own words. ``approved_by_earlier_repairs`` is
+    every file an earlier, approved repair round of this task changed (worked
+    out from git between that round's start and this re-open, never read from
+    disk): a later gate's re-entry does not count them again.
     """
 
     round_number: int
     start_commit: str
     gate_output: str
+    approved_by_earlier_repairs: FrozenSet[str] = frozenset()
 
 
 #: The most implicated paths kept. A gate's output is cut to its last lines
@@ -121,27 +128,48 @@ def implicated_paths(text: str, tracked: Iterable[str]) -> List[str]:
 
 
 def begin_repair_round(
-    worktree_path: Path, round_number: Optional[int], gate_output: str
+    worktree_path: Path,
+    round_number: Optional[int],
+    gate_output: str,
+    previous: Optional[RepairRound] = None,
 ) -> Optional[RepairRound]:
     """The repair round a re-open starts, or ``None``. Never raises.
 
-    Reads HEAD of the worktree, the round's start. ``None`` when git cannot
-    say: the round then goes ahead and its turns are audited as ordinary ones.
+    Reads HEAD of the worktree, the round's start. ``previous`` is this
+    task's last repair round, when a gate re-opened it before: the task was
+    approved again after it (only an approved task is re-opened), so every
+    file that changed between that round's start and this HEAD was approved
+    by a repair round, and is carried forward with the ones before it.
+    ``None`` when git cannot say where the round starts: the round then goes
+    ahead and its turns are audited as ordinary ones.
     """
-    try:
-        done = run_git(
-            ["rev-parse", "HEAD"], cwd=Path(worktree_path), check=False, timeout=30
-        )
-        head = done.stdout.strip() if done.returncode == 0 else ""
-    except (subprocess.SubprocessError, FileNotFoundError, OSError, TypeError):
-        head = ""
+    head = _git_out(worktree_path, ["rev-parse", "HEAD"]).strip()
     if not head:
         logger.warning(
             "The repair round's start could not be read from git; its turns "
             "are audited as ordinary turns."
         )
         return None
+    approved: Set[str] = set()
+    if previous is not None:
+        approved |= set(previous.approved_by_earlier_repairs)
+        listed = _git_out(
+            worktree_path, ["diff", "--name-only", previous.start_commit, head]
+        )
+        approved |= {line.strip() for line in listed.splitlines() if line.strip()}
     number = round_number if isinstance(round_number, int) and round_number > 1 else 2
     return RepairRound(
-        round_number=number, start_commit=head, gate_output=str(gate_output or "")
+        round_number=number,
+        start_commit=head,
+        gate_output=str(gate_output or ""),
+        approved_by_earlier_repairs=frozenset(approved),
     )
+
+
+def _git_out(worktree_path: Path, args: List[str]) -> str:
+    """git's output, or "" when git cannot answer. Never raises."""
+    try:
+        done = run_git(args, cwd=Path(worktree_path), check=False, timeout=30)
+    except (subprocess.SubprocessError, FileNotFoundError, OSError, TypeError):
+        return ""
+    return done.stdout if done.returncode == 0 else ""

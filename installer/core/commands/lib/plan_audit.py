@@ -276,8 +276,16 @@ def _beside_the_plan(extra: Set[str], planned: Set[str]) -> Set[str]:
 #     failing check pass (AgentInvoker._build_coach_prompt);
 #   * a protected extra file (see _is_protected above) the round made is high,
 #     whatever else is true: a repair round never makes one unplanned;
-#   * an extra file an earlier, approved round made counts exactly as it did
-#     when that round was approved.
+#   * an extra file an earlier repair round of this task made and that round
+#     was approved with is not counted again (named in a low discrepancy of
+#     its own); the files are handed over with the round, in memory;
+#   * any other extra file an earlier, approved round made counts exactly as
+#     it did when that round was approved.
+#
+# What the reviewer is shown does not come from these discrepancies: it is
+# every file git says changed since the round started that the task document
+# does not name (PlanAuditor._repair_round_facts), whether or not the task
+# document has a "files to modify" section.
 #
 # The round is handed to the auditor in memory by the orchestrator that
 # re-opened the task (guardkit/orchestrator/repair_round.py); nothing on disk
@@ -287,23 +295,31 @@ _FOR_THE_REVIEWER_MESSAGE = (
     "made by this repair round, for the reviewer to judge against the failing check"
 )
 _PROTECTED_IN_REPAIR_MESSAGE = "protected, made by this repair round"
+_APPROVED_BY_A_REPAIR_MESSAGE = "approved by an earlier repair round of this task"
 
 
 def _repair_round_split(
     extra: Set[str],
     existed_at_round_start: Set[str],
-) -> "tuple[Set[str], Set[str], Set[str]]":
-    """Split a repair round's extra files: ``(earlier, protected, for_reviewer)``.
+    approved_by_repairs: Set[str] = frozenset(),
+) -> "tuple[Set[str], Set[str], Set[str], Set[str]]":
+    """Split a repair round's extra files:
+    ``(counted, approved, protected, for_reviewer)``.
 
-    ``earlier`` were in the repository when the round started and count as on
-    an ordinary turn; ``protected`` are protected files the round made, always
-    high; ``for_reviewer`` is every other file the round made. See the rule
-    above.
+    ``counted`` were in the repository when the round started, were not
+    approved by an earlier repair round, and count as on an ordinary turn;
+    ``approved`` were approved by an earlier repair round; ``protected`` are
+    protected files this round made, always high; ``for_reviewer`` is every
+    other file this round made. See the rule above.
     """
     earlier = {path for path in extra if path in existed_at_round_start}
+    approved = {
+        path for path in earlier
+        if path in approved_by_repairs and not _is_protected(path)
+    }
     made = extra - earlier
     protected = {path for path in made if _is_protected(path)}
-    return earlier, protected, made - protected
+    return earlier - approved, approved, protected, made - protected
 
 
 class PlanAuditor:
@@ -601,10 +617,25 @@ class PlanAuditor:
             return None
         from guardkit.orchestrator.repair_round import implicated_paths
 
+        try:
+            from guardkit.orchestrator.arch_conformance import files_changed_since
+
+            since_start = files_changed_since(self.workspace_root, start)
+        except (ImportError, ValueError, OSError):
+            return None
+        changed_this_round = sorted(
+            path for path in since_start if not self._is_player_excluded(path)
+        )
         return {
             "round_number": getattr(round_, "round_number", None),
             "start_commit": start,
             "existed_at_round_start": existed,
+            "approved_by_earlier_repairs": set(
+                getattr(round_, "approved_by_earlier_repairs", ()) or ()
+            ),
+            # Every file git says changed since the round started (made,
+            # edited or deleted), after the same exclusions as the audit.
+            "changed_this_round": changed_this_round,
             "implicated_paths": implicated_paths(
                 str(getattr(round_, "gate_output", "") or ""), existed
             ),
@@ -660,21 +691,27 @@ class PlanAuditor:
         created: List[str] = []
         modified: List[str] = []
         for rel_path in changed:
-            if self._is_excluded(Path(rel_path)):
+            if self._is_player_excluded(rel_path):
                 continue
-            if self.path_exclusion is not None:
-                try:
-                    if self.path_exclusion(rel_path):
-                        continue
-                except Exception:
-                    # Counting the path is the safe fallback. A caller's
-                    # broken filter must not make real scope disappear.
-                    pass
             if rel_path in existed_before:
                 modified.append(rel_path)
             else:
                 created.append(rel_path)
         return {"created": sorted(created), "modified": sorted(modified)}
+
+    def _is_player_excluded(self, rel_path: str) -> bool:
+        """Whether a changed path is never counted as this task's work: the
+        audit's own never-counted paths, then the caller's exclusion."""
+        if self._is_excluded(Path(rel_path)):
+            return True
+        if self.path_exclusion is not None:
+            try:
+                return bool(self.path_exclusion(rel_path))
+            except Exception:
+                # Counting the path is the safe fallback. A caller's broken
+                # filter must not make real scope disappear.
+                return False
+        return False
 
     def _scan_created_files(
         self,
@@ -985,12 +1022,16 @@ class PlanAuditor:
         # A repair round's own rule (see _repair_round_split at the top of
         # this file). Absent on every ordinary turn.
         repair_facts = actual.get("repair_round")
+        approved_by_repair: Set[str] = set()
         protected_made: Set[str] = set()
         for_reviewer: Set[str] = set()
         if repair_facts and counted_extra:
-            counted_extra, protected_made, for_reviewer = _repair_round_split(
+            (
+                counted_extra, approved_by_repair, protected_made, for_reviewer
+            ) = _repair_round_split(
                 counted_extra,
                 set(repair_facts.get("existed_at_round_start") or ()),
+                set(repair_facts.get("approved_by_earlier_repairs") or ()),
             )
 
         if counted_extra:
@@ -1030,6 +1071,19 @@ class PlanAuditor:
                 planned=sorted(list(planned_files)),
                 actual=sorted(list(protected_made)),
                 variance=(len(protected_made) / max(len(planned_files), 1)) * 100,
+            ))
+
+        if approved_by_repair:
+            discrepancies.append(Discrepancy(
+                category="files",
+                severity="low",
+                message=(
+                    f"{len(approved_by_repair)} extra file(s) not in plan, "
+                    f"{_APPROVED_BY_A_REPAIR_MESSAGE}"
+                ),
+                planned=sorted(list(planned_files)),
+                actual=sorted(list(approved_by_repair)),
+                variance=(len(approved_by_repair) / max(len(planned_files), 1)) * 100,
             ))
 
         if for_reviewer:
