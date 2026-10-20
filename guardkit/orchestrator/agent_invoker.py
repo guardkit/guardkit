@@ -3622,8 +3622,9 @@ class AgentInvoker:
 
             # Last, so no guard above can promote past it (20 October 2026):
             # a repair round that made, changed or deleted a protected file
-            # the task document does not name is refused, whatever the
-            # reviewer said and whatever audit path the task took.
+            # the task document does not name, or whose record of what changed
+            # could not be read, is refused, whatever the reviewer said and
+            # whatever audit path the task took.
             self._enforce_repair_round_protected(
                 decision=decision,
                 review=self._repair_review,
@@ -4711,11 +4712,12 @@ Turn: {turn}
 
         Runs on every repair-round turn before the Coach, whatever audit path
         the task takes (a task document with file sections, a player's note,
-        or no declaration at all). ``None`` outside a repair round, and when
-        the round does not belong to this task's history or git cannot say
-        (``PlanAuditor._repair_round_facts``), in which case the plan audit is
-        an ordinary one too. Renames are a removed path and a new path. Never
-        raises. Sets :attr:`repair_round_inventory` (the non-protected files
+        or no declaration at all). ``None`` outside a repair round; also
+        ``None`` in a repair round when what changed cannot be established
+        (the task's checkpoint record is missing or unreadable, the round is
+        not in this task's history, git cannot say, or reading raised), and
+        then ``_enforce_repair_round_protected`` refuses the turn. Renames are
+        a removed path and a new path. Never raises. Sets :attr:`repair_round_inventory` (the non-protected files
         listed) for the orchestrator to carry if the reviewer approves.
         """
         self.repair_round_inventory = None
@@ -4750,6 +4752,12 @@ Turn: {turn}
                 repair_round=round_,
             )._repair_round_facts(task_id)
             if not facts:
+                logger.warning(
+                    "[%s] The repair round's record of what changed could not "
+                    "be read (no usable checkpoint record, or the round is not "
+                    "in this task's history); the turn will be refused.",
+                    task_id,
+                )
                 return None
             existed = set(facts.get("existed_at_round_start") or ())
             changed_this_round = list(facts.get("changed_this_round") or ())
@@ -4769,7 +4777,7 @@ Turn: {turn}
         except Exception as exc:  # noqa: BLE001 — never fails a Coach turn
             logger.warning(
                 "[%s] The repair round's changes could not be read (%s); the "
-                "turn is judged as an ordinary one.",
+                "turn will be refused.",
                 task_id, type(exc).__name__,
             )
             return None
@@ -4783,39 +4791,61 @@ Turn: {turn}
         turn: int,
         coach_output_path: "Path",
     ) -> None:
-        """Refuse a repair-round turn that touched a protected file.
+        """Refuse a repair-round turn that touched a protected file, or whose
+        record of what changed could not be read.
 
         Deterministic, and the last guard: an ``approve`` becomes
-        ``feedback`` with a must_fix naming the files, and a ``feedback``
-        gains the same must_fix. Re-persisted to ``coach_turn_N.json``.
+        ``feedback`` with a must_fix, and a ``feedback`` gains the same
+        must_fix. Re-persisted to ``coach_turn_N.json``. Outside a repair
+        round (no ``RepairRound`` on this invoker) it does nothing.
+
+        In a repair round the plan audit leaves extra files to the reviewer,
+        so a turn whose changes could not be read (``review`` is ``None``:
+        the task's checkpoint record is missing or unreadable, git could not
+        answer, or reading raised) is never approved (20 October 2026).
         """
-        protected = list((review or {}).get("protected") or [])
-        if not protected:
+        if getattr(self, "repair_round", None) is None:
             return
-        issue = {
-            "severity": "must_fix",
-            "category": "repair_round_protected",
-            "description": (
+        if review is None:
+            category = "repair_round_unreadable"
+            description = (
+                "The repair round's record of what changed could not be read, "
+                "so this turn cannot be approved."
+            )
+            details: Dict[str, Any] = {}
+            log_reason = "its record of what changed could not be read"
+        else:
+            protected = list(review.get("protected") or [])
+            if not protected:
+                return
+            category = "repair_round_protected"
+            description = (
                 f"This repair round made, changed or deleted {len(protected)} "
                 "protected file(s) the task document does not name: "
                 + ", ".join(protected)
                 + ". A repair round never does; put them back as they were."
-            ),
-            "details": {"protected": protected},
+            )
+            details = {"protected": protected}
+            log_reason = "it touched protected file(s) " + ", ".join(protected)
+        issue = {
+            "severity": "must_fix",
+            "category": category,
+            "description": description,
+            "details": details,
         }
         issues = decision.setdefault("issues", [])
-        if not any(i.get("category") == "repair_round_protected" for i in issues if isinstance(i, dict)):
+        if not any(i.get("category") == category for i in issues if isinstance(i, dict)):
             issues.append(issue)
         if decision.get("decision") == "approve":
             logger.warning(
-                "[%s] Turn %s: the reviewer approved, but the repair round "
-                "touched protected file(s) %s; refused.",
-                task_id, turn, ", ".join(protected),
+                "[%s] Turn %s: the reviewer approved, but this repair-round "
+                "turn is refused: %s.",
+                task_id, turn, log_reason,
             )
             decision["decision"] = "feedback"
-            decision["rationale"] = issue["description"]
+            decision["rationale"] = description
         self._persist_coach_decision(
-            decision, coach_output_path, tag="REPAIR-ROUND-PROTECTED"
+            decision, coach_output_path, tag="REPAIR-ROUND-GUARD"
         )
 
     # 18 October 2026: how much of one run's output (stdout and stderr

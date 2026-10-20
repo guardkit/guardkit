@@ -847,3 +847,110 @@ class TestEveryAuditPathGetsTheReview:
         )
         assert outcome["decision"] == "approved"
         assert outcome["fo"]._repair_approvals[TASK_ID] == {"tests/e2e/sign-in.ts"}
+
+
+class TestAnUnreadableRecordIsNeverApproved:
+    """In a repair round the audit leaves extra files to the reviewer, so a
+    turn whose record of what changed cannot be read is refused, whatever the
+    reviewer says. Ordinary turns are unchanged."""
+
+    REFUSAL = (
+        "The repair round's record of what changed could not be read, so this "
+        "turn cannot be approved."
+    )
+
+    def _approved_round_one(self, tmp_path: Path, direct_mode: bool) -> Path:
+        repo = make_project(
+            tmp_path, declare_create=False, declare_modify=False, direct_mode=direct_mode
+        )
+        first = run_round(repo, {"apps/web/src/App.tsx": "export const App = () => 1;\n"})
+        assert first["decision"] == "approved", first["history"][-1].coach_result.report
+        return repo
+
+    def _assert_refused(self, repo: Path, outcome: Dict[str, Any]) -> None:
+        assert outcome["decision"] != "approved"
+        report = outcome["history"][-1].coach_result.report
+        assert report["decision"] == "feedback"
+        refusals = [
+            i for i in report.get("issues", []) if i.get("category") == "repair_round_unreadable"
+        ]
+        assert refusals and refusals[0]["severity"] == "must_fix"
+        assert refusals[0]["description"] == self.REFUSAL
+        private = TaskArtifactPaths.task_private_dir(TASK_ID, repo)
+        saved = json.loads((private / "coach_turn_1.json").read_text())
+        assert saved["decision"] == "feedback"
+        assert any(i.get("category") == "repair_round_unreadable" for i in saved["issues"])
+        assert outcome["fo"]._repair_approvals.get(TASK_ID) is None
+
+    @staticmethod
+    def _checkpoints(repo: Path) -> Path:
+        return repo / ".guardkit" / "autobuild" / TASK_ID / "checkpoints.json"
+
+    @pytest.mark.parametrize("direct_mode", [False, True], ids=["no-declarations", "direct-mode"])
+    def test_a_missing_checkpoint_record_refuses_the_turn(
+        self, tmp_path: Path, direct_mode: bool
+    ) -> None:
+        repo = self._approved_round_one(tmp_path, direct_mode)
+        outcome = reopen_and_repair(
+            repo,
+            {"db/migrations/0003_seed_books.sql": "insert into books values (1);\n"},
+            model_verdict=APPROVE,
+            shell_step=lambda root: self._checkpoints(root).unlink(),
+        )
+        self._assert_refused(repo, outcome)
+
+    @pytest.mark.parametrize("direct_mode", [False, True], ids=["no-declarations", "direct-mode"])
+    def test_a_malformed_checkpoint_record_refuses_the_turn(
+        self, tmp_path: Path, direct_mode: bool
+    ) -> None:
+        repo = self._approved_round_one(tmp_path, direct_mode)
+        outcome = reopen_and_repair(
+            repo,
+            {"tests/e2e/sign-in.ts": "export const signIn = 1;\n"},
+            model_verdict=APPROVE,
+            shell_step=lambda root: self._checkpoints(root).write_text("{not json"),
+        )
+        self._assert_refused(repo, outcome)
+
+    @pytest.mark.parametrize("direct_mode", [False, True], ids=["no-declarations", "direct-mode"])
+    def test_a_read_that_raises_refuses_the_turn(
+        self, tmp_path: Path, direct_mode: bool, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        repo = self._approved_round_one(tmp_path, direct_mode)
+        from installer.core.commands.lib.plan_audit import PlanAuditor
+
+        def _raise(self: Any, task_id: Any) -> Any:
+            raise OSError("invented read failure")
+
+        monkeypatch.setattr(PlanAuditor, "_repair_round_facts", _raise)
+        outcome = reopen_and_repair(
+            repo,
+            {"tests/e2e/sign-in.ts": "export const signIn = 1;\n"},
+            model_verdict=APPROVE,
+        )
+        self._assert_refused(repo, outcome)
+
+    @pytest.mark.parametrize("direct_mode", [False, True], ids=["no-declarations", "direct-mode"])
+    def test_a_readable_record_still_approves(self, tmp_path: Path, direct_mode: bool) -> None:
+        repo = self._approved_round_one(tmp_path, direct_mode)
+        outcome = reopen_and_repair(
+            repo, {"tests/e2e/sign-in.ts": "export const signIn = 1;\n"}, model_verdict=APPROVE
+        )
+        assert outcome["decision"] == "approved"
+        assert outcome["fo"]._repair_approvals[TASK_ID] == {"tests/e2e/sign-in.ts"}
+
+    @pytest.mark.parametrize("direct_mode", [False, True], ids=["no-declarations", "direct-mode"])
+    def test_an_ordinary_turn_with_a_missing_record_is_unchanged(
+        self, tmp_path: Path, direct_mode: bool
+    ) -> None:
+        repo = self._approved_round_one(tmp_path, direct_mode)
+        outcome = run_round(
+            repo,
+            {"tests/e2e/sign-in.ts": "export const signIn = 1;\n"},
+            shell_step=lambda root: self._checkpoints(root).unlink(),
+        )
+        assert outcome["decision"] == "approved", outcome["history"][-1].coach_result.report
+        report = outcome["history"][-1].coach_result.report
+        assert not any(
+            i.get("category") == "repair_round_unreadable" for i in report.get("issues", [])
+        )
