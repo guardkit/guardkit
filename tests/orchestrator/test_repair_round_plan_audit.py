@@ -146,12 +146,11 @@ class TestTheSplit:
                 "db/migrations/0003_seed.sql",  # made by the round
                 "deploy/Dockerfile",            # changed by the round
                 "package-lock.json",            # changed, named by the plan
-                ".env.test",                    # changed, approved by an earlier repair
+                ".env.test",                    # changed again after an earlier round
                 "tests/e2e/sign-in.ts",         # not protected
             ],
             planned={"package-lock.json"},
-            approved_by_repairs={".env.test"},
-        ) == {"db/migrations/0003_seed.sql", "deploy/Dockerfile"}
+        ) == {"db/migrations/0003_seed.sql", "deploy/Dockerfile", ".env.test"}
 
 
 # ---------------------------------------------------------------------------
@@ -250,10 +249,15 @@ def _reopen(root: Path) -> RepairRound:
     return round_
 
 
-def _verdict(root: Path, repair_round: Optional[RepairRound] = None) -> Dict[str, Any]:
+def _audit(root: Path, repair_round: Optional[RepairRound] = None) -> AgentInvoker:
     invoker = AgentInvoker(worktree_path=root, max_turns_per_agent=1, sdk_timeout_seconds=10)
     invoker.repair_round = repair_round
-    return invoker._compute_plan_audit_verdict(TASK_ID)
+    invoker.last_verdict = invoker._compute_plan_audit_verdict(TASK_ID)  # type: ignore[attr-defined]
+    return invoker
+
+
+def _verdict(root: Path, repair_round: Optional[RepairRound] = None) -> Dict[str, Any]:
+    return _audit(root, repair_round).last_verdict  # type: ignore[attr-defined]
 
 
 def _gate_passes(root: Path, plan_audit: Dict[str, Any]) -> bool:
@@ -433,15 +437,20 @@ class TestTheAuditInARepairRound:
         _approve_round_one(repo)
         first_repair = _reopen(repo)
         _write_all(repo, NEAR_THE_FAILURE)
-        assert _verdict(repo, first_repair)["status"] == "passed"
+        approving_turn = _audit(repo, first_repair)
+        assert approving_turn.last_verdict["status"] == "passed"  # type: ignore[attr-defined]
+        # What the reviewer was shown on the turn it approved.
+        assert approving_turn.repair_round_inventory == frozenset({
+            "scripts/seed-owner.sh", "scripts/seed-sample-book.sh", "scripts/seed.sh",
+            "tests/e2e/shelf.spec.ts", "tests/e2e/sign-in.ts", "web/src/test-render.tsx",
+        })
         _commit(repo, "repair round approved")
 
-        second_repair = begin_repair_round(repo, 3, "Smoke check failed: tests/e2e/shelf.spec.ts", previous=first_repair)
+        second_repair = begin_repair_round(
+            repo, 3, "Smoke check failed: tests/e2e/shelf.spec.ts",
+            approved_by_earlier_repairs=approving_turn.repair_round_inventory or (),
+        )
         assert second_repair is not None
-        assert {
-            "scripts/seed-owner.sh", "scripts/seed-sample-book.sh",
-            "tests/e2e/sign-in.ts", "web/src/test-render.tsx",
-        } <= second_repair.approved_by_earlier_repairs
         _write(repo, "tests/e2e/shelf.spec.ts", "test('again', () => {});\n")
 
         verdict = _verdict(repo, second_repair)
@@ -489,6 +498,30 @@ class TestTheAuditInARepairRound:
         assert not _gate_passes(repo, verdict)
         # The same edit on an ordinary turn is a low "unplanned modification".
         assert _verdict(repo)["severity"] == "low"
+
+    def test_a_protected_file_an_earlier_round_was_approved_with_is_refused_when_edited(
+        self, repo: Path
+    ) -> None:
+        # Round 1 was approved with an unplanned migration (two extras: medium).
+        _approve_round_one(
+            repo,
+            extra={
+                "db/migrations/0002_items.sql": "create table items (id int);\n",
+                "web/src/extra.ts": "export const extra = 1;\n",
+            },
+        )
+        # Even an approval carried by name never exempts a protected file.
+        round_ = begin_repair_round(
+            repo, 2, GATE_OUTPUT,
+            approved_by_earlier_repairs={"db/migrations/0002_items.sql"},
+        )
+        _write(repo, "db/migrations/0002_items.sql", "create table items (id int, t text);\n")
+
+        approving = _audit(repo, round_)
+
+        assert approving.last_verdict["severity"] == "high"  # type: ignore[attr-defined]
+        # Nor is one ever carried to a later round.
+        assert "db/migrations/0002_items.sql" not in (approving.repair_round_inventory or ())
 
     def test_starting_a_round_without_git_never_raises(self, tmp_path: Path) -> None:
         assert begin_repair_round(tmp_path / "no-repo", 2, GATE_OUTPUT) is None

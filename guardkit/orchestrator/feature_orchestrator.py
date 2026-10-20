@@ -34,7 +34,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Literal, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Literal, Optional, Sequence, Set, Tuple
 
 from rich.console import Console
 from rich.panel import Panel
@@ -1088,10 +1088,10 @@ class FeatureOrchestrator:
         # ``_execute_wave`` threads it to each task beside ``smoke_command``;
         # every other wave sees None.
         self._feature_check_repair_for_wave: Optional[FeatureCheckRepair] = None
-        # Each task's latest gate-driven repair round, in memory only (20
-        # October 2026; repair_round.py): the next re-open of the task carries
-        # its approved files forward.
-        self._last_repair_round: Dict[str, RepairRound] = {}
+        # Per task, the non-protected files its gate-driven repair rounds
+        # showed the reviewer on the turns it approved, in memory only (20
+        # October 2026; repair_round.py). The next re-open carries them.
+        self._repair_approvals: Dict[str, Set[str]] = {}
         # 21 September 2026. What the check after each group of tasks found, or
         # could not look at. Until today its result was printed and dropped, so
         # by merge time nobody could tell "found nothing" from "never looked".
@@ -4650,19 +4650,18 @@ The detailed specifications are in the task markdown file.
                 # (20 October 2026; see repair_round.py): its number, where it
                 # starts and the gate's output, handed down IN MEMORY to this
                 # task's orchestrator. Nothing on disk says so. Never fails.
-                # This task's previous repair round, if a gate re-opened it
-                # before: the files that round had approved are carried
-                # forward, so a later gate's re-entry does not recount them.
-                last_rounds = self.__dict__.setdefault("_last_repair_round", {})
+                # The files this task's earlier repair rounds showed the
+                # reviewer on the turns it approved are carried forward, so a
+                # later gate's re-entry does not recount them.
+                approvals = self.__dict__.setdefault("_repair_approvals", {})
                 started = begin_repair_round(
                     worktree.path,
                     (archived_round + 1) if archived_round else None,
                     seed_feedback,
-                    previous=last_rounds.get(task_id),
+                    approved_by_earlier_repairs=approvals.get(task_id, ()),
                 )
                 if started is not None:
                     repair_rounds[task_id] = started
-                    last_rounds[task_id] = started
             if task.status == "completed":
                 if self._wave_display:
                     self._wave_display.update_task_status(
@@ -6284,6 +6283,10 @@ The detailed specifications are in the task markdown file.
                 behavioural_oracle=feature.behavioural_oracle,
             )
 
+            # A repair round the reviewer approved: its files are carried, in
+            # memory, to this task's next repair round.
+            self._remember_repair_approvals(task.id, task_orchestrator)
+
             # TASK-FIX-OBS2: Log completion
             elapsed = time.time() - task_start_time
             progress_logger.log_complete(elapsed, result.final_decision)
@@ -6425,6 +6428,26 @@ The detailed specifications are in the task markdown file.
     # ------------------------------------------------------------------
     # Late-approval reconciliation helpers (TASK-ATR-003)
     # ------------------------------------------------------------------
+
+    def _remember_repair_approvals(self, task_id: str, task_orchestrator: Any) -> None:
+        """Keep the files a repair round's approving turn showed the reviewer.
+
+        Read from the task's own orchestrator, in memory
+        (``AutoBuildOrchestrator.repair_round_approved_files``); ``None`` when
+        the task was not in a repair round or the round was not approved.
+        Only this task's files, and never a protected one. Never raises.
+        """
+        try:
+            approved = getattr(task_orchestrator, "repair_round_approved_files", None)
+            if approved:
+                self.__dict__.setdefault("_repair_approvals", {}).setdefault(
+                    task_id, set()
+                ).update(str(path) for path in approved)
+        except Exception as exc:  # noqa: BLE001 — a record never fails a build
+            logger.warning(
+                "[%s] The repair round's approved files could not be kept: %s",
+                task_id, type(exc).__name__,
+            )
 
     def _archive_previous_round(self, task_id: str, worktree: Worktree) -> Optional[int]:
         """Move a re-opened task's turn files into ``round-<N>/`` (18 Oct 2026).

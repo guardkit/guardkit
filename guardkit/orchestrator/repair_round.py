@@ -16,8 +16,8 @@ WHAT IT DOES
 ------------
 At the re-open the feature orchestrator makes a :class:`RepairRound` - the
 round's number, the commit the round starts from (HEAD at the re-open), the
-gate's output, and the files earlier approved repair rounds of the task
-changed - and hands it, in memory, down the call chain it controls:
+gate's output, and the non-protected files the reviewer approved in this
+task's earlier repair rounds - and hands it, in memory, down the call chain it controls:
 ``_execute_task`` -> ``AutoBuildOrchestrator`` -> its ``AgentInvoker``. Nothing
 is written to disk for it and nothing on disk is read back, so there is
 nothing a Player could write to make a turn look like a repair round.
@@ -63,10 +63,10 @@ class RepairRound:
     whose approved predecessor's turn files went into ``round-1/`` (see
     ``turn_rounds``); it is for the record and the prompt only. ``start_commit`` is HEAD at the
     re-open: the candidate the gate failed. ``gate_output`` is the feedback the
-    Player was given, the gate's own words. ``approved_by_earlier_repairs`` is
-    every file an earlier, approved repair round of this task changed (worked
-    out from git between that round's start and this re-open, never read from
-    disk): a later gate's re-entry does not count them again.
+    Player was given, the gate's own words. ``approved_by_earlier_repairs`` are
+    the non-protected files this task's earlier repair rounds showed the
+    reviewer on the turns it approved, carried in memory: a later gate's
+    re-entry does not count them again. Never a protected file.
     """
 
     round_number: int
@@ -131,17 +131,17 @@ def begin_repair_round(
     worktree_path: Path,
     round_number: Optional[int],
     gate_output: str,
-    previous: Optional[RepairRound] = None,
+    approved_by_earlier_repairs: Iterable[str] = (),
 ) -> Optional[RepairRound]:
     """The repair round a re-open starts, or ``None``. Never raises.
 
-    Reads HEAD of the worktree, the round's start. ``previous`` is this
-    task's last repair round, when a gate re-opened it before: the task was
-    approved again after it (only an approved task is re-opened), so every
-    file that changed between that round's start and this HEAD was approved
-    by a repair round, and is carried forward with the ones before it.
-    ``None`` when git cannot say where the round starts: the round then goes
-    ahead and its turns are audited as ordinary ones.
+    Reads HEAD of the worktree, the round's start.
+    ``approved_by_earlier_repairs`` are the non-protected files this task's
+    earlier repair rounds showed the reviewer on the turns it approved
+    (``FeatureOrchestrator._remember_repair_approvals``); never another
+    task's files, and never a protected file. ``None`` when git cannot say
+    where the round starts: the round then goes ahead and its turns are
+    audited as ordinary ones.
     """
     head = _git_out(worktree_path, ["rev-parse", "HEAD"]).strip()
     if not head:
@@ -150,19 +150,14 @@ def begin_repair_round(
             "are audited as ordinary turns."
         )
         return None
-    approved: Set[str] = set()
-    if previous is not None:
-        approved |= set(previous.approved_by_earlier_repairs)
-        listed = _git_out(
-            worktree_path, ["diff", "--name-only", previous.start_commit, head]
-        )
-        approved |= {line.strip() for line in listed.splitlines() if line.strip()}
     number = round_number if isinstance(round_number, int) and round_number > 1 else 2
     return RepairRound(
         round_number=number,
         start_commit=head,
         gate_output=str(gate_output or ""),
-        approved_by_earlier_repairs=frozenset(approved),
+        approved_by_earlier_repairs=frozenset(
+            str(path) for path in approved_by_earlier_repairs if path
+        ),
     )
 
 

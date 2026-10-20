@@ -14,7 +14,7 @@ from contextlib import aclosing, asynccontextmanager, suppress
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, AsyncGenerator, Dict, List, Literal, Optional, Sequence, Set, Tuple, Union
+from typing import TYPE_CHECKING, Any, AsyncGenerator, Dict, FrozenSet, List, Literal, Optional, Sequence, Set, Tuple, Union
 
 from guardkit.orchestrator.permissive_double_advisory import (
     coach_advisory_text as permissive_double_advisory_text,
@@ -2263,6 +2263,10 @@ class AgentInvoker:
     #: A gate-driven repair round handed over in memory (see ``__init__``);
     #: declared here too so an invoker built without ``__init__`` reads None.
     repair_round: Optional[Any] = None
+    #: In a repair round, the non-protected files the latest plan audit put in
+    #: front of the reviewer (what the round made or changed beyond the task
+    #: document). Read by the orchestrator when the reviewer approves the turn.
+    repair_round_inventory: Optional[FrozenSet[str]] = None
 
     # Class-level lock to serialise git operations across parallel tasks (TASK-FIX-VL04)
     _git_lock = threading.RLock()
@@ -14446,6 +14450,8 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
         whether or not the player also wrote its own note of what it intended
         to touch. A build graded against its own note is not graded.
         """
+        # Set again below only by a repair round's audit of this turn.
+        self.repair_round_inventory = None
         declared = self._read_declared_file_sections(task_id)
         if declared["create"] is not None or declared["modify"] is not None:
             return self._plan_audit_against_task_document(task_id, declared)
@@ -14885,6 +14891,14 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                 path for path in repair_facts.get("changed_this_round") or []
                 if path not in declared_paths
             ]
+            from installer.core.commands.lib.plan_audit import _is_protected
+
+            # What the reviewer is shown on this turn; if it approves the
+            # turn, these (never a protected file) are carried, in memory, to
+            # this task's next repair round.
+            self.repair_round_inventory = frozenset(
+                path for path in beyond if not _is_protected(path)
+            )
             block["repair_round"] = {
                 "round_number": repair_facts.get("round_number"),
                 "start_commit": repair_facts.get("start_commit"),

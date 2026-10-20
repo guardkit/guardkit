@@ -57,7 +57,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional, Set, Tuple
+from typing import Any, Dict, FrozenSet, List, Literal, Optional, Set, Tuple
 
 import yaml
 
@@ -3143,6 +3143,9 @@ class AutoBuildOrchestrator:
         # this task's AgentInvoker for its plan audit and Coach prompt. Held in
         # memory only; None on every other task (repair_round.py).
         self._repair_round: Optional[Any] = repair_round
+        # Set when a repair round's turn is approved: the non-protected files
+        # the reviewer was shown on that turn (AgentInvoker.repair_round_inventory).
+        self.repair_round_approved_files: Optional[FrozenSet[str]] = None
         # This task's whole-feature check record per Coach turn, read by the
         # early stop. Reset per _loop_phase invocation.
         self._whole_feature_check_by_turn: Dict[int, Dict[str, Any]] = {}
@@ -5399,6 +5402,14 @@ class AutoBuildOrchestrator:
                             f"Checkpoint created: {checkpoint.commit_hash[:8]} "
                             f"for turn {turn}"
                         )
+                    # In a repair round, the files the reviewer was shown on
+                    # the turn it approved, kept in memory for the feature
+                    # orchestrator to carry to this task's next repair round.
+                    self.repair_round_approved_files = (
+                        getattr(self._agent_invoker, "repair_round_inventory", None)
+                        if getattr(self._agent_invoker, "repair_round", None) is not None
+                        else None
+                    )
                     return turn_history, "approved"
 
                 # Cooperative cancellation check after turn (TASK-ASF-007)

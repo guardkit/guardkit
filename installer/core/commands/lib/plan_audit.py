@@ -275,13 +275,14 @@ def _beside_the_plan(extra: Set[str], planned: Set[str]) -> Set[str]:
 #     asks it to refuse the turn if any such file is not needed to make the
 #     failing check pass (AgentInvoker._build_coach_prompt);
 #   * a protected file (see _is_protected above) the round made, changed or
-#     deleted that the plan does not name is high, whatever the reviewer says
-#     and whatever file sections the task document has: it is read from git
-#     since the round started (_repair_round_protected), like the reviewer's
-#     list, unless an earlier approved repair round already changed it;
-#   * an extra file an earlier repair round of this task made and that round
-#     was approved with is not counted again (named in a low discrepancy of
-#     its own); the files are handed over with the round, in memory;
+#     deleted that the plan does not name is high, whatever the reviewer says,
+#     whatever file sections the task document has, and whatever an earlier
+#     round did: it is read from git since the round started
+#     (_repair_round_protected), like the reviewer's list;
+#   * a non-protected extra file this task's earlier repair round showed the
+#     reviewer on the turn it approved is not counted again (named in a low
+#     discrepancy of its own); the files are handed over with the round, in
+#     memory, and are only ever this task's own;
 #   * any other extra file an earlier, approved round made counts exactly as
 #     it did when that round was approved.
 #
@@ -327,10 +328,9 @@ def _repair_round_split(
 def _repair_round_protected(
     changed_this_round: List[str],
     planned: Set[str],
-    approved_by_repairs: Set[str],
 ) -> Set[str]:
     """The protected files a repair round made, changed or deleted that the
-    plan does not name and no earlier repair round approved.
+    plan does not name. Nothing an earlier round did exempts one.
 
     Read from git since the round started (``changed_this_round``), so it holds
     whichever file sections the task document has: a task that declares only
@@ -339,9 +339,7 @@ def _repair_round_protected(
     return {
         path
         for path in changed_this_round
-        if _is_protected(path)
-        and path not in planned
-        and path not in approved_by_repairs
+        if _is_protected(path) and path not in planned
     }
 
 
@@ -1058,7 +1056,6 @@ class PlanAuditor:
             protected_touched = _repair_round_protected(
                 list(repair_facts.get("changed_this_round") or ()),
                 planned_anywhere,
-                approved_by_repairs,
             )
             if counted_extra:
                 counted_extra, approved_by_repair, for_reviewer = _repair_round_split(

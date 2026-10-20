@@ -290,7 +290,10 @@ def run_round(
             worktree=worktree,
             task_type="scaffolding",
         )
-    return {"history": history, "decision": decision, "seen": seen, "prompts": prompts}
+    return {
+        "history": history, "decision": decision, "seen": seen, "prompts": prompts,
+        "orchestrator": orch,
+    }
 
 
 ROUND_ONE = {
@@ -357,6 +360,8 @@ def reopen_and_repair(
             model_verdict=model_verdict,
             requirements=requirements,
         ))
+        # What the real _execute_task does after orchestrate().
+        fo._remember_repair_approvals(task_.id, outcome["orchestrator"])
         return TaskExecutionResult(
             task_id=task_.id,
             success=outcome["decision"] == "approved",
@@ -691,3 +696,46 @@ class TestProtectedFilesWhateverTheTaskDeclares:
         issues = _plan_audit_issues(outcome["history"])
         assert issues and issues[0]["severity"] == "must_fix"
         assert "deploy/Dockerfile" in issues[0]["description"]
+
+
+class TestCarriedApprovalsAreThisTasksOwn:
+    def test_another_tasks_planned_dockerfile_change_is_never_carried(
+        self, approved_round_one: Path
+    ) -> None:
+        """Task B, sharing the worktree, makes its planned Dockerfile change;
+        task A's later repair round edits the Dockerfile and is refused."""
+        repo = approved_round_one
+        first = reopen_and_repair(repo, REPAIR_NEAR_THE_FAILURE)
+        assert first["decision"] == "approved"
+        fo = first["fo"]
+        carried = fo._repair_approvals[TASK_ID]
+        assert "apps/web/src/test-render.tsx" in carried
+
+        # Task B's planned change lands on the shared branch.
+        _write(repo, "deploy/Dockerfile", "FROM scratch\nEXPOSE 8080\n")
+        _git(repo, "add", "-A")
+        _git(repo, "commit", "-q", "-m", "task B: planned Dockerfile change")
+
+        second = reopen_and_repair(
+            repo,
+            {"deploy/Dockerfile": "FROM scratch\nEXPOSE 9090\n"},
+            fo=fo,
+            gate_output="The smoke check failed: deploy/Dockerfile",
+            model_verdict=APPROVE,
+        )
+
+        assert "deploy/Dockerfile" not in second["repair_round"].approved_by_earlier_repairs
+        assert second["repair_round"].approved_by_earlier_repairs == frozenset(carried)
+        assert second["decision"] != "approved"
+        issues = _plan_audit_issues(second["history"])
+        assert issues and "deploy/Dockerfile" in issues[0]["description"]
+
+    def test_an_unapproved_repair_round_carries_nothing(self, approved_round_one: Path) -> None:
+        repo = approved_round_one
+        outcome = reopen_and_repair(
+            repo,
+            {**REPAIR_THAT_WANDERS, "tests/e2e/shelf.spec.ts": "test('x', () => {});\n"},
+            model_verdict=REFUSE_UNRELATED,
+        )
+        assert outcome["decision"] != "approved"
+        assert outcome["fo"]._repair_approvals.get(TASK_ID) is None
