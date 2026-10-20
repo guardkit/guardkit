@@ -62,18 +62,19 @@ the biggest single process, so the whole build was lost. Three changes:
   inherits it), so the kernel stops the command's processes rather than
   GuardKit. A ``shell=True`` command's shell sets it before running the
   command (then runs it exactly as ``shell=True`` would, with ``exec``); a
-  program run directly gets it from GuardKit straight after it starts, so
-  anything it starts in its first moments may miss it.
+  program run directly gets it in the child before ``exec``
+  (:func:`_first_in_line_before_exec`), so nothing it starts escapes it.
 * A factory launch (``m0_fence.is_factory_launch``) runs no project command
   where any of ``/proc``, ``os.waitid`` or a pidfd is missing: it raises
   :class:`CleanupUnavailableError` (an ``OSError``) before the command
   starts, naming what is missing. A person's own run goes on with the
   reduced clean-up below and one warning.
 * Without ``/proc`` (macOS) the command's group alone is signalled when it
-  returns, and nothing is counted. Without ``os.waitid`` (macOS before
-  Python 3.13) the leader's exit cannot be read without collecting it, so
-  the command is waited for with ``communicate()`` as before, and only a
-  timeout ends its group.
+  returns, and nothing is counted. Without a working ``os.waitid`` (macOS
+  before Python 3.13, or a filter that refuses the call) the leader's exit
+  cannot be read without collecting it, so the command is waited for with
+  ``communicate()`` as before, and only a timeout ends its group. No wait
+  for the leader is ever unbounded (:func:`_collect`).
 """
 
 from __future__ import annotations
@@ -160,6 +161,15 @@ def _leader_state(proc: subprocess.Popen) -> str:
         info = os.waitid(os.P_PID, proc.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
     except ChildProcessError:
         return _COLLECTED
+    except OSError as exc:
+        # waitid refused (a filter): the leader's state cannot be read, so
+        # the command cannot be watched safely. Never read as "running",
+        # which could wait for ever.
+        raise CleanupUnavailableError(
+            exc.errno or errno.ENOSYS,
+            f"waitid was refused while watching a project command "
+            f"({exc.strerror or exc}), so it cannot be watched safely",
+        ) from exc
     return _RUNNING if info is None else _EXITED
 
 
@@ -578,16 +588,48 @@ def _prepare(
     return argv, command_env, marker, _now_ticks()
 
 
-def _first_in_line(proc: subprocess.Popen, shell: bool) -> None:
-    """A program run directly: raise its ``oom_score_adj`` from here (a shell
-    raises its own, see :data:`_FIRST_TO_GO`)."""
-    if shell:
-        return
+def _first_in_line_before_exec() -> None:
+    """Runs in the child between fork and exec, for a program run directly
+    (a ``shell=True`` command's shell raises its own, see
+    :data:`_FIRST_TO_GO`): the score is in place before the program can
+    start anything, and GuardKit's own is never touched.
+
+    CPython warns that ``preexec_fn`` is not safe in a threaded program: the
+    child could deadlock on a lock another thread held at the fork. This
+    function takes no Python-level lock, imports nothing and calls only
+    ``open``/``write``/``close`` (async-signal-safe system calls) through
+    ``os``; every error is swallowed, so a launch failure is still the
+    program's own ``OSError``.
+    """
     try:
-        with open(f"/proc/{proc.pid}/oom_score_adj", "w", encoding="ascii") as fh:
-            fh.write(_OOM_SCORE_ADJ_MAX)
-    except OSError:
-        pass  # no /proc, or already gone
+        fd = os.open("/proc/self/oom_score_adj", os.O_WRONLY)
+        try:
+            os.write(fd, b"1000")
+        finally:
+            os.close(fd)
+    except BaseException:  # noqa: BLE001 - nothing may escape into the child
+        pass
+
+
+def _collect(proc: subprocess.Popen) -> None:
+    """Collect the ended leader, never waiting without bound: after
+    ``_KILL_WAIT_SECONDS`` it is sent SIGKILL (its group, by the number it
+    still pins) and given ``_DRAIN_SECONDS`` more; then it is left, said
+    plainly."""
+    try:
+        proc.wait(timeout=_KILL_WAIT_SECONDS)
+        return
+    except subprocess.TimeoutExpired:
+        pass
+    _signal_group(proc.pid, signal.SIGKILL)
+    try:
+        proc.wait(timeout=_DRAIN_SECONDS)
+    except subprocess.TimeoutExpired:
+        logger.warning(
+            "a project command's first process (%s) could not be collected; "
+            "it is left as it is",
+            proc.pid,
+        )
 
 
 class _Exchange:
@@ -767,8 +809,9 @@ def _is_factory_launch() -> bool:
 
 class CleanupUnavailableError(OSError):
     """A factory build's project command was not run: this system cannot
-    stop everything such a command leaves (an ``OSError``, so a caller that
-    treats "could not start" as the command's failure says so)."""
+    stop everything such a command leaves (an ``OSError`` with ``errno`` and
+    ``strerror`` set, so a caller that treats "could not start" as the
+    command's failure, and reports ``strerror``, says why)."""
 
 
 def _refused(call: str, wrapper: bool, exc: OSError) -> str:
@@ -797,8 +840,9 @@ def _missing_capability() -> Optional[str]:
     """
     if not Path("/proc/self/stat").exists():
         return "/proc is missing (it is needed to find a command's processes)"
-    if not _can_wait_without_collecting():
-        return "os.waitid is missing (macOS has it from Python 3.13)"
+    waitid_problem = _waitid_problem()
+    if waitid_problem is not None:
+        return waitid_problem
     try:
         handle = _pidfd_open(os.getpid())
     except OSError as exc:
@@ -830,6 +874,7 @@ def _check_capability() -> None:
         return
     if _is_factory_launch():
         raise CleanupUnavailableError(
+            errno.ENOSYS,
             f"The factory does not run project commands here: {missing}, so what "
             "a command leaves running could not all be stopped safely. Run the "
             "factory with a Python and a Linux kernel (5.3 or later) that allow "
@@ -844,13 +889,35 @@ def _check_capability() -> None:
         )
 
 
-def _can_wait_without_collecting() -> bool:
-    """Whether ``os.waitid`` exists. macOS has it only from Python 3.13."""
+def _waitid_problem() -> Optional[str]:
+    """Why a leader's exit cannot be read without collecting it, as a plain
+    clause, or ``None`` when it can.
+
+    ``os.waitid`` must exist (macOS has it only from Python 3.13) and the
+    call must work: it is tried on this process itself, which is never its
+    own child, so a working call answers "no such child" (ECHILD) and a
+    refusal by the kernel or a filter answers otherwise. One system call,
+    nothing collected.
+    """
     try:
         os.waitid  # noqa: B018 - the attribute's presence is the question
     except AttributeError:
-        return False
-    return True
+        return "os.waitid is missing (macOS has it from Python 3.13)"
+    try:
+        os.waitid(os.P_PID, os.getpid(), os.WEXITED | os.WNOHANG | os.WNOWAIT)
+    except ChildProcessError:
+        return None
+    except OSError as exc:
+        return (
+            f"waitid is refused here by the kernel or a security filter "
+            f"({exc.strerror or exc})"
+        )
+    return None
+
+
+def _can_wait_without_collecting() -> bool:
+    """Whether a leader's exit can be read without collecting it."""
+    return _waitid_problem() is None
 
 
 def _not_safe_sentence(count: int) -> str:
@@ -922,13 +989,17 @@ def _run(
     except BaseException:
         try:
             _end_group(proc, 0.0, entry, since)
+        except Exception:  # noqa: BLE001 - e.g. waitid refused mid-run
+            # The leader is not collected, so its group's number is still
+            # this command's.
+            _signal_group(proc.pid, signal.SIGKILL)
         finally:
             if exchange is not None:
                 exchange.close()
-            proc.wait()
+            _collect(proc)
         raise
     exchange.close()
-    proc.wait()
+    _collect(proc)
     stdout, stderr = exchange.output()
     return stdout, stderr, timed_out
 
@@ -961,7 +1032,7 @@ def _run_without_waitid(
     except BaseException:
         if proc.returncode is None:
             _signal_group(proc.pid, signal.SIGKILL)
-        proc.wait()
+        _collect(proc)
         raise
 
 
@@ -996,8 +1067,8 @@ def run_in_own_group(
         encoding="utf-8",
         errors="replace",
         start_new_session=True,
+        preexec_fn=None if shell else _first_in_line_before_exec,
     )
-    _first_in_line(proc, shell)
     stdout, stderr, timed_out = _run(
         proc, marker, since, args, input=None, timeout=timeout, grace=grace
     )
@@ -1058,8 +1129,8 @@ def run_project_command(
         encoding=encoding,
         errors=errors,
         start_new_session=True,
+        preexec_fn=None if shell else _first_in_line_before_exec,
     )
-    _first_in_line(proc, shell)
     out, err, timed_out = _run(
         proc, marker, since, args, input=input, timeout=timeout, grace=grace
     )

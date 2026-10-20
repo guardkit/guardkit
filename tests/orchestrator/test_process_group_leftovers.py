@@ -20,7 +20,8 @@ forgotten server, watcher or test run:
 * on a timeout the command and everything it started are ended;
 * processes the command did not start are never touched;
 * the command's processes go first when memory runs out, GuardKit's own
-  process does not change;
+  process does not change, and a program run directly cannot start anything
+  before its score is set;
 * ``run_project_command`` still behaves as ``subprocess.run``;
 * the project's commands get ``CI=true`` unless the project declares ``CI``.
 
@@ -510,6 +511,35 @@ class TestCommandsGoFirstWhenMemoryRunsOut:
         assert before == after
         assert after != "1000"
 
+    def test_a_program_run_directly_cannot_fork_before_its_score_is_set(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Synchronised, not timed: Popen does not return until the program
+        # has already started a child and that child has recorded its score.
+        # A score written after Popen returns would be too late for it.
+        record = tmp_path / "child.txt"
+        base = process_group.subprocess.Popen
+
+        class ReturnsLate(base):  # type: ignore[misc, valid-type]
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                deadline = time.monotonic() + 20
+                while time.monotonic() < deadline:
+                    if record.exists() and record.read_text(encoding="ascii"):
+                        break
+                    time.sleep(0.01)
+
+        monkeypatch.setattr(process_group.subprocess, "Popen", ReturnsLate)
+        proc = run_project_command(
+            ["sh", "-c", f"sh -c 'cat /proc/self/oom_score_adj > {record}'; echo done"],
+            cwd=str(tmp_path), env=dict(_ENV), capture_output=True, text=True, timeout=30,
+        )
+        monkeypatch.undo()
+
+        assert proc.stdout == "done\n"
+        assert record.read_text(encoding="ascii") == "1000\n"
+        assert Path("/proc/self/oom_score_adj").read_text().strip() != "1000"
+
     def test_a_program_run_directly_and_what_it_starts_later(self, tmp_path: Path) -> None:
         proc = run_project_command(
             ["sh", "-c", "sleep 0.3; cat /proc/$$/oom_score_adj; "
@@ -641,6 +671,101 @@ class TestCleanupCapability:
             process_group._missing_capability()
         assert len(os.listdir("/proc/self/fd")) == before
 
+    @linux_only
+    def test_a_refused_waitid_is_named_and_neither_entry_point_starts_the_command(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # os.waitid exists but a filter refuses it: the probe makes the call.
+        def refused(*_args: object) -> None:
+            raise PermissionError(errno.EPERM, "Operation not permitted")
+
+        monkeypatch.setattr(process_group.os, "waitid", refused)
+        monkeypatch.setattr(process_group, "_CAPABILITY", [])
+        expected = (
+            "waitid is refused here by the kernel or a security filter "
+            "(Operation not permitted)"
+        )
+        assert process_group._missing_capability() == expected
+        for run in (
+            lambda: _run(tmp_path, "touch ran"),
+            lambda: run_in_own_group(
+                "touch ran", shell=True, cwd=tmp_path, env=dict(_ENV), timeout=30
+            ),
+        ):
+            with pytest.raises(process_group.CleanupUnavailableError) as caught:
+                run()
+            assert expected in caught.value.strerror
+        assert not (tmp_path / "ran").exists()
+
+    @linux_only
+    @pytest.mark.personal_run
+    def test_a_refused_waitid_on_a_persons_run_falls_back_and_never_hangs(
+        self, tmp_path: Path, started: List[int], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def refused(*_args: object) -> None:
+            raise PermissionError(errno.EPERM, "Operation not permitted")
+
+        monkeypatch.setattr(process_group.os, "waitid", refused)
+        monkeypatch.setattr(process_group, "_CAPABILITY", [])
+        monkeypatch.setattr(process_group, "_WARNED", [])
+        assert _run(tmp_path, "echo ok").stdout == "ok\n"
+        with pytest.raises(subprocess.TimeoutExpired):
+            _run(tmp_path, "echo $$ > fg.pid; exec sleep 300", timeout=1, grace=0.2)
+        monkeypatch.undo()
+        assert not _alive(_pid(tmp_path, "fg.pid"))
+
+    @linux_only
+    def test_waitid_refused_while_a_command_runs_never_hangs(
+        self, tmp_path: Path, started: List[int], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The probe passes (self is no child), then watching the leader is
+        # refused: the command is ended and collected within bounds, and the
+        # caller hears why.
+        real_waitid = os.waitid
+        own = os.getpid()
+
+        def flaky(idtype: int, ident: int, options: int):
+            # Refused once the command is under way (it has written its pid).
+            if ident == own or not (tmp_path / "fg.pid").exists():
+                return real_waitid(idtype, ident, options)
+            raise PermissionError(errno.EPERM, "Operation not permitted")
+
+        monkeypatch.setattr(process_group.os, "waitid", flaky)
+        monkeypatch.setattr(process_group, "_CAPABILITY", [])
+        began = time.monotonic()
+        with pytest.raises(process_group.CleanupUnavailableError, match="waitid was refused"):
+            _run(tmp_path, "echo $$ > fg.pid; exec sleep 300")
+        monkeypatch.undo()
+
+        assert time.monotonic() - began < 30
+        assert not _alive(_pid(tmp_path, "fg.pid"))
+
+    @linux_only
+    def test_the_declared_install_says_why_it_could_not_start(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, missing: None
+    ) -> None:
+        from guardkit.orchestrator.merge_environment import MergeEnvironment
+        from guardkit.orchestrator.merge_executor import prepare_tree
+
+        tree = _work_folder(tmp_path)
+        done = prepare_tree(
+            tree,
+            MergeEnvironment(
+                install_argv=("touch", "ran"), install_text="touch ran", install_timeout=30
+            ),
+            "the target",
+        )
+
+        assert done.env is None
+        assert done.problem == (
+            "the declared install (`touch ran`) could not start on the target: "
+            f"The factory does not run project commands here: {self._MISSING}, "
+            "so what a command leaves running could not all be stopped safely. "
+            "Run the factory with a Python and a Linux kernel (5.3 or later) "
+            "that allow pidfd_open and pidfd_send_signal."
+        )
+        assert not (tree / "ran").exists()
+
     def test_a_factory_launch_runs_no_project_command(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, missing: None
     ) -> None:
@@ -654,7 +779,8 @@ class TestCleanupCapability:
             with pytest.raises(process_group.CleanupUnavailableError) as caught:
                 run()
             assert isinstance(caught.value, OSError)
-            assert str(caught.value) == (
+            assert caught.value.errno == errno.ENOSYS
+            assert caught.value.strerror == (
                 f"The factory does not run project commands here: {self._MISSING}, "
                 "so what a command leaves running could not all be stopped safely. "
                 "Run the factory with a Python and a Linux kernel (5.3 or later) "
