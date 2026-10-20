@@ -2396,7 +2396,19 @@ async def test_timeout_mixed_with_success(
                 total_turns=2, final_decision="approved",
             )
 
-    with patch.object(orchestrator, '_execute_task', side_effect=mock_execute_task_mixed):
+    disjoint = {
+        "TASK-P-001": ["src/a/one.py"],
+        "TASK-P-002": ["src/b/two.py"],
+    }
+    with patch.object(
+        orchestrator,
+        '_execute_task',
+        side_effect=mock_execute_task_mixed,
+    ), patch.object(
+        orchestrator,
+        '_wave_task_paths',
+        return_value=disjoint,
+    ):
         results = await orchestrator._execute_wave_parallel(
             1, ["TASK-P-001", "TASK-P-002"], parallel_feature, mock_worktree
         )
