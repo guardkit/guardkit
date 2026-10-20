@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import subprocess
 from copy import deepcopy
 from pathlib import Path
@@ -1082,3 +1083,111 @@ class TestIgnoredProtectedFiles:
         assert any(
             i.get("category") == "repair_round_unreadable" for i in report.get("issues", [])
         )
+
+
+@pytest.mark.skipif(
+    hasattr(os, "geteuid") and os.geteuid() == 0, reason="root reads unreadable files"
+)
+class TestEveryFailurePathFailsClosed:
+    """A repair round whose facts cannot be established is still a repair
+    round, and every one of its turns is refused (no stand-in value, no
+    fallback to an ordinary turn)."""
+
+    def _round_one(self, tmp_path: Path, direct_mode: bool, env: Optional[str]) -> Path:
+        repo = make_project(
+            tmp_path, declare_create=False, declare_modify=False, direct_mode=direct_mode
+        )
+        if env is not None:
+            _write(repo, ".env", env)
+        first = run_round(repo, {"apps/web/src/App.tsx": "export const App = () => 1;\n"})
+        assert first["decision"] == "approved", first["history"][-1].coach_result.report
+        return repo
+
+    def _refused_as_unreadable(self, repo: Path, outcome: Dict[str, Any]) -> None:
+        assert outcome["decision"] != "approved"
+        report = outcome["history"][-1].coach_result.report
+        assert report["decision"] == "feedback"
+        assert any(
+            i.get("category") == "repair_round_unreadable" for i in report.get("issues", [])
+        ), report.get("issues")
+        private = TaskArtifactPaths.task_private_dir(TASK_ID, repo)
+        assert json.loads((private / "coach_turn_1.json").read_text())["decision"] == "feedback"
+        assert outcome["fo"]._repair_approvals.get(TASK_ID) is None
+
+    HELPER = {"tests/e2e/sign-in.ts": "export const signIn = 1;\n"}
+
+    @pytest.mark.parametrize("direct_mode", [False, True], ids=["no-declarations", "direct-mode"])
+    def test_a_one_shot_head_failure_at_the_re_open_is_refused(
+        self, tmp_path: Path, direct_mode: bool, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        repo = self._round_one(tmp_path, direct_mode, env=None)
+        from guardkit.orchestrator import repair_round as rr
+
+        real = rr.git_head
+        calls = {"n": 0}
+
+        def _first_call_fails(worktree_path: Path) -> str:
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise rr.RepairFactsUnavailable("HEAD could not be read")
+            return real(worktree_path)
+
+        monkeypatch.setattr(rr, "git_head", _first_call_fails)
+        outcome = reopen_and_repair(repo, self.HELPER, model_verdict=APPROVE)
+
+        assert outcome["repair_round"] is not None  # never dropped
+        assert outcome["repair_round"].unavailable
+        self._refused_as_unreadable(repo, outcome)
+
+    @pytest.mark.parametrize("direct_mode", [False, True], ids=["no-declarations", "direct-mode"])
+    def test_a_protected_file_unreadable_at_the_baseline_only_is_refused(
+        self, tmp_path: Path, direct_mode: bool
+    ) -> None:
+        repo = self._round_one(tmp_path, direct_mode, env="A=1\n")
+        os.chmod(repo / ".env", 0)
+        outcome = reopen_and_repair(
+            repo, self.HELPER, model_verdict=APPROVE,
+            shell_step=lambda root: os.chmod(root / ".env", 0o600),
+        )
+        assert outcome["repair_round"].unavailable
+        self._refused_as_unreadable(repo, outcome)
+
+    @pytest.mark.parametrize("direct_mode", [False, True], ids=["no-declarations", "direct-mode"])
+    def test_a_protected_file_unreadable_at_the_current_read_only_is_refused(
+        self, tmp_path: Path, direct_mode: bool
+    ) -> None:
+        repo = self._round_one(tmp_path, direct_mode, env="A=1\n")
+        outcome = reopen_and_repair(
+            repo, self.HELPER, model_verdict=APPROVE,
+            shell_step=lambda root: os.chmod(root / ".env", 0),
+        )
+        assert not outcome["repair_round"].unavailable
+        os.chmod(repo / ".env", 0o600)
+        self._refused_as_unreadable(repo, outcome)
+
+    @pytest.mark.parametrize("direct_mode", [False, True], ids=["no-declarations", "direct-mode"])
+    def test_a_protected_file_unreadable_at_both_reads_and_changed_between_is_refused(
+        self, tmp_path: Path, direct_mode: bool
+    ) -> None:
+        repo = self._round_one(tmp_path, direct_mode, env="A=1\n")
+        os.chmod(repo / ".env", 0)
+
+        def _change_while_unreadable(root: Path) -> None:
+            os.chmod(root / ".env", 0o600)
+            (root / ".env").write_text("A=2\n")
+            os.chmod(root / ".env", 0)
+
+        outcome = reopen_and_repair(
+            repo, self.HELPER, model_verdict=APPROVE, shell_step=_change_while_unreadable
+        )
+        os.chmod(repo / ".env", 0o600)
+        self._refused_as_unreadable(repo, outcome)
+
+    @pytest.mark.parametrize("direct_mode", [False, True], ids=["no-declarations", "direct-mode"])
+    def test_a_readable_unchanged_protected_file_approves(
+        self, tmp_path: Path, direct_mode: bool
+    ) -> None:
+        repo = self._round_one(tmp_path, direct_mode, env="A=1\n")
+        outcome = reopen_and_repair(repo, self.HELPER, model_verdict=APPROVE)
+        assert outcome["repair_round"].unavailable is None
+        assert outcome["decision"] == "approved", outcome["history"][-1].coach_result.report

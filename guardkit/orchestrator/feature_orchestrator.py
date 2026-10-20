@@ -4654,14 +4654,15 @@ The detailed specifications are in the task markdown file.
                 # reviewer on the turns it approved are carried forward, so a
                 # later gate's re-entry does not recount them.
                 approvals = self.__dict__.setdefault("_repair_approvals", {})
-                started = begin_repair_round(
+                # Always a round, even when its facts could not be read: an
+                # unavailable round refuses every turn, it never runs as an
+                # ordinary task (begin_repair_round never raises).
+                repair_rounds[task_id] = begin_repair_round(
                     worktree.path,
                     (archived_round + 1) if archived_round else None,
                     seed_feedback,
                     approved_by_earlier_repairs=approvals.get(task_id, ()),
                 )
-                if started is not None:
-                    repair_rounds[task_id] = started
             if task.status == "completed":
                 if self._wave_display:
                     self._wave_display.update_task_status(

@@ -566,8 +566,29 @@ class TestTheAuditInARepairRound:
         both = files_changed_since(repo, start, no_renames=True)
         assert {"scripts/seed.sh", "scripts/seed-books.sh"} <= set(both)
 
+    def test_an_unavailable_round_is_never_relaxed_and_never_reviewed(self, repo: Path) -> None:
+        """Even with a real start commit, a round marked unavailable gives the
+        plan audit nothing to relax and the review nothing but the reason."""
+        import dataclasses
+
+        _approve_round_one(repo)
+        round_ = dataclasses.replace(_reopen(repo), unavailable="invented reason")
+        _write_all(repo, NEAR_THE_FAILURE)
+
+        turn = _audit(repo, round_)
+
+        assert turn.last_verdict["severity"] == "high"  # type: ignore[attr-defined]
+        assert "repair_round" not in turn.last_verdict  # type: ignore[attr-defined]
+        assert turn.last_review == {  # type: ignore[attr-defined]
+            "unavailable": "at the re-open: invented reason"
+        }
+        assert turn.repair_round_inventory is None
+
     def test_starting_a_round_without_git_never_raises(self, tmp_path: Path) -> None:
-        assert begin_repair_round(tmp_path / "no-repo", 2, GATE_OUTPUT) is None
+        """Still a round, carrying why its facts could not be read."""
+        round_ = begin_repair_round(tmp_path / "no-repo", 2, GATE_OUTPUT)
+        assert isinstance(round_, RepairRound)
+        assert round_.unavailable and "HEAD" in round_.unavailable
 
 
 # ---------------------------------------------------------------------------

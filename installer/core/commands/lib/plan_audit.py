@@ -614,16 +614,20 @@ class PlanAuditor:
     def _repair_round_facts(self, task_id: Optional[str]) -> Optional[Dict[str, Any]]:
         """What the audit needs to know about a repair round, or ``None``.
 
-        ``None`` - the audit is an ordinary one - unless a repair round was
-        given AND it belongs to this task's history: the task's first
-        checkpoint is at or before the round's start, and the round's start is
-        at or before the worktree's current commit (a round whose start was
-        rolled back is audited as an ordinary turn). ``implicated_paths`` are
-        the files the gate's output names, matched against the repository as
-        it was when the round started.
+        ``None`` - the audit is an ordinary, strict one, never relaxed -
+        unless a repair round was given, is not marked unavailable, AND it
+        belongs to this task's history: the task's first checkpoint is at or
+        before the round's start, and the round's start is at or before the
+        worktree's current commit. Every ``None`` here is also read by
+        ``AgentInvoker._repair_round_review`` as an unavailable review, so the
+        turn is refused, never approved. ``implicated_paths`` are the files
+        the gate's output names, matched against the repository as it was
+        when the round started.
         """
         round_ = self.repair_round
-        if round_ is None or not isinstance(round_.start_commit, str):
+        if round_ is None or not isinstance(getattr(round_, "start_commit", None), str):
+            return None
+        if getattr(round_, "unavailable", None):
             return None
         start = round_.start_commit.strip()
         if not start:

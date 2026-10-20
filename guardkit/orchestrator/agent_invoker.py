@@ -4648,7 +4648,7 @@ Turn: {turn}
         protected file whatever the reviewer decides.
         """
         round_ = getattr(self, "repair_round", None)
-        if round_ is None or not review:
+        if round_ is None or not review or review.get("unavailable"):
             return ""
         from guardkit.orchestrator.feature_check import cut_tail
         from guardkit.orchestrator.repair_round import GATE_OUTPUT_PROMPT_LIMIT
@@ -4712,19 +4712,42 @@ Turn: {turn}
 
         Runs on every repair-round turn before the Coach, whatever audit path
         the task takes (a task document with file sections, a player's note,
-        or no declaration at all). ``None`` outside a repair round; also
-        ``None`` in a repair round when what changed cannot be established
-        (the task's checkpoint record is missing or unreadable, the round is
-        not in this task's history, git cannot say, or reading raised), and
-        then ``_enforce_repair_round_protected`` refuses the turn. Renames are
-        a removed path and a new path. Never raises. Sets :attr:`repair_round_inventory` (the non-protected files
-        listed) for the orchestrator to carry if the reviewer approves.
+        or no declaration at all). Returns:
+
+        * ``None`` only outside a repair round (no ``RepairRound`` on this
+          invoker);
+        * ``{"unavailable": reason}`` in a repair round whose facts cannot be
+          established, whatever the cause - the round was unavailable at the
+          re-open, the task's checkpoint record is missing or unreadable, the
+          round is not in this task's history, git cannot answer, the ignored
+          protected files cannot be listed or hashed, or anything raised.
+          ``_enforce_repair_round_protected`` then refuses the turn;
+        * the review otherwise.
+
+        Renames are a removed path and a new path. Never raises. Sets
+        :attr:`repair_round_inventory` (the non-protected files listed) only
+        for a complete review, for the orchestrator to carry if the reviewer
+        approves.
         """
         self.repair_round_inventory = None
         round_ = getattr(self, "repair_round", None)
         if round_ is None:
             return None
+
+        def _unavailable(reason: str) -> Dict[str, Any]:
+            logger.warning(
+                "[%s] The repair round's record of what changed could not be "
+                "read (%s); the turn will be refused.", task_id, reason,
+            )
+            return {"unavailable": reason}
+
+        if getattr(round_, "unavailable", None):
+            return _unavailable(f"at the re-open: {round_.unavailable}")
         try:
+            from guardkit.orchestrator.repair_round import (
+                ignored_protected_changes,
+                ignored_protected_files,
+            )
             from guardkit.tasks.state_bridge import TaskStateBridge
             from installer.core.commands.lib.plan_audit import (
                 PlanAuditor,
@@ -4752,35 +4775,19 @@ Turn: {turn}
                 repair_round=round_,
             )._repair_round_facts(task_id)
             if not facts:
-                logger.warning(
-                    "[%s] The repair round's record of what changed could not "
-                    "be read (no usable checkpoint record, or the round is not "
-                    "in this task's history); the turn will be refused.",
-                    task_id,
+                return _unavailable(
+                    "no usable checkpoint record, the round is not in this "
+                    "task's history, or git could not say what changed"
                 )
-                return None
             existed = set(facts.get("existed_at_round_start") or ())
             changed_this_round = list(facts.get("changed_this_round") or ())
             beyond = [p for p in changed_this_round if p not in declared_paths]
             # Protected files git ignores (a .env) are invisible to the
             # listing above: compared, by path and hash only, with what the
-            # re-open recorded. No listing, no review: the turn is refused.
-            from guardkit.orchestrator.repair_round import (
-                ignored_protected_changes,
-                ignored_protected_files,
-            )
-
+            # re-open recorded. Raises if the listing or a hash cannot be had.
             ignored_touched = ignored_protected_changes(
-                getattr(round_, "ignored_protected", None),
-                ignored_protected_files(self.worktree_path),
+                round_.ignored_protected, ignored_protected_files(self.worktree_path)
             )
-            if ignored_touched is None:
-                logger.warning(
-                    "[%s] The ignored protected files could not be compared "
-                    "with the re-open's listing; the turn will be refused.",
-                    task_id,
-                )
-                return None
             protected = sorted(
                 _repair_round_protected(changed_this_round, declared_paths)
                 | {p for p in ignored_touched if p not in declared_paths}
@@ -4796,13 +4803,9 @@ Turn: {turn}
                 "files_changed_this_round": sorted(p for p in beyond if p in existed),
                 "protected": protected,
             }
-        except Exception as exc:  # noqa: BLE001 — never fails a Coach turn
-            logger.warning(
-                "[%s] The repair round's changes could not be read (%s); the "
-                "turn will be refused.",
-                task_id, type(exc).__name__,
-            )
-            return None
+        except Exception as exc:  # noqa: BLE001 — becomes an explicit unavailable review
+            self.repair_round_inventory = None
+            return _unavailable(str(exc) or type(exc).__name__)
 
     def _enforce_repair_round_protected(
         self,
@@ -4822,20 +4825,20 @@ Turn: {turn}
         round (no ``RepairRound`` on this invoker) it does nothing.
 
         In a repair round the plan audit leaves extra files to the reviewer,
-        so a turn whose changes could not be read (``review`` is ``None``:
-        the task's checkpoint record is missing or unreadable, git could not
-        answer, or reading raised) is never approved (20 October 2026).
+        so a turn whose changes could not be read (``review`` is ``None`` or
+        carries ``unavailable``) is never approved (20 October 2026).
         """
         if getattr(self, "repair_round", None) is None:
             return
-        if review is None:
+        if review is None or review.get("unavailable"):
             category = "repair_round_unreadable"
             description = (
                 "The repair round's record of what changed could not be read, "
                 "so this turn cannot be approved."
             )
-            details: Dict[str, Any] = {}
-            log_reason = "its record of what changed could not be read"
+            reason = (review or {}).get("unavailable") or "no review"
+            details: Dict[str, Any] = {"reason": reason}
+            log_reason = f"its record of what changed could not be read ({reason})"
         else:
             protected = list(review.get("protected") or [])
             if not protected:

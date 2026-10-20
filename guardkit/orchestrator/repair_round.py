@@ -44,7 +44,6 @@ import hashlib
 import logging
 import os
 import re
-import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, FrozenSet, Iterable, List, Optional, Set, Tuple
@@ -77,9 +76,19 @@ class RepairRound:
     approved_by_earlier_repairs: FrozenSet[str] = frozenset()
     #: Every protected file git ignores, as it stood at the re-open: path and
     #: sha256 of its bytes, nothing else (``ignored_protected_files``). Never
-    #: the contents. ``None`` when the listing could not be taken, and then
-    #: every turn of the round is refused.
-    ignored_protected: Optional[Tuple[Tuple[str, str], ...]] = None
+    #: the contents.
+    ignored_protected: Tuple[Tuple[str, str], ...] = ()
+    #: Why the round's facts could not be established at the re-open, or
+    #: ``None`` when they were. A round that is unavailable is still a repair
+    #: round: every one of its turns is refused (the unreadable-record
+    #: refusal), never audited as an ordinary turn.
+    unavailable: Optional[str] = None
+
+
+class RepairFactsUnavailable(Exception):
+    """A repair round's facts could not be established. Every helper that
+    establishes them raises this on any error, and the caller refuses the
+    turn; no helper returns a stand-in value."""
 
 
 #: The most implicated paths kept. A gate's output is cut to its last lines
@@ -139,38 +148,57 @@ def begin_repair_round(
     round_number: Optional[int],
     gate_output: str,
     approved_by_earlier_repairs: Iterable[str] = (),
-) -> Optional[RepairRound]:
-    """The repair round a re-open starts, or ``None``. Never raises.
+) -> RepairRound:
+    """The repair round a re-open starts. Always a round; never raises.
 
-    Reads HEAD of the worktree, the round's start.
-    ``approved_by_earlier_repairs`` are the non-protected files this task's
-    earlier repair rounds showed the reviewer on the turns it approved
+    Reads HEAD of the worktree, the round's start, and the protected files git
+    ignores. ``approved_by_earlier_repairs`` are the non-protected files this
+    task's earlier repair rounds showed the reviewer on the turns it approved
     (``FeatureOrchestrator._remember_repair_approvals``); never another
-    task's files, and never a protected file. ``None`` when git cannot say
-    where the round starts: the round then goes ahead and its turns are
-    audited as ordinary ones.
+    task's files, and never a protected file. If anything cannot be
+    established the round is returned with ``unavailable`` set to the reason,
+    and every one of its turns is refused.
     """
-    head = _git_out(worktree_path, ["rev-parse", "HEAD"]).strip()
-    if not head:
-        logger.warning(
-            "The repair round's start could not be read from git; its turns "
-            "are audited as ordinary turns."
-        )
-        return None
     number = round_number if isinstance(round_number, int) and round_number > 1 else 2
-    ignored = ignored_protected_files(worktree_path)
+    approved = frozenset(str(path) for path in approved_by_earlier_repairs if path)
+    try:
+        head = git_head(worktree_path)
+        ignored = ignored_protected_files(worktree_path)
+    except Exception as exc:  # noqa: BLE001 — becomes an explicit unavailable round
+        reason = str(exc) if isinstance(exc, RepairFactsUnavailable) else type(exc).__name__
+        logger.warning(
+            "The repair round's facts could not be established at the re-open "
+            "(%s); every turn of the round will be refused.", reason,
+        )
+        return RepairRound(
+            round_number=number,
+            start_commit="",
+            gate_output=str(gate_output or ""),
+            approved_by_earlier_repairs=approved,
+            unavailable=reason,
+        )
     return RepairRound(
         round_number=number,
         start_commit=head,
         gate_output=str(gate_output or ""),
-        approved_by_earlier_repairs=frozenset(
-            str(path) for path in approved_by_earlier_repairs if path
-        ),
-        ignored_protected=None if ignored is None else tuple(sorted(ignored.items())),
+        approved_by_earlier_repairs=approved,
+        ignored_protected=tuple(sorted(ignored.items())),
     )
 
 
-def ignored_protected_files(worktree_path: Path) -> Optional[Dict[str, str]]:
+def git_head(worktree_path: Path) -> str:
+    """HEAD of the worktree. Raises ``RepairFactsUnavailable`` on any error."""
+    try:
+        done = run_git(["rev-parse", "HEAD"], cwd=Path(worktree_path), check=False, timeout=30)
+    except Exception as exc:  # noqa: BLE001
+        raise RepairFactsUnavailable(f"HEAD could not be read ({type(exc).__name__})") from exc
+    head = (done.stdout or "").strip() if done.returncode == 0 else ""
+    if not head:
+        raise RepairFactsUnavailable("HEAD could not be read")
+    return head
+
+
+def ignored_protected_files(worktree_path: Path) -> Dict[str, str]:
     """Every protected file git ignores, as ``{path: sha256 of its bytes}``.
 
     git's own view of changes says nothing about an ignored file, so an
@@ -180,7 +208,8 @@ def ignored_protected_files(worktree_path: Path) -> Optional[Dict[str, str]]:
     ``_is_protected``), leaves out what the audit never counts (installed
     packages, caches, the factory's own records) and hashes each one. The
     contents are read only to hash them: they are never kept, logged or
-    shown. ``None`` when git cannot list them. Never raises.
+    shown. Raises ``RepairFactsUnavailable`` if the listing or any one hash
+    cannot be taken.
     """
     try:
         from installer.core.commands.lib.plan_audit import PlanAuditor, _is_protected
@@ -191,24 +220,25 @@ def ignored_protected_files(worktree_path: Path) -> Optional[Dict[str, str]]:
             check=False,
             timeout=60,
         )
-        if done.returncode != 0:
-            return None
-        auditor = PlanAuditor()
-        found: Dict[str, str] = {}
-        for path in done.stdout.split("\0"):
-            if not path or not _is_protected(path) or auditor._is_excluded(Path(path)):
-                continue
-            found[path] = _sha256_of(Path(worktree_path) / path)
-        return found
-    except Exception as exc:  # noqa: BLE001 — a missing listing refuses the turn
-        logger.warning(
-            "The ignored protected files could not be listed (%s).", type(exc).__name__
-        )
-        return None
+    except Exception as exc:  # noqa: BLE001
+        raise RepairFactsUnavailable(
+            f"the ignored files could not be listed ({type(exc).__name__})"
+        ) from exc
+    if done.returncode != 0:
+        raise RepairFactsUnavailable("the ignored files could not be listed")
+    auditor = PlanAuditor()
+    found: Dict[str, str] = {}
+    for path in done.stdout.split("\0"):
+        if not path or not _is_protected(path) or auditor._is_excluded(Path(path)):
+            continue
+        found[path] = _sha256_of(Path(worktree_path) / path)
+    return found
 
 
 def _sha256_of(path: Path) -> str:
-    """The sha256 of a file's bytes, or a fixed word when it cannot be read."""
+    """The sha256 of a file's bytes (of a symlink's target text, for a link).
+    Raises ``RepairFactsUnavailable`` naming the path when it cannot be read;
+    there is no stand-in value that could compare equal."""
     digest = hashlib.sha256()
     try:
         if path.is_symlink():
@@ -217,26 +247,17 @@ def _sha256_of(path: Path) -> str:
         with open(path, "rb") as handle:
             for chunk in iter(lambda: handle.read(1 << 20), b""):
                 digest.update(chunk)
-    except OSError:
-        return "unreadable"
+    except OSError as exc:
+        raise RepairFactsUnavailable(
+            f"{path.name} could not be read to hash it ({type(exc).__name__})"
+        ) from exc
     return digest.hexdigest()
 
 
 def ignored_protected_changes(
-    before: Optional[Iterable[Tuple[str, str]]], now: Optional[Dict[str, str]]
-) -> Optional[Set[str]]:
-    """The ignored protected files made, changed or deleted since ``before``,
-    or ``None`` when either listing is missing. Pure."""
-    if before is None or now is None:
-        return None
+    before: Iterable[Tuple[str, str]], now: Dict[str, str]
+) -> Set[str]:
+    """The ignored protected files made, changed or deleted between two
+    complete listings. Pure."""
     then = dict(before)
     return {path for path in set(then) | set(now) if then.get(path) != now.get(path)}
-
-
-def _git_out(worktree_path: Path, args: List[str]) -> str:
-    """git's output, or "" when git cannot answer. Never raises."""
-    try:
-        done = run_git(args, cwd=Path(worktree_path), check=False, timeout=30)
-    except (subprocess.SubprocessError, FileNotFoundError, OSError, TypeError):
-        return ""
-    return done.stdout if done.returncode == 0 else ""
