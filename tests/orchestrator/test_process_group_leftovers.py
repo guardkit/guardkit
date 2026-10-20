@@ -1287,6 +1287,65 @@ class TestTheSelfTestReportsTheRealCause:
         assert not (tmp_path / "ran").exists()
 
 
+@linux_only
+class TestProcGoneAfterTheSelfTest:
+    """Codex round 6: after the cached self-test, /proc may become
+    unavailable. On a factory launch that is a capability failure, not a
+    reduced group-only clean-up; a person's own run keeps the reduced path."""
+
+    def test_a_factory_command_ends_its_escapee_and_reports_the_cause(
+        self, tmp_path: Path, started: List[int], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        if shutil.which("setsid", path=_ENV["PATH"]) is None:
+            pytest.skip("no setsid program")
+        monkeypatch.setattr(process_group, "_SELF_TEST_PASSED", [True])
+        # The inline /proc guard reports missing (a transient stat failure),
+        # while the real /proc stays usable for the emergency clean-up.
+        monkeypatch.setattr(process_group, "_proc_available", lambda: False)
+        with pytest.raises(
+            process_group.CleanupUnavailableError,
+            match="was ended because /proc became unavailable while the command ran",
+        ):
+            _run(
+                tmp_path,
+                "setsid sh -c 'echo $$ > bg.pid; exec sleep 300' >/dev/null 2>&1 & "
+                + _WAIT_FOR.format(name="bg.pid"),
+            )
+        monkeypatch.undo()
+        # The escaped child was ended by the bounded emergency clean-up.
+        assert not _alive(_pid(tmp_path, "bg.pid"))
+
+    def test_an_unrelated_process_is_untouched(
+        self, tmp_path: Path, started: List[int], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        stranger = subprocess.Popen(["sleep", "300"], start_new_session=True, env=dict(_ENV))
+        started.append(stranger.pid)
+        monkeypatch.setattr(process_group, "_SELF_TEST_PASSED", [True])
+        monkeypatch.setattr(process_group, "_proc_available", lambda: False)
+        with pytest.raises(process_group.CleanupUnavailableError):
+            _run(tmp_path, "echo done", timeout=30)
+        monkeypatch.undo()
+        assert _alive(stranger.pid)  # not its own, not signalled
+
+    @pytest.mark.personal_run
+    def test_a_persons_run_still_gets_reduced_cleanup(
+        self,
+        tmp_path: Path,
+        started: List[int],
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        monkeypatch.setattr(process_group, "_proc_available", lambda: False)
+        monkeypatch.setattr(process_group, "_CAPABILITY", [None])
+        with caplog.at_level(logging.WARNING, logger=process_group.__name__):
+            proc = _run(
+                tmp_path, "echo $$ > fg.pid; echo ok", timeout=30
+            )
+        monkeypatch.undo()
+        # Reduced clean-up ran (the command's own group signalled), no raise.
+        assert proc.stdout == "ok\n"
+
+
 @pytest.mark.personal_run
 class TestWithoutWaitid:
     """macOS before Python 3.13 has no ``os.waitid``: commands still run (with

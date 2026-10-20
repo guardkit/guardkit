@@ -76,12 +76,18 @@ the biggest single process, so the whole build was lost. Three changes:
   number, the rest through pidfds) instead of falling back to a reduced or
   silently empty clean-up. A person's own run keeps the reduced clean-up
   below, with one warning.
-* Without ``/proc`` (macOS) the command's group alone is signalled when it
-  returns, and nothing is counted. Without a working ``os.waitid`` (macOS
-  before Python 3.13, or a filter that refuses the call) the leader's exit
-  cannot be read without collecting it, so the command is waited for with
-  ``communicate()`` as before, and only a timeout ends its group. No wait
-  for the leader is ever unbounded (:func:`_collect`).
+* On a factory launch, any point where the clean-up cannot do its full check
+  (``/proc`` missing or inaccessible, ``os.waitid`` or a pidfd refused, a
+  record unreadable) raises :class:`CleanupUnavailableError`, keeping the
+  cause, after the bounded emergency clean-up (the group by the number its
+  uncollected leader pins). It never degrades to a reduced or silently empty
+  clean-up. The reduced clean-up below is for a person's own run only.
+* On a person's own run without ``/proc`` (macOS) the command's group alone
+  is signalled when it returns, and nothing is counted. Without a working
+  ``os.waitid`` (macOS before Python 3.13, or a filter that refuses the call)
+  the leader's exit cannot be read without collecting it, so the command is
+  waited for with ``communicate()`` as before, and only a timeout ends its
+  group. No wait for the leader is ever unbounded (:func:`_collect`).
 """
 
 from __future__ import annotations
@@ -1038,6 +1044,15 @@ def _is_factory_launch() -> bool:
     return is_factory_launch()
 
 
+def _proc_available() -> bool:
+    """Whether ``/proc`` can be reached (one stat). The clean-up reads it to
+    find a command's processes."""
+    try:
+        return Path("/proc/self/stat").exists()
+    except OSError:
+        return False
+
+
 class CleanupUnavailableError(OSError):
     """This system cannot stop everything a project command leaves (an
     ``OSError`` with ``errno`` ENOSYS and the plain sentence as ``strerror``,
@@ -1093,7 +1108,7 @@ def _missing_capability() -> Optional[str]:
     wrappers or, where this Python build lacks them, the system calls
     themselves.
     """
-    if not Path("/proc/self/stat").exists():
+    if not _proc_available():
         return "/proc is missing (it is needed to find a command's processes)"
     waitid_problem = _waitid_problem()
     if waitid_problem is not None:
@@ -1437,6 +1452,16 @@ def _run(
     try:
         exchange = _Exchange(proc, input)
         timed_out = exchange.wait(timeout)
+        if _is_factory_launch() and not _proc_available():
+            # The blunt rule: on a factory launch, any point where the
+            # clean-up cannot do its full check (here /proc became
+            # unavailable after the cached self-test proved it) raises,
+            # keeping the cause, after the bounded emergency clean-up the
+            # except path below runs (the group by its pinned number). The
+            # reduced no-/proc clean-up is for a person's own run only.
+            raise _cleanup_failure(
+                "/proc became unavailable while the command ran", before_launch=False
+            )
         if timed_out:
             ended = _end_group(proc, grace, entry, since)
             stopped = len(ended.seen - ended.not_safe)
@@ -1448,8 +1473,8 @@ def _run(
                 _not_safe_sentence(len(ended.not_safe)),
                 _quoted(args),
             )
-        elif not Path("/proc/self/stat").exists():
-            _end_without_proc(proc)
+        elif not _proc_available():
+            _end_without_proc(proc)  # a person's own run only (checked above)
         elif _anything_left(proc, entry, since):
             ended = _end_group(proc, grace, entry, since)
             if ended.seen:
@@ -1483,7 +1508,7 @@ def _run(
     exchange.close()
     _collect(proc)
     stdout, stderr = exchange.output()
-    if _is_factory_launch() and Path("/proc/self/stat").exists():
+    if _is_factory_launch() and _proc_available():
         # Logged, never folded into the command's own output: that output is
         # the project's, published under the merge's redaction rules, and
         # this note is GuardKit's observation, not the command's.
