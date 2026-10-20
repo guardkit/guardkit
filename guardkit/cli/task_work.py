@@ -41,7 +41,7 @@ from typing import Optional, Tuple
 
 import click
 
-from guardkit.orchestrator.m0_fence import FRONTIER_ESCAPE_ENV, resolve_m0_violation
+from guardkit.orchestrator.m0_fence import FRONTIER_ESCAPE_ENV, cli_m0_violation
 from guardkit.orchestrator.review_runner import render_marker_block
 from guardkit.orchestrator.work_runner import (
     DEFAULT_LEG_BUDGET_SECONDS,
@@ -147,10 +147,11 @@ _NATS_NOTICE = (
     default=None,
     help=(
         "Model alias for the work seat. Defaults to NONE — never autobuild's "
-        "frontier-named default (cli/autobuild.py:208). A frontier prefix is "
-        f"refused unless {FRONTIER_ESCAPE_ENV}=1, and so is an unnamed seat: "
-        "the effective-seat fence at select_harness judges what the harness "
-        "would actually run on."
+        "frontier-named default (cli/autobuild.py:208). On a factory launch "
+        "(GUARDKIT_FACTORY_LAUNCH set) a frontier prefix is refused unless "
+        f"{FRONTIER_ESCAPE_ENV}=1, and so is an unnamed seat: the "
+        "effective-seat fence at select_harness judges what the harness would "
+        "actually run on. A person's own run is not fenced."
     ),
 )
 @click.option(
@@ -203,7 +204,7 @@ def task_work(
     # decide the seat question: the chokepoint at select_harness judges the
     # EFFECTIVE seat (including model=None), and the receipt REPORTS that
     # verdict rather than re-deriving one (stage-2 design §3.3).
-    violation = resolve_m0_violation(model)
+    violation = cli_m0_violation(model)
     if violation is not None:
         if os.environ.get(FRONTIER_ESCAPE_ENV) == "1":
             click.echo(

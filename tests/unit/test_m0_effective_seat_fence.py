@@ -30,6 +30,13 @@ Covered:
   the "no real model call" exemption seam has no members today;
 * the verdict record, and the receipt REPORTING it instead of NOT-EVALUATED;
 * the stage-1 names still import from ``guardkit.cli.task_review`` unchanged.
+
+Since 19 October 2026 the fence applies to FACTORY launches only, and every
+test here runs as one (``tests/conftest.py``). On a factory launch the ``sdk``
+harness is refused outright, so the rule's other parts are driven on the
+langgraph branch, through the same ``enforce_effective_seat`` call
+``select_harness`` makes before it builds anything. The person's-own-run side
+is in ``tests/unit/test_m0_fence_factory_launches_only.py``.
 """
 
 from __future__ import annotations
@@ -71,6 +78,15 @@ def _fence_armed(monkeypatch):
     m0_fence.reset_verdict()
     yield
     m0_fence.reset_verdict()
+
+
+def _enforce(model=FLEET_SEAT):
+    """The chokepoint call ``select_harness`` makes, on the langgraph branch.
+
+    Building a LangGraphHarness needs a worktree; the fence runs before any
+    construction, so its verdict, record and refusal are the same either way.
+    """
+    return m0_fence.enforce_effective_seat(model, harness="langgraph")
 
 
 def _sdk_kwargs(**overrides):
@@ -231,9 +247,9 @@ class TestPartCBaseUrlIsLoadBearing:
         assert verdict.status == VERDICT_PASS
 
     def test_select_harness_refuses_a_bare_alias_with_no_base_url(self, monkeypatch):
-        monkeypatch.setenv(SDK_ENV, "sdk")
+        monkeypatch.setenv(LG_ENV, "langgraph")
         with pytest.raises(AgentInvocationError) as exc:
-            select_harness(env_var=SDK_ENV, **_sdk_kwargs())
+            select_harness(env_var=LG_ENV, **_sdk_kwargs())
         assert FLEET_SEAT in str(exc.value)
         assert "OPENAI_BASE_URL" in str(exc.value)
 
@@ -369,22 +385,24 @@ class TestPartCIsAnAllowlist:
 
 
 class TestSdkBranchDrive:
-    def test_sdk_branch_constructs_when_the_seat_is_a_fleet_route(
+    def test_sdk_branch_is_refused_on_a_factory_launch_even_on_a_fleet_route(
         self, monkeypatch
     ):
-        from guardkit.orchestrator.harness.sdk_harness import ClaudeSDKHarness
-
+        """The Claude program never reads OPENAI_BASE_URL: a factory build
+        never uses the sdk harness, whatever model it names."""
         monkeypatch.setenv(SDK_ENV, "sdk")
         monkeypatch.setenv("OPENAI_BASE_URL", FLEET_BASE_URL)
 
-        harness = select_harness(env_var=SDK_ENV, **_sdk_kwargs())
+        with pytest.raises(AgentInvocationError) as exc:
+            select_harness(env_var=SDK_ENV, **_sdk_kwargs())
 
-        assert isinstance(harness, ClaudeSDKHarness)
+        assert "Claude program" in str(exc.value)
+        assert "OPENAI" not in str(exc.value)
         verdict = m0_fence.last_verdict()
-        assert verdict is not None
-        assert verdict.status == VERDICT_PASS
+        assert verdict.status == VERDICT_REFUSED
         assert verdict.harness == "sdk"
         assert verdict.effective_model == FLEET_SEAT
+        assert verdict.escapable is False
 
     def test_an_unknown_harness_name_is_not_fenced_but_still_refused(self, monkeypatch):
         """Branch inventory: the third branch constructs nothing.
@@ -420,43 +438,51 @@ class TestEscapeHatch:
     def test_escape_lets_a_frontier_seat_through_with_a_loud_stderr_echo(
         self, monkeypatch, capsys
     ):
-        from guardkit.orchestrator.harness.sdk_harness import ClaudeSDKHarness
-
-        monkeypatch.setenv(SDK_ENV, "sdk")
         monkeypatch.setenv(FRONTIER_ESCAPE_ENV, "1")
 
-        harness = select_harness(
-            env_var=SDK_ENV, **_sdk_kwargs(model="anthropic:claude-opus-4")
-        )
+        verdict = _enforce("anthropic:claude-opus-4")
 
-        assert isinstance(harness, ClaudeSDKHarness)
+        assert verdict.status == VERDICT_ALLOWED_BY_ESCAPE
         captured = capsys.readouterr()
         assert "anthropic:claude-opus-4" in captured.err
         assert FRONTIER_ESCAPE_ENV in captured.err
         assert captured.out == ""  # stdout is the pipeline's marker scrape
 
     def test_escape_covers_the_nameless_seat_too(self, monkeypatch, capsys):
+        monkeypatch.setenv(FRONTIER_ESCAPE_ENV, "1")
+
+        _enforce(None)
+
+        assert LANGGRAPH_DEFAULT_SEAT in capsys.readouterr().err
+
+    def test_escape_never_lifts_the_sdk_refusal_on_a_factory_launch(
+        self, monkeypatch, capsys
+    ):
+        """As before 19 October 2026, when the selector refused it after the
+        fence: the escape hatch never reached that refusal, and still does not."""
         monkeypatch.setenv(SDK_ENV, "sdk")
         monkeypatch.setenv(FRONTIER_ESCAPE_ENV, "1")
 
-        select_harness(env_var=SDK_ENV, **_sdk_kwargs(model=None))
+        with pytest.raises(AgentInvocationError) as exc:
+            select_harness(env_var=SDK_ENV, **_sdk_kwargs(model="claude-sonnet-4-5"))
 
-        assert "bundled claude-agent-sdk CLI default" in capsys.readouterr().err
+        assert f"{FRONTIER_ESCAPE_ENV} does not override this" in str(exc.value)
+        assert m0_fence.last_verdict().status == VERDICT_REFUSED
+        assert "Proceeding" not in capsys.readouterr().err
 
     def test_the_escape_verdict_is_recorded_as_escaped_not_as_a_pass(
         self, monkeypatch
     ):
-        monkeypatch.setenv(SDK_ENV, "sdk")
         monkeypatch.setenv(FRONTIER_ESCAPE_ENV, "1")
-        select_harness(env_var=SDK_ENV, **_sdk_kwargs(model="anthropic:claude-opus-4"))
+        _enforce("anthropic:claude-opus-4")
         assert m0_fence.last_verdict().status == VERDICT_ALLOWED_BY_ESCAPE
 
     @pytest.mark.parametrize("value", ["0", "true", "yes", "", "TRUE"])
     def test_only_the_literal_1_opens_the_escape(self, monkeypatch, value):
-        monkeypatch.setenv(SDK_ENV, "sdk")
+        monkeypatch.setenv(LG_ENV, "langgraph")
         monkeypatch.setenv(FRONTIER_ESCAPE_ENV, value)
         with pytest.raises(AgentInvocationError):
-            select_harness(env_var=SDK_ENV, **_sdk_kwargs(model="anthropic:claude-opus-4"))
+            select_harness(env_var=LG_ENV, **_sdk_kwargs(model="anthropic:claude-opus-4"))
 
 
 # ===========================================================================
@@ -487,22 +513,20 @@ class TestReceiptTruth:
     def test_a_recorded_pass_replaces_not_evaluated(self, monkeypatch):
         from guardkit.orchestrator.review_runner import build_receipt
 
-        monkeypatch.setenv(SDK_ENV, "sdk")
         monkeypatch.setenv("OPENAI_BASE_URL", FLEET_BASE_URL)
-        select_harness(env_var=SDK_ENV, **_sdk_kwargs())
+        _enforce()
 
         receipt = build_receipt(_outcome(), build_id=None, correlation_id=None)
         assert receipt["m0_fence"].startswith(VERDICT_PASS)
         assert "NOT-EVALUATED" not in receipt["m0_fence"]
         assert FLEET_SEAT in receipt["m0_fence"]
-        assert "select_harness/sdk" in receipt["m0_fence"]
+        assert "select_harness/langgraph" in receipt["m0_fence"]
 
     def test_a_recorded_escape_is_reported_as_escaped(self, monkeypatch):
         from guardkit.orchestrator.review_runner import build_receipt
 
-        monkeypatch.setenv(SDK_ENV, "sdk")
         monkeypatch.setenv(FRONTIER_ESCAPE_ENV, "1")
-        select_harness(env_var=SDK_ENV, **_sdk_kwargs(model="anthropic:claude-opus-4"))
+        _enforce("anthropic:claude-opus-4")
 
         receipt = build_receipt(_outcome(), build_id=None, correlation_id=None)
         assert receipt["m0_fence"].startswith(VERDICT_ALLOWED_BY_ESCAPE)
@@ -520,17 +544,15 @@ class TestReceiptTruth:
         """
         from guardkit.orchestrator.review_runner import build_receipt
 
-        monkeypatch.setenv(SDK_ENV, "sdk")
-
         # 1. a frontier seat, allowed only because the operator opened the hatch
         monkeypatch.setenv(FRONTIER_ESCAPE_ENV, "1")
-        select_harness(env_var=SDK_ENV, **_sdk_kwargs(model="anthropic:claude-opus-4"))
+        _enforce("anthropic:claude-opus-4")
         assert m0_fence.last_verdict().status == VERDICT_ALLOWED_BY_ESCAPE
 
         # 2. a perfectly legitimate local seat, later in the same process
         monkeypatch.delenv(FRONTIER_ESCAPE_ENV)
         monkeypatch.setenv("OPENAI_BASE_URL", FLEET_BASE_URL)
-        select_harness(env_var=SDK_ENV, **_sdk_kwargs())
+        _enforce()
 
         assert m0_fence.last_verdict().status == VERDICT_ALLOWED_BY_ESCAPE
         receipt = build_receipt(_outcome(), build_id=None, correlation_id=None)
@@ -539,21 +561,19 @@ class TestReceiptTruth:
         assert not receipt["m0_fence"].startswith(VERDICT_PASS)
 
     def test_a_refusal_outranks_everything_recorded_after_it(self, monkeypatch):
-        monkeypatch.setenv(SDK_ENV, "sdk")
         with pytest.raises(AgentInvocationError):
-            select_harness(env_var=SDK_ENV, **_sdk_kwargs(model=None))
+            _enforce(None)
         assert m0_fence.last_verdict().status == VERDICT_REFUSED
 
         monkeypatch.setenv("OPENAI_BASE_URL", FLEET_BASE_URL)
-        select_harness(env_var=SDK_ENV, **_sdk_kwargs())
+        _enforce()
         assert m0_fence.last_verdict().status == VERDICT_REFUSED
 
     def test_a_pass_is_not_buried_by_a_later_not_judged(self, monkeypatch):
         """NOT-JUDGED outranks PASS: an unjudged seat is worse news than a
         judged-and-clean one, and the ranking says so in one place."""
-        monkeypatch.setenv(SDK_ENV, "sdk")
         monkeypatch.setenv("OPENAI_BASE_URL", FLEET_BASE_URL)
-        select_harness(env_var=SDK_ENV, **_sdk_kwargs())
+        _enforce()
         assert m0_fence.last_verdict().status == VERDICT_PASS
 
         m0_fence.record_verdict(
@@ -562,16 +582,14 @@ class TestReceiptTruth:
         assert m0_fence.last_verdict().status == VERDICT_NOT_JUDGED
 
     def test_an_equal_severity_verdict_replaces_the_earlier_one(self, monkeypatch):
-        monkeypatch.setenv(SDK_ENV, "sdk")
         monkeypatch.setenv("OPENAI_BASE_URL", FLEET_BASE_URL)
-        select_harness(env_var=SDK_ENV, **_sdk_kwargs())
-        select_harness(env_var=SDK_ENV, **_sdk_kwargs(model="other-seat"))
+        _enforce()
+        _enforce("other-seat")
         assert m0_fence.last_verdict().effective_model == "other-seat"
 
     def test_reset_clears_the_sticky_record(self, monkeypatch):
-        monkeypatch.setenv(SDK_ENV, "sdk")
         with pytest.raises(AgentInvocationError):
-            select_harness(env_var=SDK_ENV, **_sdk_kwargs(model=None))
+            _enforce(None)
         m0_fence.reset_verdict()
         assert m0_fence.last_verdict() is None
 

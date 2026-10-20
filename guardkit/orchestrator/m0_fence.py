@@ -48,6 +48,15 @@ logger = logging.getLogger(__name__)
 # Constants
 # ---------------------------------------------------------------------------
 
+#: Set (to any non-empty value) when the FACTORY launched this GuardKit. Forge's
+#: ``build_launch_env`` (``forge/src/forge/launch_environment.py``) sets it to
+#: ``1`` on every launch it makes and never inherits it, and every harness in a
+#: factory build runs inside that one process. The fence applies to factory
+#: launches only (Rich, 19 October 2026): a person's own run of GuardKit is not
+#: fenced. The same setting decides the memory rule
+#: (``guardkit.knowledge.memory_project.FACTORY_LAUNCH_ENV``).
+FACTORY_LAUNCH_ENV = "GUARDKIT_FACTORY_LAUNCH"
+
 #: Set to ``1`` to run on a frontier seat deliberately. Anything else (including
 #: unset) leaves the fence armed. ONE escape hatch, one env var — a second would
 #: be a future lie.
@@ -122,6 +131,27 @@ VERDICT_PASS = "PASS"
 VERDICT_REFUSED = "REFUSED"
 VERDICT_ALLOWED_BY_ESCAPE = "ALLOWED-BY-ESCAPE"
 VERDICT_NOT_JUDGED = "NOT-JUDGED"
+#: A person's own run (not a factory launch) on a seat the factory rule would
+#: refuse. Judged and recorded, never refused (Rich, 19 October 2026).
+VERDICT_PERSONAL_RUN = "PERSONAL-RUN"
+
+
+def is_factory_launch(env: Optional[Any] = None) -> bool:
+    """Did the factory launch this GuardKit? (:data:`FACTORY_LAUNCH_ENV`)
+
+    Read fresh on every call, like the escape hatch, so a test or a launcher
+    that sets it takes effect in the same process.
+
+    **Any value at all is a factory launch,** whitespace and ``0``/``false``
+    included: only unset or exactly empty is a person's own run. The fence
+    fails safe — a value nobody can read as "on" must never switch it off
+    (Codex review round 3: a stripped ``" "`` used to). This is the ONE
+    predicate; the selector's second ``sdk`` check and the memory rule
+    (``guardkit.knowledge.memory_project``) both call it.
+    """
+    settings = os.environ if env is None else env
+    value = settings.get(FACTORY_LAUNCH_ENV)
+    return value is not None and str(value) != ""
 
 
 # ---------------------------------------------------------------------------
@@ -297,6 +327,12 @@ class M0Verdict:
     harness: str
     effective_model: str
     detail: str
+    #: ``False`` for a refusal that :data:`FRONTIER_ESCAPE_ENV` must NOT lift:
+    #: the ``sdk`` harness on a factory launch. Before 19 October 2026 that
+    #: refusal lived in the selector, after the fence, where the escape hatch
+    #: never reached it; it moved into the fence so the recorded verdict says
+    #: REFUSED instead of PASS, and this flag keeps it unescapable.
+    escapable: bool = True
 
     @property
     def refused(self) -> bool:
@@ -315,8 +351,12 @@ class M0Verdict:
 _VERDICT_SEVERITY = {
     VERDICT_PASS: 0,
     VERDICT_NOT_JUDGED: 1,
-    VERDICT_ALLOWED_BY_ESCAPE: 2,
-    VERDICT_REFUSED: 3,
+    # Above NOT-JUDGED: a person's run on a seat the factory would refuse (a
+    # hosted model, usually) must stay on the record when a later seat in the
+    # same process could not be judged (coach review, 19 October 2026).
+    VERDICT_PERSONAL_RUN: 2,
+    VERDICT_ALLOWED_BY_ESCAPE: 3,
+    VERDICT_REFUSED: 4,
 }
 
 _verdict_lock = threading.Lock()
@@ -339,7 +379,7 @@ def record_verdict(verdict: M0Verdict) -> M0Verdict:
     receipt then said PASS about a process that had already called a frontier
     seat. That is the one thing this receipt line exists to prevent, so the
     record keeps the worst verdict seen: REFUSED > ALLOWED-BY-ESCAPE >
-    NOT-JUDGED > PASS. A later verdict of EQUAL severity does replace the
+    PERSONAL-RUN > NOT-JUDGED > PASS. A later verdict of EQUAL severity does replace the
     earlier one (same story, fresher detail).
 
     Returns the verdict passed in — the caller's own verdict, not the record —
@@ -373,6 +413,7 @@ def reset_verdict() -> None:
     global _last_verdict
     with _verdict_lock:
         _last_verdict = None
+        _personal_run_logged.clear()
 
 
 # ---------------------------------------------------------------------------
@@ -395,6 +436,40 @@ def default_seat_for(harness: str) -> Optional[str]:
 
 def judge_effective_seat(model: Any, *, harness: str) -> M0Verdict:
     """Judge the **effective** seat a harness branch is about to be built on.
+
+    **The fence applies to factory launches only** (Rich, 19 October 2026). The
+    factory must never reach a hosted model; a person running GuardKit by hand
+    may choose one on purpose (some of Rich's own projects are built on the
+    ``sdk`` harness with Claude). So:
+
+    * **a factory launch** (:func:`is_factory_launch`) gets the factory rule,
+      :func:`_judge_by_factory_rule`, unchanged — plus the ``sdk`` harness
+      refused outright, unescapably, because a factory build never uses it;
+    * **a person's own run** is judged by the same rule, so the record still
+      says what the factory would have decided, but a refusal becomes
+      :data:`VERDICT_PERSONAL_RUN` and nothing is refused. That includes
+      langgraph with no model, which falls to the deepagents Anthropic default:
+      a person may point their own run anywhere.
+
+    A seat the factory rule passes is recorded PASS on either kind of run.
+    """
+    verdict = _judge_by_factory_rule(model, harness=harness)
+    if not verdict.refused or is_factory_launch():
+        return verdict
+    return M0Verdict(
+        status=VERDICT_PERSONAL_RUN,
+        harness=verdict.harness,
+        effective_model=verdict.effective_model,
+        detail=(
+            f"not a factory launch ({FACTORY_LAUNCH_ENV} is not set), so the "
+            "fence does not apply: a person's own run is not fenced. On a "
+            f"factory launch this seat would be refused — {verdict.detail}"
+        ),
+    )
+
+
+def _judge_by_factory_rule(model: Any, *, harness: str) -> M0Verdict:
+    """The factory's rule for the **effective** seat (see :func:`judge_effective_seat`).
 
     This is design §3's three-part rule, and it is the rule that actually
     protects M0 because it sits at the one chokepoint every production model
@@ -426,7 +501,8 @@ def judge_effective_seat(model: Any, *, harness: str) -> M0Verdict:
     ``select_harness`` has exactly two construction branches and one error
     branch:
 
-    * ``"sdk"`` → ``ClaudeSDKHarness``: a REAL model call. Fenced.
+    * ``"sdk"`` → ``ClaudeSDKHarness``: a REAL call to Anthropic's hosted
+      models, whatever the model name. Refused outright, unescapably.
     * ``"langgraph"`` → ``LangGraphHarness``: a REAL model call. Fenced.
     * anything else → ``AgentInvocationError`` before any construction.
 
@@ -453,6 +529,31 @@ def judge_effective_seat(model: Any, *, harness: str) -> M0Verdict:
                 f"harness branch {harness!r} constructs no real model call, so "
                 "there is no seat to fence."
             ),
+        )
+
+    if harness == "sdk":
+        # The ``sdk`` harness runs the Claude program, which sends every call
+        # to Anthropic's hosted models and never reads OPENAI_BASE_URL, so the
+        # route test below says nothing about it. A factory build never uses
+        # it (design ``factory-project-commands-without-factory-credentials``,
+        # 13 October 2026). Refused whatever model it names, and the escape
+        # hatch does not lift it.
+        if model is None or (isinstance(model, str) and not model.strip()):
+            seat = default_seat
+        elif isinstance(model, str):
+            seat = model.strip()
+        else:
+            seat = f"<{type(model).__name__} instance>"
+        return M0Verdict(
+            status=VERDICT_REFUSED,
+            harness=harness,
+            effective_model=seat,
+            detail=(
+                "M0 fence: the 'sdk' harness runs the Claude program, which "
+                f"sends every call to Anthropic's hosted models (seat: {seat}). "
+                "A factory build never uses it, whatever model it names."
+            ),
+            escapable=False,
         )
 
     # Part (a): model=None IS the violation — name the concrete default.
@@ -548,7 +649,18 @@ def receipt_line_when_chokepoint_did_not_run(model: Optional[str]) -> str:
     the function returns ``None`` without ever looking at ``OPENAI_BASE_URL``.
     Only the chokepoint route-judges a bare alias. The line now says which
     judgement happened rather than implying the strong one.
+
+    A person's own run (not a factory launch) gets a third wording: neither
+    fence applies to it, so nothing was judged and the line says so instead of
+    claiming the CLI fence passed the alias.
     """
+    if not is_factory_launch():
+        supplied = f"--model {model!r} supplied" if model else "no --model supplied"
+        return (
+            f"NOT-FENCED (a person's own run: {FACTORY_LAUNCH_ENV} is not set, "
+            f"so the fence does not apply; {supplied}, and no harness was "
+            "constructed in this process)"
+        )
     if model:
         provider, _alias = _split_provider_prefix(model)
         judged = (
@@ -582,14 +694,21 @@ def enforce_effective_seat(model: Any, *, harness: str) -> M0Verdict:
     ``GUARDKIT_ALLOW_FRONTIER=1`` (:data:`FRONTIER_ESCAPE_ENV`) proceeds — but
     **loudly**, with the same stderr echo the CLI-level fence uses. A deliberate
     frontier run is allowed; a silent one is not.
+
+    Two things it does NOT do. It never refuses a person's own run: that
+    verdict is :data:`VERDICT_PERSONAL_RUN`, recorded and logged once at INFO.
+    And the escape hatch never lifts an unescapable refusal (the ``sdk``
+    harness on a factory launch).
     """
     verdict = judge_effective_seat(model, harness=harness)
 
     if not verdict.refused:
         record_verdict(verdict)
+        if verdict.status == VERDICT_PERSONAL_RUN:
+            _log_personal_run_once(verdict)
         return verdict
 
-    if os.environ.get(FRONTIER_ESCAPE_ENV) == "1":
+    if verdict.escapable and os.environ.get(FRONTIER_ESCAPE_ENV) == "1":
         allowed = M0Verdict(
             status=VERDICT_ALLOWED_BY_ESCAPE,
             harness=verdict.harness,
@@ -610,13 +729,50 @@ def enforce_effective_seat(model: Any, *, harness: str) -> M0Verdict:
     # dragging the orchestrator's exception module into every consumer.
     from guardkit.orchestrator.exceptions import AgentInvocationError
 
+    if not verdict.escapable:
+        raise AgentInvocationError(
+            f"{verdict.detail} Effective seat: {verdict.effective_model}. "
+            f"{FRONTIER_ESCAPE_ENV} does not override this."
+        )
     raise AgentInvocationError(
         f"{verdict.detail} Effective seat: {verdict.effective_model}. "
         f"Set {FRONTIER_ESCAPE_ENV}=1 to override deliberately."
     )
 
 
+_personal_run_logged: set = set()
+
+
+def _log_personal_run_once(verdict: M0Verdict) -> None:
+    """One INFO line per harness and seat per process; no stderr noise."""
+    key = (verdict.harness, verdict.effective_model)
+    with _verdict_lock:
+        if key in _personal_run_logged:
+            return
+        _personal_run_logged.add(key)
+    logger.info(
+        "M0 fence: %s on the %r harness, seat %s — %s",
+        VERDICT_PERSONAL_RUN,
+        verdict.harness,
+        verdict.effective_model,
+        verdict.detail,
+    )
+
+
+def cli_m0_violation(model: Optional[str]) -> Optional[str]:
+    """The command-line fence (a SUPPLIED ``--model``) under the launch rule.
+
+    On a factory launch this is exactly :func:`resolve_m0_violation`. On a
+    person's own run it is ``None``: the fence does not apply there (Rich,
+    19 October 2026), the same rule the chokepoint follows.
+    """
+    if not is_factory_launch():
+        return None
+    return resolve_m0_violation(model)
+
+
 __all__ = [
+    "FACTORY_LAUNCH_ENV",
     "FRONTIER_ESCAPE_ENV",
     "FRONTIER_PROVIDER_PREFIXES",
     "LANGGRAPH_DEFAULT_SEAT",
@@ -629,9 +785,12 @@ __all__ = [
     "VERDICT_ALLOWED_BY_ESCAPE",
     "VERDICT_NOT_JUDGED",
     "VERDICT_PASS",
+    "VERDICT_PERSONAL_RUN",
     "VERDICT_REFUSED",
+    "cli_m0_violation",
     "default_seat_for",
     "enforce_effective_seat",
+    "is_factory_launch",
     "judge_effective_seat",
     "last_verdict",
     "receipt_line_when_chokepoint_did_not_run",

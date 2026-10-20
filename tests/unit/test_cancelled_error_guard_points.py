@@ -143,6 +143,7 @@ def _routine_fleet_route(m0_routine_fleet_route):
 class TestGP1InvokeWithRole:
     """Guard Point 1: _invoke_with_role catches CancelledError, logs it, and re-raises."""
 
+    @pytest.mark.personal_run
     @pytest.mark.asyncio
     async def test_cancelled_error_is_reraised(self, agent_invoker):
         """CancelledError raised inside _invoke_with_role bubbles up to the caller."""
@@ -179,6 +180,7 @@ class TestGP1InvokeWithRole:
                     permission_mode="acceptEdits",
                 )
 
+    @pytest.mark.personal_run
     @pytest.mark.asyncio
     async def test_cancelled_error_triggers_logger_debug(self, agent_invoker):
         """CancelledError at _invoke_with_role emits logger.debug (TASK-PFI-A1B2: downgraded from WARNING)."""

@@ -973,6 +973,7 @@ class TestBackendAutoInit:
         fmc._backend = "fleet_memory"
         fmc._backend_initialized = False
 
+    @pytest.mark.personal_run
     def test_get_memory_client_auto_inits_fleet_from_env(self, monkeypatch):
         from guardkit.knowledge import fleet_memory_client as fmc
 
@@ -981,6 +982,7 @@ class TestBackendAutoInit:
         assert isinstance(client, FleetMemoryClient)
         assert fmc._backend_initialized is True
 
+    @pytest.mark.personal_run
     def test_get_memory_client_defaults_to_fleet_memory(self, monkeypatch, tmp_path):
         from guardkit.knowledge import fleet_memory_client as fmc
 

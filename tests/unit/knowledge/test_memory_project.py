@@ -96,10 +96,17 @@ def test_without_the_factory_setting_the_folder_still_answers(tmp_path):
     """GuardKit used by hand is untouched: its own folder still declares."""
     _declare(tmp_path, "memory:\n  project: widget_shop\n")
 
-    for blank in ({}, {FACTORY_LAUNCH_ENV: ""}, {FACTORY_LAUNCH_ENV: "   "}):
+    for blank in ({}, {FACTORY_LAUNCH_ENV: ""}):
         answer = resolve_memory_project(tmp_path, env=blank)
         assert answer.project == "widget_shop"
         assert answer.source == "declaration"
+
+    # Only unset or exactly empty is by hand: a whitespace value is a factory
+    # launch, for this rule as for the frontier-model fence (one predicate,
+    # m0_fence.is_factory_launch; Codex review round 3, 20 October 2026).
+    answer = resolve_memory_project(tmp_path, env={FACTORY_LAUNCH_ENV: "   "})
+    assert answer.project is None
+    assert answer.source == "none"
 
 
 def test_the_project_declares_its_own_name(tmp_path):
@@ -282,6 +289,7 @@ def memory_module(monkeypatch, tmp_path):
     fmc._backend_initialized = False
 
 
+@pytest.mark.personal_run
 def test_the_settled_answer_reaches_the_shared_configuration(memory_module, tmp_path):
     _declare(tmp_path, "memory:\n  project: widget_shop\n")
     answer = memory_module.configure_memory_project(tmp_path)
@@ -289,6 +297,7 @@ def test_the_settled_answer_reaches_the_shared_configuration(memory_module, tmp_
     assert memory_module._load_fleet_config_from_env().project == "widget_shop"
 
 
+@pytest.mark.personal_run
 def test_the_settled_answer_is_said_out_loud_when_there_is_none(
     memory_module, tmp_path, caplog
 ):
@@ -299,6 +308,7 @@ def test_the_settled_answer_is_said_out_loud_when_there_is_none(
     assert str(tmp_path / ".guardkit" / "config.yaml") in caplog.text
 
 
+@pytest.mark.personal_run
 def test_every_thread_gets_the_same_name(memory_module, tmp_path):
     """One answer for the build: the second thread cannot get a different name."""
     _declare(tmp_path, "memory:\n  project: widget_shop\n")
@@ -388,6 +398,7 @@ async def test_with_no_name_the_store_is_never_opened(memory_module):
     assert client._store is None
 
 
+@pytest.mark.personal_run
 async def test_the_declared_name_is_what_the_read_asks_for(memory_module, monkeypatch, tmp_path):
     """End of the read path: the name on the request is the project's own."""
     monkeypatch.chdir(tmp_path)  # the read log lands here, not in the repository
@@ -414,6 +425,7 @@ async def test_the_declared_name_is_what_the_read_asks_for(memory_module, monkey
     assert asked["project"] == "widget_shop"
 
 
+@pytest.mark.personal_run
 async def test_the_declared_name_is_what_the_write_carries(memory_module, monkeypatch, tmp_path):
     """End of the write path: the record's own name is the project's own."""
     pytest.importorskip("nats_core.events")
@@ -449,6 +461,7 @@ async def test_the_declared_name_is_what_the_write_carries(memory_module, monkey
     assert published[0].project_id == "widget_shop"
 
 
+@pytest.mark.personal_run
 def test_used_by_hand_the_current_folder_answers(memory_module, monkeypatch, tmp_path):
     """Nobody handed a name over and nothing configured a build: read here."""
     _declare(tmp_path, "memory:\n  project: widget_shop\n")
@@ -478,6 +491,7 @@ class TestOneAnswerPerBuild:
     one. A different answer still drops everything built under the old one.
     """
 
+    @pytest.mark.personal_run
     def test_the_same_answer_again_keeps_what_was_built(self, memory_module, tmp_path):
         _declare(tmp_path, "memory:\n  project: widget_shop\n")
         memory_module.configure_memory_project(tmp_path)
@@ -492,6 +506,7 @@ class TestOneAnswerPerBuild:
         assert memory_module._memory_client is sentinel
         assert memory_module._backend_initialized is True
 
+    @pytest.mark.personal_run
     def test_a_different_answer_drops_what_was_built(self, memory_module, tmp_path):
         first = tmp_path / "first"
         second = tmp_path / "second"
@@ -509,6 +524,7 @@ class TestOneAnswerPerBuild:
         assert memory_module._memory_factory is None
         assert memory_module._backend_initialized is False
 
+    @pytest.mark.personal_run
     def test_every_wave_thread_settles_the_same_answer_without_tearing(
         self, memory_module, tmp_path
     ):
@@ -543,6 +559,7 @@ class TestTheSettledAnswerDoesNotOutliveItsTest:
     second proves it did not inherit it.
     """
 
+    @pytest.mark.personal_run
     def test_a_settles_a_name_for_its_own_folder(self, tmp_path):
         import guardkit.knowledge.fleet_memory_client as fmc
 
@@ -561,6 +578,7 @@ class TestTheSettledAnswerDoesNotOutliveItsTest:
 # ===========================================================================
 
 
+@pytest.mark.personal_run
 def test_a_failed_resolution_discards_the_previous_projects_memory(
     memory_module, tmp_path, monkeypatch, caplog
 ):

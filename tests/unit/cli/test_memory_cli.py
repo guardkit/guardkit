@@ -35,6 +35,7 @@ def mock_memory_client():
 class TestMemorySearch:
     """Tests for guardkit memory search command."""
 
+    @pytest.mark.personal_run
     @patch("guardkit.cli.memory.get_memory_client")
     def test_search_basic(self, mock_get_client, runner, mock_memory_client):
         """Test basic search returns results."""
@@ -46,6 +47,7 @@ class TestMemorySearch:
         assert "test fact" in result.output
         mock_memory_client.search.assert_called_once()
 
+    @pytest.mark.personal_run
     @patch("guardkit.cli.memory.get_memory_client")
     def test_search_with_token_budget(self, mock_get_client, runner, mock_memory_client):
         """Test search with --token-budget flag."""
@@ -56,6 +58,7 @@ class TestMemorySearch:
         assert result.exit_code == 0
         mock_memory_client.search.assert_called_once()
 
+    @pytest.mark.personal_run
     @patch("guardkit.cli.memory.get_memory_client")
     def test_search_unreachable_store(self, mock_get_client, runner):
         """Test search shows graceful message when store is unreachable."""
@@ -73,6 +76,7 @@ class TestMemorySearch:
 class TestMemoryStatus:
     """Tests for guardkit memory status command."""
 
+    @pytest.mark.personal_run
     @patch("guardkit.cli.memory.get_memory_client")
     def test_status_shows_reachability(self, mock_get_client, runner, mock_memory_client):
         """Test status shows store reachability."""
@@ -98,6 +102,7 @@ class TestMemoryStatus:
         assert result.exit_code == 0
         # Should show some form of counts/stats
 
+    @pytest.mark.personal_run
     @patch("guardkit.cli.memory.get_memory_client")
     def test_status_unreachable_store(self, mock_get_client, runner):
         """Test status shows graceful message when store is unreachable."""
@@ -115,6 +120,7 @@ class TestMemoryStatus:
 class TestMemoryCaptureOutcome:
     """Tests for guardkit memory capture-outcome command."""
 
+    @pytest.mark.personal_run
     @patch("guardkit.cli.memory.get_memory_client")
     @patch("guardkit.cli.memory.capture_task_outcome_verified")
     def test_capture_outcome_from_task_file(
@@ -150,6 +156,7 @@ Test implementation notes
         assert "OUT-12345" in result.output
         mock_capture.assert_called_once()
 
+    @pytest.mark.personal_run
     @patch("guardkit.cli.memory.get_memory_client")
     @patch("guardkit.cli.memory.capture_task_outcome_verified")
     def test_capture_outcome_that_published_nothing_is_not_reported_green(
@@ -210,6 +217,7 @@ Test implementation notes
         assert result.exit_code == 0
         assert "stored" not in result.output.lower()
 
+    @pytest.mark.personal_run
     @patch("guardkit.cli.memory.get_memory_client")
     def test_capture_outcome_unreachable_store(self, mock_get_client, runner, tmp_path):
         """Test capture-outcome shows graceful message when store is unreachable."""

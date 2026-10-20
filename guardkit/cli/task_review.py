@@ -39,6 +39,7 @@ from guardkit.orchestrator.m0_fence import (  # noqa: F401  (re-exported)
     FRONTIER_ESCAPE_ENV,
     FRONTIER_PROVIDER_PREFIXES,
     _split_provider_prefix,
+    cli_m0_violation,
     resolve_m0_violation,
 )
 from guardkit.orchestrator.review_runner import (
@@ -133,9 +134,10 @@ _NATS_NOTICE = (
     "model",
     default=None,
     help=(
-        "Model alias for the review seat. A frontier provider prefix is "
-        f"refused unless {FRONTIER_ESCAPE_ENV}=1 (the M0 fence). Defaults to "
-        "the harness's configured seat."
+        "Model alias for the review seat. On a factory launch "
+        "(GUARDKIT_FACTORY_LAUNCH set) a frontier provider prefix is refused "
+        f"unless {FRONTIER_ESCAPE_ENV}=1 (the M0 fence); a person's own run "
+        "is not fenced. Defaults to the harness's configured seat."
     ),
 )
 @click.option(
@@ -173,7 +175,7 @@ def task_review(
     if nats:
         click.echo(_NATS_NOTICE, err=True)
 
-    violation = resolve_m0_violation(model)
+    violation = cli_m0_violation(model)
     if violation is not None:
         if os.environ.get(FRONTIER_ESCAPE_ENV) == "1":
             click.echo(

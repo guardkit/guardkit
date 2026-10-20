@@ -379,6 +379,35 @@ class TestM0Fence:
         assert "anthropic:claude-opus-4" in result.stderr
         assert "## Artefacts" not in result.stdout
 
+    def test_a_whitespace_factory_signal_still_refuses_at_the_cli(
+        self, runner, repo, monkeypatch
+    ):
+        """Any value at all is a factory launch (Codex review round 3)."""
+        monkeypatch.setenv("GUARDKIT_FACTORY_LAUNCH", " ")
+        install_fake_specialist(
+            monkeypatch, repo, report_body=clean_report(), findings_payload={"findings": []}
+        )
+        result = runner.invoke(
+            task_review, ["--task-id", TASK_ID, "--model", "anthropic:claude-opus-4"]
+        )
+        assert result.exit_code == 2
+        assert "M0 fence" in result.stderr
+
+    @pytest.mark.personal_run
+    def test_a_persons_own_run_is_not_fenced_at_the_cli(
+        self, runner, repo, monkeypatch
+    ):
+        """The fence applies to factory launches only (19 October 2026)."""
+        install_fake_specialist(
+            monkeypatch, repo, report_body=clean_report(), findings_payload={"findings": []}
+        )
+        result = runner.invoke(
+            task_review, ["--task-id", TASK_ID, "--model", "anthropic:claude-opus-4"]
+        )
+        assert result.exit_code == 0, result.stderr
+        assert "M0 fence" not in result.stderr
+        assert "## Artefacts" in result.stdout
+
     def test_escape_hatch_lets_a_frontier_model_through(
         self, runner, repo, monkeypatch
     ):

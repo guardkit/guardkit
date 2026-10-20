@@ -162,6 +162,7 @@ class TestAgentInvocationErrorErrorClass:
 class TestDefensiveStreamIteration:
     """Per-message try/except around the SDK query stream (AC item 1+4)."""
 
+    @pytest.mark.personal_run
     @pytest.mark.asyncio
     async def test_unknown_then_valid_logs_warning_and_completes(
         self, tmp_path, caplog
@@ -212,6 +213,7 @@ class TestDefensiveStreamIteration:
         assert len(summary) == 1
         assert "1 unparseable" in summary[0].getMessage()
 
+    @pytest.mark.personal_run
     @pytest.mark.asyncio
     async def test_valid_then_unknown_accepts_partial_output(
         self, tmp_path, caplog
@@ -245,6 +247,7 @@ class TestDefensiveStreamIteration:
             "parsed successfully" in r.getMessage() for r in caplog.records
         )
 
+    @pytest.mark.personal_run
     @pytest.mark.asyncio
     async def test_all_unknown_messages_raises_with_error_class(self, tmp_path):
         """Stream of only unparseable messages → ``AgentInvocationError``
@@ -275,6 +278,7 @@ class TestDefensiveStreamIteration:
         # successful parses triggers the structured raise.
         assert err.error_class == "MessageParseError"
 
+    @pytest.mark.personal_run
     @pytest.mark.asyncio
     async def test_valueerror_in_stream_is_logged_and_dropped(
         self, tmp_path, caplog
@@ -317,6 +321,7 @@ class TestDefensiveStreamIteration:
 class TestOuterExceptionCascade:
     """Typed ``ValueError`` clause + augmented blanket handler (AC item 2+3)."""
 
+    @pytest.mark.personal_run
     @pytest.mark.asyncio
     async def test_valueerror_escaping_streaming_block_preserves_error_class(
         self, tmp_path
@@ -345,6 +350,7 @@ class TestOuterExceptionCascade:
         assert "ValueError" in str(err)  # type name in surfaced string
         assert "some ValueError in the query() call" in str(err)
 
+    @pytest.mark.personal_run
     @pytest.mark.asyncio
     async def test_blanket_exception_is_augmented_with_type_name(self, tmp_path):
         """An unexpected exception type (``RuntimeError`` here) hits the
@@ -387,6 +393,7 @@ class TestNoRegressionOnExistingHandlers:
     an ``error_class`` kwarg (their surfaced messages are not required
     to change)."""
 
+    @pytest.mark.personal_run
     @pytest.mark.asyncio
     async def test_cli_not_found_still_surfaces_install_hint(self, tmp_path):
         from claude_agent_sdk import CLINotFoundError
@@ -407,6 +414,7 @@ class TestNoRegressionOnExistingHandlers:
 
         assert "npm install -g @anthropic-ai/claude-code" in str(ei.value)
 
+    @pytest.mark.personal_run
     @pytest.mark.asyncio
     async def test_process_error_still_surfaces_exit_code(self, tmp_path):
         from claude_agent_sdk import ProcessError

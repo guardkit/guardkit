@@ -45,11 +45,7 @@ import yaml
 
 from guardkit.orchestrator.exceptions import AgentInvocationError
 from guardkit.orchestrator.harness.adapter import HarnessAdapter
-from guardkit.orchestrator.m0_fence import enforce_effective_seat
-
-#: Set (to any non-empty value) when the factory launched this GuardKit
-#: (``guardkit.knowledge.memory_project.FACTORY_LAUNCH_ENV``).
-_FACTORY_LAUNCH_ENV = "GUARDKIT_FACTORY_LAUNCH"
+from guardkit.orchestrator.m0_fence import enforce_effective_seat, is_factory_launch
 
 logger = logging.getLogger(__name__)
 
@@ -1278,8 +1274,10 @@ def select_harness(
     # credentials``): the hosted SDK harness's shell inherits this process's
     # whole environment (``ClaudeAgentOptions.env`` can only add names), so a
     # project command it runs would see the factory's credentials. A build
-    # the factory launched never uses it.
-    if name == "sdk" and str(os.environ.get(_FACTORY_LAUNCH_ENV) or "").strip():
+    # the factory launched never uses it. Since 19 October 2026 the fence
+    # above refuses this first (unescapably, so the recorded verdict says
+    # REFUSED); this check stays as a second line.
+    if name == "sdk" and is_factory_launch():
         raise AgentInvocationError(
             "the hosted SDK harness passes the factory's whole environment to "
             "its shell, so a factory build does not use it (GUARDKIT_HARNESS=sdk "

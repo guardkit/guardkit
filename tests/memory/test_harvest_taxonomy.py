@@ -17,6 +17,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 from guardkit.memory.harvest_taxonomy import (
     HARVEST_MAP,
     HarvestEntry,
@@ -197,6 +199,7 @@ class TestManifestJson:
         for entry in manifest["entries"]:
             assert entry["kind"] == entry["episode_type"]
 
+    @pytest.mark.personal_run
     def test_main_json_flag_prints_manifest(self):
         """python -m guardkit.memory.harvest_taxonomy --json prints the manifest."""
         repo_root = Path(__file__).resolve().parents[2]

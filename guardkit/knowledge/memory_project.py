@@ -259,7 +259,12 @@ def resolve_memory_project(
             )
         return MemoryProjectResolution(project=None, source="refused", message=refusal or "")
 
-    if str(settings.get(FACTORY_LAUNCH_ENV) or "").strip():
+    # The one factory-launch predicate, shared with the frontier-model fence
+    # (imported here, not at the top, so this module stays importable without
+    # loading the orchestrator package first).
+    from guardkit.orchestrator.m0_fence import is_factory_launch
+
+    if is_factory_launch(settings):
         # A FACTORY launched this and handed over no name. It reads the
         # project's declaration itself, at the commit the work started from, so
         # the absence of a name here is a decision and not an omission — and

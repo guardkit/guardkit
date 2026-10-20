@@ -418,6 +418,35 @@ class TestExitContract:
         assert "GUARDKIT_ALLOW_FRONTIER" in result.stderr
         assert "anthropic:claude-opus-4" in result.stderr
 
+    def test_a_whitespace_factory_signal_still_refuses_at_the_cli(
+        self, repo, fake_orchestrator, monkeypatch
+    ):
+        """Any value at all is a factory launch (Codex review round 3)."""
+        fake_orchestrator(APPROVED)
+        monkeypatch.delenv("GUARDKIT_ALLOW_FRONTIER", raising=False)
+        monkeypatch.setenv("GUARDKIT_FACTORY_LAUNCH", " ")
+        result = _run_cli(
+            repo,
+            ["task-work", "--task-id", FIX_TASK_ID, "--model", "anthropic:claude-opus-4"],
+        )
+        assert result.exit_code == 2
+        assert "anthropic:claude-opus-4" in result.stderr
+
+    @pytest.mark.personal_run
+    def test_a_persons_own_run_is_not_fenced_at_the_cli(
+        self, repo, fake_orchestrator, monkeypatch
+    ):
+        """The fence applies to factory launches only (19 October 2026)."""
+        fake_orchestrator(APPROVED)
+        monkeypatch.delenv("GUARDKIT_ALLOW_FRONTIER", raising=False)
+        result = _run_cli(
+            repo,
+            ["task-work", "--task-id", FIX_TASK_ID, "--model", "anthropic:claude-opus-4"],
+        )
+        assert result.exit_code == 0, result.stderr
+        assert "M0 fence" not in result.stderr
+        assert "GUARDKIT_ALLOW_FRONTIER" not in result.stderr
+
     def test_model_default_is_none_never_a_frontier_alias(self):
         """``cli/autobuild.py:208`` defaults to a frontier alias; this must not."""
         param = {p.name: p for p in cli.commands["task-work"].params}["model"]

@@ -162,6 +162,7 @@ class TestInvokeWithRoleConfig:
         # these SDK-path tests opt into the SDK harness explicitly.
         monkeypatch.setenv("GUARDKIT_HARNESS", "sdk")
 
+    @pytest.mark.personal_run
     @pytest.mark.asyncio
     async def test_player_setting_sources_project_only(self, worktree_path):
         """Player invocation uses setting_sources=['project']."""
@@ -184,6 +185,7 @@ class TestInvokeWithRoleConfig:
 
         assert captured.get("setting_sources") == ["project"]
 
+    @pytest.mark.personal_run
     @pytest.mark.asyncio
     async def test_coach_setting_sources_project_only(self, worktree_path):
         """Coach invocation uses setting_sources=['project']."""
@@ -206,6 +208,7 @@ class TestInvokeWithRoleConfig:
 
         assert captured.get("setting_sources") == ["project"]
 
+    @pytest.mark.personal_run
     @pytest.mark.asyncio
     async def test_player_allowed_tools_passed_through(self, worktree_path):
         """Player allowed_tools are passed to ClaudeAgentOptions."""
@@ -229,6 +232,7 @@ class TestInvokeWithRoleConfig:
 
         assert captured.get("allowed_tools") == player_tools
 
+    @pytest.mark.personal_run
     @pytest.mark.asyncio
     async def test_coach_allowed_tools_read_only(self, worktree_path):
         """Coach tools are read-only (no Write/Edit)."""
@@ -256,6 +260,7 @@ class TestInvokeWithRoleConfig:
         assert "Write" not in tools
         assert "Edit" not in tools
 
+    @pytest.mark.personal_run
     @pytest.mark.asyncio
     async def test_player_permission_mode_accept_edits(self, worktree_path):
         """Player uses permission_mode='acceptEdits'."""
@@ -278,6 +283,7 @@ class TestInvokeWithRoleConfig:
 
         assert captured.get("permission_mode") == "acceptEdits"
 
+    @pytest.mark.personal_run
     @pytest.mark.asyncio
     async def test_coach_permission_mode_bypass(self, worktree_path):
         """Coach uses permission_mode='bypassPermissions'."""
@@ -300,6 +306,7 @@ class TestInvokeWithRoleConfig:
 
         assert captured.get("permission_mode") == "bypassPermissions"
 
+    @pytest.mark.personal_run
     @pytest.mark.asyncio
     async def test_max_turns_uses_constant(self, worktree_path):
         """Both Player and Coach use TASK_WORK_SDK_MAX_TURNS for max_turns."""

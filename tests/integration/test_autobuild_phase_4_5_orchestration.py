@@ -318,6 +318,7 @@ def _read_task_work_results(worktree: Path, task_id: str) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.personal_run
 @pytest.mark.integration
 async def test_orchestrator_side_invocation_fires_on_non_direct_task(
     worktree: Path,
@@ -410,6 +411,7 @@ async def test_direct_mode_task_skips_specialists(
     )
 
 
+@pytest.mark.personal_run
 @pytest.mark.integration
 async def test_phase4_failure_skips_phase5_and_records_partial(
     worktree: Path,
@@ -579,6 +581,7 @@ async def test_sdk_ceiling_hit_skips_specialists(
     )
 
 
+@pytest.mark.personal_run
 @pytest.mark.integration
 async def test_sdk_ceiling_hit_circuit_breaker_env_var(
     worktree: Path,

@@ -396,6 +396,7 @@ class TestGeneratorDrainAfterResultMessage:
             "finally block must guard aclose() with 'if gen is not None'"
         )
 
+    @pytest.mark.personal_run
     @pytest.mark.asyncio
     async def test_no_cancelled_error_after_result_message(self, agent_invoker):
         """TASK-FIX-GEN1 regression: receiving ResultMessage must not raise

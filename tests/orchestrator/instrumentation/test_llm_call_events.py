@@ -159,6 +159,7 @@ def _routine_fleet_route(m0_routine_fleet_route):
 class TestSuccessfulEmission:
     """llm.call event emitted for every successful SDK invocation."""
 
+    @pytest.mark.personal_run
     @pytest.mark.asyncio
     async def test_emits_event_on_successful_call(
         self, tmp_path: Path, mock_sdk: ModuleType,
@@ -188,6 +189,7 @@ class TestSuccessfulEmission:
         assert event.error_type is None
         assert event.agent_role == "player"
 
+    @pytest.mark.personal_run
     @pytest.mark.asyncio
     async def test_coach_role_emits_event(
         self, tmp_path: Path, mock_sdk: ModuleType,
@@ -222,6 +224,7 @@ class TestSuccessfulEmission:
 class TestErrorEmission:
     """llm.call event emitted for failed SDK invocations (timeout, API error)."""
 
+    @pytest.mark.personal_run
     @pytest.mark.asyncio
     async def test_emits_event_on_timeout(
         self, tmp_path: Path, mock_sdk: ModuleType,
@@ -253,6 +256,7 @@ class TestErrorEmission:
         assert event.error_type == "timeout"
         assert event.latency_ms >= 0.0
 
+    @pytest.mark.personal_run
     @pytest.mark.asyncio
     async def test_emits_event_on_process_error(
         self, tmp_path: Path, mock_sdk: ModuleType,
@@ -292,6 +296,7 @@ class TestErrorEmission:
 class TestRequiredFields:
     """Event includes all required fields."""
 
+    @pytest.mark.personal_run
     @pytest.mark.asyncio
     async def test_event_includes_all_required_fields(
         self, tmp_path: Path, mock_sdk: ModuleType,
@@ -340,6 +345,7 @@ class TestRequiredFields:
 class TestNonBlockingEmission:
     """Event emission is non-blocking (asyncio.create_task)."""
 
+    @pytest.mark.personal_run
     @pytest.mark.asyncio
     async def test_emission_does_not_block_caller(
         self, tmp_path: Path, mock_sdk: ModuleType,
@@ -373,6 +379,7 @@ class TestNonBlockingEmission:
 class TestEmissionFailureSafe:
     """Emission failure does not propagate to caller."""
 
+    @pytest.mark.personal_run
     @pytest.mark.asyncio
     async def test_emission_failure_does_not_propagate(
         self, tmp_path: Path, mock_sdk: ModuleType,
@@ -422,6 +429,7 @@ class TestNullEmitterDefault:
         )
         assert isinstance(invoker._emitter, NullEmitter)
 
+    @pytest.mark.personal_run
     @pytest.mark.asyncio
     async def test_no_events_captured_without_injected_emitter(
         self, tmp_path: Path, mock_sdk: ModuleType,
@@ -464,6 +472,7 @@ class TestNullEmitterDefault:
 class TestMultipleCallsDistinctEvents:
     """Multiple calls in same turn produce distinct events."""
 
+    @pytest.mark.personal_run
     @pytest.mark.asyncio
     async def test_two_calls_produce_two_events(
         self, tmp_path: Path, mock_sdk: ModuleType,
@@ -506,6 +515,7 @@ class TestMultipleCallsDistinctEvents:
 class TestLatencyTracking:
     """Latency is correctly measured for success and failure paths."""
 
+    @pytest.mark.personal_run
     @pytest.mark.asyncio
     async def test_latency_is_positive_on_success(
         self, tmp_path: Path, mock_sdk: ModuleType,
@@ -532,6 +542,7 @@ class TestLatencyTracking:
         assert len(emitter.events) == 1
         assert emitter.events[0].latency_ms >= 5.0
 
+    @pytest.mark.personal_run
     @pytest.mark.asyncio
     async def test_latency_is_recorded_on_error(
         self, tmp_path: Path, mock_sdk: ModuleType,
@@ -570,6 +581,7 @@ class TestLatencyTracking:
 class TestPromptProfile:
     """Prompt profile field is correctly populated."""
 
+    @pytest.mark.personal_run
     @pytest.mark.asyncio
     async def test_default_prompt_profile(
         self, tmp_path: Path, mock_sdk: ModuleType,
@@ -606,6 +618,7 @@ class TestSpecialistEventLabels:
     on the first web fixture proof were all recorded as ``agent_role: coach``.
     The event now says ``specialist`` and names it."""
 
+    @pytest.mark.personal_run
     @pytest.mark.asyncio
     async def test_a_timed_out_code_reviewer_is_labelled_as_the_specialist(
         self, tmp_path: Path, mock_sdk: ModuleType,
@@ -641,6 +654,7 @@ class TestSpecialistEventLabels:
         assert event.agent_role == "specialist"
         assert event.agent_name == "code-reviewer"
 
+    @pytest.mark.personal_run
     @pytest.mark.asyncio
     async def test_the_coach_itself_is_still_the_coach(
         self, tmp_path: Path, mock_sdk: ModuleType,

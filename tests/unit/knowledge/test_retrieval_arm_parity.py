@@ -332,6 +332,7 @@ class TestEnvDrivenArmContract:
     vars, not dataclasses); _load_fleet_config_from_env() must produce the
     config that drives the chain into the asserted arm behaviour."""
 
+    @pytest.mark.personal_run
     @pytest.mark.parametrize("arm_env", [None, "off", "fixture:v1"])
     async def test_env_driven_arm_end_to_end(
         self, monkeypatch, query_log_path, arm_env

@@ -154,6 +154,7 @@ class TestAC_B_MessageParseErrorNonTerminal:
     per-message WARNING logged, post-stream summary WARNING records the
     drop count."""
 
+    @pytest.mark.personal_run
     @pytest.mark.asyncio
     async def test_parse_error_then_valid_message_completes_turn(
         self, tmp_path, caplog
@@ -199,6 +200,7 @@ class TestAC_B_MessageParseErrorNonTerminal:
         assert len(summary) == 1
         assert "1 unparseable" in summary[0].getMessage()
 
+    @pytest.mark.personal_run
     @pytest.mark.asyncio
     async def test_valueerror_midstream_is_dropped_same_as_parse_error(
         self, tmp_path, caplog
@@ -247,6 +249,7 @@ class TestAC_C_ProcessErrorAfterValidMessage:
     cause of one ``AgentInvocationError`` whose message carries the exit
     code and stderr."""
 
+    @pytest.mark.personal_run
     @pytest.mark.asyncio
     async def test_user_message_processed_then_process_error_propagates(
         self, tmp_path
@@ -316,6 +319,7 @@ class TestInnerExceptionCascade:
     (which names the failure) and re-raises, and the original exception is
     the ``__cause__``, untouched, for the caller to introspect."""
 
+    @pytest.mark.personal_run
     @pytest.mark.asyncio
     async def test_cli_not_found_handler_logs_class_and_reraises(
         self, tmp_path, caplog
@@ -342,6 +346,7 @@ class TestInnerExceptionCascade:
         assert len(tagged) == 1
         assert "Claude Code CLI not installed" in tagged[0].getMessage()
 
+    @pytest.mark.personal_run
     @pytest.mark.asyncio
     async def test_cli_json_decode_handler_logs_class_and_reraises(
         self, tmp_path, caplog
@@ -372,6 +377,7 @@ class TestInnerExceptionCascade:
         assert "Failed to parse SDK response" in tagged[0].getMessage()
         assert "garbage line from CLI" in tagged[0].getMessage()
 
+    @pytest.mark.personal_run
     @pytest.mark.asyncio
     async def test_process_error_inner_handler_captures_exit_code_and_stderr(
         self, tmp_path, caplog
@@ -415,6 +421,7 @@ class TestInnerExceptionCascade:
         assert original.exit_code == 1
         assert original.stderr == stderr_text
 
+    @pytest.mark.personal_run
     @pytest.mark.asyncio
     async def test_blanket_exception_handler_tags_concrete_class_name(
         self, tmp_path, caplog

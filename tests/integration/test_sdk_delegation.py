@@ -426,6 +426,7 @@ def _create_mock_sdk(query_gen):
 class TestSDKDelegationHappyPath:
     """Test happy path for SDK delegation flow."""
 
+    @pytest.mark.personal_run
     def test_invoke_task_work_implement_success(self, agent_invoker, mock_worktree, sample_sdk_messages):
         """SDK invocation succeeds and returns TaskWorkResult."""
         # Create mock SDK response
@@ -537,6 +538,7 @@ class TestSDKDelegationHappyPath:
 class TestSDKTimeoutHandling:
     """Test SDK timeout handling."""
 
+    @pytest.mark.personal_run
     def test_sdk_timeout_raises_error(self, mock_worktree, _routine_seat):
         """SDK timeout raises SDKTimeoutError."""
         invoker = AgentInvoker(
@@ -565,6 +567,7 @@ class TestSDKTimeoutHandling:
 
         assert "timeout" in str(exc_info.value).lower()
 
+    @pytest.mark.personal_run
     def test_invoke_player_timeout_returns_failure(self, mock_worktree, _routine_seat):
         """invoke_player returns failure result on timeout."""
         invoker = AgentInvoker(
@@ -605,6 +608,7 @@ class TestSDKTimeoutHandling:
 class TestSDKErrorHandling:
     """Test SDK error handling scenarios."""
 
+    @pytest.mark.personal_run
     def test_sdk_import_error_handled(self, mock_worktree, _routine_seat):
         """Missing SDK import is handled gracefully."""
         invoker = AgentInvoker(
@@ -626,6 +630,7 @@ class TestSDKErrorHandling:
         assert result.success is False
         assert "Claude Agent SDK" in result.error or "import" in result.error.lower()
 
+    @pytest.mark.personal_run
     def test_sdk_process_error_handled(self, agent_invoker):
         """SDK ProcessError is handled gracefully."""
         ProcessError = type("ProcessError", (Exception,), {"exit_code": 1, "stderr": "Command failed"})
@@ -653,6 +658,7 @@ class TestSDKErrorHandling:
         # not carry these words, and fails here.
         assert "Command failed" in result.error
 
+    @pytest.mark.personal_run
     def test_sdk_generic_error_handled(self, agent_invoker):
         """Generic SDK errors are handled gracefully."""
         async def failing_query(*args, **kwargs):
@@ -804,6 +810,7 @@ class TestParseTaskWorkStream:
 class TestDevelopmentModeHandling:
     """Test development mode parameter handling in SDK delegation."""
 
+    @pytest.mark.personal_run
     @pytest.mark.parametrize("mode", ["tdd", "standard", "bdd"])
     def test_mode_included_in_sdk_prompt(self, mock_worktree, mode, _routine_seat):
         """Development mode is included in SDK prompt."""
@@ -914,6 +921,7 @@ class TestTaskWorkOutputParsing:
 class TestCoachResultsValidation:
     """Test that Coach can validate results written by _invoke_task_work_implement."""
 
+    @pytest.mark.personal_run
     def test_full_flow_creates_results_for_coach(
         self, agent_invoker, mock_worktree, sample_sdk_messages, mock_sdk_query
     ):
@@ -956,6 +964,7 @@ class TestCoachResultsValidation:
 
         run_async(run_test())
 
+    @pytest.mark.personal_run
     def test_results_file_has_coach_expected_structure(
         self, agent_invoker, mock_worktree, mock_sdk_query
     ):
@@ -1003,6 +1012,7 @@ class TestCoachResultsValidation:
 
         run_async(run_test())
 
+    @pytest.mark.personal_run
     def test_failure_results_file_written_on_sdk_failure(
         self, agent_invoker, mock_worktree
     ):

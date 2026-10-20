@@ -1,5 +1,6 @@
 """Pytest configuration and fixtures."""
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -99,6 +100,13 @@ def pytest_configure(config):
         "stops a task needing coverage in a project that declares no coverage "
         "command; every other test runs with that check passing.",
     )
+    config.addinivalue_line(
+        "markers",
+        "personal_run: this test is a person's own run of GuardKit, not a "
+        "factory launch, so GUARDKIT_FACTORY_LAUNCH is cleared for it (the "
+        "sdk harness, the by-hand memory rule). Every other test runs as a "
+        "factory launch. It never lifts the network and claude guard.",
+    )
 
 
 def pytest_collection_modifyitems(config, items):
@@ -126,6 +134,318 @@ def pytest_collection_modifyitems(config, items):
                 f"[quarantine] skipped {skipped} pre-existing red test(s) "
                 f"(GUARDKIT_NO_QUARANTINE=1 to run them)"
             )
+
+
+# ---------------------------------------------------------------------------
+# Tests run as a FACTORY launch, and never reach a hosted model (19 Oct 2026)
+# ---------------------------------------------------------------------------
+# The frontier-model fence (guardkit/orchestrator/m0_fence.py) applies to
+# factory launches only since 19 October 2026: a person's own run is not
+# fenced. A test process is not a factory launch, so without the fixture below
+# every test that the fence used to stop would now go further — and could
+# build a real hosted-model client. Two safeguards:
+#
+#   1. Every test runs as a factory launch (GUARDKIT_FACTORY_LAUNCH=1), the
+#      strict rule. A test whose subject is a person's own run says so with
+#      ``@pytest.mark.personal_run`` (greppable, never quiet).
+#   2. A guard that stays on for the whole session: a connection to anything
+#      but this machine, or a start of the ``claude`` program (other than a
+#      ``--version`` probe), is refused where it happens and fails the test
+#      that made it. Starts are checked in ``subprocess.Popen`` (argument lists,
+#      ``shell=True`` strings and ``executable=``), ``asyncio``'s exec and
+#      shell, ``os.system`` and ``os.posix_spawn``/``posix_spawnp``, all by
+#      one decision: a SHELL launch that contains ``claude`` as a word of its
+#      own (``.claude`` folders and ``claude_agent_sdk`` are not) is always
+#      refused; an argument list that contains it is refused unless it is,
+#      element by element, ``claude --version``, ``claude -v`` (``claude`` or
+#      a plain absolute path ending in ``/claude``), ``which claude`` or
+#      ``command -v claude``. Not covered: ``os.exec*``
+#      (it would replace the test process) and the legacy ``os.spawn*``
+#      family; nothing in the suite uses either. It does not rely on product
+#      code letting the refusal
+#      through, because never-raises chains swallow exceptions.
+
+import asyncio as _guard_asyncio
+import functools as _guard_functools
+import ipaddress as _guard_ipaddress
+import socket as _guard_socket
+import subprocess as _guard_subprocess
+import threading as _guard_threading
+
+_LAUNCH_GUARD_HITS: list = []
+_LAUNCH_GUARD_LOCK = _guard_threading.Lock()
+
+
+def _launch_guard_hit(what: str) -> None:
+    with _LAUNCH_GUARD_LOCK:
+        _LAUNCH_GUARD_HITS.append(what)
+
+
+def _launch_guard_is_this_machine(address) -> bool:
+    host = address[0] if isinstance(address, tuple) else address
+    if not isinstance(host, str):
+        return True  # an abstract or bytes unix-socket address
+    if host in ("localhost", ""):
+        return True
+    try:
+        ip = _guard_ipaddress.ip_address(host.split("%", 1)[0])
+    except ValueError:
+        return False  # a host NAME: refused, it could be anywhere
+    return ip.is_loopback or ip.is_unspecified
+
+
+#: The ``claude`` word (Codex review rounds 4 and 5). It is bounded by the
+#: start or end, whitespace, shell punctuation, a quote, ``=``, ``,``, ``#``
+#: or, before it only, a path separator. ``.``, ``-`` and ``_`` do NOT bound
+#: it, so the ``.claude`` folder (GuardKit's own git calls exclude
+#: ``**/.claude/task-plans/**``), ``claude_agent_sdk``, ``claude-agent`` and a
+#: ``/tmp/claude-1000`` folder are not ``claude``; nor is a FOLDER named
+#: ``claude`` inside a path (an existing test keeps notes in
+#: ``config/claude/``). ``/x/claude``, ``$(claude …)`` and ``echo ok;claude``
+#: are.
+_LAUNCH_GUARD_BOUND = r"""[\s;&|()`'"$<>{}=,!#]"""
+_LAUNCH_GUARD_CLAUDE_WORD = re.compile(
+    rf"(?:^|(?<={_LAUNCH_GUARD_BOUND})|(?<=[/\\]))claude(?:\.exe)?(?=$|{_LAUNCH_GUARD_BOUND})",
+    re.IGNORECASE,
+)
+#: Characters that may not appear in an absolute ``claude`` path in an
+#: allowed argument list.
+_LAUNCH_GUARD_UNSAFE_PATH = re.compile(r"""[\s;&|`$<>()'"\\*?!{}#=,]""")
+
+
+def _launch_guard_harmless_argv(words) -> bool:
+    """The only argument lists that may name ``claude``, matched element by element."""
+    if words in (["which", "claude"], ["command", "-v", "claude"]):
+        return True
+    if len(words) != 2 or words[1] not in ("--version", "-v"):
+        return False
+    program = words[0]
+    if program == "claude":
+        return True
+    return (
+        program.startswith("/")
+        and not _LAUNCH_GUARD_UNSAFE_PATH.search(program)
+        and program.rsplit("/", 1)[-1] == "claude"
+    )
+
+
+def _launch_guard_program_is_claude(program) -> bool:
+    """Is this program (an ``executable=``, say) the ``claude`` program?"""
+    name = os.path.basename(os.fsdecode(program)).lower()
+    return name in ("claude", "claude.exe")
+
+
+def _launch_guard_is_claude(launch, *, shell: bool = False) -> bool:
+    """Could this launch start ``claude``? The one decision, for every entry point.
+
+    * A SHELL launch — a string (``os.system``, ``shell=True``, asyncio's
+      shell), or a list run with ``shell=True`` — is refused whenever it
+      contains the ``claude`` word. No exceptions (Codex review round 5: an
+      allowlist read through shell syntax let ``which\nclaude`` through).
+    * An ARGUMENT LIST that contains the word (joined with spaces, so an
+      ``sh -c`` script inside it counts) is refused unless it is, element by
+      element, ``[claude, --version]``, ``[claude, -v]`` (``claude`` or a
+      plain absolute path ending in ``/claude``), ``[which, claude]`` or
+      ``[command, -v, claude]``.
+    """
+    if isinstance(launch, (str, bytes)):
+        return bool(_LAUNCH_GUARD_CLAUDE_WORD.search(os.fsdecode(launch)))
+    words = [os.fsdecode(part) if isinstance(part, (str, bytes)) else str(part) for part in launch]
+    if not _LAUNCH_GUARD_CLAUDE_WORD.search(" ".join(words)):
+        return False
+    if shell:
+        return True
+    return not _launch_guard_harmless_argv(words)
+
+
+def _install_launch_guard() -> None:
+    socket_class = _guard_socket.socket
+    original_connect = socket_class.connect
+    original_connect_ex = socket_class.connect_ex
+
+    @_guard_functools.wraps(original_connect)
+    def connect(self, address):
+        if self.family in (_guard_socket.AF_INET, _guard_socket.AF_INET6) and not (
+            _launch_guard_is_this_machine(address)
+        ):
+            _launch_guard_hit(f"network connection to {address!r}")
+            raise ConnectionRefusedError(
+                f"test guard: a connection to {address!r} was refused"
+            )
+        return original_connect(self, address)
+
+    @_guard_functools.wraps(original_connect_ex)
+    def connect_ex(self, address):
+        if self.family in (_guard_socket.AF_INET, _guard_socket.AF_INET6) and not (
+            _launch_guard_is_this_machine(address)
+        ):
+            _launch_guard_hit(f"network connection to {address!r}")
+            return 111  # ECONNREFUSED
+        return original_connect_ex(self, address)
+
+    socket_class.connect = connect
+    socket_class.connect_ex = connect_ex
+
+    popen_init = _guard_subprocess.Popen.__init__
+
+    @_guard_functools.wraps(popen_init)
+    def guarded_popen_init(self, args, *rest, **kwargs):
+        executable = kwargs.get("executable")
+        shell = bool(kwargs.get("shell"))
+        if shell or isinstance(args, (str, bytes)):
+            launch = [args] if isinstance(args, (str, bytes)) else list(args)
+            # Judged as the shell string AND as the program that runs it
+            # (Codex review round 6: ``Popen("x", executable=".../claude")``).
+            refused = _launch_guard_is_claude(launch, shell=True) or (
+                executable is not None and _launch_guard_program_is_claude(executable)
+            )
+        else:
+            launch = list(args)
+            if executable is not None:
+                launch = [executable, *launch[1:]]  # what Popen actually runs
+            refused = _launch_guard_is_claude(launch)
+        if refused:
+            _launch_guard_hit(f"start of claude: {args!r}"[:300])
+            raise PermissionError("test guard: starting claude was refused")
+        return popen_init(self, args, *rest, **kwargs)
+
+    _guard_subprocess.Popen.__init__ = guarded_popen_init
+
+    create_exec = _guard_asyncio.create_subprocess_exec
+
+    @_guard_functools.wraps(create_exec)
+    async def guarded_create_exec(program, *args, **kwargs):
+        if _launch_guard_is_claude([program, *args]):
+            _launch_guard_hit(f"start of claude: {[program, *args]!r}"[:300])
+            raise PermissionError("test guard: starting claude was refused")
+        return await create_exec(program, *args, **kwargs)
+
+    _guard_asyncio.create_subprocess_exec = guarded_create_exec
+
+    create_shell = _guard_asyncio.create_subprocess_shell
+
+    @_guard_functools.wraps(create_shell)
+    async def guarded_create_shell(cmd, *args, **kwargs):
+        if _launch_guard_is_claude(cmd):
+            _launch_guard_hit(f"start of claude: {cmd!r}"[:300])
+            raise PermissionError("test guard: starting claude was refused")
+        return await create_shell(cmd, *args, **kwargs)
+
+    _guard_asyncio.create_subprocess_shell = guarded_create_shell
+
+    os_system = os.system
+
+    @_guard_functools.wraps(os_system)
+    def guarded_system(command):
+        if _launch_guard_is_claude(command):
+            _launch_guard_hit(f"start of claude: {command!r}"[:300])
+            raise PermissionError("test guard: starting claude was refused")
+        return os_system(command)
+
+    os.system = guarded_system
+
+    for spawn_name in ("posix_spawn", "posix_spawnp"):
+        original_spawn = getattr(os, spawn_name, None)
+        if original_spawn is None:
+            continue
+
+        def make_guarded_spawn(original):
+            @_guard_functools.wraps(original)
+            def guarded_spawn(path, argv, *rest, **kwargs):
+                if _launch_guard_is_claude([path, *list(argv)[1:]]):
+                    _launch_guard_hit(f"start of claude: {path!r} {list(argv)!r}"[:300])
+                    raise PermissionError("test guard: starting claude was refused")
+                return original(path, argv, *rest, **kwargs)
+
+            return guarded_spawn
+
+        setattr(os, spawn_name, make_guarded_spawn(original_spawn))
+
+
+_install_launch_guard()
+
+
+# The second, independent layer (Codex review round 6): a ``claude`` stub first
+# on PATH for the whole session. Anything that finds ``claude`` by PATH lookup,
+# through an API or a wrapper the guard above does not see, runs the stub, not
+# the real program. The stub answers a bare ``--version`` or ``-v`` (the
+# presence probes the suite makes) and exits 0; anything else is recorded in a
+# marker file and exits 97, and the session then fails with a plain message.
+import shutil as _stub_shutil
+import tempfile as _stub_tempfile
+
+_CLAUDE_STUB_DIR = _stub_tempfile.mkdtemp(prefix="guardkit-tests-claude-stub-")
+_CLAUDE_STUB_MARKER = os.path.join(_CLAUDE_STUB_DIR, "claude-was-run.log")
+_CLAUDE_STUB = os.path.join(_CLAUDE_STUB_DIR, "claude")
+with open(_CLAUDE_STUB, "w", encoding="utf-8") as _stub_file:
+    _stub_file.write(
+        "#!/bin/sh\n"
+        "# GuardKit test-suite stand-in for the claude program (tests/conftest.py).\n"
+        'if [ "$#" -eq 1 ] && { [ "$1" = "--version" ] || [ "$1" = "-v" ]; }; then\n'
+        '  echo "0.0.0 (GuardKit test stand-in, not Claude Code)"\n'
+        "  exit 0\n"
+        "fi\n"
+        f'printf "%s\\n" "claude $*" >> "{_CLAUDE_STUB_MARKER}"\n'
+        "exit 97\n"
+    )
+os.chmod(_CLAUDE_STUB, 0o755)
+os.environ["PATH"] = _CLAUDE_STUB_DIR + os.pathsep + os.environ.get("PATH", "")
+
+
+def _claude_stub_runs() -> list:
+    """Every call the stand-in recorded (empty when nothing reached it)."""
+    try:
+        with open(_CLAUDE_STUB_MARKER, encoding="utf-8") as marker:
+            return [line.rstrip("\n") for line in marker if line.strip()]
+    except FileNotFoundError:
+        return []
+
+
+def pytest_sessionfinish(session, exitstatus):
+    """Fail the session if anything ran the claude stand-in for real work."""
+    runs = _claude_stub_runs()
+    _stub_shutil.rmtree(_CLAUDE_STUB_DIR, ignore_errors=True)
+    if not runs:
+        return
+    message = (
+        f"\nTEST SUITE FAILED: something started claude {len(runs)} time(s) by "
+        "looking it up on PATH. The session's stand-in caught it, so the real "
+        "program did not run, but the guard in tests/conftest.py missed it. "
+        "First: " + "; ".join(runs[:3]) + "\n"
+    )
+    reporter = session.config.pluginmanager.get_plugin("terminalreporter")
+    if reporter is not None:
+        reporter.write_line(message)
+    else:
+        sys.stderr.write(message)
+    session.exitstatus = pytest.ExitCode.TESTS_FAILED
+
+
+@pytest.fixture(autouse=True)
+def tests_run_as_a_factory_launch(monkeypatch, request):
+    """Every test is a factory launch unless it is marked ``personal_run``."""
+    from guardkit.orchestrator.m0_fence import FACTORY_LAUNCH_ENV
+
+    if request.node.get_closest_marker("personal_run"):
+        monkeypatch.delenv(FACTORY_LAUNCH_ENV, raising=False)
+    else:
+        monkeypatch.setenv(FACTORY_LAUNCH_ENV, "1")
+
+
+@pytest.fixture(autouse=True)
+def no_test_reaches_a_hosted_model():
+    """Fail the test that tried to leave this machine or start ``claude``."""
+    with _LAUNCH_GUARD_LOCK:
+        start = len(_LAUNCH_GUARD_HITS)
+    yield
+    with _LAUNCH_GUARD_LOCK:
+        hits = _LAUNCH_GUARD_HITS[start:]
+    if hits:
+        pytest.fail(
+            "this test tried to reach beyond this machine or start claude "
+            "(refused): " + "; ".join(hits[:5]),
+            pytrace=False,
+        )
 
 
 # ---------------------------------------------------------------------------

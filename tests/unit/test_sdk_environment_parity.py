@@ -345,6 +345,7 @@ class TestRunTestsViaSdk:
         assert result.tests_passed is False
         assert "SDK API error" in result.test_output_summary
 
+    @pytest.mark.personal_run
     async def test_sdk_timeout(self, tmp_path):
         """asyncio.TimeoutError from SDK yields tests_passed=False mentioning timeout."""
         mock_sdk = _make_mock_sdk_module()

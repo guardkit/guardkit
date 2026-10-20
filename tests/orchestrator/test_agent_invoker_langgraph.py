@@ -440,6 +440,7 @@ class TestLazyImportOnSdkPath:
     opt into it explicitly.
     """
 
+    @pytest.mark.personal_run
     @pytest.mark.asyncio
     async def test_sdk_path_does_not_construct_langgraph_harness(
         self,
@@ -503,6 +504,7 @@ class TestLazyImportOnSdkPath:
         # AC-003: LangGraphHarness must never have been constructed.
         assert construction_calls == []
 
+    @pytest.mark.personal_run
     def test_sdk_path_returns_claude_sdk_harness(
         self,
         monkeypatch: pytest.MonkeyPatch,
@@ -993,6 +995,7 @@ class TestInstalledCandidateIntegration:
                 for directory, _dirs, _files in os.walk(root):
                     os.chmod(directory, 0o700)
 
+    @pytest.mark.personal_run
     @pytest.mark.asyncio
     async def test_installed_sdk_selector_invoker_uses_fake_client(
         self,

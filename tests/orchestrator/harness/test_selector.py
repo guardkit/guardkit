@@ -267,6 +267,7 @@ class TestSelectHarnessDispatch:
 
         assert isinstance(harness, LangGraphHarness)
 
+    @pytest.mark.personal_run
     def test_sdk_fallback_does_not_import_guardkitfactory(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -297,6 +298,7 @@ class TestSelectHarnessDispatch:
             if original_harness is None:
                 sys.modules.pop("guardkitfactory.harness", None)
 
+    @pytest.mark.personal_run
     def test_explicit_sdk_returns_claude_sdk_harness(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -309,6 +311,7 @@ class TestSelectHarnessDispatch:
 
         assert isinstance(harness, ClaudeSDKHarness)
 
+    @pytest.mark.personal_run
     def test_sdk_receives_env_overrides(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -321,6 +324,7 @@ class TestSelectHarnessDispatch:
 
         assert harness._env == {"PYTHONPATH": "/wt"}
 
+    @pytest.mark.personal_run
     def test_explicit_sdk_case_insensitive(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -387,6 +391,7 @@ class TestSelectHarnessDispatch:
         assert isinstance(harness, LangGraphHarness)
         assert harness.on_model_activity is sentinel
 
+    @pytest.mark.personal_run
     def test_sdk_pops_on_model_activity(
         self,
         monkeypatch: pytest.MonkeyPatch,
@@ -574,6 +579,7 @@ class TestSelectHarnessDispatch:
         assert "build_autobuild_backend" in msg
         assert "_invoke_with_role" in msg
 
+    @pytest.mark.personal_run
     def test_sdk_path_ignores_cwd_kwarg(
         self,
         monkeypatch: pytest.MonkeyPatch,
@@ -658,6 +664,7 @@ class TestSelectHarnessDispatch:
         assert harness.recursion_limit is None
         assert not isinstance(harness.backend.default, TruncatingBackend)
 
+    @pytest.mark.personal_run
     def test_sdk_path_drops_gather_bounds(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Any
     ) -> None:
@@ -678,6 +685,7 @@ class TestSelectHarnessDispatch:
         )
         assert isinstance(harness, ClaudeSDKHarness)
 
+    @pytest.mark.personal_run
     def test_sdk_path_threads_setting_sources(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -1246,6 +1254,7 @@ class TestRequiredPlayerSelection:
         assert config_calls == []
         assert "player_config" not in constructions[0]
 
+    @pytest.mark.personal_run
     def test_sdk_player_remains_separate_from_dcode_config(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -1642,6 +1651,7 @@ def test_langgraph_forwards_progressive_native_tool_sink(
     assert harness.on_native_tool_event is sentinel
 
 
+@pytest.mark.personal_run
 def test_sdk_drops_progressive_native_tool_sink(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

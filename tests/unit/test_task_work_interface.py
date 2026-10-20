@@ -1290,6 +1290,7 @@ class TestSDKOptionsForInlineProtocol:
         # seat is the only reason this class needs the escape.
         monkeypatch.setenv("GUARDKIT_ALLOW_FRONTIER", "1")
 
+    @pytest.mark.personal_run
     @pytest.mark.asyncio
     async def test_sdk_uses_project_only_setting_sources(self, interface, tmp_worktree):
         """Test setting_sources is ["project"], not ["user", "project"]."""
@@ -1323,6 +1324,7 @@ class TestSDKOptionsForInlineProtocol:
 
         assert captured_options.get("setting_sources") == ["project"]
 
+    @pytest.mark.personal_run
     @pytest.mark.asyncio
     async def test_sdk_excludes_skill_tool(self, interface, tmp_worktree):
         """Test Skill tool is not in allowed_tools."""
@@ -1361,6 +1363,7 @@ class TestSDKOptionsForInlineProtocol:
         assert "Write" in allowed_tools
         assert "Glob" in allowed_tools
 
+    @pytest.mark.personal_run
     @pytest.mark.asyncio
     async def test_sdk_max_turns_reduced(self, interface, tmp_worktree):
         """Test max_turns is reduced for simpler inline protocol."""

@@ -143,6 +143,7 @@ def _routine_fleet_route(m0_routine_fleet_route):
 class TestSpecialistToolUseBlockLogging:
     """heartbeat_label_override gates ToolUseBlock log emission."""
 
+    @pytest.mark.personal_run
     @pytest.mark.asyncio
     async def test_specialist_path_emits_tool_use_log(self, tmp_path, caplog):
         """When heartbeat_label_override is set, each ToolUseBlock is logged
@@ -184,6 +185,7 @@ class TestSpecialistToolUseBlockLogging:
         assert "ToolUseBlock Read" in msg
         assert "['file_path']" in msg
 
+    @pytest.mark.personal_run
     @pytest.mark.asyncio
     async def test_specialist_path_logs_multiple_tool_blocks(
         self, tmp_path, caplog
@@ -231,6 +233,7 @@ class TestSpecialistToolUseBlockLogging:
             for m in tool_use_lines
         )
 
+    @pytest.mark.personal_run
     @pytest.mark.asyncio
     async def test_specialist_path_handles_non_dict_input(
         self, tmp_path, caplog
@@ -272,6 +275,7 @@ class TestSpecialistToolUseBlockLogging:
         ]
         assert matching, "expected a WeirdTool log line"
 
+    @pytest.mark.personal_run
     @pytest.mark.asyncio
     async def test_non_specialist_path_does_not_double_log(
         self, tmp_path, caplog
@@ -327,6 +331,7 @@ class TestSpecialistToolUseBlockLogging:
             f"{new_emit_lines}"
         )
 
+    @pytest.mark.personal_run
     @pytest.mark.asyncio
     async def test_specialist_path_ignores_text_blocks(
         self, tmp_path, caplog

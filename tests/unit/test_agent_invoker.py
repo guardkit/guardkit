@@ -717,6 +717,7 @@ class TestReportValidation:
 class TestSDKIntegration:
     """Test SDK integration patterns."""
 
+    @pytest.mark.personal_run
     @pytest.mark.asyncio
     async def test_sdk_invocation_calls_query(self, agent_invoker):
         """SDK invocation calls claude_agent_sdk.query() with correct options."""
@@ -763,6 +764,7 @@ class TestSDKIntegration:
             assert options_kwargs["model"] == "claude-sonnet-4-5-20250929"
             assert options_kwargs["setting_sources"] == ["project"]
 
+    @pytest.mark.personal_run
     @pytest.mark.asyncio
     async def test_sdk_handles_cli_not_found(self, agent_invoker):
         """SDK raises AgentInvocationError when CLI not found."""
@@ -793,6 +795,7 @@ class TestSDKIntegration:
 
             assert "Claude Code CLI not installed" in str(exc_info.value)
 
+    @pytest.mark.personal_run
     @pytest.mark.asyncio
     async def test_sdk_handles_import_error(self, agent_invoker):
         """SDK raises AgentInvocationError with diagnostic info when SDK not installed.
@@ -823,6 +826,7 @@ class TestSDKIntegration:
             assert "sys.path" in error_message
             assert "pip install" in error_message
 
+    @pytest.mark.personal_run
     @pytest.mark.asyncio
     async def test_sdk_import_error_includes_diagnostic_info(self, agent_invoker):
         """SDK ImportError includes complete diagnostic information.
@@ -857,6 +861,7 @@ class TestSDKIntegration:
             assert "pip install guardkit-py[autobuild]" in error_message, \
                 "Missing 'pip install guardkit-py[autobuild]' installation option"
 
+    @pytest.mark.personal_run
     @pytest.mark.asyncio
     async def test_sdk_handles_timeout(self, agent_invoker):
         """SDK raises SDKTimeoutError when invocation times out."""
@@ -888,6 +893,7 @@ class TestSDKIntegration:
 
             assert "timeout" in str(exc_info.value).lower()
 
+    @pytest.mark.personal_run
     @pytest.mark.asyncio
     async def test_coach_uses_bypass_permissions(self, agent_invoker, worktree_path, sample_player_report, sample_coach_approval):
         """Coach invocation uses bypassPermissions mode."""
@@ -1510,6 +1516,7 @@ class TestInvokeTaskWorkImplement:
         text_block = mock_sdk.TextBlock(text)
         return mock_sdk.AssistantMessage([text_block])
 
+    @pytest.mark.personal_run
     @pytest.mark.asyncio
     async def test_invoke_task_work_implement_success(self, invoker, worktree_path):
         """_invoke_task_work_implement returns success when SDK query completes."""
@@ -1562,6 +1569,7 @@ class TestInvokeTaskWorkImplement:
             # Inline protocol eliminates need for user setting_sources
             assert options_kwargs["setting_sources"] == ["project"]
 
+    @pytest.mark.personal_run
     @pytest.mark.asyncio
     async def test_invoke_task_work_implement_sdk_process_error(self, invoker):
         """_invoke_task_work_implement returns failure on SDK ProcessError."""
@@ -1589,6 +1597,7 @@ class TestInvokeTaskWorkImplement:
             assert result.success is False
             assert "SDK process failed" in result.error
 
+    @pytest.mark.personal_run
     @pytest.mark.asyncio
     async def test_invoke_task_work_implement_timeout(self, invoker):
         """_invoke_task_work_implement raises SDKTimeoutError on timeout."""
@@ -1611,6 +1620,7 @@ class TestInvokeTaskWorkImplement:
 
             assert "timeout" in str(exc_info.value).lower()
 
+    @pytest.mark.personal_run
     @pytest.mark.asyncio
     async def test_invoke_task_work_implement_cli_not_found(self, invoker):
         """_invoke_task_work_implement handles missing Claude CLI."""
@@ -1633,6 +1643,7 @@ class TestInvokeTaskWorkImplement:
             assert result.success is False
             assert "Claude Code CLI not installed" in result.error
 
+    @pytest.mark.personal_run
     @pytest.mark.asyncio
     async def test_invoke_task_work_implement_sdk_import_error(self, invoker):
         """_invoke_task_work_implement handles missing SDK import."""
@@ -1673,6 +1684,7 @@ class TestInvokeTaskWorkImplement:
             # Verify it's NOT the old skill invocation
             assert "/task-work" not in captured_prompt
 
+    @pytest.mark.personal_run
     @pytest.mark.asyncio
     async def test_invoke_task_work_implement_json_decode_error(self, invoker):
         """_invoke_task_work_implement handles SDK JSON decode errors."""
@@ -1695,6 +1707,7 @@ class TestInvokeTaskWorkImplement:
             assert result.success is False
             assert "Failed to parse SDK response" in result.error
 
+    @pytest.mark.personal_run
     @pytest.mark.asyncio
     async def test_invoke_task_work_implement_collects_output(self, invoker):
         """_invoke_task_work_implement collects message content for parsing."""
@@ -1725,6 +1738,7 @@ class TestInvokeTaskWorkImplement:
             assert result.output.get("coverage") == 90.0
             assert result.output.get("quality_gates_passed") is True
 
+    @pytest.mark.personal_run
     @pytest.mark.asyncio
     async def test_invoke_task_work_implement_writes_results_file(self, invoker, worktree_path):
         """_invoke_task_work_implement writes task_work_results.json after success."""
@@ -1759,6 +1773,7 @@ class TestInvokeTaskWorkImplement:
         assert "timestamp" in content
         assert "completed" in content
 
+    @pytest.mark.personal_run
     @pytest.mark.asyncio
     async def test_invoke_task_work_implement_results_file_has_quality_gates(self, invoker, worktree_path):
         """_invoke_task_work_implement writes results with quality gate metrics."""
@@ -9531,6 +9546,7 @@ class _CapturingHeartbeat:
 class TestHeartbeatLabelOverride:
     """Verify TASK-ABSR-DIAG: _invoke_with_role honours the override kwarg."""
 
+    @pytest.mark.personal_run
     @pytest.mark.asyncio
     async def test_invoke_with_role_uses_override_when_provided(
         self, agent_invoker
@@ -9556,6 +9572,7 @@ class TestHeartbeatLabelOverride:
 
         assert _CapturingHeartbeat.captured_phase == "specialist:foo invocation"
 
+    @pytest.mark.personal_run
     @pytest.mark.asyncio
     async def test_invoke_with_role_default_phase_when_no_override(
         self, agent_invoker
@@ -9581,6 +9598,7 @@ class TestHeartbeatLabelOverride:
 
         assert _CapturingHeartbeat.captured_phase == "Player invocation"
 
+    @pytest.mark.personal_run
     @pytest.mark.asyncio
     async def test_invoke_with_role_default_phase_for_coach(
         self, agent_invoker
