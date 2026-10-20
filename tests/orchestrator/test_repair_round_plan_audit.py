@@ -53,7 +53,10 @@ from guardkit.orchestrator.repair_round import (
     begin_repair_round,
     implicated_paths,
 )
-from installer.core.commands.lib.plan_audit import _repair_round_split
+from installer.core.commands.lib.plan_audit import (
+    _repair_round_protected,
+    _repair_round_split,
+)
 
 TASK_ID = "TASK-SHELF-001"
 PLANNED_CREATE = ["web/src/ShelfPage.tsx", "web/src/ShelfCard.tsx"]
@@ -117,7 +120,7 @@ class TestImplicatedPaths:
 
 class TestTheSplit:
     def test_each_kind_of_file(self) -> None:
-        counted, approved, protected, for_reviewer = _repair_round_split(
+        counted, approved, for_reviewer = _repair_round_split(
             {
                 "web/src/format.ts",          # made by the ordinary approved round
                 "db/migrations/0001_x.sql",   # made by the approved round, protected
@@ -125,7 +128,6 @@ class TestTheSplit:
                 "scripts/seed-owner.sh",      # made by this round
                 "api/billing/invoice.ts",     # made by this round
                 "scripts/Dockerfile",         # made by this round, protected
-                "tests/e2e/.env.test",        # made by this round, protected
             },
             existed_at_round_start={
                 "web/src/format.ts", "db/migrations/0001_x.sql", "tests/e2e/helpers.ts",
@@ -135,8 +137,21 @@ class TestTheSplit:
         # The ordinary round's files count as they did when it was approved.
         assert counted == {"web/src/format.ts", "db/migrations/0001_x.sql"}
         assert approved == {"tests/e2e/helpers.ts"}
-        assert protected == {"scripts/Dockerfile", "tests/e2e/.env.test"}
+        # A protected file is never left to the reviewer.
         assert for_reviewer == {"scripts/seed-owner.sh", "api/billing/invoice.ts"}
+
+    def test_protected_files_come_from_what_git_says_the_round_changed(self) -> None:
+        assert _repair_round_protected(
+            [
+                "db/migrations/0003_seed.sql",  # made by the round
+                "deploy/Dockerfile",            # changed by the round
+                "package-lock.json",            # changed, named by the plan
+                ".env.test",                    # changed, approved by an earlier repair
+                "tests/e2e/sign-in.ts",         # not protected
+            ],
+            planned={"package-lock.json"},
+            approved_by_repairs={".env.test"},
+        ) == {"db/migrations/0003_seed.sql", "deploy/Dockerfile"}
 
 
 # ---------------------------------------------------------------------------
@@ -179,7 +194,9 @@ def repo(tmp_path: Path) -> Path:
     return _make_repo(tmp_path)
 
 
-def _make_repo(tmp_path: Path, declare_modify: bool = True) -> Path:
+def _make_repo(
+    tmp_path: Path, declare_modify: bool = True, declare_create: bool = True
+) -> Path:
     root = tmp_path / "repo"
     root.mkdir()
     _git(root, "init", "-q", "-b", "autobuild/FEAT-SHELF")
@@ -197,8 +214,12 @@ def _make_repo(tmp_path: Path, declare_modify: bool = True) -> Path:
         f"tasks/in_progress/{TASK_ID}.md",
         "---\n"
         f"id: {TASK_ID}\ntitle: Build the shelf page\nstatus: in_progress\n"
-        "---\n\n## Files to Create\n\n"
-        + "".join(f"- `{p}`\n" for p in PLANNED_CREATE)
+        "---\n\n"
+        + (
+            "## Files to Create\n\n" + "".join(f"- `{p}`\n" for p in PLANNED_CREATE)
+            if declare_create
+            else ""
+        )
         + (
             "\n## Files to Modify\n\n" + "".join(f"- `{p}`\n" for p in PLANNED_MODIFY)
             if declare_modify
@@ -432,6 +453,42 @@ class TestTheAuditInARepairRound:
         ]
         # Without the carried approvals the same re-entry would be high.
         assert _verdict(repo, begin_repair_round(repo, 3, "x"))["severity"] == "high"
+
+    def test_a_modify_only_task_cannot_make_a_migration_in_a_repair_round(
+        self, tmp_path: Path
+    ) -> None:
+        repo = _make_repo(tmp_path, declare_create=False)
+        _write(repo, "web/src/App.tsx", "export const App = () => 'shelf';\n")
+        _checkpoint(repo, _commit(repo, "turn 1 checkpoint"))
+        round_ = _reopen(repo)
+        _write(repo, "db/migrations/0003_seed.sql", "insert into books values (1);\n")
+        _write(repo, "tests/e2e/sign-in.ts", "export const s = 1;\n")
+
+        verdict = _verdict(repo, round_)
+
+        assert verdict["status"] == "violation"
+        assert verdict["severity"] == "high"
+        assert "db/migrations/0003_seed.sql" in verdict["extra_files"]
+        assert not _gate_passes(repo, verdict)
+        # Today's ordinary turn says nothing about it (no "files to create"
+        # section): reported, not changed by this work.
+        assert _verdict(repo)["severity"] == "low"
+
+    def test_a_repair_round_cannot_edit_a_protected_file(self, tmp_path: Path) -> None:
+        repo = _make_repo(tmp_path, declare_create=False)
+        _write(repo, "deploy/Dockerfile", "FROM scratch\n")
+        _write(repo, "web/src/App.tsx", "export const App = () => 'shelf';\n")
+        _checkpoint(repo, _commit(repo, "turn 1 checkpoint"))
+        round_ = _reopen(repo)
+        _write(repo, "deploy/Dockerfile", "FROM scratch\nRUN echo changed\n")
+
+        verdict = _verdict(repo, round_)
+
+        assert verdict["severity"] == "high"
+        assert "deploy/Dockerfile" in verdict["extra_files"]
+        assert not _gate_passes(repo, verdict)
+        # The same edit on an ordinary turn is a low "unplanned modification".
+        assert _verdict(repo)["severity"] == "low"
 
     def test_starting_a_round_without_git_never_raises(self, tmp_path: Path) -> None:
         assert begin_repair_round(tmp_path / "no-repo", 2, GATE_OUTPUT) is None

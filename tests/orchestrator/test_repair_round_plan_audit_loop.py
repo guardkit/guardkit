@@ -77,7 +77,9 @@ def _write(repo: Path, rel: str, text: str = "// invented\n") -> None:
     path.write_text(text)
 
 
-def make_project(tmp_path: Path, declare_modify: bool = True) -> Path:
+def make_project(
+    tmp_path: Path, declare_modify: bool = True, declare_create: bool = True
+) -> Path:
     """A small invented web project on its feature branch."""
     repo = tmp_path / "main" / ".guardkit" / "worktrees" / FEATURE_ID
     repo.mkdir(parents=True)
@@ -87,6 +89,7 @@ def make_project(tmp_path: Path, declare_modify: bool = True) -> Path:
     _write(repo, "scripts/check-feature.sh", "#!/bin/sh\nbash scripts/seed.sh\n")
     _write(repo, "scripts/seed.sh", "#!/bin/sh\necho seeded\n")
     _write(repo, "tests/e2e/shelf.spec.ts", "test('shelf', () => {});\n")
+    _write(repo, "deploy/Dockerfile", "FROM scratch\n")
     _write(repo, ".gitignore", "node_modules/\n")
     _write(
         repo,
@@ -104,8 +107,11 @@ def make_project(tmp_path: Path, declare_modify: bool = True) -> Path:
         "status: in_progress\n"
         "task_type: scaffolding\n"
         "---\n\n# Build the shelf page\n\n"
-        "## Files to Create\n\n"
-        + "".join(f"- `{p}`\n" for p in PLANNED_CREATE)
+        + (
+            "## Files to Create\n\n" + "".join(f"- `{p}`\n" for p in PLANNED_CREATE)
+            if declare_create
+            else ""
+        )
         + (
             "\n## Files to Modify\n\n" + "".join(f"- `{p}`\n" for p in PLANNED_MODIFY)
             if declare_modify
@@ -645,3 +651,43 @@ class TestTheReviewSectionMustReachTheModel:
         assert "noise line 399" in section  # the end of the output is kept
         assert "noise line 100 " not in section  # the rest was cut
         assert outcome["decision"] == "approved"
+
+
+class TestProtectedFilesWhateverTheTaskDeclares:
+    """A task that declares only files to modify has no "files to create"
+    section, so the ordinary audit lists no new files. In a repair round a
+    protected file made or changed is still refused, even when the reviewer
+    approves."""
+
+    def _modify_only(self, tmp_path: Path) -> Path:
+        repo = make_project(tmp_path, declare_create=False)
+        outcome = run_round(repo, {"apps/web/src/App.tsx": "export const App = () => 1;\n"})
+        assert outcome["decision"] == "approved", outcome["history"][-1].coach_result.report
+        return repo
+
+    def test_a_new_migration_is_refused(self, tmp_path: Path) -> None:
+        repo = self._modify_only(tmp_path)
+        outcome = reopen_and_repair(
+            repo,
+            {
+                "tests/e2e/sign-in.ts": "export const signIn = 1;\n",
+                "db/migrations/0003_seed_books.sql": "insert into books values (1);\n",
+            },
+            model_verdict=APPROVE,
+        )
+        assert outcome["decision"] != "approved"
+        issues = _plan_audit_issues(outcome["history"])
+        assert issues and issues[0]["severity"] == "must_fix"
+        assert "db/migrations/0003_seed_books.sql" in issues[0]["description"]
+
+    def test_an_edited_dockerfile_is_refused(self, tmp_path: Path) -> None:
+        repo = self._modify_only(tmp_path)
+        outcome = reopen_and_repair(
+            repo,
+            {"deploy/Dockerfile": "FROM scratch\nRUN echo seeded\n"},
+            model_verdict=APPROVE,
+        )
+        assert outcome["decision"] != "approved"
+        issues = _plan_audit_issues(outcome["history"])
+        assert issues and issues[0]["severity"] == "must_fix"
+        assert "deploy/Dockerfile" in issues[0]["description"]

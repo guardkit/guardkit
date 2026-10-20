@@ -274,8 +274,11 @@ def _beside_the_plan(extra: Set[str], planned: Set[str]) -> Set[str]:
 #     for the reviewer, whose prompt for the turn says it is a repair round and
 #     asks it to refuse the turn if any such file is not needed to make the
 #     failing check pass (AgentInvoker._build_coach_prompt);
-#   * a protected extra file (see _is_protected above) the round made is high,
-#     whatever else is true: a repair round never makes one unplanned;
+#   * a protected file (see _is_protected above) the round made, changed or
+#     deleted that the plan does not name is high, whatever the reviewer says
+#     and whatever file sections the task document has: it is read from git
+#     since the round started (_repair_round_protected), like the reviewer's
+#     list, unless an earlier approved repair round already changed it;
 #   * an extra file an earlier repair round of this task made and that round
 #     was approved with is not counted again (named in a low discrepancy of
 #     its own); the files are handed over with the round, in memory;
@@ -294,7 +297,7 @@ def _beside_the_plan(extra: Set[str], planned: Set[str]) -> Set[str]:
 _FOR_THE_REVIEWER_MESSAGE = (
     "made by this repair round, for the reviewer to judge against the failing check"
 )
-_PROTECTED_IN_REPAIR_MESSAGE = "protected, made by this repair round"
+_PROTECTED_IN_REPAIR_MESSAGE = "protected, made or changed by this repair round"
 _APPROVED_BY_A_REPAIR_MESSAGE = "approved by an earlier repair round of this task"
 
 
@@ -302,15 +305,15 @@ def _repair_round_split(
     extra: Set[str],
     existed_at_round_start: Set[str],
     approved_by_repairs: Set[str] = frozenset(),
-) -> "tuple[Set[str], Set[str], Set[str], Set[str]]":
-    """Split a repair round's extra files:
-    ``(counted, approved, protected, for_reviewer)``.
+) -> "tuple[Set[str], Set[str], Set[str]]":
+    """Split a repair round's extra files: ``(counted, approved, for_reviewer)``.
 
     ``counted`` were in the repository when the round started, were not
     approved by an earlier repair round, and count as on an ordinary turn;
-    ``approved`` were approved by an earlier repair round; ``protected`` are
-    protected files this round made, always high; ``for_reviewer`` is every
-    other file this round made. See the rule above.
+    ``approved`` were approved by an earlier repair round; ``for_reviewer`` is
+    every non-protected file this round made. A protected file is in none of
+    the last two: it is refused through :func:`_repair_round_protected`. See
+    the rule above.
     """
     earlier = {path for path in extra if path in existed_at_round_start}
     approved = {
@@ -318,8 +321,28 @@ def _repair_round_split(
         if path in approved_by_repairs and not _is_protected(path)
     }
     made = extra - earlier
-    protected = {path for path in made if _is_protected(path)}
-    return earlier - approved, approved, protected, made - protected
+    return earlier - approved, approved, {p for p in made if not _is_protected(p)}
+
+
+def _repair_round_protected(
+    changed_this_round: List[str],
+    planned: Set[str],
+    approved_by_repairs: Set[str],
+) -> Set[str]:
+    """The protected files a repair round made, changed or deleted that the
+    plan does not name and no earlier repair round approved.
+
+    Read from git since the round started (``changed_this_round``), so it holds
+    whichever file sections the task document has: a task that declares only
+    files to modify cannot make a migration in a repair round either.
+    """
+    return {
+        path
+        for path in changed_this_round
+        if _is_protected(path)
+        and path not in planned
+        and path not in approved_by_repairs
+    }
 
 
 class PlanAuditor:
@@ -1023,16 +1046,27 @@ class PlanAuditor:
         # this file). Absent on every ordinary turn.
         repair_facts = actual.get("repair_round")
         approved_by_repair: Set[str] = set()
-        protected_made: Set[str] = set()
+        protected_touched: Set[str] = set()
         for_reviewer: Set[str] = set()
-        if repair_facts and counted_extra:
-            (
-                counted_extra, approved_by_repair, protected_made, for_reviewer
-            ) = _repair_round_split(
-                counted_extra,
-                set(repair_facts.get("existed_at_round_start") or ()),
-                set(repair_facts.get("approved_by_earlier_repairs") or ()),
+        if repair_facts:
+            approved_by_repairs = set(
+                repair_facts.get("approved_by_earlier_repairs") or ()
             )
+            # From git since the round started, whatever sections the task
+            # document has (not from the extra files above, which are empty
+            # when the task declares no files to create).
+            protected_touched = _repair_round_protected(
+                list(repair_facts.get("changed_this_round") or ()),
+                planned_anywhere,
+                approved_by_repairs,
+            )
+            if counted_extra:
+                counted_extra, approved_by_repair, for_reviewer = _repair_round_split(
+                    counted_extra,
+                    set(repair_facts.get("existed_at_round_start") or ()),
+                    approved_by_repairs,
+                )
+                counted_extra -= protected_touched
 
         if counted_extra:
             severity = "medium" if len(counted_extra) <= 2 else "high"
@@ -1060,17 +1094,17 @@ class PlanAuditor:
                 variance=(len(beside) / max(len(planned_files), 1)) * 100,
             ))
 
-        if protected_made:
+        if protected_touched:
             discrepancies.append(Discrepancy(
                 category="files",
                 severity="high",
                 message=(
-                    f"{len(protected_made)} extra file(s) not in plan, "
+                    f"{len(protected_touched)} extra file(s) not in plan, "
                     f"{_PROTECTED_IN_REPAIR_MESSAGE}"
                 ),
                 planned=sorted(list(planned_files)),
-                actual=sorted(list(protected_made)),
-                variance=(len(protected_made) / max(len(planned_files), 1)) * 100,
+                actual=sorted(list(protected_touched)),
+                variance=(len(protected_touched) / max(len(planned_files), 1)) * 100,
             ))
 
         if approved_by_repair:
