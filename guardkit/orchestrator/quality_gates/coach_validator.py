@@ -92,6 +92,7 @@ from guardkit.orchestrator.project_command_env import (
     project_command_environment,
 )
 from guardkit.orchestrator.toolchain_declaration import (
+    CONFIG_RELATIVE_PATH,
     ComponentToolchain,
     ToolchainDeclaration,
     resolve_component_cwd,
@@ -1170,6 +1171,10 @@ class IndependentTestResult:
     # uses. Records THAT it fell back and WHY. Receipt evidence only: no gate,
     # verdict or feedback branch reads it.
     isolation_fallback_reason: Optional[str] = None
+    # Most isolated-copy failures may retry in the worktree. A required
+    # project-configuration snapshot failure sets this false so the command
+    # never runs against mutable configuration after isolation was refused.
+    allow_worktree_fallback: bool = True
     # The command's own exit status, when it ran as a subprocess (12 October
     # 2026). ``None`` when there was none to read (the agent-shell path, a
     # timeout, a skipped run). Read only by ``failure_receipt`` below.
@@ -1282,6 +1287,7 @@ class IndependentTestResult:
         duration_seconds: float,
         raw_output: Optional[str] = None,
         resolved_interpreter: Optional[str] = None,
+        allow_worktree_fallback: bool = True,
     ) -> "IndependentTestResult":
         """THE CHECK COULD NOT RUN — nothing about the builder's work was
         measured, because the command could not start where it was asked to
@@ -1305,6 +1311,7 @@ class IndependentTestResult:
             resolved_interpreter=resolved_interpreter,
             check_could_not_run=True,
             check_could_not_run_detail=detail,
+            allow_worktree_fallback=allow_worktree_fallback,
         )
 
     @classmethod
@@ -1596,6 +1603,9 @@ class CoachValidationResult:
                     ),
                     "isolation_fallback_reason": (
                         self.independent_tests.isolation_fallback_reason
+                    ),
+                    "allow_worktree_fallback": (
+                        self.independent_tests.allow_worktree_fallback
                     ),
                     "exit_code": self.independent_tests.exit_code,
                     # Repair 7: what the check actually ran against. Evidence
@@ -7061,6 +7071,110 @@ class CoachValidator:
                 )
         return linked
 
+    def _copy_project_config_into_snapshot(
+        self, snapshot_root: Path
+    ) -> Optional[str]:
+        """Copy the optional project config as independent regular bytes.
+
+        ``None`` means either success or genuine absence. A returned string
+        is a plain failure reason; the caller refuses worktree fallback before
+        the project command starts.
+        """
+        source = self.worktree_path / CONFIG_RELATIVE_PATH
+        relative = str(CONFIG_RELATIVE_PATH)
+
+        try:
+            source.lstat()
+        except (FileNotFoundError, NotADirectoryError):
+            return None
+        except OSError as exc:
+            return (
+                f"project configuration {relative} could not be looked up "
+                f"({type(exc).__name__}: {exc})"
+            )
+
+        source_fd: Optional[int] = None
+        try:
+            # Follow a source symlink, as the declaration loaders do, but a
+            # pipe/device must never block or be accepted as configuration.
+            source_fd = os.open(source, os.O_RDONLY | _O_NONBLOCK)
+        except (FileNotFoundError, NotADirectoryError):
+            # A dangling source link is absent to the strict and non-strict
+            # declaration loaders, so it is absent here too.
+            return None
+        except OSError as exc:
+            return (
+                f"project configuration {relative} could not be opened "
+                f"({type(exc).__name__}: {exc})"
+            )
+
+        try:
+            opened = os.fstat(source_fd)
+            if not stat.S_ISREG(opened.st_mode):
+                return (
+                    f"project configuration {relative} is not a regular "
+                    "file when opened"
+                )
+            payload = bytearray()
+            while True:
+                chunk = os.read(source_fd, 1024 * 1024)
+                if not chunk:
+                    break
+                payload.extend(chunk)
+        except OSError as exc:
+            return (
+                f"project configuration {relative} could not be read "
+                f"({type(exc).__name__}: {exc})"
+            )
+        finally:
+            if source_fd is not None:
+                try:
+                    os.close(source_fd)
+                except OSError:
+                    pass
+
+        destination_dir = snapshot_root / CONFIG_RELATIVE_PATH.parent
+        try:
+            destination_dir.mkdir(parents=True, exist_ok=True)
+            directory_info = destination_dir.lstat()
+        except OSError as exc:
+            return (
+                f"project configuration {relative} could not create or "
+                f"inspect its snapshot directory ({type(exc).__name__}: {exc})"
+            )
+        if not stat.S_ISDIR(directory_info.st_mode):
+            return (
+                f"project configuration {relative} snapshot directory is "
+                "not a real directory"
+            )
+
+        destination = snapshot_root / CONFIG_RELATIVE_PATH
+        destination_fd: Optional[int] = None
+        try:
+            destination_fd = os.open(
+                destination,
+                os.O_WRONLY | os.O_CREAT | os.O_EXCL | _O_NOFOLLOW,
+                stat.S_IMODE(opened.st_mode) or stat.S_IRUSR,
+            )
+            remaining = memoryview(payload)
+            while remaining:
+                written = os.write(destination_fd, remaining)
+                if written <= 0:
+                    raise OSError("write returned no progress")
+                remaining = remaining[written:]
+        except OSError as exc:
+            return (
+                f"project configuration {relative} could not be written to "
+                f"the isolated snapshot ({type(exc).__name__}: {exc})"
+            )
+        finally:
+            if destination_fd is not None:
+                try:
+                    os.close(destination_fd)
+                except OSError:
+                    pass
+        return None
+
     @staticmethod
     def _command_runs_pytest(test_cmd: str) -> bool:
         """True when the declared command actually invokes pytest.
@@ -7436,6 +7550,28 @@ class CoachValidator:
                         logger.warning(
                             f"[TASK-ABFIX-005] Skipping {item.name} during isolation copy: {copy_err}"
                         )
+
+                config_copy_error = self._copy_project_config_into_snapshot(
+                    tmpdir_path
+                )
+                if config_copy_error is not None:
+                    duration = time.time() - start_time
+                    detail = (
+                        f"The check could not run. Command: {test_cmd}. "
+                        f"Directory: {self._component_run_cwd(tmpdir_path)} "
+                        f"(an isolated copy of the worktree). What was "
+                        f"missing: {config_copy_error}."
+                    )
+                    logger.error("%s", detail)
+                    return IndependentTestResult.could_not_run(
+                        test_command=test_cmd,
+                        detail=detail,
+                        duration_seconds=duration,
+                        resolved_interpreter=self._resolved_interpreter_for(
+                            test_cmd
+                        ),
+                        allow_worktree_fallback=False,
+                    )
 
                 logger.info(
                     f"[TASK-ABFIX-005] Worktree snapshot created at {tmpdir_path}"
@@ -7949,6 +8085,8 @@ class CoachValidator:
                 )
                 isolated = self._run_isolated_tests(test_cmd)
                 if not isolated.check_could_not_run:
+                    return isolated
+                if not isolated.allow_worktree_fallback:
                     return isolated
                 # THE FALLBACK. A wave of one already runs this check in the
                 # real worktree and it works; a wave of two must not be worse

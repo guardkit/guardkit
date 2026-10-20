@@ -23,11 +23,13 @@ These tests run the real code with real commands (no mocked subprocess):
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import shlex
 import subprocess
 import tempfile
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -132,6 +134,19 @@ def _leftovers(parent: Path) -> list[str]:
     return sorted(p.name for p in parent.iterdir() if PREFIX in p.name)
 
 
+def _executable(path: Path, body: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(body, encoding="utf-8")
+    path.chmod(0o755)
+
+
+def _record_bootstrap_runner(worktree: Path, runner: Path) -> None:
+    (worktree / ".guardkit" / "bootstrap_state.json").write_text(
+        json.dumps({"success": True, "venv_python": str(runner)}),
+        encoding="utf-8",
+    )
+
+
 class TestTheCopyLivesBesideTheWorktree:
     def test_copy_is_made_beside_the_worktree_and_the_command_runs_in_it(
         self, tmp_path, git_layout, system_temp
@@ -196,6 +211,216 @@ class TestTheCopyLivesBesideTheWorktree:
 
         assert (out / "toplevel_rc").read_text().strip() != "0"
         assert str(clone) not in (out / "toplevel").read_text()
+
+
+class TestProjectConfigurationSnapshot:
+    def test_shell_reads_regular_snapshot_without_generated_state_or_git(
+        self, tmp_path, git_layout, system_temp
+    ):
+        """A language-neutral command gets bytes, never mutable state/links."""
+        _, worktree = git_layout
+        guardkit = worktree / ".guardkit"
+        guardkit.mkdir()
+        source = guardkit / "source.yaml"
+        source.write_text("marker: original\n", encoding="utf-8")
+        (guardkit / "config.yaml").symlink_to(source.name)
+        for generated in ("autobuild", "autobuild-private", "worktrees"):
+            (guardkit / generated).mkdir()
+            (guardkit / generated / "state").write_text("private\n")
+        (guardkit / "bootstrap_state.json").write_text("{}\n")
+        ran = tmp_path / "shell-ran"
+        q = shlex.quote
+        command = " && ".join(
+            (
+                "grep -Fqx 'marker: original' .guardkit/config.yaml",
+                "test -f .guardkit/config.yaml",
+                "test ! -L .guardkit/config.yaml",
+                "test ! -e .git",
+                "test ! -e .guardkit/autobuild",
+                "test ! -e .guardkit/autobuild-private",
+                "test ! -e .guardkit/worktrees",
+                "test ! -e .guardkit/bootstrap_state.json",
+                f"printf 'marker: changed\\n' > {q(str(source))}",
+                "grep -Fqx 'marker: original' .guardkit/config.yaml",
+                f"touch {q(str(ran))}",
+            )
+        )
+
+        result = _validator(worktree, command)._run_isolated_tests(command)
+
+        assert result.tests_passed, result.test_output_summary
+        assert ran.exists()
+        assert source.read_text() == "marker: changed\n"
+
+    @pytest.mark.parametrize("dangling", [False, True])
+    def test_absent_or_dangling_config_adds_no_guardkit_directory(
+        self, tmp_path, system_temp, dangling
+    ):
+        worktree = tmp_path / "project"
+        (worktree / ".guardkit" / "autobuild").mkdir(parents=True)
+        (worktree / ".guardkit" / "autobuild" / "state").write_text("x\n")
+        if dangling:
+            (worktree / ".guardkit" / "config.yaml").symlink_to("missing.yaml")
+
+        result = _validator(worktree, "test ! -e .guardkit")._run_isolated_tests(
+            "test ! -e .guardkit"
+        )
+
+        assert result.tests_passed, result.test_output_summary
+
+    def test_config_and_nested_bootstrap_environment_both_work(
+        self, tmp_path, system_temp
+    ):
+        worktree = tmp_path / "project"
+        guardkit = worktree / ".guardkit"
+        guardkit.mkdir(parents=True)
+        (guardkit / "config.yaml").write_text("marker: nested\n")
+        runner = guardkit / "buildenv" / "bin" / "runner"
+        _executable(runner, "#!/bin/sh\necho runner-ok\n")
+        _record_bootstrap_runner(worktree, runner)
+        command = (
+            "grep -Fqx 'marker: nested' .guardkit/config.yaml"
+            " && test ! -L .guardkit/config.yaml"
+            " && test ! -e .guardkit/bootstrap_state.json"
+            " && .guardkit/buildenv/bin/runner"
+        )
+
+        result = _validator(worktree, command)._run_isolated_tests(command)
+
+        assert result.tests_passed, result.test_output_summary
+        assert "runner-ok" in (result.raw_output or "")
+
+    def test_whole_guardkit_bootstrap_layout_keeps_exit_127_fallback(
+        self, tmp_path, system_temp
+    ):
+        worktree = tmp_path / "project"
+        guardkit = worktree / ".guardkit"
+        guardkit.mkdir(parents=True)
+        (guardkit / "config.yaml").write_text("marker: whole-root\n")
+        runner = guardkit / "bin" / "runner"
+        _executable(runner, "#!/bin/sh\necho worktree-runner-ok\n")
+        _record_bootstrap_runner(worktree, runner)
+        suite = worktree / "qa" / "run-suite.sh"
+        _executable(
+            suite,
+            "#!/bin/sh\n"
+            "grep -Fqx 'marker: whole-root' .guardkit/config.yaml || exit 1\n"
+            "if [ ! -x .guardkit/bin/runner ]; then\n"
+            "  echo 'run-suite: no runner at .guardkit/bin/runner' >&2\n"
+            "  exit 127\n"
+            "fi\n"
+            "exec .guardkit/bin/runner\n",
+        )
+
+        result = _validator(worktree, "qa/run-suite.sh").run_independent_tests()
+
+        assert result.tests_passed, result.test_output_summary
+        assert "worktree-runner-ok" in (result.raw_output or "")
+        assert result.isolation_fallback_reason is not None
+        assert result.check_could_not_run is False
+
+    def test_destination_guardkit_link_is_refused_before_command(
+        self, tmp_path, system_temp, monkeypatch
+    ):
+        worktree = tmp_path / "project"
+        (worktree / ".guardkit").mkdir(parents=True)
+        (worktree / ".guardkit" / "config.yaml").write_text("marker: source\n")
+        ran = tmp_path / "command-ran"
+        snapshot = tmp_path / "snapshot"
+        snapshot.mkdir()
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        (snapshot / ".guardkit").symlink_to(outside, target_is_directory=True)
+        holder = tmp_path / "holder"
+        holder.mkdir()
+
+        @contextmanager
+        def prepared_location():
+            yield snapshot, holder
+
+        validator = _validator(worktree, f"touch {shlex.quote(str(ran))}")
+        monkeypatch.setattr(validator, "_isolated_copy_location", prepared_location)
+
+        result = validator._run_isolated_tests(validator.test_command)
+
+        assert result.check_could_not_run
+        assert result.allow_worktree_fallback is False
+        assert "not a real directory" in (result.check_could_not_run_detail or "")
+        assert not ran.exists()
+        assert not (outside / "config.yaml").exists()
+
+    @pytest.mark.timeout(5)
+    @pytest.mark.parametrize("special", ["fifo", "symlink-loop"])
+    def test_special_config_is_promptly_refused_without_fallback(
+        self, tmp_path, system_temp, special
+    ):
+        worktree = tmp_path / "project"
+        (worktree / ".guardkit").mkdir(parents=True)
+        config = worktree / ".guardkit" / "config.yaml"
+        if special == "fifo":
+            os.mkfifo(config)
+        else:
+            config.symlink_to("config.yaml")
+        ran = tmp_path / "command-ran"
+        command = f"touch {shlex.quote(str(ran))}"
+
+        result = _validator(worktree, command).run_independent_tests()
+
+        assert result.check_could_not_run
+        assert result.allow_worktree_fallback is False
+        assert ".guardkit/config.yaml" in (result.check_could_not_run_detail or "")
+        assert result.isolation_fallback_reason is None
+        assert not ran.exists()
+
+    @pytest.mark.parametrize(
+        ("stage", "error"),
+        (
+            pytest.param("lookup", PermissionError("lookup refused"), id="lookup"),
+            pytest.param("read", OSError("read refused"), id="read"),
+            pytest.param(
+                "read", FileNotFoundError("read vanished"), id="read-enoent"
+            ),
+            pytest.param(
+                "read", NotADirectoryError("read parent changed"), id="read-enotdir"
+            ),
+            pytest.param("write", OSError("write refused"), id="write"),
+        ),
+    )
+    def test_config_io_errors_refuse_real_parallel_fallback(
+        self, tmp_path, system_temp, monkeypatch, stage, error
+    ):
+        worktree = tmp_path / "project"
+        (worktree / ".guardkit").mkdir(parents=True)
+        source = worktree / ".guardkit" / "config.yaml"
+        source.write_text("marker: errors\n")
+        ran = tmp_path / "command-ran"
+        command = f"touch {shlex.quote(str(ran))}"
+
+        if stage == "lookup":
+            real_lstat = Path.lstat
+
+            def refused_lstat(path):
+                if path == source:
+                    raise error
+                return real_lstat(path)
+
+            monkeypatch.setattr(Path, "lstat", refused_lstat)
+        elif stage == "read":
+            monkeypatch.setattr(
+                os, "read", lambda _fd, _size: (_ for _ in ()).throw(error)
+            )
+        else:
+            monkeypatch.setattr(
+                os, "write", lambda _fd, _data: (_ for _ in ()).throw(error)
+            )
+
+        result = _validator(worktree, command).run_independent_tests()
+
+        assert result.check_could_not_run
+        assert result.allow_worktree_fallback is False
+        assert str(error) in (result.check_could_not_run_detail or "")
+        assert result.isolation_fallback_reason is None
+        assert not ran.exists()
 
 
 class TestTheCopyIsRemoved:
