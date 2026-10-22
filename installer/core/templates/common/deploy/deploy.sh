@@ -20,6 +20,13 @@
 #                      RUNNING_IDENTITY_UNKNOWN=<reason>; always exits 0
 #   REVERT=1           refused: this kit keeps no rollback image
 #
+# Long command output (image builds) goes to a log file and only its end is
+# shown, and the marker lines are printed on stdout and again as the last
+# lines of stderr, so the factory's output limits never cut them off.
+#
+# After a promote, this project's older kept images (<env id>-deploy-*) are
+# removed by exact name; nothing is pruned.
+#
 # The compose file is the project's own root compose.yaml. The kit exports
 # APP_PORT (the loopback port the public service must publish) and adds a
 # generated override that labels every container with the identity and, for
@@ -97,14 +104,17 @@ if [[ "$mode" == candidate_down ]]; then
   # Interpolation needs APP_PORT; its value does not matter to `down`.
   export APP_PORT="${CANDIDATE_PORT:-$DEPLOY_CANDIDATE_PORT}"
   override=""
-  kit_compose down --volumes --remove-orphans --timeout 10 >&2
+  kit_log_open
+  trap 'rm -f "$kit_log"' EXIT
+  kit_logged "removing $project" kit_compose down --volumes --remove-orphans --timeout 10
   kit_remove_record "$project"
   echo "deploy: removed $project" >&2
   exit 0
 fi
 
 override="$(mktemp "${TMPDIR:-/tmp}/deploy-override.XXXXXX")"
-trap 'rm -f "$override"' EXIT
+kit_log_open
+trap 'rm -f "$override" "$kit_log"' EXIT
 
 # --- Candidate: build, start, and report what was checked ---------------------------
 if [[ "$mode" == candidate ]]; then
@@ -113,8 +123,8 @@ if [[ "$mode" == candidate ]]; then
   [[ "$CANDIDATE_PORT" != "$DEPLOY_LIVE_PORT" ]] || die "the candidate port is the live port $DEPLOY_LIVE_PORT"
   export APP_PORT="$CANDIDATE_PORT"
   kit_write_override "$override" "$identity" labels
-  kit_compose build >&2
-  kit_compose up --detach --wait --wait-timeout "$DEPLOY_WAIT_SECONDS" --remove-orphans >&2
+  kit_logged "building the candidate" kit_compose build
+  kit_logged "starting the candidate" kit_compose up --detach --wait --wait-timeout "$DEPLOY_WAIT_SECONDS" --remove-orphans
   artifact="$(kit_running_images)"
   # Each checked image is kept under a name made from the identity, so the
   # promote can find it and nothing treats it as unused.
@@ -128,9 +138,10 @@ if [[ "$mode" == candidate ]]; then
   [[ "$label_state" == one && "$label_value" == "$identity" ]] ||
     die "the containers in $project do not all carry $identity (${label_reason:-$label_state})"
   kit_write_record "$project" "$identity" "$APP_PORT"
+  kit_log_tail
   echo "deploy: $project (candidate) up on 127.0.0.1:$APP_PORT as $identity" >&2
-  echo "CHECKED_ARTIFACT=$artifact"
-  echo "DEPLOYED_IDENTITY=$identity"
+  kit_say "CHECKED_ARTIFACT=$artifact"
+  kit_say "DEPLOYED_IDENTITY=$identity"
   exit 0
 fi
 
@@ -150,7 +161,7 @@ for part in "${parts[@]}"; do
   docker tag "${part#*=}" "$(kit_image "${part%%=*}" "$identity")" >&2
 done
 kit_write_override "$override" "$identity" images
-kit_compose up --detach --no-build --pull never --wait --wait-timeout "$DEPLOY_WAIT_SECONDS" --remove-orphans >&2
+kit_logged "starting the live project" kit_compose up --detach --no-build --pull never --wait --wait-timeout "$DEPLOY_WAIT_SECONDS" --remove-orphans
 running="$(kit_running_images)"
 [[ "$(sorted_artifact "$running")" == "$(sorted_artifact "$artifact")" ]] ||
   die "the live project runs $running, not the checked images $artifact"
@@ -160,5 +171,7 @@ kit_label_state || rc=$?
 [[ "$label_state" == one && "$label_value" == "$identity" ]] ||
   die "the containers in $project do not all carry $identity (${label_reason:-$label_state})"
 kit_write_record "$project" "$identity" "$APP_PORT"
+kit_remove_old_images "$(identity_tag "$identity")" || true
+kit_log_tail
 echo "deploy: $project (live) up on 127.0.0.1:$APP_PORT as $identity" >&2
-echo "DEPLOYED_IDENTITY=$identity"
+kit_say "DEPLOYED_IDENTITY=$identity"

@@ -50,8 +50,19 @@ pytestmark = pytest.mark.skipif(shutil.which("bash") is None, reason="needs bash
 FAKE_DOCKER = r'''
 import hashlib, json, os, re, sys
 
-state_path = os.environ["FAKE_STATE"]
-with open(os.environ["FAKE_LOG"], "a") as log:
+# Settings come from the environment, else from fake-env.json beside this
+# file (Forge builds a project program's environment from nothing).
+try:
+    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "fake-env.json")) as fh:
+        CONFIG = json.load(fh)
+except FileNotFoundError:
+    CONFIG = {}
+
+def setting(name, default=None):
+    return os.environ.get(name, CONFIG.get(name, default))
+
+state_path = setting("FAKE_STATE")
+with open(setting("FAKE_LOG"), "a") as log:
     log.write(json.dumps(sys.argv[1:]) + "\n")
 try:
     with open(state_path) as fh:
@@ -63,7 +74,7 @@ def save():
     with open(state_path, "w") as fh:
         json.dump(state, fh)
 
-if os.environ.get("FAKE_DOCKER_DOWN") == "1":
+if setting("FAKE_DOCKER_DOWN") == "1":
     print("Cannot connect to the Docker daemon", file=sys.stderr)
     sys.exit(1)
 
@@ -86,15 +97,19 @@ if args[:1] == ["compose"]:
         if opt == "-f": files.append(val)
         rest = rest[2:]
     sub, opts = rest[0], rest[1:]
-    services = os.environ.get("FAKE_SERVICES", "web").split()
+    services = setting("FAKE_SERVICES", "web").split()
     if sub == "config" and opts == ["--services"]:
         if not os.environ.get("APP_PORT"):
             print("required variable APP_PORT is missing a value", file=sys.stderr); sys.exit(1)
         print("\n".join(reversed(services))); sys.exit(0)
     if sub == "build":
+        flood = int(setting("FAKE_BUILD_OUTPUT_BYTES", "0"))
+        line = "#9 [build 2/9] RUN a long and noisy build step that prints a great deal\n"
+        while flood > 0:
+            sys.stderr.write(line); sys.stdout.write(line); flood -= 2 * len(line)
         sys.exit(0)
     if sub == "up":
-        if os.environ.get("FAKE_UP_FAIL") == "1":
+        if setting("FAKE_UP_FAIL") == "1":
             print("container failed to start", file=sys.stderr); sys.exit(1)
         labels, images, current = {}, {}, None
         for path in files[1:]:
@@ -116,8 +131,8 @@ if args[:1] == ["compose"]:
                 if image not in state["images"]:
                     state["images"].append(image)
             # Simulate a compose run that did not do what it was asked.
-            image = os.environ.get("FAKE_UP_IMAGE", image)
-            label = os.environ.get("FAKE_UP_LABEL", labels.get(svc, ""))
+            image = setting("FAKE_UP_IMAGE", image)
+            label = setting("FAKE_UP_LABEL", labels.get(svc, ""))
             state["containers"].append({"id": f"{project}-{svc}-1", "project": project,
                                         "service": svc, "label": label, "image": image})
         save(); sys.exit(0)
@@ -147,6 +162,20 @@ if args[:1] == ["inspect"]:
     sys.exit(1)
 if args[:2] == ["image", "inspect"]:
     sys.exit(0 if resolve(args[2]) else 1)
+if args[:1] == ["images"]:
+    repo = args[-1]
+    for name in sorted(state["tags"]):
+        if name.rsplit(":", 1)[0] == repo:
+            print(name.rsplit(":", 1)[1])
+    sys.exit(0)
+if args[:2] == ["image", "rm"]:
+    ref = args[2]
+    if ref not in state["tags"]:
+        sys.exit(1)
+    if any(c["image"] == state["tags"][ref] for c in state["containers"]):
+        print("conflict: image is being used by a container", file=sys.stderr); sys.exit(1)
+    del state["tags"][ref]
+    save(); sys.exit(0)
 if args[:1] == ["tag"]:
     image = resolve(args[1])
     if image is None:
@@ -158,10 +187,15 @@ sys.exit(2)
 '''
 
 FAKE_CURL = r'''
-import os, sys
-with open(os.environ["FAKE_CURL_LOG"], "a") as log:
+import json, os, sys
+try:
+    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "fake-env.json")) as fh:
+        CONFIG = json.load(fh)
+except FileNotFoundError:
+    CONFIG = {}
+with open(os.environ.get("FAKE_CURL_LOG", CONFIG.get("FAKE_CURL_LOG")), "a") as log:
     log.write(sys.argv[-1] + "\n")
-sys.stdout.write(os.environ.get("FAKE_CURL_CODE", "200"))
+sys.stdout.write(os.environ.get("FAKE_CURL_CODE", CONFIG.get("FAKE_CURL_CODE", "200")))
 '''
 
 
@@ -631,6 +665,122 @@ def test_installed_scripts_pass_shellcheck(kit: Kit) -> None:
     assert done.returncode == 0, done.stdout + done.stderr
 
 
+# --- Output limits -------------------------------------------------------------------
+
+
+def test_markers_are_the_last_lines_and_build_output_is_trimmed(kit: Kit) -> None:
+    done = kit.run("deploy.sh", {"CANDIDATE": "1", **CANDIDATE_ENV, "DEPLOY_IDENTITY": IDENTITY,
+                                 "FAKE_BUILD_OUTPUT_BYTES": "300000"})
+    assert done.returncode == 0, done.stderr[-2000:]
+    assert len(done.stdout) + len(done.stderr) < 20_000
+    last = done.stderr.splitlines()[-2:]
+    assert last[0].startswith("CHECKED_ARTIFACT=web=sha256:")
+    assert last[1] == f"DEPLOYED_IDENTITY={IDENTITY}"
+    assert "the end of the deploy log" in done.stderr
+
+
+def test_failed_build_shows_the_end_of_its_output(kit: Kit) -> None:
+    done = kit.run("deploy.sh", {"CANDIDATE": "1", **CANDIDATE_ENV, "DEPLOY_IDENTITY": IDENTITY,
+                                 "FAKE_UP_FAIL": "1"})
+    assert done.returncode != 0
+    assert "container failed to start" in done.stderr
+    assert "starting the candidate failed" in done.stderr
+
+
+def _forge_src() -> Path | None:
+    configured = os.environ.get("FORGE_SRC")
+    candidates = [Path(configured)] if configured else []
+    candidates.append(Path(__file__).resolve().parents[3] / "forge" / "src" / "forge")
+    for candidate in candidates:
+        if (candidate / "executor" / "shell_steps.py").is_file():
+            return candidate
+    return None
+
+
+def test_markers_survive_forges_own_output_join_and_trim(kit: Kit, monkeypatch: pytest.MonkeyPatch) -> None:
+    """More than 64 KiB (and more than 1 MiB) of build output, through Forge's
+    real script runner (stdout then stderr, first 1 MiB kept) and the sandbox
+    helper's tail (last 64 KiB), still yields both markers when read with
+    Forge's own reader."""
+    forge = _forge_src()
+    if forge is None:
+        pytest.skip("Forge source not found (sibling checkout or FORGE_SRC)")
+    monkeypatch.syspath_prepend(str(forge.parent))
+    try:
+        from forge.deploy_sidecar.service import OUTPUT_TAIL_CHARS, _tail
+        from forge.executor.shell_steps import _run_script_step
+        from forge.pipeline.deployment_identity import identity_reported_by
+    except ImportError as exc:  # pragma: no cover - depends on Forge's own dependencies
+        pytest.skip(f"Forge could not be imported here: {exc}")
+
+    subprocess.run(["git", "init", "-q", str(kit.project)], check=True)
+    (kit.bin / "fake-env.json").write_text(json.dumps({
+        "FAKE_STATE": str(kit.state),
+        "FAKE_LOG": str(kit.log),
+        "FAKE_CURL_LOG": str(kit.curl_log),
+        "FAKE_BUILD_OUTPUT_BYTES": "2000000",
+    }))
+    monkeypatch.setenv("PATH", f"{kit.bin}:{os.environ['PATH']}")
+
+    def forge_runs(extra_env: dict[str, str]) -> str:
+        code, output = _run_script_step(
+            cwd=str(kit.project), script="deploy/deploy.sh", env_file=None,
+            extra_env=extra_env, repository=str(kit.project),
+        )
+        assert code == 0, output[-3000:]
+        return _tail(output)
+
+    said = forge_runs({"CANDIDATE": "1", **CANDIDATE_ENV, "DEPLOY_IDENTITY": IDENTITY})
+    assert kit.compose_calls("build"), "the build (and its 2 MB of output) did not run"
+    assert len(said) < OUTPUT_TAIL_CHARS
+    artifact = identity_reported_by(said, marker="CHECKED_ARTIFACT")
+    assert artifact and artifact.startswith("web=sha256:")
+    assert identity_reported_by(said, marker="DEPLOYED_IDENTITY") == IDENTITY
+
+    said = forge_runs({"PROMOTE": "1", "DEPLOY_IDENTITY": IDENTITY, "DEPLOY_ARTIFACT": artifact})
+    assert identity_reported_by(said, marker="DEPLOYED_IDENTITY") == IDENTITY
+
+
+# --- Older images -------------------------------------------------------------------
+
+
+def _tags(kit: Kit) -> set[str]:
+    return set(json.loads(kit.state.read_text())["tags"])
+
+
+def test_promote_removes_this_projects_older_images_only(kit: Kit) -> None:
+    first = _line(kit.candidate().stdout, "CHECKED_ARTIFACT")
+    kit.run("deploy.sh", {"PROMOTE": "1", "DEPLOY_IDENTITY": IDENTITY, "DEPLOY_ARTIFACT": first})
+    kit.run("deploy.sh", {"CANDIDATE_DOWN": "1", **CANDIDATE_ENV, "DEPLOY_IDENTITY": IDENTITY})
+    # Another project's image whose name starts the same way is never touched.
+    state = json.loads(kit.state.read_text())
+    state["tags"]["demox-deploy-web:keep"] = first.split("=", 1)[1]
+    kit.state.write_text(json.dumps(state))
+
+    second = _line(kit.candidate(OTHER_IDENTITY).stdout, "CHECKED_ARTIFACT")
+    done = kit.run("deploy.sh", {"PROMOTE": "1", "DEPLOY_IDENTITY": OTHER_IDENTITY, "DEPLOY_ARTIFACT": second})
+    assert done.returncode == 0, done.stderr
+    old = f"{ENV_ID}-deploy-web:{IDENTITY.replace('@', '-')}"
+    new = f"{ENV_ID}-deploy-web:{OTHER_IDENTITY.replace('@', '-')}"
+    assert old not in _tags(kit)
+    assert new in _tags(kit)
+    assert "demox-deploy-web:keep" in _tags(kit)
+    assert f"removed the older image {old}" in done.stderr
+    assert not [c for c in kit.calls() if c[:1] in (["image"], ["rmi"]) and "prune" in c]
+    assert not any("prune" in c for c in kit.calls())
+
+
+def test_promote_keeps_an_older_image_a_container_still_uses(kit: Kit) -> None:
+    first = _line(kit.candidate().stdout, "CHECKED_ARTIFACT")
+    kit.run("deploy.sh", {"PROMOTE": "1", "DEPLOY_IDENTITY": IDENTITY, "DEPLOY_ARTIFACT": first})
+    kit.candidate(OTHER_IDENTITY)  # another build's candidate stands, not yet promoted
+    done = kit.run("deploy.sh", {"PROMOTE": "1", "DEPLOY_IDENTITY": IDENTITY, "DEPLOY_ARTIFACT": first})
+    assert done.returncode == 0, done.stderr
+    standing = f"{ENV_ID}-deploy-web:{OTHER_IDENTITY.replace('@', '-')}"
+    assert standing in _tags(kit)
+    assert f"kept {standing}" in done.stderr
+
+
 # --- The real thing -----------------------------------------------------------------
 
 REAL_ENV_ID = "gkdk-e2e"
@@ -721,11 +871,32 @@ def test_real_candidate_promote_cycle(tmp_path: Path) -> None:
         assert run("healthcheck.sh", {}).returncode == 0
         gate = run("live-gate.sh", {}, "--feature", "F1", "--target", REAL_ENV_ID)
         assert gate.returncode == 0 and json.loads(gate.stdout)["verdict"] == "pass"
+
+        # A second build replaces the first; the first one's kept image goes.
+        (project / "web" / "Dockerfile").write_text(
+            (project / "web" / "Dockerfile").read_text().replace("echo ok", "echo ok2")
+        )
+        cand = run("deploy.sh", {"CANDIDATE": "1", **cand_env, "DEPLOY_IDENTITY": OTHER_IDENTITY})
+        assert cand.returncode == 0
+        second = _line(cand.stdout, "CHECKED_ARTIFACT")
+        assert second != artifact
+        promoted = run("deploy.sh", {"PROMOTE": "1", "DEPLOY_IDENTITY": OTHER_IDENTITY,
+                                     "DEPLOY_ARTIFACT": second})
+        assert promoted.returncode == 0
+        assert promoted.stderr.splitlines()[-1] == f"DEPLOYED_IDENTITY={OTHER_IDENTITY}"
+        assert run("deploy.sh", {"CANDIDATE_DOWN": "1", **cand_env,
+                                 "DEPLOY_IDENTITY": OTHER_IDENTITY}).returncode == 0
+        kept = subprocess.run(["docker", "images", "--format", "{{.Tag}}", f"{REAL_ENV_ID}-deploy-web"],
+                              capture_output=True, text=True).stdout.split()
+        assert kept == [OTHER_IDENTITY.replace("@", "-")]
+        assert _line(run("deploy.sh", {"RUNNING_IDENTITY": "1"}).stdout, "RUNNING_IDENTITY") == OTHER_IDENTITY
+        assert run("healthcheck.sh", {}).returncode == 0
     finally:
         for name, port in ((f"{REAL_ENV_ID}-cand", CANDIDATE_PORT), (f"{REAL_ENV_ID}-live", LIVE_PORT)):
             subprocess.run(["docker", "compose", "--project-name", name, "-f", str(project / "compose.yaml"),
                             "down", "--volumes", "--remove-orphans", "--timeout", "5"],
                            cwd=project, env={**os.environ, "APP_PORT": str(port)}, capture_output=True)
-        tag = IDENTITY.replace("@", "-")
-        subprocess.run(["docker", "image", "rm", f"{REAL_ENV_ID}-deploy-web:{tag}",
-                        f"{REAL_ENV_ID}-cand-web"], capture_output=True)
+        for identity in (IDENTITY, OTHER_IDENTITY):
+            subprocess.run(["docker", "image", "rm",
+                            f"{REAL_ENV_ID}-deploy-web:{identity.replace('@', '-')}"], capture_output=True)
+        subprocess.run(["docker", "image", "rm", f"{REAL_ENV_ID}-cand-web"], capture_output=True)

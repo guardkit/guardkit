@@ -6,8 +6,10 @@ implemented in them; the project only supplies its own service.
 
 ## What the project provides
 
-1. **A root `compose.yaml`** that starts the service. Its public service must
-   publish the port the kit gives it in `APP_PORT`, on loopback only:
+1. **A root `compose.yaml`** that starts the service. The public service
+   publishes `127.0.0.1:${APP_PORT}` to whatever port the app listens on
+   inside its container. The kit sets `APP_PORT` (the live port or the
+   candidate port); only one service publishes it:
 
    ```yaml
    services:
@@ -15,13 +17,32 @@ implemented in them; the project only supplies its own service.
        build: .
        environment:
          PORT: "8080"
+         DATABASE_URL: "postgres://app@db:5432/app"
        ports:
          - "127.0.0.1:${APP_PORT:?APP_PORT is required}:8080"
+       depends_on:
+         - db
+     db:
+       image: postgres:16-alpine
+       environment:
+         POSTGRES_USER: app
+         POSTGRES_HOST_AUTH_METHOD: trust
+       volumes:
+         - dbdata:/var/lib/postgresql/data
+   volumes:
+     dbdata: {}
    ```
 
-   The port inside the container is the project's choice. Do not set
-   `container_name`, fixed host ports, or `external` volumes: the live app and
-   the candidate run side by side as two compose projects.
+   (The database settings above are only an illustration; real secrets do not
+   belong in compose.yaml.)
+
+   Keep data in **named volumes** (like `dbdata` above). Never bind-mount a
+   project folder (`./data:/data`): the factory builds and runs each
+   candidate from a temporary copy of the project that is deleted after the
+   check, so anything written into a mounted project folder is lost. Do not
+   set `container_name`, fixed host ports, or `external` volumes: the live app
+   and the candidate run side by side as two compose projects, each with its
+   own volumes.
 2. **A health path** that answers HTTP 200 when the service is up (for
    example `GET /health`). It was given to `guardkit deploy init` and is kept
    in `deploy/settings.sh`.
@@ -47,8 +68,14 @@ successful candidate or promote also records it, with the port, in
 `$HOME/.local/state/guardkit-deploy/<compose project>.env` (the factory gives
 every step of one checkout the same private home); the checks compare the
 running containers with that record.
-Checked images are kept as `<env id>-deploy-<service>:<identity>`; old ones can
-be removed by hand once they are no longer live.
+Checked images are kept as `<env id>-deploy-<service>:<identity>`. After a
+successful promote the kit removes this project's older ones by exact name
+(an image a container still uses is kept); it never prunes anything else.
+
+Build and start output goes to a log file and only its last lines are shown,
+and the lines the factory reads (`CHECKED_ARTIFACT=`, `DEPLOYED_IDENTITY=`)
+are printed last, so a long build never pushes them out of the factory's
+output limit.
 
 ## Files
 

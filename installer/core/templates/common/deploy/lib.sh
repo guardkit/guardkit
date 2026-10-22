@@ -304,3 +304,64 @@ kit_expected_identity() {
     die "DEPLOY_IDENTITY is $DEPLOY_IDENTITY, but $project was deployed as $expected"
   fi
 }
+
+# --- Output the factory can read --------------------------------------------------
+#
+# Forge joins a step's stdout and then its stderr, keeps the first 1 MiB
+# (executor/shell_steps.py) and, through the sandbox helper, only the last
+# 64 KiB of that (deploy_sidecar/service.py, OUTPUT_TAIL_CHARS). A long image
+# build would push the marker lines out, and a deploy whose markers are lost
+# is not deployed. So long command output goes to a log file and only its end
+# is shown, and each marker is printed on stdout and again as the last lines
+# of stderr.
+
+kit_log_open() {
+  kit_log="$(mktemp "${TMPDIR:-/tmp}/deploy-log.XXXXXX")"
+}
+
+# Shows the end of the log on stderr (at most 150 lines and 16 KiB).
+kit_log_tail() {
+  [[ -n "${kit_log:-}" && -s "$kit_log" ]] || return 0
+  echo "--- the end of the deploy log ---" >&2
+  tail -n 150 "$kit_log" | tail -c 16384 >&2
+  echo "--- end of the deploy log ---" >&2
+}
+
+# kit_logged <what it is doing> <command...>: runs the command with its output
+# in the log; on failure shows the end of the log and stops.
+kit_logged() {
+  local what="$1" rc=0
+  shift
+  "$@" >>"$kit_log" 2>&1 || rc=$?
+  if ((rc != 0)); then
+    kit_log_tail
+    die "$what failed (exit $rc); the end of its output is above"
+  fi
+}
+
+# A marker line for the factory, on stdout and as the last lines of stderr.
+kit_say() {
+  echo "$1"
+  echo "$1" >&2
+}
+
+# After a promote: removes this project's older kept images by exact name,
+# <env id>-deploy-<service>:<tag> for the services in compose.yaml, keeping
+# `keep_tag`. Docker refuses to remove an image a container still uses (a
+# standing candidate's, say), and that image is simply kept. Never prunes.
+kit_remove_old_images() {
+  local keep_tag="$1" services svc repo tags tag
+  services="$(kit_services)"
+  while IFS= read -r svc; do
+    repo="$DEPLOY_ENV_ID-deploy-${svc,,}"
+    tags="$(docker images --format '{{.Tag}}' "$repo" 2>/dev/null)" || continue
+    while IFS= read -r tag; do
+      [[ -n "$tag" && "$tag" != "$keep_tag" && "$tag" =~ ^[A-Za-z0-9._-]+$ ]] || continue
+      if docker image rm "$repo:$tag" >>"$kit_log" 2>&1; then
+        echo "deploy: removed the older image $repo:$tag" >&2
+      else
+        echo "deploy: kept $repo:$tag (in use, or it could not be removed)" >&2
+      fi
+    done <<<"$tags"
+  done <<<"$services"
+}
