@@ -1,0 +1,245 @@
+# shellcheck shell=bash
+# shellcheck disable=SC2034 # mode, project, port, label_* are read by the scripts that source this
+# shellcheck disable=SC2154 # root is set by the script that sources this
+#
+# GuardKit deployment kit: the one place that implements the software
+# factory's deployment contract for a Docker Compose project. Sourced by
+# deploy/deploy.sh, deploy/healthcheck.sh and deploy/live-gate.sh after
+# deploy/settings.sh. Copied verbatim by `guardkit deploy init`; a project
+# does not need to edit it.
+#
+# What the factory (Forge) sends each step, read from Forge's own source
+# (src/forge/deploy/stage.py, runbook_builder.py, executor/shell_steps.py,
+# pipeline/merge_executor.py, pipeline/deployment_identity.py):
+#
+#   candidate check  CANDIDATE=1 + candidate.env + DEPLOY_IDENTITY
+#   candidate down   CANDIDATE_DOWN=1 + candidate.env + DEPLOY_IDENTITY
+#   promote          PROMOTE=1 + DEPLOY_IDENTITY + DEPLOY_ARTIFACT (no port)
+#   revert           REVERT=1 (+ ROLLBACK_IMAGE_REF); this kit keeps none
+#   what is running  RUNNING_IDENTITY=1, nothing else
+#   health checks    candidate.env after the candidate; nothing after promote
+#   live gate        candidate.env on the candidate leg; live_gate.env after
+#                    promote; argv gets --feature <id> --target <env id>
+#
+# Every program gets an environment built from nothing (PATH, a private HOME
+# and TMPDIR, the locale, proxies, and the values above), so the scripts take
+# nothing else from the environment except the optional waits in settings.sh.
+#
+# What the scripts print for the factory (one line each, last one wins):
+#   CHECKED_ARTIFACT=<service>=sha256:<id>[,...]   after a candidate check
+#   DEPLOYED_IDENTITY=<identity>                   after a candidate or promote
+#   RUNNING_IDENTITY=<identity> | none             answer to RUNNING_IDENTITY=1
+#   RUNNING_IDENTITY_UNKNOWN=<reason>              when that cannot be told
+# Everything else goes to stderr.
+
+# The label every container of a deployment carries, holding the identity the
+# factory handed the deploy step. RUNNING_IDENTITY, the health check and the
+# live gate read it back.
+IDENTITY_LABEL="guardkit.deploy.identity"
+
+die() {
+  echo "deploy: $*" >&2
+  exit 1
+}
+
+truthy() { [[ "${1:-}" =~ ^(1|true|yes)$ ]]; }
+
+require_command() {
+  command -v "$1" >/dev/null 2>&1 || die "$1 is required and was not found on PATH"
+}
+
+# Checks the values deploy/settings.sh carries and sets the project names.
+kit_settings() {
+  [[ "${DEPLOY_ENV_ID:-}" =~ ^[a-z][a-z0-9-]{0,39}$ && "$DEPLOY_ENV_ID" != *- ]] ||
+    die "deploy/settings.sh: DEPLOY_ENV_ID must be lower-case letters, digits and '-', starting with a letter"
+  local name
+  for name in DEPLOY_LIVE_PORT DEPLOY_CANDIDATE_PORT; do
+    valid_port "${!name:-}" || die "deploy/settings.sh: $name must be a port number"
+  done
+  [[ "${DEPLOY_HEALTH_PATH:-}" =~ ^/[A-Za-z0-9._~/-]*$ ]] ||
+    die "deploy/settings.sh: DEPLOY_HEALTH_PATH must be a path starting with '/'"
+  for name in DEPLOY_WAIT_SECONDS DEPLOY_HEALTH_WAIT_SECONDS DEPLOY_GATE_WAIT_SECONDS; do
+    [[ "${!name:-}" =~ ^(0|[1-9][0-9]{0,4})$ ]] || die "$name must be a whole number of seconds"
+  done
+  live_project="$DEPLOY_ENV_ID-live"
+  candidate_project="$DEPLOY_ENV_ID-cand"
+}
+
+# Sets `mode` to one of: running candidate candidate_down promote revert
+# preview none. Two or more signals are refused: the step never guesses.
+kit_mode() {
+  local found=()
+  truthy "${RUNNING_IDENTITY:-}" && found+=(running)
+  truthy "${CANDIDATE:-}" && found+=(candidate)
+  truthy "${CANDIDATE_DOWN:-}" && found+=(candidate_down)
+  truthy "${PROMOTE:-}" && found+=(promote)
+  truthy "${REVERT:-}" && found+=(revert)
+  if truthy "${PREVIEW:-}" || [[ -n "${FACTORY_PREVIEW_PORT:-}" ]]; then
+    found+=(preview)
+  fi
+  ((${#found[@]} <= 1)) || die "more than one deploy mode is set (${found[*]}); refusing to guess"
+  mode="${found[0]:-none}"
+}
+
+valid_project_name() { [[ "$1" =~ ^[a-z0-9][a-z0-9_-]{0,62}$ ]]; }
+
+valid_port() { [[ "$1" =~ ^[1-9][0-9]{1,4}$ ]] && (($1 >= 1 && $1 <= 65535)); }
+
+# Forge's identity text is "<name>@<fingerprint>" (deployment_identity.py).
+valid_identity() { [[ "$1" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,100}(@[A-Za-z0-9]{1,64})?$ ]]; }
+
+# An image tag cannot carry '@'; the tag form turns it into '-'.
+identity_tag() { printf '%s' "${1//@/-}"; }
+
+# The image name the kit keeps a checked service image under.
+kit_image() { printf '%s-deploy-%s:%s' "$DEPLOY_ENV_ID" "${1,,}" "$(identity_tag "$2")"; }
+
+# docker compose for `project`, with the project's compose.yaml and, when
+# `override` is set, the kit's generated override file.
+kit_compose() {
+  local files=(-f "$root/compose.yaml")
+  [[ -n "${override:-}" ]] && files+=(-f "$override")
+  docker compose --project-name "$project" --project-directory "$root" "${files[@]}" "$@"
+}
+
+# The compose file's services, sorted, one per line.
+kit_services() {
+  local out name
+  out="$(override='' kit_compose config --services)" || die "docker compose could not read compose.yaml"
+  out="$(printf '%s\n' "$out" | LC_ALL=C sort -u)"
+  [[ -n "$out" ]] || die "compose.yaml declares no services"
+  while IFS= read -r name; do
+    [[ "$name" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || die "unexpected service name in compose.yaml: $name"
+  done <<<"$out"
+  printf '%s\n' "$out"
+}
+
+# Writes the override file: the identity label on every service and, for a
+# promote, the exact checked image for every service.
+kit_write_override() {
+  local file="$1" identity="$2" with_images="$3" services svc
+  services="$(kit_services)"
+  {
+    echo "# Generated by deploy/lib.sh for one deploy step; not committed."
+    echo "services:"
+    while IFS= read -r svc; do
+      echo "  $svc:"
+      echo "    labels:"
+      echo "      $IDENTITY_LABEL: \"$identity\""
+      if [[ "$with_images" == images ]]; then
+        echo "    image: \"$(kit_image "$svc" "$identity")\""
+      fi
+    done <<<"$services"
+  } >"$file"
+}
+
+# Reads the identity labels of every container (running or not) in `project`.
+# Sets label_state to none (no containers), one (all carry label_value) or
+# mixed (label_reason says why). Returns 2 when docker could not be asked.
+kit_label_state() {
+  local out values
+  label_state="" label_value="" label_reason=""
+  out="$(docker ps -a --filter "label=com.docker.compose.project=$project" \
+    --format "c:{{.Label \"$IDENTITY_LABEL\"}}" 2>/dev/null)" || {
+    label_reason="docker could not list the containers of $project"
+    return 2
+  }
+  if [[ -z "$out" ]]; then
+    label_state=none
+    return 0
+  fi
+  if grep -qx 'c:' <<<"$out"; then
+    label_state=mixed
+    label_reason="a container in $project carries no $IDENTITY_LABEL label"
+    return 0
+  fi
+  # shellcheck disable=SC2001 # the prefix is removed per line, not anywhere
+  values="$(sed 's/^c://' <<<"$out" | LC_ALL=C sort -u)"
+  if [[ "$values" == *$'\n'* ]]; then
+    label_state=mixed
+    label_reason="the containers in $project carry different identities: ${values//$'\n'/, }"
+    return 0
+  fi
+  label_state=one
+  label_value="$values"
+}
+
+# The image of every service's containers in `project`, as
+# "<service>=sha256:<id>,..." sorted by service.
+kit_running_images() {
+  local services svc cids cid image first out=""
+  services="$(kit_services)"
+  while IFS= read -r svc; do
+    cids="$(kit_compose ps -a -q "$svc")" || die "docker compose could not list $svc in $project"
+    [[ -n "$cids" ]] || die "service $svc has no container in $project"
+    first=""
+    while IFS= read -r cid; do
+      image="$(docker inspect --format '{{.Image}}' "$cid")" || die "docker could not inspect $cid"
+      [[ "$image" =~ ^sha256:[0-9a-f]{64}$ ]] || die "service $svc runs an image with no sha256 id ($image)"
+      [[ -z "$first" || "$first" == "$image" ]] || die "the containers of $svc in $project run different images"
+      first="$image"
+    done <<<"$cids"
+    out+="${out:+,}$svc=$first"
+  done <<<"$services"
+  printf '%s' "$out"
+}
+
+# The artifact text with its parts sorted, for comparison.
+sorted_artifact() { tr ',' '\n' <<<"$1" | LC_ALL=C sort | paste -sd, -; }
+
+# One health probe of `project` on `port`: the health path answers HTTP 200
+# and every container carries one identity (and `expected`, when given).
+# Sets probe_detail; returns 0 healthy, 1 not healthy, 2 docker unavailable.
+kit_probe() {
+  local port="$1" expected="${2:-}" code url
+  url="http://127.0.0.1:$port$DEPLOY_HEALTH_PATH"
+  probe_http="" probe_identity=""
+  code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 "$url" 2>/dev/null)" || code="000"
+  probe_http="$code"
+  if [[ "$code" != 200 ]]; then
+    probe_detail="$url answered HTTP $code, not 200"
+    return 1
+  fi
+  local rc=0
+  kit_label_state || rc=$?
+  if ((rc != 0)); then
+    probe_detail="$label_reason"
+    return 2
+  fi
+  case "$label_state" in
+  none)
+    probe_detail="$url answers, but no container of $project is running"
+    return 1
+    ;;
+  mixed)
+    probe_detail="$label_reason"
+    return 1
+    ;;
+  esac
+  probe_identity="$label_value"
+  if [[ -n "$expected" && "$label_value" != "$expected" ]]; then
+    probe_detail="$project runs $label_value, not $expected"
+    return 1
+  fi
+  probe_detail="$project answers on $url as $label_value"
+  return 0
+}
+
+# Which deployment a health check or live gate looks at, from what the factory
+# sent it: the candidate after a candidate check, the live app otherwise.
+# Sets project and port.
+kit_check_target() {
+  if [[ -n "${FACTORY_PREVIEW_PORT:-}" ]] || truthy "${PREVIEW:-}"; then
+    die "this deployment kit has no review preview; remove the preview section from deploy/profile.yaml"
+  fi
+  if [[ -n "${CANDIDATE_PORT:-}" ]] || truthy "${CANDIDATE:-}"; then
+    port="${CANDIDATE_PORT:-$DEPLOY_CANDIDATE_PORT}"
+    project="${COMPOSE_PROJECT_NAME:-$candidate_project}"
+    [[ "$project" != "$live_project" ]] || die "the candidate check names the live project $live_project"
+  else
+    port="$DEPLOY_LIVE_PORT"
+    project="$live_project"
+  fi
+  valid_port "$port" || die "invalid port: $port"
+  valid_project_name "$project" || die "invalid compose project name: $project"
+}

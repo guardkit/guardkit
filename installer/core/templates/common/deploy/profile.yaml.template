@@ -1,0 +1,54 @@
+# Deployment profile (guardkit qa kind: deploy-profile), written by
+# `guardkit deploy init` from GuardKit's deployment kit (deploy/README.md).
+# Format: Forge src/forge/deploy/profile.py. Check it with
+#   guardkit qa validate deploy-profile deploy/profile.yaml
+#
+# The running service is the project's root compose.yaml, driven by the kit's
+# deploy/deploy.sh. The live app is compose project "__ENV_ID__-live" on
+# 127.0.0.1:__LIVE_PORT__ (deploy/settings.sh); the candidate check runs as
+# "__ENV_ID__-cand" on 127.0.0.1:__CANDIDATE_PORT__.
+#
+# The factory accepts a project's first profile only with a candidate
+# section, a live-gate driver and an identity block that says how to ask what
+# is running (Forge pipeline/merge_executor.py,
+# first_deployment_profile_is_usable). All three are here.
+#
+# No `cwd`: the factory runs every step in a tree laid out at the commit being
+# deployed, and the scripts find their own folder.
+# No `sandbox` block: the factory's own settings name the project's sandbox.
+# No `preview` section: a review preview is optional and this kit does not
+# support one yet; a profile without it keeps the normal flow.
+format_version: "1.0"
+env_id: "__ENV_ID__"
+compose:
+  file: compose.yaml
+  script: deploy/deploy.sh
+# The names deploy/deploy.sh reads and prints (Forge
+# pipeline/deployment_identity.py). The identity is the text the factory makes
+# from the commit being deployed; the kit labels every container with it.
+identity:
+  setting: DEPLOY_IDENTITY
+  reported_as: DEPLOYED_IDENTITY
+  checked_as: CHECKED_ARTIFACT
+  artifact_setting: DEPLOY_ARTIFACT
+  asked_with: RUNNING_IDENTITY
+  running_as: RUNNING_IDENTITY
+hosts:
+  - host: localhost
+    role: app
+health_checks:
+  - cmd: deploy/healthcheck.sh
+# The kit's smoke gate: the health path answers 200 and the containers carry
+# the deployed identity. Replace the driver with the project's own end-to-end
+# checks when it has them.
+live_gate:
+  driver: ["deploy/live-gate.sh"]
+  gates: []
+  timeout_seconds: 300
+# The candidate is its own compose project on its own port; it is removed
+# after a promote (keep: false) or when its check fails.
+candidate:
+  env:
+    CANDIDATE_PORT: "__CANDIDATE_PORT__"
+    COMPOSE_PROJECT_NAME: "__ENV_ID__-cand"
+  keep: false

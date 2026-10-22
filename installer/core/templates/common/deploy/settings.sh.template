@@ -1,0 +1,29 @@
+# shellcheck shell=bash
+# shellcheck disable=SC2034 # read by deploy/lib.sh and the scripts that source it
+#
+# This project's deployment values, written by `guardkit deploy init`.
+# deploy/deploy.sh, deploy/healthcheck.sh and deploy/live-gate.sh read them
+# through deploy/lib.sh. Change a value here and in deploy/profile.yaml
+# together (the candidate port and project name appear in both).
+
+# The environment id. The live app runs as the compose project
+# "<id>-live"; the candidate check runs as "<id>-cand" (deploy/profile.yaml
+# candidate.env sets COMPOSE_PROJECT_NAME to that name).
+DEPLOY_ENV_ID="__ENV_ID__"
+
+# The loopback port the live app answers on. The factory sends the promote
+# step no port, so this is where the live port is kept.
+DEPLOY_LIVE_PORT="__LIVE_PORT__"
+
+# The candidate's loopback port. The factory sends it as CANDIDATE_PORT from
+# deploy/profile.yaml candidate.env; this is only the fallback.
+DEPLOY_CANDIDATE_PORT="__CANDIDATE_PORT__"
+
+# The path that answers HTTP 200 when the app is up, e.g. /health.
+DEPLOY_HEALTH_PATH="__HEALTH_PATH__"
+
+# How long to wait, in seconds: for `docker compose up --wait`, for the health
+# check, and for the live gate's own health probe.
+: "${DEPLOY_WAIT_SECONDS:=180}"
+: "${DEPLOY_HEALTH_WAIT_SECONDS:=120}"
+: "${DEPLOY_GATE_WAIT_SECONDS:=30}"

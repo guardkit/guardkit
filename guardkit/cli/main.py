@@ -17,6 +17,7 @@ from dotenv import load_dotenv
 from rich.console import Console
 
 from guardkit.cli.autobuild import autobuild
+from guardkit.cli.deploy import deploy
 from guardkit.cli.feature import feature
 from guardkit.cli.init import init
 from guardkit.cli.memory import memory
@@ -107,6 +108,9 @@ def cli(ctx, verbose: bool, quiet: bool):
 
 # Add AutoBuild command group
 cli.add_command(autobuild)
+
+# Add Deploy command group (generic deployment kit for the factory)
+cli.add_command(deploy)
 
 # Add Feature command group
 cli.add_command(feature)
