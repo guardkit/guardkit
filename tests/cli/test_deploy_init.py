@@ -104,7 +104,12 @@ def test_never_overwrites_and_reports_skips(tmp_path: Path) -> None:
 
 def test_existing_invalid_profile_fails_validation(tmp_path: Path) -> None:
     (tmp_path / "deploy").mkdir()
-    (tmp_path / "deploy" / "profile.yaml").write_text('format_version: "1.0"\nenv_id: myapp\n')
+    # Every value the command compares agrees; the profile is still invalid
+    # (no compose section), which validation catches.
+    (tmp_path / "deploy" / "profile.yaml").write_text(
+        'format_version: "1.0"\nenv_id: myapp\n'
+        "candidate: {env: {CANDIDATE_PORT: '18962', COMPOSE_PROJECT_NAME: myapp-cand}}\n"
+    )
     done = _init(tmp_path)
     assert done.exit_code == 1
     assert "skipped deploy/profile.yaml" in done.output
@@ -129,6 +134,60 @@ def test_rerun_with_different_values_is_refused(tmp_path: Path, option: str, val
     assert done.exit_code == 2, done.output
     assert words in " ".join(done.output.split())
     assert {p.name: p.read_bytes() for p in (tmp_path / "deploy").iterdir()} == before
+
+
+def _rewrite_settings(project: Path, old: str, new: str) -> None:
+    path = project / "deploy" / "settings.sh"
+    text = path.read_text()
+    assert old in text
+    path.write_text(text.replace(old, new))
+
+
+@pytest.mark.parametrize(
+    "old, new",
+    [
+        ('DEPLOY_ENV_ID="myapp"', "DEPLOY_ENV_ID='myapp'"),
+        ('DEPLOY_LIVE_PORT="18961"', "DEPLOY_LIVE_PORT=18961  # the live port"),
+        ('DEPLOY_HEALTH_PATH="/health"', "export DEPLOY_HEALTH_PATH='/health' # health"),
+    ],
+)
+def test_rerun_understands_plain_literal_forms(tmp_path: Path, old: str, new: str) -> None:
+    _init(tmp_path)
+    _rewrite_settings(tmp_path, old, new)
+    done = _init(tmp_path)
+    assert done.exit_code == 0, done.output
+    assert "the existing settings already match" in " ".join(done.output.split())
+
+
+@pytest.mark.parametrize(
+    "old, new, words",
+    [
+        ('DEPLOY_ENV_ID="myapp"', "DEPLOY_ENV_ID='other'", "environment id other, not myapp"),
+        ('DEPLOY_LIVE_PORT="18961"', "DEPLOY_LIVE_PORT=19000 # moved", "live port 19000, not 18961"),
+        ('DEPLOY_HEALTH_PATH="/health"', "", "does not set DEPLOY_HEALTH_PATH"),
+        ('DEPLOY_LIVE_PORT="18961"', 'DEPLOY_LIVE_PORT="$PORT"', "DEPLOY_LIVE_PORT to something that is not a plain value"),
+        ('DEPLOY_LIVE_PORT="18961"', "DEPLOY_LIVE_PORT=18961#x", "not a plain value"),
+    ],
+)
+def test_rerun_refuses_settings_it_cannot_confirm(tmp_path: Path, old: str, new: str, words: str) -> None:
+    _init(tmp_path)
+    _rewrite_settings(tmp_path, old, new)
+    before = {p.name: p.read_bytes() for p in (tmp_path / "deploy").iterdir()}
+    done = _init(tmp_path)
+    assert done.exit_code == 2, done.output
+    assert words in " ".join(done.output.split())
+    assert {p.name: p.read_bytes() for p in (tmp_path / "deploy").iterdir()} == before
+
+
+def test_rerun_refuses_a_profile_without_the_candidate_settings(tmp_path: Path) -> None:
+    (tmp_path / "deploy").mkdir()
+    (tmp_path / "deploy" / "profile.yaml").write_text(
+        'format_version: "1.0"\nenv_id: myapp\ncompose: {file: compose.yaml}\n'
+    )
+    done = _init(tmp_path)
+    assert done.exit_code == 2
+    assert "has no candidate.env" in " ".join(done.output.split())
+    assert not (tmp_path / "deploy" / "settings.sh").exists()
 
 
 def test_rerun_with_the_same_values_says_they_match(tmp_path: Path) -> None:

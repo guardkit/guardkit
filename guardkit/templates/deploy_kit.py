@@ -55,9 +55,6 @@ class DeployKitResult:
     kept_settings: bool = False
 
 
-_SETTING_RE = re.compile(
-    r'^DEPLOY_(ENV_ID|LIVE_PORT|CANDIDATE_PORT|HEALTH_PATH)="([^"]*)"\s*$', re.MULTILINE
-)
 _SETTING_WORDS = {
     "ENV_ID": "environment id",
     "LIVE_PORT": "live port",
@@ -65,16 +62,59 @@ _SETTING_WORDS = {
     "HEALTH_PATH": "health path",
 }
 
+#: An assignment of one of the four settings, as a line of deploy/settings.sh.
+_ASSIGNMENT_RE = re.compile(
+    r"^\s*(?:export\s+)?DEPLOY_(ENV_ID|LIVE_PORT|CANDIDATE_PORT|HEALTH_PATH)=(.*)$"
+)
+#: The plain literal forms understood on the right of ``=``: a double-quoted
+#: string with nothing the shell would expand, a single-quoted string, or a
+#: bare word; then optionally whitespace and a ``#`` comment (a ``#`` with no
+#: space before it is part of the word in the shell, so it is not understood).
+_LITERAL_RE = re.compile(
+    r"""^(?:"(?P<dq>[^"$`\\]*)"|'(?P<sq>[^']*)'|(?P<bare>[^\s#'"$`\\;&|<>()]+))"""
+    r"""(?:\s+#.*)?\s*$"""
+)
+
+
+def _read_settings(path: Path) -> tuple[dict[str, str], List[str]]:
+    """The four settings as literally assigned in ``path``, and the problems.
+
+    The last assignment of a setting wins, as in the shell. An assignment
+    that is not a plain literal, and a setting that is never assigned, are
+    problems: nothing is assumed about a value that was not read."""
+    found: dict[str, str] = {}
+    problems: List[str] = []
+    text = path.read_text(encoding="utf-8", errors="replace")
+    for number, line in enumerate(text.splitlines(), start=1):
+        match = _ASSIGNMENT_RE.match(line)
+        if not match:
+            continue
+        key, rest = match.group(1), match.group(2).strip()
+        literal = _LITERAL_RE.match(rest)
+        if literal is None:
+            problems.append(
+                f"deploy/settings.sh line {number} sets DEPLOY_{key} to something "
+                "that is not a plain value"
+            )
+            continue
+        found[key] = next(v for v in literal.group("dq", "sq", "bare") if v is not None)
+    for key in _SETTING_WORDS:
+        if key not in found and not any(f"DEPLOY_{key} " in p for p in problems):
+            problems.append(f"deploy/settings.sh does not set DEPLOY_{key}")
+    return found, problems
+
 
 def existing_disagreements(project_dir: Path, values: dict[str, str]) -> List[str]:
     """Where an existing deploy/settings.sh or deploy/profile.yaml says
     something other than ``values`` (keys ENV_ID, LIVE_PORT, CANDIDATE_PORT,
-    HEALTH_PATH), as plain sentences. Empty when they agree or are absent."""
+    HEALTH_PATH), or does not plainly say it, as plain sentences. Empty when
+    both files are absent or every relevant value was read and agrees."""
     found: List[str] = []
     settings = Path(project_dir) / "deploy" / "settings.sh"
     if settings.is_file():
-        text = settings.read_text(encoding="utf-8", errors="replace")
-        for key, value in _SETTING_RE.findall(text):
+        read, problems = _read_settings(settings)
+        found.extend(problems)
+        for key, value in read.items():
             if value != values[key]:
                 found.append(
                     f"deploy/settings.sh has {_SETTING_WORDS[key]} {value}, not {values[key]}"
@@ -85,22 +125,28 @@ def existing_disagreements(project_dir: Path, values: dict[str, str]) -> List[st
             data = yaml.safe_load(profile.read_text(encoding="utf-8"))
         except (yaml.YAMLError, UnicodeDecodeError) as exc:
             return [*found, f"deploy/profile.yaml could not be read ({exc.__class__.__name__})"]
-        if isinstance(data, dict):
-            env_id = data.get("env_id")
-            if env_id is not None and str(env_id) != values["ENV_ID"]:
-                found.append(f"deploy/profile.yaml has environment id {env_id}, not {values['ENV_ID']}")
-            candidate = data.get("candidate")
-            env = candidate.get("env") if isinstance(candidate, dict) else None
-            if isinstance(env, dict):
-                port = env.get("CANDIDATE_PORT")
-                if port is not None and str(port) != values["CANDIDATE_PORT"]:
-                    found.append(
-                        f"deploy/profile.yaml has candidate port {port}, not {values['CANDIDATE_PORT']}"
-                    )
-                name = env.get("COMPOSE_PROJECT_NAME")
-                wanted = f"{values['ENV_ID']}-cand"
-                if name is not None and str(name) != wanted:
-                    found.append(f"deploy/profile.yaml names the candidate project {name}, not {wanted}")
+        if not isinstance(data, dict):
+            return [*found, "deploy/profile.yaml is not a mapping"]
+        env_id = data.get("env_id")
+        if env_id is None:
+            found.append("deploy/profile.yaml does not set env_id")
+        elif str(env_id) != values["ENV_ID"]:
+            found.append(f"deploy/profile.yaml has environment id {env_id}, not {values['ENV_ID']}")
+        candidate = data.get("candidate")
+        env = candidate.get("env") if isinstance(candidate, dict) else None
+        if not isinstance(env, dict):
+            found.append("deploy/profile.yaml has no candidate.env")
+        else:
+            wanted = {
+                "CANDIDATE_PORT": values["CANDIDATE_PORT"],
+                "COMPOSE_PROJECT_NAME": f"{values['ENV_ID']}-cand",
+            }
+            for name, value in wanted.items():
+                have = env.get(name)
+                if have is None:
+                    found.append(f"deploy/profile.yaml does not set candidate.env {name}")
+                elif str(have) != value:
+                    found.append(f"deploy/profile.yaml has candidate.env {name} {have}, not {value}")
     return found
 
 
