@@ -648,12 +648,12 @@ def _refuse_linked_required_documents(
 
 #: The most project-document text, in bytes, that may be given in full to a
 #: role that receives it inside its prompt (the Coach): the repository's
-#: instructions plus the declared binding documents together. About 12,000
+#: instructions plus the declared binding documents together. About 32,000
 #: tokens. One constant for GuardKit; Forge keeps its own for the planning
 #: writers. Over the limit the turn is refused rather than given a shortened
 #: document, because a binding document silently cut short is worse than a
 #: refusal.
-PROJECT_DOCUMENTS_BUDGET_BYTES = 48 * 1024
+PROJECT_DOCUMENTS_BUDGET_BYTES = 128 * 1024
 
 
 @dataclass(frozen=True)
@@ -848,7 +848,7 @@ def load_project_documents_at_commit(
        through the Player's own parser and allowed-key list.
     2. **Bytes:** the raw committed bytes (``git cat-file blob``) through the
        shared committed-content reader, decoded strictly as UTF-8 (invalid is
-       refused), line endings kept; hash, size and the 48 KiB budget are of the
+       refused), line endings kept; hash, size and the 128 KiB budget are of the
        raw bytes, after de-duplication.
     3. **Links:** a required document must be an ordinary file (a link, or a
        path under a linked folder, is refused). An instruction file may be a

@@ -9,7 +9,7 @@ fakes only at the model and validator seams:
 
 * the loader reads the declaration and every document from a COMMIT's
   committed content, with hashes, refuses a missing document, a symbolic link
-  (for the Player too) and a total over the 48 KiB budget, follows an
+  (for the Player too) and a total over the 128 KiB budget, follows an
   instruction-file link only inside the repository, and is opt-in;
 * the Coach prompt carries a ``## Project documents`` section beside the
   requirements, and a project with nothing declared gets today's prompt;
@@ -1289,3 +1289,13 @@ class TestSnapshotIsTheBuildsIdentity:
             )
         feature_orch._worktree_manager.create.assert_called_once()
         assert not snapshot.exists()
+
+
+def test_budget_is_128_kib_the_same_value_forge_uses_for_the_planning_writers() -> None:
+    """GuardKit's Coach budget and Forge's planning budget are kept in step.
+
+    Forge's ``PROJECT_DOCUMENTS_BUDGET_BYTES`` (in
+    ``src/forge/planning/project_documents.py``) has its own test pinning the
+    same number; change both together.
+    """
+    assert PROJECT_DOCUMENTS_BUDGET_BYTES == 131_072
