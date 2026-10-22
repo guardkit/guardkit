@@ -119,13 +119,23 @@ kit_compose() {
 }
 
 # The compose file's services, sorted, one per line.
+# Each name must also make a valid image name once lower-cased (the kit keeps
+# images as <env id>-deploy-<service>), and no two names may differ only by
+# case, or they would share one image name.
 kit_services() {
-  local out name
+  local out name lower
+  local -A seen=()
   out="$(override='' kit_compose config --services)" || die "docker compose could not read compose.yaml"
   out="$(printf '%s\n' "$out" | LC_ALL=C sort -u)"
   [[ -n "$out" ]] || die "compose.yaml declares no services"
   while IFS= read -r name; do
     [[ "$name" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || die "unexpected service name in compose.yaml: $name"
+    lower="${name,,}"
+    [[ "$lower" =~ ^[a-z0-9]+(([._]|__|-+)[a-z0-9]+)*$ ]] ||
+      die "the service name $name in compose.yaml cannot be used in an image name; use letters, digits and single '.', '_' or '-' between them"
+    [[ -z "${seen[$lower]:-}" ]] ||
+      die "the services ${seen[$lower]} and $name in compose.yaml differ only by case; rename one of them"
+    seen[$lower]="$name"
   done <<<"$out"
   printf '%s\n' "$out"
 }

@@ -508,6 +508,25 @@ def test_candidate_builds_labels_and_reports(kit: Kit) -> None:
 
 
 @pytest.mark.parametrize(
+    "services, words",
+    [
+        ("API api", "the services API and api in compose.yaml differ only by case"),
+        ("web web.-x", "cannot be used in an image name"),
+        ("web web-", "cannot be used in an image name"),
+    ],
+)
+def test_candidate_refuses_service_names_that_would_share_or_break_an_image_name(
+    kit: Kit, services: str, words: str
+) -> None:
+    done = kit.run("deploy.sh", {"CANDIDATE": "1", **CANDIDATE_ENV, "DEPLOY_IDENTITY": IDENTITY,
+                                 "FAKE_SERVICES": services})
+    assert done.returncode != 0
+    assert words in done.stderr
+    assert kit.compose_calls("build") == [] and kit.compose_calls("up") == []
+    assert _line(done.stdout, "CHECKED_ARTIFACT") is None
+
+
+@pytest.mark.parametrize(
     "env, words",
     [
         ({"CANDIDATE": "1", "COMPOSE_PROJECT_NAME": f"{ENV_ID}-cand", "DEPLOY_IDENTITY": IDENTITY},
