@@ -150,9 +150,11 @@ if args[:1] == ["compose"]:
 if args[:1] == ["ps"]:
     prefix = "label=com.docker.compose.project="
     project = next(a[len(prefix):] for a in args if a.startswith(prefix))
+    fmt = args[args.index("--format") + 1]
     for c in state["containers"]:
         if c["project"] == project:
-            print("c:" + c["label"])
+            print(fmt.replace("{{.State}}", c.get("state", "running"))
+                     .replace('{{.Label "' + LABEL + '"}}', c["label"]))
     sys.exit(0)
 if args[:1] == ["inspect"]:
     cid = args[-1]
@@ -331,7 +333,7 @@ def test_running_identity_says_none_when_nothing_runs(kit: Kit) -> None:
     # Read-only: one container listing of the live project, nothing else.
     assert kit.calls() == [
         ["ps", "-a", "--filter", f"label=com.docker.compose.project={ENV_ID}-live",
-         "--format", 'c:{{.Label "guardkit.deploy.identity"}}']
+         "--format", 'c:{{.State}}:{{.Label "guardkit.deploy.identity"}}']
     ]
 
 
@@ -340,6 +342,56 @@ def test_running_identity_unknown_when_docker_cannot_be_asked(kit: Kit) -> None:
     assert done.returncode == 0
     assert _line(done.stdout, "RUNNING_IDENTITY") is None
     assert _line(done.stdout, "RUNNING_IDENTITY_UNKNOWN")
+
+
+def _live_stack(kit: Kit, *containers: tuple[str, str, str]) -> None:
+    """The live project as (service, state, identity label) containers."""
+    kit.state.write_text(json.dumps({"tags": {}, "images": [], "containers": [
+        {"id": f"live-{svc}", "project": f"{ENV_ID}-live", "service": svc, "state": state,
+         "label": label, "image": "sha256:" + "a" * 64}
+        for svc, state, label in containers
+    ]}))
+
+
+def test_running_identity_for_a_fully_running_stack(kit: Kit) -> None:
+    _live_stack(kit, ("web", "running", IDENTITY), ("db", "running", IDENTITY))
+    done = kit.run("deploy.sh", {"RUNNING_IDENTITY": "1"})
+    assert _line(done.stdout, "RUNNING_IDENTITY") == IDENTITY
+
+
+def test_running_identity_unknown_for_a_stopped_stack(kit: Kit) -> None:
+    _live_stack(kit, ("web", "exited", IDENTITY), ("db", "exited", IDENTITY))
+    done = kit.run("deploy.sh", {"RUNNING_IDENTITY": "1"})
+    assert done.returncode == 0
+    assert _line(done.stdout, "RUNNING_IDENTITY") is None
+    assert "2 of 2 containers" in _line(done.stdout, "RUNNING_IDENTITY_UNKNOWN")
+
+
+def test_running_identity_unknown_for_a_partial_stack(kit: Kit) -> None:
+    _live_stack(kit, ("web", "running", IDENTITY), ("db", "exited", IDENTITY))
+    done = kit.run("deploy.sh", {"RUNNING_IDENTITY": "1"})
+    assert _line(done.stdout, "RUNNING_IDENTITY") is None
+    assert "1 of 2 containers" in _line(done.stdout, "RUNNING_IDENTITY_UNKNOWN")
+
+
+def test_running_identity_unknown_for_an_unlabelled_container(kit: Kit) -> None:
+    _live_stack(kit, ("web", "running", IDENTITY), ("db", "running", ""))
+    done = kit.run("deploy.sh", {"RUNNING_IDENTITY": "1"})
+    assert _line(done.stdout, "RUNNING_IDENTITY") is None
+    assert "carries no" in _line(done.stdout, "RUNNING_IDENTITY_UNKNOWN")
+
+
+def test_healthcheck_refuses_a_partly_stopped_stack(kit: Kit) -> None:
+    artifact = _line(kit.candidate().stdout, "CHECKED_ARTIFACT")
+    kit.run("deploy.sh", {"PROMOTE": "1", "DEPLOY_IDENTITY": IDENTITY, "DEPLOY_ARTIFACT": artifact})
+    state = json.loads(kit.state.read_text())
+    for container in state["containers"]:
+        if container["project"] == f"{ENV_ID}-live":
+            container["state"] = "exited"
+    kit.state.write_text(json.dumps(state))
+    done = kit.run("healthcheck.sh")
+    assert done.returncode != 0
+    assert "not running" in done.stderr
 
 
 def test_running_identity_unknown_when_labels_disagree(kit: Kit) -> None:
@@ -463,7 +515,7 @@ def test_promote_fails_when_the_containers_carry_another_identity(kit: Kit) -> N
     done = kit.run("deploy.sh", {"PROMOTE": "1", "DEPLOY_IDENTITY": IDENTITY,
                                  "DEPLOY_ARTIFACT": artifact, "FAKE_UP_LABEL": OTHER_IDENTITY})
     assert done.returncode != 0
-    assert f"do not all carry {IDENTITY}" in done.stderr
+    assert f"are not all running as {IDENTITY}" in done.stderr
     assert _line(done.stdout, "DEPLOYED_IDENTITY") is None
 
 
@@ -891,6 +943,19 @@ def test_real_candidate_promote_cycle(tmp_path: Path) -> None:
         assert kept == [OTHER_IDENTITY.replace("@", "-")]
         assert _line(run("deploy.sh", {"RUNNING_IDENTITY": "1"}).stdout, "RUNNING_IDENTITY") == OTHER_IDENTITY
         assert run("healthcheck.sh", {}).returncode == 0
+
+        # A stopped live stack is not "running <identity>" and not "none".
+        live = ["docker", "compose", "--project-name", f"{REAL_ENV_ID}-live", "-f", str(project / "compose.yaml")]
+        live_env = {**os.environ, "APP_PORT": str(LIVE_PORT)}
+        subprocess.run([*live, "stop", "--timeout", "5"], cwd=project, env=live_env, check=True,
+                       capture_output=True)
+        asked = run("deploy.sh", {"RUNNING_IDENTITY": "1"})
+        assert _line(asked.stdout, "RUNNING_IDENTITY") is None
+        assert "not running" in _line(asked.stdout, "RUNNING_IDENTITY_UNKNOWN")
+        assert run("healthcheck.sh", {"DEPLOY_HEALTH_WAIT_SECONDS": "0"}).returncode != 0
+        subprocess.run([*live, "start"], cwd=project, env=live_env, check=True, capture_output=True)
+        assert run("healthcheck.sh", {}).returncode == 0
+        assert _line(run("deploy.sh", {"RUNNING_IDENTITY": "1"}).stdout, "RUNNING_IDENTITY") == OTHER_IDENTITY
     finally:
         for name, port in ((f"{REAL_ENV_ID}-cand", CANDIDATE_PORT), (f"{REAL_ENV_ID}-live", LIVE_PORT)):
             subprocess.run(["docker", "compose", "--project-name", name, "-f", str(project / "compose.yaml"),

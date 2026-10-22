@@ -16,8 +16,10 @@
 #                      from exactly the images in DEPLOY_ARTIFACT (never a
 #                      rebuild) labelled with DEPLOY_IDENTITY; print
 #                      DEPLOYED_IDENTITY=<identity>
-#   RUNNING_IDENTITY=1 read-only: print RUNNING_IDENTITY=<identity>, =none, or
-#                      RUNNING_IDENTITY_UNKNOWN=<reason>; always exits 0
+#   RUNNING_IDENTITY=1 read-only: print RUNNING_IDENTITY=<identity> when every
+#                      live container runs as it, =none when the live project
+#                      has no container, else RUNNING_IDENTITY_UNKNOWN=<reason>
+#                      (stopped, partial or mixed); always exits 0
 #   REVERT=1           refused: this kit keeps no rollback image
 #
 # Long command output (image builds) goes to a log file and only its end is
@@ -53,18 +55,22 @@ esac
 require_command docker
 
 # --- Read-only: what is the live project running? --------------------------------
+# An identity only when every container of the live project is running and
+# carries it; none only when the live project has no container at all; for a
+# stopped, partial or mixed stack, why it cannot be told (Forge reads that as
+# "not established" and deploys nothing over it).
 if [[ "$mode" == running ]]; then
   project="$live_project"
   rc=0
-  kit_label_state || rc=$?
+  kit_run_state || rc=$?
   if ((rc != 0)); then
-    echo "RUNNING_IDENTITY_UNKNOWN=$label_reason"
-  elif [[ "$label_state" == none ]]; then
+    echo "RUNNING_IDENTITY_UNKNOWN=$run_reason"
+  elif [[ "$run_state" == none ]]; then
     echo "RUNNING_IDENTITY=none"
-  elif [[ "$label_state" == mixed ]]; then
-    echo "RUNNING_IDENTITY_UNKNOWN=$label_reason"
+  elif [[ "$run_state" == unknown ]]; then
+    echo "RUNNING_IDENTITY_UNKNOWN=$run_reason"
   else
-    echo "RUNNING_IDENTITY=$label_value"
+    echo "RUNNING_IDENTITY=$run_identity"
   fi
   exit 0
 fi
@@ -133,10 +139,10 @@ if [[ "$mode" == candidate ]]; then
     docker tag "${part#*=}" "$(kit_image "${part%%=*}" "$identity")" >&2
   done
   rc=0
-  kit_label_state || rc=$?
-  ((rc == 0)) || die "$label_reason"
-  [[ "$label_state" == one && "$label_value" == "$identity" ]] ||
-    die "the containers in $project do not all carry $identity (${label_reason:-$label_state})"
+  kit_run_state || rc=$?
+  ((rc == 0)) || die "$run_reason"
+  [[ "$run_state" == running && "$run_identity" == "$identity" ]] ||
+    die "the containers in $project are not all running as $identity (${run_reason:-$run_state})"
   kit_write_record "$project" "$identity" "$APP_PORT"
   kit_log_tail
   echo "deploy: $project (candidate) up on 127.0.0.1:$APP_PORT as $identity" >&2
@@ -166,10 +172,10 @@ running="$(kit_running_images)"
 [[ "$(sorted_artifact "$running")" == "$(sorted_artifact "$artifact")" ]] ||
   die "the live project runs $running, not the checked images $artifact"
 rc=0
-kit_label_state || rc=$?
-((rc == 0)) || die "$label_reason"
-[[ "$label_state" == one && "$label_value" == "$identity" ]] ||
-  die "the containers in $project do not all carry $identity (${label_reason:-$label_state})"
+kit_run_state || rc=$?
+((rc == 0)) || die "$run_reason"
+[[ "$run_state" == running && "$run_identity" == "$identity" ]] ||
+  die "the containers in $project are not all running as $identity (${run_reason:-$run_state})"
 kit_write_record "$project" "$identity" "$APP_PORT"
 kit_remove_old_images "$(identity_tag "$identity")" || true
 kit_log_tail

@@ -143,7 +143,8 @@ kit_write_override() {
   } >"$file"
 }
 
-# Reads the identity labels of every container (running or not) in `project`.
+# Reads the identity labels of every container (running or not) in `project`:
+# who owns them, for a teardown. Whether they are running is kit_run_state.
 # Sets label_state to none (no containers), one (all carry label_value) or
 # mixed (label_reason says why). Returns 2 when docker could not be asked.
 kit_label_state() {
@@ -174,6 +175,58 @@ kit_label_state() {
   label_value="$values"
 }
 
+# Whether `project` is RUNNING a deployment, and whose (the read-only question,
+# the health check and the live gate). Unlike kit_label_state, which answers
+# "whose containers are these" for a teardown, a stopped container counts
+# here. Sets run_state:
+#   none     no container of the project exists at all
+#   running  every container is running and all carry run_identity
+#   unknown  a container is stopped, paused, restarting or still starting,
+#            or carries no identity, or the identities differ (run_reason)
+# Returns 2 when docker could not be asked (run_reason says so).
+kit_run_state() {
+  local out line state label total=0 stopped=0 states="" values
+  run_state="" run_identity="" run_reason=""
+  out="$(docker ps -a --filter "label=com.docker.compose.project=$project" \
+    --format "c:{{.State}}:{{.Label \"$IDENTITY_LABEL\"}}" 2>/dev/null)" || {
+    run_reason="docker could not list the containers of $project"
+    return 2
+  }
+  if [[ -z "$out" ]]; then
+    run_state=none
+    return 0
+  fi
+  values=""
+  while IFS= read -r line; do
+    [[ "$line" == c:* ]] || continue
+    line="${line#c:}"
+    state="${line%%:*}"
+    label="${line#*:}"
+    total=$((total + 1))
+    if [[ "$state" != running ]]; then
+      stopped=$((stopped + 1))
+      states+="${states:+, }$state"
+    fi
+    values+="$label"$'\n'
+  done <<<"$out"
+  run_state=unknown
+  if ((stopped > 0)); then
+    run_reason="$stopped of $total containers in $project are not running ($states)"
+    return 0
+  fi
+  if grep -qx '' <<<"${values%$'\n'}"; then
+    run_reason="a container in $project carries no $IDENTITY_LABEL label"
+    return 0
+  fi
+  values="$(printf '%s' "$values" | LC_ALL=C sort -u)"
+  if [[ "$values" == *$'\n'* ]]; then
+    run_reason="the containers in $project carry different identities: ${values//$'\n'/, }"
+    return 0
+  fi
+  run_state=running
+  run_identity="$values"
+}
+
 # The image of every service's containers in `project`, as
 # "<service>=sha256:<id>,..." sorted by service.
 kit_running_images() {
@@ -198,7 +251,8 @@ kit_running_images() {
 sorted_artifact() { tr ',' '\n' <<<"$1" | LC_ALL=C sort | paste -sd, -; }
 
 # One health probe of `project` on `port`: the health path answers HTTP 200
-# and every container carries one identity (and `expected`, when given).
+# and every container is running and carries one identity (and `expected`,
+# when given).
 # Sets probe_detail; returns 0 healthy, 1 not healthy, 2 docker unavailable.
 kit_probe() {
   local port="$1" expected="${2:-}" code url
@@ -211,27 +265,27 @@ kit_probe() {
     return 1
   fi
   local rc=0
-  kit_label_state || rc=$?
+  kit_run_state || rc=$?
   if ((rc != 0)); then
-    probe_detail="$label_reason"
+    probe_detail="$run_reason"
     return 2
   fi
-  case "$label_state" in
+  case "$run_state" in
   none)
     probe_detail="$url answers, but no container of $project is running"
     return 1
     ;;
-  mixed)
-    probe_detail="$label_reason"
+  unknown)
+    probe_detail="$run_reason"
     return 1
     ;;
   esac
-  probe_identity="$label_value"
-  if [[ -n "$expected" && "$label_value" != "$expected" ]]; then
-    probe_detail="$project runs $label_value, not $expected"
+  probe_identity="$run_identity"
+  if [[ -n "$expected" && "$run_identity" != "$expected" ]]; then
+    probe_detail="$project runs $run_identity, not $expected"
     return 1
   fi
-  probe_detail="$project answers on $url as $label_value"
+  probe_detail="$project answers on $url as $run_identity"
   return 0
 }
 
