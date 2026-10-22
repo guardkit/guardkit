@@ -115,9 +115,11 @@ if args[:1] == ["compose"]:
                 image = "sha256:" + hashlib.sha256((svc + labels.get(svc, "")).encode()).hexdigest()
                 if image not in state["images"]:
                     state["images"].append(image)
+            # Simulate a compose run that did not do what it was asked.
+            image = os.environ.get("FAKE_UP_IMAGE", image)
+            label = os.environ.get("FAKE_UP_LABEL", labels.get(svc, ""))
             state["containers"].append({"id": f"{project}-{svc}-1", "project": project,
-                                        "service": svc, "label": labels.get(svc, ""),
-                                        "image": image})
+                                        "service": svc, "label": label, "image": image})
         save(); sys.exit(0)
     if sub == "ps":
         svc = opts[-1]
@@ -392,6 +394,62 @@ def test_promote_runs_exactly_the_checked_images_as_live(kit: Kit) -> None:
     assert _line(asked.stdout, "RUNNING_IDENTITY") == IDENTITY
 
 
+def test_promote_uses_the_checked_image_even_if_its_tag_moved(kit: Kit) -> None:
+    artifact = _line(kit.candidate().stdout, "CHECKED_ARTIFACT")
+    checked = artifact.split("=", 1)[1]
+    # Between the check and the promote, the kit's tag is pointed elsewhere.
+    state = json.loads(kit.state.read_text())
+    moved = "sha256:" + "e" * 64
+    state["images"].append(moved)
+    for name in state["tags"]:
+        state["tags"][name] = moved
+    kit.state.write_text(json.dumps(state))
+    done = kit.run("deploy.sh", {"PROMOTE": "1", "DEPLOY_IDENTITY": IDENTITY, "DEPLOY_ARTIFACT": artifact})
+    assert done.returncode == 0, done.stderr
+    live = [c for c in kit.containers() if c["project"] == f"{ENV_ID}-live"]
+    assert [c["image"] for c in live] == [checked]
+
+
+def test_promote_fails_when_the_running_images_are_not_the_checked_ones(kit: Kit) -> None:
+    artifact = _line(kit.candidate().stdout, "CHECKED_ARTIFACT")
+    other = "sha256:" + "f" * 64
+    state = json.loads(kit.state.read_text())
+    state["images"].append(other)
+    kit.state.write_text(json.dumps(state))
+    done = kit.run("deploy.sh", {"PROMOTE": "1", "DEPLOY_IDENTITY": IDENTITY,
+                                 "DEPLOY_ARTIFACT": artifact, "FAKE_UP_IMAGE": other})
+    assert done.returncode != 0
+    assert "not the checked images" in done.stderr
+    assert _line(done.stdout, "DEPLOYED_IDENTITY") is None
+    assert not (kit.tmp / ".local/state/guardkit-deploy" / f"{ENV_ID}-live.env").exists()
+
+
+def test_promote_fails_when_the_containers_carry_another_identity(kit: Kit) -> None:
+    artifact = _line(kit.candidate().stdout, "CHECKED_ARTIFACT")
+    done = kit.run("deploy.sh", {"PROMOTE": "1", "DEPLOY_IDENTITY": IDENTITY,
+                                 "DEPLOY_ARTIFACT": artifact, "FAKE_UP_LABEL": OTHER_IDENTITY})
+    assert done.returncode != 0
+    assert f"do not all carry {IDENTITY}" in done.stderr
+    assert _line(done.stdout, "DEPLOYED_IDENTITY") is None
+
+
+def test_candidate_fails_when_the_containers_carry_another_identity(kit: Kit) -> None:
+    done = kit.run("deploy.sh", {"CANDIDATE": "1", **CANDIDATE_ENV, "DEPLOY_IDENTITY": IDENTITY,
+                                 "FAKE_UP_LABEL": OTHER_IDENTITY})
+    assert done.returncode != 0
+    assert _line(done.stdout, "CHECKED_ARTIFACT") is None
+    assert _line(done.stdout, "DEPLOYED_IDENTITY") is None
+
+
+def test_identity_is_reported_verbatim(kit: Kit) -> None:
+    # Forge compares the reported text with what it handed over, as text.
+    odd = "j-0a1b2c3d4e5f@AbC0123456789xyz"
+    artifact = _line(kit.candidate(odd).stdout, "CHECKED_ARTIFACT")
+    done = kit.run("deploy.sh", {"PROMOTE": "1", "DEPLOY_IDENTITY": odd, "DEPLOY_ARTIFACT": artifact})
+    assert _line(done.stdout, "DEPLOYED_IDENTITY") == odd
+    assert _line(kit.run("deploy.sh", {"RUNNING_IDENTITY": "1"}).stdout, "RUNNING_IDENTITY") == odd
+
+
 @pytest.mark.parametrize(
     "artifact, words",
     [
@@ -482,14 +540,54 @@ def test_healthcheck_fails_on_non_200(kit: Kit) -> None:
 def test_healthcheck_fails_when_nothing_is_deployed(kit: Kit) -> None:
     done = kit.run("healthcheck.sh")
     assert done.returncode != 0
-    assert "no container" in done.stderr
+    assert "no deploy record" in done.stderr
 
 
-def test_healthcheck_checks_expected_identity_when_given(kit: Kit) -> None:
+def test_deploy_steps_record_identity_and_port_for_the_checks(kit: Kit) -> None:
+    records = kit.tmp / ".local" / "state" / "guardkit-deploy"
+    artifact = _line(kit.candidate().stdout, "CHECKED_ARTIFACT")
+    assert (records / f"{ENV_ID}-cand.env").read_text() == f"IDENTITY={IDENTITY}\nPORT={CANDIDATE_PORT}\n"
+    kit.run("deploy.sh", {"PROMOTE": "1", "DEPLOY_IDENTITY": IDENTITY, "DEPLOY_ARTIFACT": artifact})
+    assert (records / f"{ENV_ID}-live.env").read_text() == f"IDENTITY={IDENTITY}\nPORT={LIVE_PORT}\n"
+    kit.run("deploy.sh", {"CANDIDATE_DOWN": "1", **CANDIDATE_ENV, "DEPLOY_IDENTITY": IDENTITY})
+    assert not (records / f"{ENV_ID}-cand.env").exists()
+    assert (records / f"{ENV_ID}-live.env").exists()
+
+
+def _relabel(kit: Kit, project: str, label: str) -> None:
+    """Another build's containers now stand in ``project`` (labels changed)."""
+    state = json.loads(kit.state.read_text())
+    for container in state["containers"]:
+        if container["project"] == project:
+            container["label"] = label
+    kit.state.write_text(json.dumps(state))
+
+
+def test_healthcheck_refuses_containers_that_are_not_the_recorded_identity(kit: Kit) -> None:
+    kit.candidate()
+    _relabel(kit, f"{ENV_ID}-cand", OTHER_IDENTITY)
+    done = kit.run("healthcheck.sh", CANDIDATE_ENV)  # exactly what Forge sends
+    assert done.returncode != 0
+    assert f"runs {OTHER_IDENTITY}, not {IDENTITY}" in done.stderr
+
+
+def test_healthcheck_after_promote_refuses_a_replaced_live_project(kit: Kit) -> None:
+    artifact = _line(kit.candidate().stdout, "CHECKED_ARTIFACT")
+    kit.run("deploy.sh", {"PROMOTE": "1", "DEPLOY_IDENTITY": IDENTITY, "DEPLOY_ARTIFACT": artifact})
+    _relabel(kit, f"{ENV_ID}-live", OTHER_IDENTITY)
+    done = kit.run("healthcheck.sh")  # Forge sends nothing after a promote
+    assert done.returncode != 0
+    assert f"not {IDENTITY}" in done.stderr
+    gate = kit.run("live-gate.sh", args=("--feature", "F1", "--target", ENV_ID))
+    assert gate.returncode == 1
+    assert json.loads(gate.stdout)["verdict"] == "fail"
+
+
+def test_healthcheck_refuses_a_hand_set_identity_that_disagrees(kit: Kit) -> None:
     kit.candidate()
     done = kit.run("healthcheck.sh", {**CANDIDATE_ENV, "DEPLOY_IDENTITY": OTHER_IDENTITY})
     assert done.returncode != 0
-    assert f"not {OTHER_IDENTITY}" in done.stderr
+    assert f"was deployed as {IDENTITY}" in done.stderr
 
 
 def test_live_gate_passes_with_an_envelope(kit: Kit) -> None:

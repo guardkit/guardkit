@@ -9,7 +9,7 @@
 # which this smoke gate accepts and does not need.
 #
 # The gate: the deployment answers its health path with HTTP 200 and every
-# container carries one identity label. It prints one results envelope (JSON)
+# container carries the identity the deploy step recorded for it. It prints one results envelope (JSON)
 # on stdout and exits by the factory's driver map: 0 pass, 1 fail,
 # 3 instrument_fail, 4 environment_fail (deploy/live_gate.py in Forge).
 #
@@ -58,11 +58,12 @@ kit_settings
 require_command curl
 require_command docker
 kit_check_target
+kit_expected_identity
 
 deadline=$(($(date +%s) + DEPLOY_GATE_WAIT_SECONDS))
 while :; do
   rc=0
-  kit_probe "$port" "" || rc=$?
+  kit_probe "$port" "$expected" || rc=$?
   ((rc == 0)) && break
   (($(date +%s) < deadline)) || break
   sleep 2

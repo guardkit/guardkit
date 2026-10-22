@@ -34,7 +34,7 @@ does not care what language or framework is inside.
 | Step (signal from the factory) | What happens |
 |---|---|
 | Candidate check (`CANDIDATE=1`) | Builds and starts compose project `<env id>-cand` on the candidate port, labels every container with the identity the factory handed over, and prints the image of every service as `CHECKED_ARTIFACT` and the identity as `DEPLOYED_IDENTITY`. |
-| Health check | `deploy/healthcheck.sh`: the health path answers 200 and every container carries one identity. |
+| Health check | `deploy/healthcheck.sh`: the health path answers 200 and every container carries the identity the deploy step recorded for that project. |
 | Live gate | `deploy/live-gate.sh`: the same check, reported as a results envelope. |
 | Promote (`PROMOTE=1`) | Starts compose project `<env id>-live` on the live port from exactly the checked images (never a rebuild), labelled with the identity. |
 | Candidate down (`CANDIDATE_DOWN=1`) | Removes the candidate project and its volumes, only when it is the named identity's. Never touches the live project. |
@@ -42,6 +42,11 @@ does not care what language or framework is inside.
 | Revert (`REVERT=1`) | Refused: the kit keeps no rollback image. |
 
 The identity is stored as the container label `guardkit.deploy.identity`.
+The factory does not send the health check and live gate the identity, so each
+successful candidate or promote also records it, with the port, in
+`$HOME/.local/state/guardkit-deploy/<compose project>.env` (the factory gives
+every step of one checkout the same private home); the checks compare the
+running containers with that record.
 Checked images are kept as `<env id>-deploy-<service>:<identity>`; old ones can
 be removed by hand once they are no longer live.
 

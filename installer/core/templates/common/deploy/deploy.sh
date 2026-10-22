@@ -9,8 +9,9 @@
 #                      labelled with DEPLOY_IDENTITY; print
 #                      CHECKED_ARTIFACT=<service>=sha256:<image id>,... and
 #                      DEPLOYED_IDENTITY=<identity>
-#   CANDIDATE_DOWN=1   remove the named candidate project and its volumes, only
-#                      when what runs there is DEPLOY_IDENTITY's (or nothing)
+#   CANDIDATE_DOWN=1   remove the named candidate project, its volumes and its
+#                      deploy record, only when what runs there is
+#                      DEPLOY_IDENTITY's (or nothing)
 #   PROMOTE=1          start the live project "<env id>-live" on the live port
 #                      from exactly the images in DEPLOY_ARTIFACT (never a
 #                      rebuild) labelled with DEPLOY_IDENTITY; print
@@ -22,7 +23,9 @@
 # The compose file is the project's own root compose.yaml. The kit exports
 # APP_PORT (the loopback port the public service must publish) and adds a
 # generated override that labels every container with the identity and, for
-# a promote, pins every service to its checked image. The live project is
+# a promote, pins every service to its checked image. A successful candidate
+# or promote records the identity and port for the health check and live gate
+# (deploy/lib.sh, kit_write_record). The live project is
 # never touched by a candidate step, and a candidate step never names it.
 set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -95,6 +98,7 @@ if [[ "$mode" == candidate_down ]]; then
   export APP_PORT="${CANDIDATE_PORT:-$DEPLOY_CANDIDATE_PORT}"
   override=""
   kit_compose down --volumes --remove-orphans --timeout 10 >&2
+  kit_remove_record "$project"
   echo "deploy: removed $project" >&2
   exit 0
 fi
@@ -123,6 +127,7 @@ if [[ "$mode" == candidate ]]; then
   ((rc == 0)) || die "$label_reason"
   [[ "$label_state" == one && "$label_value" == "$identity" ]] ||
     die "the containers in $project do not all carry $identity (${label_reason:-$label_state})"
+  kit_write_record "$project" "$identity" "$APP_PORT"
   echo "deploy: $project (candidate) up on 127.0.0.1:$APP_PORT as $identity" >&2
   echo "CHECKED_ARTIFACT=$artifact"
   echo "DEPLOYED_IDENTITY=$identity"
@@ -154,5 +159,6 @@ kit_label_state || rc=$?
 ((rc == 0)) || die "$label_reason"
 [[ "$label_state" == one && "$label_value" == "$identity" ]] ||
   die "the containers in $project do not all carry $identity (${label_reason:-$label_state})"
+kit_write_record "$project" "$identity" "$APP_PORT"
 echo "deploy: $project (live) up on 127.0.0.1:$APP_PORT as $identity" >&2
 echo "DEPLOYED_IDENTITY=$identity"

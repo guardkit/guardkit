@@ -31,6 +31,16 @@
 #   RUNNING_IDENTITY=<identity> | none             answer to RUNNING_IDENTITY=1
 #   RUNNING_IDENTITY_UNKNOWN=<reason>              when that cannot be told
 # Everything else goes to stderr.
+#
+# The health check and the live gate are NOT sent the deploy step's identity
+# (Forge sends them candidate.env, or nothing after a promote). So each deploy
+# step that brings a project up records what it deployed in a per-project
+# file, <state dir>/<compose project>.env (IDENTITY, PORT), and the checks
+# compare the running containers with that record. The state dir is
+# DEPLOY_STATE_DIR or $HOME/.local/state/guardkit-deploy; Forge gives every
+# project program of one checkout the same private HOME, so the deploy step
+# and the checks that follow it read the same file. Candidate down deletes
+# the candidate's record.
 
 # The label every container of a deployment carries, holding the identity the
 # factory handed the deploy step. RUNNING_IDENTITY, the health check and the
@@ -242,4 +252,55 @@ kit_check_target() {
   fi
   valid_port "$port" || die "invalid port: $port"
   valid_project_name "$project" || die "invalid compose project name: $project"
+}
+
+# The deploy record file for `project`.
+kit_record_file() {
+  local dir="${DEPLOY_STATE_DIR:-${HOME:?HOME is not set}/.local/state/guardkit-deploy}"
+  valid_project_name "$1" || die "invalid compose project name: $1"
+  printf '%s/%s.env' "$dir" "$1"
+}
+
+# Records that `project` now runs `identity` on `port` (private, atomic).
+kit_write_record() {
+  local file dir tmp
+  file="$(kit_record_file "$1")"
+  dir="$(dirname "$file")"
+  (umask 077 && mkdir -p "$dir")
+  tmp="$(umask 077 && mktemp "$dir/.record.XXXXXX")"
+  printf 'IDENTITY=%s\nPORT=%s\n' "$2" "$3" >"$tmp"
+  mv -f "$tmp" "$file"
+}
+
+# Reads `project`'s record into record_identity and record_port; dies when
+# there is none or it is not well formed.
+kit_read_record() {
+  local file name value
+  file="$(kit_record_file "$1")"
+  [[ -r "$file" ]] || die "no deploy record for $1 ($file): it was not deployed from this checkout"
+  record_identity="" record_port=""
+  while IFS='=' read -r name value; do
+    case "$name" in
+    IDENTITY) record_identity="$value" ;;
+    PORT) record_port="$value" ;;
+    *) die "unexpected line in $file" ;;
+    esac
+  done <"$file"
+  valid_identity "$record_identity" || die "the deploy record $file has no valid IDENTITY"
+  valid_port "$record_port" || die "the deploy record $file has no valid PORT"
+}
+
+kit_remove_record() { rm -f "$(kit_record_file "$1")"; }
+
+# What a health check or live gate expects: the identity the last deploy step
+# recorded for `project` on `port` (and DEPLOY_IDENTITY, when a person sets it
+# by hand, must agree). Sets expected.
+kit_expected_identity() {
+  kit_read_record "$project"
+  [[ "$record_port" == "$port" ]] ||
+    die "$project was deployed on port $record_port, but this check addresses port $port"
+  expected="$record_identity"
+  if [[ -n "${DEPLOY_IDENTITY:-}" && "$DEPLOY_IDENTITY" != "$expected" ]]; then
+    die "DEPLOY_IDENTITY is $DEPLOY_IDENTITY, but $project was deployed as $expected"
+  fi
 }

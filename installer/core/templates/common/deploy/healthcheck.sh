@@ -6,8 +6,9 @@
 # the live port (deploy/settings.sh).
 #
 # Healthy means: http://127.0.0.1:<port><health path> answers HTTP 200, and
-# every container of the project carries one and the same identity label (the
-# one the deploy step was handed; when DEPLOY_IDENTITY is set, exactly that).
+# every container of the project carries the identity label the deploy step
+# recorded for that project (deploy/lib.sh, kit_write_record): the factory
+# does not send this step the identity, so the record is where it comes from.
 # It waits up to DEPLOY_HEALTH_WAIT_SECONDS. The exit code is the verdict.
 set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -20,10 +21,7 @@ kit_settings
 require_command curl
 require_command docker
 kit_check_target
-expected="${DEPLOY_IDENTITY:-}"
-if [[ -n "$expected" ]]; then
-  valid_identity "$expected" || die "DEPLOY_IDENTITY is not an identity"
-fi
+kit_expected_identity
 
 deadline=$(($(date +%s) + DEPLOY_HEALTH_WAIT_SECONDS))
 while :; do
