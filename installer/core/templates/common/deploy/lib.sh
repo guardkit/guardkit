@@ -131,7 +131,7 @@ kit_services() {
   while IFS= read -r name; do
     [[ "$name" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || die "unexpected service name in compose.yaml: $name"
     lower="${name,,}"
-    [[ "$lower" =~ ^[a-z0-9]+(([._]|__|-+)[a-z0-9]+)*$ ]] ||
+    [[ "$lower" =~ ^[a-z0-9]+((\.|_{1,2}|-+)[a-z0-9]+)*$ ]] ||
       die "the service name $name in compose.yaml cannot be used in an image name; use letters, digits and single '.', '_' or '-' between them"
     [[ -z "${seen[$lower]:-}" ]] ||
       die "the services ${seen[$lower]} and $name in compose.yaml differ only by case; rename one of them"
