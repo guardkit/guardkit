@@ -64,10 +64,12 @@ does not care what language or framework is inside.
 | Live gate | `deploy/live-gate.sh`: the same check, reported as a results envelope. |
 | Promote (`PROMOTE=1`) | Starts compose project `<env id>-live` on the live port from exactly the checked images (never a rebuild), labelled with the identity. |
 | Candidate down (`CANDIDATE_DOWN=1`) | Removes the candidate project and its volumes, only when it is the named identity's. Never touches the live project. |
-| What is running (`RUNNING_IDENTITY=1`) | Prints the live project's identity when every live container is running as it, `none` when the live project has no container at all, and otherwise (stopped, partial or mixed) why it cannot tell. Changes nothing. |
+| What is running (`RUNNING_IDENTITY=1`) | Prints the live project's identity when every service the deployment named (label `guardkit.deploy.services`) has exactly one container, running as it, `none` when the live project has no container at all, and otherwise (stopped, partial or mixed) why it cannot tell. Changes nothing. |
 | Revert (`REVERT=1`) | Refused: the kit keeps no rollback image. |
 
-The identity is stored as the container label `guardkit.deploy.identity`.
+The identity is stored as the container label `guardkit.deploy.identity`, and
+the full list of the deployment's services as `guardkit.deploy.services`, so a
+removed container is noticed without reading any compose file.
 The factory does not send the health check and live gate the identity, so each
 successful candidate or promote also records it, with the port, in
 `$HOME/.local/state/guardkit-deploy/<compose project>.env` (the factory gives

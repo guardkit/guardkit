@@ -111,13 +111,15 @@ if args[:1] == ["compose"]:
     if sub == "up":
         if setting("FAKE_UP_FAIL") == "1":
             print("container failed to start", file=sys.stderr); sys.exit(1)
-        labels, images, current = {}, {}, None
+        labels, images, lists, current = {}, {}, {}, None
         for path in files[1:]:
             for line in open(path):
                 m = re.match(r"^  ([A-Za-z0-9._-]+):$", line)
                 if m: current = m.group(1)
                 m = re.match(r'^      ' + re.escape(LABEL) + r': "(.*)"$', line)
                 if m: labels[current] = m.group(1)
+                m = re.match(r'^      guardkit\.deploy\.services: "(.*)"$', line)
+                if m: lists[current] = m.group(1)
                 m = re.match(r'^    image: "(.*)"$', line)
                 if m: images[current] = m.group(1)
         state["containers"] = [c for c in state["containers"] if c["project"] != project]
@@ -134,7 +136,8 @@ if args[:1] == ["compose"]:
             image = setting("FAKE_UP_IMAGE", image)
             label = setting("FAKE_UP_LABEL", labels.get(svc, ""))
             state["containers"].append({"id": f"{project}-{svc}-1", "project": project,
-                                        "service": svc, "label": label, "image": image})
+                                        "service": svc, "label": label, "image": image,
+                                        "services": lists.get(svc, "")})
         save(); sys.exit(0)
     if sub == "ps":
         svc = opts[-1]
@@ -153,8 +156,11 @@ if args[:1] == ["ps"]:
     fmt = args[args.index("--format") + 1]
     for c in state["containers"]:
         if c["project"] == project:
-            print(fmt.replace("{{.State}}", c.get("state", "running"))
-                     .replace('{{.Label "' + LABEL + '"}}', c["label"]))
+            values = {"com.docker.compose.service": c["service"], LABEL: c["label"],
+                      "guardkit.deploy.services": c.get("services", "")}
+            text = fmt.replace("{{.State}}", c.get("state", "running"))
+            text = re.sub(r'\{\{\.Label "([^"]+)"\}\}', lambda m: values.get(m.group(1), ""), text)
+            print(text)
     sys.exit(0)
 if args[:1] == ["inspect"]:
     cid = args[-1]
@@ -333,7 +339,8 @@ def test_running_identity_says_none_when_nothing_runs(kit: Kit) -> None:
     # Read-only: one container listing of the live project, nothing else.
     assert kit.calls() == [
         ["ps", "-a", "--filter", f"label=com.docker.compose.project={ENV_ID}-live",
-         "--format", 'c:{{.State}}:{{.Label "guardkit.deploy.identity"}}']
+         "--format", 'c|{{.State}}|{{.Label "com.docker.compose.service"}}'
+         '|{{.Label "guardkit.deploy.identity"}}|{{.Label "guardkit.deploy.services"}}']
     ]
 
 
@@ -344,12 +351,13 @@ def test_running_identity_unknown_when_docker_cannot_be_asked(kit: Kit) -> None:
     assert _line(done.stdout, "RUNNING_IDENTITY_UNKNOWN")
 
 
-def _live_stack(kit: Kit, *containers: tuple[str, str, str]) -> None:
-    """The live project as (service, state, identity label) containers."""
+def _live_stack(kit: Kit, *containers: tuple[str, str, str], services: str = "db,web") -> None:
+    """The live project as (service, state, identity label) containers, each
+    labelled with the deployment's service list ``services``."""
     kit.state.write_text(json.dumps({"tags": {}, "images": [], "containers": [
-        {"id": f"live-{svc}", "project": f"{ENV_ID}-live", "service": svc, "state": state,
-         "label": label, "image": "sha256:" + "a" * 64}
-        for svc, state, label in containers
+        {"id": f"live-{svc}-{n}", "project": f"{ENV_ID}-live", "service": svc, "state": state,
+         "label": label, "image": "sha256:" + "a" * 64, "services": services}
+        for n, (svc, state, label) in enumerate(containers)
     ]}))
 
 
@@ -364,14 +372,16 @@ def test_running_identity_unknown_for_a_stopped_stack(kit: Kit) -> None:
     done = kit.run("deploy.sh", {"RUNNING_IDENTITY": "1"})
     assert done.returncode == 0
     assert _line(done.stdout, "RUNNING_IDENTITY") is None
-    assert "2 of 2 containers" in _line(done.stdout, "RUNNING_IDENTITY_UNKNOWN")
+    said = _line(done.stdout, "RUNNING_IDENTITY_UNKNOWN")
+    assert "web is exited" in said and "db is exited" in said
 
 
 def test_running_identity_unknown_for_a_partial_stack(kit: Kit) -> None:
     _live_stack(kit, ("web", "running", IDENTITY), ("db", "exited", IDENTITY))
     done = kit.run("deploy.sh", {"RUNNING_IDENTITY": "1"})
     assert _line(done.stdout, "RUNNING_IDENTITY") is None
-    assert "1 of 2 containers" in _line(done.stdout, "RUNNING_IDENTITY_UNKNOWN")
+    said = _line(done.stdout, "RUNNING_IDENTITY_UNKNOWN")
+    assert "db is exited" in said and "web is" not in said
 
 
 def test_running_identity_unknown_for_an_unlabelled_container(kit: Kit) -> None:
@@ -391,7 +401,70 @@ def test_healthcheck_refuses_a_partly_stopped_stack(kit: Kit) -> None:
     kit.state.write_text(json.dumps(state))
     done = kit.run("healthcheck.sh")
     assert done.returncode != 0
-    assert "not running" in done.stderr
+    assert "is exited" in done.stderr
+
+
+def test_two_service_deployment_with_one_container_removed_is_unknown(kit: Kit) -> None:
+    """The regression: a removed container is not seen by `docker ps`, so only
+    the deployment's own services label can tell the stack is incomplete."""
+    env = {"FAKE_SERVICES": "web db"}
+    artifact = _line(kit.run("deploy.sh", {"CANDIDATE": "1", **CANDIDATE_ENV,
+                                           "DEPLOY_IDENTITY": IDENTITY, **env}).stdout, "CHECKED_ARTIFACT")
+    done = kit.run("deploy.sh", {"PROMOTE": "1", "DEPLOY_IDENTITY": IDENTITY, "DEPLOY_ARTIFACT": artifact, **env})
+    assert done.returncode == 0, done.stderr
+    live = [c for c in kit.containers() if c["project"] == f"{ENV_ID}-live"]
+    assert {c["services"] for c in live} == {"db,web"}
+    # Complete stack: the identity.
+    assert _line(kit.run("deploy.sh", {"RUNNING_IDENTITY": "1"}).stdout, "RUNNING_IDENTITY") == IDENTITY
+    # One container removed: unknown, and the health check and gate refuse it.
+    state = json.loads(kit.state.read_text())
+    state["containers"] = [c for c in state["containers"]
+                           if not (c["project"] == f"{ENV_ID}-live" and c["service"] == "db")]
+    kit.state.write_text(json.dumps(state))
+    said = kit.run("deploy.sh", {"RUNNING_IDENTITY": "1"}).stdout
+    assert _line(said, "RUNNING_IDENTITY") is None
+    assert "service db has no container" in _line(said, "RUNNING_IDENTITY_UNKNOWN")
+    assert kit.run("healthcheck.sh").returncode != 0
+    assert kit.run("live-gate.sh", args=("--feature", "F1", "--target", ENV_ID)).returncode == 1
+    # Empty project: none.
+    state["containers"] = [c for c in state["containers"] if c["project"] != f"{ENV_ID}-live"]
+    kit.state.write_text(json.dumps(state))
+    assert _line(kit.run("deploy.sh", {"RUNNING_IDENTITY": "1"}).stdout, "RUNNING_IDENTITY") == "none"
+
+
+def test_running_identity_ignores_the_current_compose_file(kit: Kit) -> None:
+    # Asked from a tree whose compose.yaml has other services: only labels count.
+    _live_stack(kit, ("web", "running", IDENTITY), ("db", "running", IDENTITY))
+    done = kit.run("deploy.sh", {"RUNNING_IDENTITY": "1", "FAKE_SERVICES": "web db cache"})
+    assert _line(done.stdout, "RUNNING_IDENTITY") == IDENTITY
+    assert not kit.compose_calls("config")
+
+
+@pytest.mark.parametrize(
+    "containers, services, words",
+    [
+        ((("web", "running", IDENTITY), ("db", "running", IDENTITY), ("db", "running", IDENTITY)),
+         "db,web", "service db has 2 containers"),
+        ((("web", "running", IDENTITY), ("db", "running", IDENTITY), ("cache", "running", IDENTITY)),
+         "db,web", "service cache is not part of the deployment"),
+        ((("web", "running", IDENTITY), ("db", "running", IDENTITY)), "", "carries no guardkit.deploy.services"),
+    ],
+)
+def test_running_identity_unknown_for_incomplete_or_extra_containers(kit: Kit, containers, services, words) -> None:
+    _live_stack(kit, *containers, services=services)
+    said = _line(kit.run("deploy.sh", {"RUNNING_IDENTITY": "1"}).stdout, "RUNNING_IDENTITY_UNKNOWN")
+    assert said and words in said
+
+
+def test_running_identity_unknown_when_service_lists_differ(kit: Kit) -> None:
+    kit.state.write_text(json.dumps({"tags": {}, "images": [], "containers": [
+        {"id": "a", "project": f"{ENV_ID}-live", "service": "web", "label": IDENTITY,
+         "image": "x", "services": "web"},
+        {"id": "b", "project": f"{ENV_ID}-live", "service": "db", "label": IDENTITY,
+         "image": "y", "services": "db,web"},
+    ]}))
+    said = _line(kit.run("deploy.sh", {"RUNNING_IDENTITY": "1"}).stdout, "RUNNING_IDENTITY_UNKNOWN")
+    assert said and "different service lists" in said
 
 
 def test_running_identity_unknown_when_labels_disagree(kit: Kit) -> None:
@@ -877,6 +950,10 @@ def test_real_candidate_promote_cycle(tmp_path: Path) -> None:
         '      - "example.owner=deploy-kit-test"\n'
         "    ports:\n"
         '      - "127.0.0.1:${APP_PORT:?APP_PORT is required}:8080"\n'
+        "  side:\n"
+        f"    image: {REAL_IMAGE}\n"
+        "    init: true\n"
+        '    command: ["httpd", "-f", "-p", "9000", "-h", "/tmp"]\n'
     )
     install_deploy_kit(project, env_id=REAL_ENV_ID, live_port=LIVE_PORT,
                        candidate_port=CANDIDATE_PORT, health_path="/health")
@@ -901,7 +978,7 @@ def test_real_candidate_promote_cycle(tmp_path: Path) -> None:
         cand = run("deploy.sh", {"CANDIDATE": "1", **cand_env, "DEPLOY_IDENTITY": IDENTITY})
         assert cand.returncode == 0
         artifact = _line(cand.stdout, "CHECKED_ARTIFACT")
-        assert artifact and artifact.startswith("web=sha256:")
+        assert artifact and artifact.startswith("side=sha256:") and ",web=sha256:" in artifact
         assert _line(cand.stdout, "DEPLOYED_IDENTITY") == IDENTITY
         assert run("healthcheck.sh", cand_env).returncode == 0
         gate = run("live-gate.sh", cand_env, "--feature", "F1", "--target", REAL_ENV_ID)
@@ -951,17 +1028,30 @@ def test_real_candidate_promote_cycle(tmp_path: Path) -> None:
                        capture_output=True)
         asked = run("deploy.sh", {"RUNNING_IDENTITY": "1"})
         assert _line(asked.stdout, "RUNNING_IDENTITY") is None
-        assert "not running" in _line(asked.stdout, "RUNNING_IDENTITY_UNKNOWN")
+        assert "is exited" in _line(asked.stdout, "RUNNING_IDENTITY_UNKNOWN")
         assert run("healthcheck.sh", {"DEPLOY_HEALTH_WAIT_SECONDS": "0"}).returncode != 0
         subprocess.run([*live, "start"], cwd=project, env=live_env, check=True, capture_output=True)
         assert run("healthcheck.sh", {}).returncode == 0
         assert _line(run("deploy.sh", {"RUNNING_IDENTITY": "1"}).stdout, "RUNNING_IDENTITY") == OTHER_IDENTITY
+
+        # One of the two services' containers removed: not "running <identity>".
+        side = subprocess.run([*live, "ps", "-a", "-q", "side"], cwd=project, env=live_env,
+                              capture_output=True, text=True, check=True).stdout.strip()
+        assert side
+        subprocess.run(["docker", "rm", "-f", side], check=True, capture_output=True)
+        asked = run("deploy.sh", {"RUNNING_IDENTITY": "1"})
+        assert _line(asked.stdout, "RUNNING_IDENTITY") is None
+        assert "service side has no container" in _line(asked.stdout, "RUNNING_IDENTITY_UNKNOWN")
+        assert run("healthcheck.sh", {"DEPLOY_HEALTH_WAIT_SECONDS": "0"}).returncode != 0
     finally:
         for name, port in ((f"{REAL_ENV_ID}-cand", CANDIDATE_PORT), (f"{REAL_ENV_ID}-live", LIVE_PORT)):
             subprocess.run(["docker", "compose", "--project-name", name, "-f", str(project / "compose.yaml"),
                             "down", "--volumes", "--remove-orphans", "--timeout", "5"],
                            cwd=project, env={**os.environ, "APP_PORT": str(port)}, capture_output=True)
+        # Only this test's own tags; the busybox image keeps its own tag.
         for identity in (IDENTITY, OTHER_IDENTITY):
-            subprocess.run(["docker", "image", "rm",
-                            f"{REAL_ENV_ID}-deploy-web:{identity.replace('@', '-')}"], capture_output=True)
+            for service in ("web", "side"):
+                subprocess.run(["docker", "image", "rm",
+                                f"{REAL_ENV_ID}-deploy-{service}:{identity.replace('@', '-')}"],
+                               capture_output=True)
         subprocess.run(["docker", "image", "rm", f"{REAL_ENV_ID}-cand-web"], capture_output=True)
