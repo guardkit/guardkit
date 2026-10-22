@@ -54,6 +54,7 @@ def test_init_writes_the_whole_kit(tmp_path: Path) -> None:
     assert "What to do next:" in done.output
     assert "publishes 127.0.0.1:${APP_PORT} to whatever port the app listens on" in done.output
     assert "never bind-mount a project folder" in done.output
+    assert "Every service must keep running" in done.output
 
 
 def test_scripts_are_executable(tmp_path: Path) -> None:

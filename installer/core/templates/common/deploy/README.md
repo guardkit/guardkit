@@ -47,6 +47,11 @@ implemented in them; the project only supplies its own service.
    example `GET /health`). It was given to `guardkit deploy init` and is kept
    in `deploy/settings.sh`.
 
+Every service in `compose.yaml` must keep running. One-off jobs (database
+migrations, seeding) belong in the app's own start-up, not in separate
+services that run and exit: a stopped service makes the deployment read as
+unknown, and the factory then deploys nothing over it.
+
 Nothing else. The service can be anything that runs in containers; the kit
 does not care what language or framework is inside.
 

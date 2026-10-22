@@ -98,7 +98,8 @@ def next_steps(health_path: str) -> list[str]:
     return [
         "1. Add a root compose.yaml: the public service publishes "
         "127.0.0.1:${APP_PORT} to whatever port the app listens on; only "
-        "that service publishes APP_PORT.",
+        "that service publishes APP_PORT. Every service must keep running "
+        "(run migrations and seeding in the app's start-up, not as services that exit).",
         f"2. Make {health_path} answer HTTP 200 when the app is up; keep data "
         "in named volumes and never bind-mount a project folder.",
         "3. Commit deploy/ with deploy.sh, healthcheck.sh and live-gate.sh "
