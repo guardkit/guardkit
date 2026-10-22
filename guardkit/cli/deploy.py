@@ -64,7 +64,7 @@ def init(
             health_path=health_path,
         )
     except DeployKitError as exc:
-        console.print(f"[bold red]✗[/bold red] {exc}", highlight=False)
+        console.print(f"[bold red]✗[/bold red] {exc}", highlight=False, soft_wrap=True)
         sys.exit(2)
 
     for rel in result.written:
@@ -80,10 +80,27 @@ def init(
         console.print("[bold red]✗ deploy/profile.yaml is not a valid deploy-profile[/bold red]")
         console.print(str(exc), highlight=False)
         sys.exit(1)
-    console.print(f"[bold green]✓[/bold green] {profile} is a valid deploy-profile", highlight=False)
-    if not (project_dir / "compose.yaml").is_file():
+    if result.kept_settings:
         console.print(
-            "  next: add a root compose.yaml whose public service publishes "
-            "127.0.0.1:${APP_PORT} (see deploy/README.md)",
+            f"  the existing settings already match: environment id {env_id}, "
+            f"live port {live_port}, candidate port {candidate_port}, "
+            f"health path {health_path}",
             highlight=False,
         )
+    console.print(f"[bold green]✓[/bold green] {profile} is a valid deploy-profile", highlight=False)
+    console.print("What to do next:", highlight=False)
+    for line in next_steps(health_path):
+        console.print(f"  {line}", highlight=False, soft_wrap=True)
+
+
+def next_steps(health_path: str) -> list[str]:
+    """The three things the project still does (same words as deploy/README.md)."""
+    return [
+        "1. Add a root compose.yaml: the public service publishes "
+        "127.0.0.1:${APP_PORT} to whatever port the app listens on; only "
+        "that service publishes APP_PORT.",
+        f"2. Make {health_path} answer HTTP 200 when the app is up; keep data "
+        "in named volumes and never bind-mount a project folder.",
+        "3. Commit deploy/ with deploy.sh, healthcheck.sh and live-gate.sh "
+        "executable (deploy/README.md explains the rest).",
+    ]

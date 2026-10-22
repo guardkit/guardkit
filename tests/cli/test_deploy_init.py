@@ -50,7 +50,10 @@ def test_init_writes_the_whole_kit(tmp_path: Path) -> None:
     written = {str(p.relative_to(tmp_path)) for p in (tmp_path / "deploy").rglob("*") if p.is_file()}
     assert written == KIT_FILES
     assert "valid deploy-profile" in done.output
-    assert "compose.yaml" in done.output  # tells the project what is still its own
+    # Tells the project, in the README's words, what is still its own.
+    assert "What to do next:" in done.output
+    assert "publishes 127.0.0.1:${APP_PORT} to whatever port the app listens on" in done.output
+    assert "never bind-mount a project folder" in done.output
 
 
 def test_scripts_are_executable(tmp_path: Path) -> None:
@@ -101,11 +104,38 @@ def test_never_overwrites_and_reports_skips(tmp_path: Path) -> None:
 
 def test_existing_invalid_profile_fails_validation(tmp_path: Path) -> None:
     (tmp_path / "deploy").mkdir()
-    (tmp_path / "deploy" / "profile.yaml").write_text('format_version: "1.0"\nenv_id: x\n')
+    (tmp_path / "deploy" / "profile.yaml").write_text('format_version: "1.0"\nenv_id: myapp\n')
     done = _init(tmp_path)
     assert done.exit_code == 1
     assert "skipped deploy/profile.yaml" in done.output
     assert "not a valid deploy-profile" in done.output
+
+
+@pytest.mark.parametrize(
+    "option, value, words",
+    [
+        ("--env-id", "other", "environment id myapp, not other"),
+        ("--live-port", "19000", "live port 18961, not 19000"),
+        ("--candidate-port", "19001", "candidate port 18962, not 19001"),
+        ("--health-path", "/ready", "health path /health, not /ready"),
+    ],
+)
+def test_rerun_with_different_values_is_refused(tmp_path: Path, option: str, value: str, words: str) -> None:
+    assert _init(tmp_path).exit_code == 0
+    before = {p.name: p.read_bytes() for p in (tmp_path / "deploy").iterdir()}
+    args = list(ARGS)
+    args[args.index(option) + 1] = value
+    done = CliRunner().invoke(cli, [*args, "--project-dir", str(tmp_path)])
+    assert done.exit_code == 2, done.output
+    assert words in " ".join(done.output.split())
+    assert {p.name: p.read_bytes() for p in (tmp_path / "deploy").iterdir()} == before
+
+
+def test_rerun_with_the_same_values_says_they_match(tmp_path: Path) -> None:
+    _init(tmp_path)
+    done = _init(tmp_path)
+    assert done.exit_code == 0
+    assert "the existing settings already match" in " ".join(done.output.split())
 
 
 @pytest.mark.parametrize(

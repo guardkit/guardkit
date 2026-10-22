@@ -23,6 +23,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List
 
+import yaml
+
 from guardkit.templates.resolver import _get_templates_base_dir
 
 _DEPLOY_TEMPLATE_RELPATH = ("common", "deploy")
@@ -48,6 +50,58 @@ class DeployKitResult:
     written: List[str] = field(default_factory=list)
     skipped: List[str] = field(default_factory=list)
     profile_path: Path | None = None
+    #: True when an existing profile.yaml or settings.sh was kept; its values
+    #: were checked and agree with the ones asked for.
+    kept_settings: bool = False
+
+
+_SETTING_RE = re.compile(
+    r'^DEPLOY_(ENV_ID|LIVE_PORT|CANDIDATE_PORT|HEALTH_PATH)="([^"]*)"\s*$', re.MULTILINE
+)
+_SETTING_WORDS = {
+    "ENV_ID": "environment id",
+    "LIVE_PORT": "live port",
+    "CANDIDATE_PORT": "candidate port",
+    "HEALTH_PATH": "health path",
+}
+
+
+def existing_disagreements(project_dir: Path, values: dict[str, str]) -> List[str]:
+    """Where an existing deploy/settings.sh or deploy/profile.yaml says
+    something other than ``values`` (keys ENV_ID, LIVE_PORT, CANDIDATE_PORT,
+    HEALTH_PATH), as plain sentences. Empty when they agree or are absent."""
+    found: List[str] = []
+    settings = Path(project_dir) / "deploy" / "settings.sh"
+    if settings.is_file():
+        text = settings.read_text(encoding="utf-8", errors="replace")
+        for key, value in _SETTING_RE.findall(text):
+            if value != values[key]:
+                found.append(
+                    f"deploy/settings.sh has {_SETTING_WORDS[key]} {value}, not {values[key]}"
+                )
+    profile = Path(project_dir) / "deploy" / "profile.yaml"
+    if profile.is_file():
+        try:
+            data = yaml.safe_load(profile.read_text(encoding="utf-8"))
+        except (yaml.YAMLError, UnicodeDecodeError) as exc:
+            return [*found, f"deploy/profile.yaml could not be read ({exc.__class__.__name__})"]
+        if isinstance(data, dict):
+            env_id = data.get("env_id")
+            if env_id is not None and str(env_id) != values["ENV_ID"]:
+                found.append(f"deploy/profile.yaml has environment id {env_id}, not {values['ENV_ID']}")
+            candidate = data.get("candidate")
+            env = candidate.get("env") if isinstance(candidate, dict) else None
+            if isinstance(env, dict):
+                port = env.get("CANDIDATE_PORT")
+                if port is not None and str(port) != values["CANDIDATE_PORT"]:
+                    found.append(
+                        f"deploy/profile.yaml has candidate port {port}, not {values['CANDIDATE_PORT']}"
+                    )
+                name = env.get("COMPOSE_PROJECT_NAME")
+                wanted = f"{values['ENV_ID']}-cand"
+                if name is not None and str(name) != wanted:
+                    found.append(f"deploy/profile.yaml names the candidate project {name}, not {wanted}")
+    return found
 
 
 def kit_source_dir() -> Path:
@@ -118,6 +172,15 @@ def install_deploy_kit(
         "HEALTH_PATH": health_path,
     }
     src_root = kit_source_dir()
+    # A second run with other values must not quietly keep the old ones.
+    differing = existing_disagreements(Path(project_dir), values)
+    if differing:
+        raise DeployKitError(
+            "the project already has deployment settings that differ from the "
+            "values given, so nothing was written: "
+            + "; ".join(differing)
+            + ". Change those files by hand, or run again with their values."
+        )
     target_root = Path(project_dir) / "deploy"
     result = DeployKitResult(profile_path=target_root / "profile.yaml")
 
@@ -132,6 +195,8 @@ def install_deploy_kit(
         shown = str(Path("deploy") / rel)
         if dest.exists() or dest.is_symlink():
             result.skipped.append(shown)
+            if is_template:
+                result.kept_settings = True
             continue
         dest.parent.mkdir(parents=True, exist_ok=True)
         if is_template:
