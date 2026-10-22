@@ -50,6 +50,19 @@ Dated additions:
   False) leaves the candidate project up after a successful promote. Absent ⇒
   byte-identical to the direct-live flow. Field parity with
   ``forge.deploy.profile._parse_candidate`` is proven by the B8 seam test.
+
+- 2026-10-22 (deployment kit): ``identity`` — the names a project's deploy
+  step is handed and prints (forge ``pipeline/deployment_identity.py``,
+  ``declared_identity``): ``setting`` (the identity handed over),
+  ``reported_as`` (the line the deploy prints), ``checked_as`` (the line the
+  candidate check prints its artifact under), ``artifact_setting`` (that
+  artifact handed back to the promote), ``asked_with`` (the read-only "what is
+  running" signal) and ``running_as`` (its answer line). Forge parks the block
+  in the profile's extras and reads it there; it accepts a project's first
+  profile only when the block is present with ``asked_with``
+  (``first_deployment_profile_is_usable``), so a profile written for a first
+  deployment has to carry it and validate here. Every entry is optional and a
+  setting-name shape; Forge's older alias spellings are not canonized.
 """
 
 from __future__ import annotations
@@ -249,6 +262,50 @@ class CandidateSpec(BaseModel):
         return value
 
 
+#: A setting or printed-line NAME in the ``identity`` block: letters, digits
+#: and underscores, never starting with a digit (the shape Forge's
+#: ``declared_setting_refusal`` accepts for a project setting).
+_IDENTITY_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+class IdentitySpec(BaseModel):
+    """How the deploy step is handed the identity and reports it back.
+
+    Read by Forge's ``declared_identity`` (pipeline/deployment_identity.py).
+    Every entry is optional; Forge supplies its defaults for an omitted one,
+    except ``asked_with``, which has none: without it the project cannot be
+    asked what it is running and nothing is deployed over its target.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    setting: Optional[str] = None
+    reported_as: Optional[str] = None
+    checked_as: Optional[str] = None
+    artifact_setting: Optional[str] = None
+    asked_with: Optional[str] = None
+    running_as: Optional[str] = None
+
+    @field_validator(
+        "setting",
+        "reported_as",
+        "checked_as",
+        "artifact_setting",
+        "asked_with",
+        "running_as",
+    )
+    @classmethod
+    def _name_shape(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return value
+        if not isinstance(value, str) or not _IDENTITY_NAME_RE.match(value):
+            raise ValueError(
+                f"identity entry {value!r} must be a setting name "
+                "(letters, digits and underscores, not starting with a digit)"
+            )
+        return value
+
+
 class DeployProfile(QAFormatModel):
     """Canonical deploy-profile schema (B10). Faithful superset of the B8 loader."""
 
@@ -290,6 +347,9 @@ class DeployProfile(QAFormatModel):
     # The candidate-then-promote overlay (dated addition 2026-07-16; forge
     # loader c20f28e). Absent ⇒ byte-identical to the direct-live flow.
     candidate: Optional[CandidateSpec] = None
+    # The identity names (dated addition 2026-10-22; forge
+    # pipeline/deployment_identity.py declared_identity, read from extras).
+    identity: Optional[IdentitySpec] = None
 
     @field_validator("models_required", mode="before")
     @classmethod
