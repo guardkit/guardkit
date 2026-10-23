@@ -3479,6 +3479,10 @@ class AutoBuildOrchestrator:
         # turn, and the coverage command is read from the worktree before the
         # Coach judges that turn (20 October 2026). None otherwise.
         self._coverage_due_from_task: Optional[Dict[str, Any]] = None
+        # The files this task says it will create or change, handed to the
+        # Coach so it makes the task-start check's no-source-files exception
+        # too (23 October 2026). Empty until the task file is read.
+        self._declared_task_paths: List[str] = []
 
         # Emit task.started lifecycle event (TASK-INST-004)
         self._emit_task_started(task_id)
@@ -3536,6 +3540,7 @@ class AutoBuildOrchestrator:
             _declared_task_paths = self._task_declared_paths(
                 task_data.get("content"), frontmatter
             )
+            self._declared_task_paths = list(_declared_task_paths)
             _task_bo_raw = (
                 frontmatter["behavioural_oracle"]
                 if "behavioural_oracle" in frontmatter
@@ -3822,13 +3827,16 @@ class AutoBuildOrchestrator:
             # pass (only the declared command measures coverage). Found out
             # here, from the pinned declaration the Coach will read, before
             # the pre-loop phase or any Player turn, instead of after every
-            # turn has been refused "Coverage is UNKNOWN".
+            # turn has been refused "Coverage is UNKNOWN". 23 October 2026:
+            # a task whose declared files are all configuration, deployment,
+            # documentation or data files is not stopped, whatever its type.
             coverage_refusal = self._undeclared_coverage_refusal(
                 task_id,
                 worktree,
                 task_type=task_type,
                 component=component,
                 implementation_mode=_implementation_mode_raw,
+                declared_paths=_declared_task_paths,
             )
             if coverage_refusal is not None and self._task_declares_coverage_setup(
                 task_id, worktree, _declared_task_paths, component=component
@@ -4269,6 +4277,7 @@ class AutoBuildOrchestrator:
         task_type: Any,
         component: Optional[str],
         implementation_mode: Any,
+        declared_paths: Optional[List[str]] = None,
     ) -> Optional[str]:
         """The plain reason this task cannot pass for want of a coverage
         command, or ``None`` when it can (19 October 2026).
@@ -4295,6 +4304,7 @@ class AutoBuildOrchestrator:
                 toolchain=coverage_view_of_pin(task_id, Path(worktree.path)),
                 component=component,
                 implementation_mode=implementation_mode,
+                declared_paths=declared_paths,
             )
         except Exception as exc:  # pragma: no cover - defensive
             logger.warning(
@@ -10985,6 +10995,15 @@ class AutoBuildOrchestrator:
                         if behavioural_oracle
                         else {}
                     ),
+                    # 23 October 2026: the files the task said it would
+                    # create or change, for the Coach's no-source-files
+                    # coverage exception. Spread conditionally like the key
+                    # above.
+                    **(
+                        {"declared_files": list(self._declared_task_paths)}
+                        if getattr(self, "_declared_task_paths", None)
+                        else {}
+                    ),
                 },
                 skip_arch_review=skip_arch_review,
                 context=context_prompt if context_prompt else None,
@@ -11228,6 +11247,15 @@ class AutoBuildOrchestrator:
                     **(
                         {"behavioural_oracle": behavioural_oracle}
                         if behavioural_oracle
+                        else {}
+                    ),
+                    # 23 October 2026: the files the task said it would
+                    # create or change, for the Coach's no-source-files
+                    # coverage exception. Spread conditionally like the key
+                    # above.
+                    **(
+                        {"declared_files": list(self._declared_task_paths)}
+                        if getattr(self, "_declared_task_paths", None)
                         else {}
                     ),
                 },

@@ -998,7 +998,8 @@ class QualityGateStatus:
     plan_audit_required: bool = True
     # B9 Lane C. When the coverage gate was turned off by a named relaxation
     # rather than by a measurement, the relaxation is recorded by name
-    # (today the only one is ``"direct_mode"``). A reader can then tell
+    # (``"direct_mode"``, or ``"no_source_files"`` since 23 October 2026 for
+    # a task that declares and writes no source code). A reader can then tell
     # "coverage was met" from "coverage was not required of this task".
     coverage_relaxed_by: Optional[str] = None
     # B9 Lane C. The receipt of the project's OWN declared coverage command
@@ -2731,7 +2732,8 @@ class CoachValidator:
 
         # 2. Verify quality gates passed with profile
         gates_status = self.verify_quality_gates(
-            task_work_results, profile=profile, skip_arch_review=skip_arch_review
+            task_work_results, profile=profile, skip_arch_review=skip_arch_review,
+            declared_files=task.get("declared_files"),
         )
 
         # Validate requirements ahead of the gate-fail short-circuit so
@@ -3540,6 +3542,7 @@ class CoachValidator:
                 task_work_results,
                 profile=profile,
                 skip_arch_review=skip_arch_review,
+                declared_files=task.get("declared_files"),
             )
         except Exception as exc:  # noqa: BLE001
             logger.error(
@@ -5738,6 +5741,7 @@ class CoachValidator:
         task_work_results: Dict[str, Any],
         profile: Optional[QualityGateProfile] = None,
         skip_arch_review: bool = False,
+        declared_files: Optional[List[str]] = None,
     ) -> QualityGateStatus:
         """
         Verify task-work quality gates passed.
@@ -5760,6 +5764,10 @@ class CoachValidator:
             If True, skip architectural review gate regardless of profile setting.
             Used for --implement-only mode where Phase 2.5B doesn't run.
             Default: False (enforce arch review per profile).
+        declared_files : Optional[List[str]]
+            The files the task says it will create or change. Read only for
+            the no-source-files coverage exception (see
+            :meth:`_touches_no_source_files`).
 
         Returns
         -------
@@ -5878,6 +5886,16 @@ class CoachValidator:
             logger.info(
                 "Coverage gate relaxed for a direct-mode task "
                 "(coverage_relaxed_by=direct_mode); no measurement is claimed."
+            )
+        elif self._touches_no_source_files(declared_files, task_work_results):
+            coverage_met = True
+            coverage_relaxed_by = "no_source_files"
+            logger.info(
+                "Coverage gate relaxed: the task declares and wrote only "
+                "configuration, deployment, documentation or data files, and "
+                "no coverage command is declared "
+                "(coverage_relaxed_by=no_source_files); no measurement is "
+                "claimed."
             )
         else:
             coverage_met_value = quality_gates.get("coverage_met")
@@ -10634,6 +10652,41 @@ class CoachValidator:
             return False
         mode = task_work_results.get("implementation_mode")
         return isinstance(mode, str) and mode.strip().lower() == "direct"
+
+    def _touches_no_source_files(
+        self,
+        declared_files: Optional[List[str]],
+        task_work_results: Optional[Dict[str, Any]],
+    ) -> bool:
+        """True when coverage has nothing to measure in this task
+        (23 October 2026).
+
+        The Coach's half of the task-start exception in
+        ``undeclared_coverage_refusal``: the task declared files and none is
+        source code (``declares_no_source_files``), the files the builder
+        wrote this turn (``_compute_authored_set``) include no source code
+        either, and the project declares no coverage command for the task. A
+        declared command still runs as before, and an authored set that was
+        never recorded is not taken as clean.
+        """
+        from guardkit.orchestrator.toolchain_declaration import (
+            declares_no_source_files,
+            is_non_source_file,
+        )
+
+        if not declares_no_source_files(declared_files):
+            return False
+        if not isinstance(task_work_results, dict):
+            return False
+        authored, status = _compute_authored_set(task_work_results)
+        if status == STATUS_UNKNOWN:
+            return False
+        if not all(is_non_source_file(path) for path in authored):
+            return False
+        try:
+            return self._declared_coverage_command() is None
+        except AttributeError:  # a validator built without a toolchain
+            return True
 
     def _declared_coverage_command(self) -> Optional[str]:
         """Return the declared ``coverage`` command for THIS TASK, or ``None``.

@@ -946,6 +946,68 @@ def declares_config_file(paths: Iterable[Any]) -> bool:
     return False
 
 
+# File kinds no coverage command measures (23 October 2026): the
+# configuration, deployment, documentation, compose, container, lock and data
+# files of any project. Decided by file kind alone, never by project or
+# language. Anything not named here counts as source code, so an unfamiliar
+# kind keeps the coverage requirement. Plain ``.txt`` and ``Makefile`` are left
+# out on purpose: build scripts such as ``CMakeLists.txt`` and make rules are
+# logic, not configuration.
+_NON_SOURCE_SUFFIXES = frozenset({
+    # documentation
+    ".md", ".markdown", ".rst", ".adoc",
+    # configuration and data
+    ".yaml", ".yml", ".json", ".jsonc", ".json5", ".toml", ".ini", ".cfg",
+    ".conf", ".properties", ".env", ".xml", ".csv", ".tsv",
+    # lock files
+    ".lock",
+    # containers and infrastructure declarations
+    ".dockerfile", ".containerfile", ".tf", ".tfvars", ".hcl",
+    # images
+    ".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico",
+})
+_NON_SOURCE_NAMES = frozenset({
+    "dockerfile", "containerfile", "procfile", "codeowners",
+    "readme", "changelog", "license", "licence", "notice",
+    "go.mod", "go.sum",
+    ".env", ".gitignore", ".dockerignore", ".gitattributes", ".editorconfig",
+})
+
+
+def is_non_source_file(path: Any) -> bool:
+    """True when ``path`` is a file kind no coverage command measures.
+
+    Configuration, deployment, documentation, compose, container, lock and
+    data files, by extension or well-known name (``Dockerfile.dev`` and
+    ``.env.example`` count). Anything else, an unrecognised kind or a folder
+    included, is treated as source code.
+    """
+    if not isinstance(path, str):
+        return False
+    name = posixpath.basename(path.strip().strip("`").replace("\\", "/")).lower()
+    if not name:
+        return False
+    if name in _NON_SOURCE_NAMES:
+        return True
+    if name.startswith(("dockerfile.", "containerfile.", ".env.")):
+        return True
+    return posixpath.splitext(name)[1] in _NON_SOURCE_SUFFIXES
+
+
+def declares_no_source_files(paths: Optional[Iterable[Any]]) -> bool:
+    """True when ``paths`` names at least one file and none is source code.
+
+    ``paths`` is what a task says it will create or change (see
+    :func:`declares_config_file`). A task that declares no files at all is
+    not known to be free of source code, so this is ``False`` for it.
+    """
+    named = [
+        raw for raw in (paths or [])
+        if isinstance(raw, str) and raw.strip().strip("`").strip()
+    ]
+    return bool(named) and all(is_non_source_file(raw) for raw in named)
+
+
 def undeclared_coverage_refusal(
     *,
     task_type: Any,
@@ -953,6 +1015,7 @@ def undeclared_coverage_refusal(
     component: Optional[str] = None,
     implementation_mode: Any = None,
     after_turn: bool = False,
+    declared_paths: Optional[Iterable[Any]] = None,
 ) -> Optional[str]:
     """Say why a task can never pass because no coverage command is declared.
 
@@ -973,7 +1036,13 @@ def undeclared_coverage_refusal(
       stop reports that, with its own message);
     * the task is routed to the direct Player (``implementation_mode:
       direct``), the one named relaxation of the coverage gate;
-    * a coverage command is declared for the task (root, or its component).
+    * a coverage command is declared for the task (root, or its component);
+    * ``declared_paths`` (the files the task says it will create or change)
+      names files and none of them is source code (23 October 2026): a task
+      that only writes configuration, deployment, documentation or data
+      files has nothing for coverage to measure, whatever its type. The
+      Coach makes the same exception (``coverage_relaxed_by:
+      no_source_files``). A task that declares no files is still refused.
 
     ``after_turn`` (20 October 2026) words the same reason for a task that
     said it would change ``.guardkit/config.yaml``, was therefore given its
@@ -1006,6 +1075,8 @@ def undeclared_coverage_refusal(
     if implementation_mode == "direct":
         return None
     if declared_coverage_command(toolchain, component):
+        return None
+    if declares_no_source_files(declared_paths):
         return None
 
     needing = [t.value for t in TaskType if DEFAULT_PROFILES[t].coverage_required]
@@ -1044,7 +1115,8 @@ def undeclared_coverage_refusal(
         f'`coverage: "<command that exits 0 when the coverage threshold is '
         f'met>"` {place} in .guardkit/config.yaml, then run the task again. '
         f"Only {needing_words} tasks need this; other task types are "
-        f"unaffected."
+        f"unaffected, and so are tasks that change only configuration, "
+        f"deployment, documentation or data files."
     )
 
 
@@ -1090,6 +1162,8 @@ __all__ = [
     "undeclared_coverage_refusal",
     "add_coverage_to_pin",
     "declares_config_file",
+    "declares_no_source_files",
+    "is_non_source_file",
     "load_coverage_only_pin",
     "coverage_view_of_pin",
     "coverage_in",

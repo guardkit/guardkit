@@ -245,6 +245,8 @@ def _project(
     implementation_mode: Optional[str] = None,
     component: Optional[str] = None,
     task_id: str = "TASK-COV-001",
+    body: str = "Reqs.\n",
+    frontmatter_extra: Optional[list] = None,
 ) -> None:
     """An invented project: a config, one task file, in a git repository."""
     (root / ".guardkit").mkdir(parents=True, exist_ok=True)
@@ -256,10 +258,11 @@ def _project(
         front.append(f"implementation_mode: {implementation_mode}")
     if component is not None:
         front.append(f"component: {component}")
+    front.extend(frontmatter_extra or [])
     tasks = root / "tasks" / "backlog"
     tasks.mkdir(parents=True, exist_ok=True)
     (tasks / f"{task_id}-tidy.md").write_text(
-        "---\n" + "\n".join(front) + "\n---\n\n# Tidy\n\nReqs.\n", encoding="utf-8"
+        "---\n" + "\n".join(front) + "\n---\n\n# Tidy\n\n" + body, encoding="utf-8"
     )
     (root / ".gitignore").write_text(".guardkit/autobuild-private/\n")
     _git(root, "init", "-q", "-b", "main")
@@ -488,3 +491,300 @@ class TestUnchangedWhenTheTaskCanPass:
         assert loop.call_args.kwargs["task_type"] == task_type
         assert result.final_decision == "max_turns_exceeded"
         assert orch._coverage_declaration_refusal is None
+
+
+# ---------------------------------------------------------------------------
+# 23 October 2026: a task that writes no source code needs no coverage
+# ---------------------------------------------------------------------------
+#
+# Builds stopped before any work on tasks that only wrote deployment
+# configuration (a compose file, a deploy folder) because the planner called
+# them feature tasks. Coverage has nothing to measure in such a task, whatever
+# its type, so it is neither stopped at task start nor held at "Coverage is
+# UNKNOWN" by the Coach. Decided by file kind, never by project or language.
+
+from guardkit.orchestrator.toolchain_declaration import (  # noqa: E402
+    declares_no_source_files,
+    is_non_source_file,
+)
+
+CONFIG_ONLY = [
+    "deploy/compose.yaml",
+    "compose.yaml",
+    "deploy/Dockerfile",
+    "Dockerfile.dev",
+    "deploy/.env.example",
+    "README.md",
+    "docs/deploy.rst",
+    "package-lock.json",
+    "deploy/settings.toml",
+    "infra/main.tf",
+    "data/seed.csv",
+]
+CONFIG_ONLY_SECTIONS = (
+    "## Files to Create\n- `deploy/compose.yaml` — the stack\n"
+    "- `deploy/Dockerfile`\n- `deploy/.env.example`\n\n"
+    "## Files to Modify\n- `README.md` — how to deploy\n"
+)
+WITH_ONE_SOURCE_FILE = CONFIG_ONLY_SECTIONS + "- `src/server.go`\n"
+
+
+class TestFileKinds:
+    @pytest.mark.parametrize("path", CONFIG_ONLY + [
+        "Containerfile", "app.dockerfile", ".gitignore", ".dockerignore",
+        "LICENSE", "config/app.yml", "pom.xml", "yarn.lock", "go.sum",
+        "`deploy/compose.yaml`", "deploy\\compose.yaml", "logo.svg",
+    ])
+    def test_not_source(self, path: str) -> None:
+        assert is_non_source_file(path) is True
+
+    @pytest.mark.parametrize("path", [
+        "src/server.go", "app/main.py", "web/index.ts", "lib/thing.rs",
+        "scripts/deploy.sh", "Makefile", "CMakeLists.txt", "notes.txt",
+        "deploy/", "deploy", "src/unknown.kind", "", None, 3,
+    ])
+    def test_source_or_unknown(self, path: Any) -> None:
+        assert is_non_source_file(path) is False
+
+    def test_any_source_file_makes_the_task_a_source_task(self) -> None:
+        assert declares_no_source_files(CONFIG_ONLY) is True
+        assert declares_no_source_files(CONFIG_ONLY + ["src/server.go"]) is False
+
+    @pytest.mark.parametrize("paths", [None, [], ["", "  "], [None, 3]])
+    def test_a_task_that_declares_no_files_is_not_known_to_be_clean(
+        self, paths: Any
+    ) -> None:
+        assert declares_no_source_files(paths) is False
+
+
+class TestNoSourceFilesDecision:
+    @pytest.mark.parametrize("task_type", COVERAGE_TYPES + [None])
+    def test_config_only_task_is_not_refused(self, task_type) -> None:
+        assert undeclared_coverage_refusal(
+            task_type=task_type, toolchain=NOTHING, declared_paths=CONFIG_ONLY
+        ) is None
+
+    @pytest.mark.parametrize("task_type", COVERAGE_TYPES)
+    def test_one_source_file_keeps_the_refusal(self, task_type) -> None:
+        refusal = undeclared_coverage_refusal(
+            task_type=task_type, toolchain=NOTHING,
+            declared_paths=CONFIG_ONLY + ["src/server.go"],
+        )
+        assert refusal is not None
+        assert "declares no coverage command" in refusal
+
+    @pytest.mark.parametrize("paths", [None, []])
+    def test_no_declared_files_keeps_the_refusal(self, paths) -> None:
+        assert undeclared_coverage_refusal(
+            task_type="feature", toolchain=NOTHING, declared_paths=paths
+        ) is not None
+
+    def test_the_component_rule_is_unchanged_for_source_tasks(self) -> None:
+        refusal = undeclared_coverage_refusal(
+            task_type="wiring", toolchain=COMPONENTS, component="api",
+            declared_paths=["api/handler.go", "api/config.yaml"],
+        )
+        assert "for the task's component `api`" in refusal
+
+    def test_the_refusal_names_the_exception(self) -> None:
+        refusal = undeclared_coverage_refusal(task_type="feature", toolchain=None)
+        assert "tasks that change only configuration, deployment" in refusal
+
+
+class TestNoSourceFilesAtTaskStart:
+    @pytest.mark.parametrize("task_type", ["feature", "refactor", None])
+    def test_config_only_task_reaches_the_loop(
+        self, tmp_path: Path, task_type
+    ) -> None:
+        root = tmp_path / "proj"
+        _project(
+            root, toolchain_yaml=NO_COVERAGE, task_type=task_type,
+            body=CONFIG_ONLY_SECTIONS,
+        )
+        orch, _, _ = _orchestrator(tmp_path, root)
+        with patch.object(
+            AutoBuildOrchestrator, "_loop_phase", return_value=([], "max_turns_exceeded")
+        ) as loop:
+            result = _run(orch)
+        loop.assert_called_once()
+        assert result.final_decision == "max_turns_exceeded"
+        assert orch._coverage_declaration_refusal is None
+        assert orch._coverage_due_from_task is None
+        # Kept for the Coach, which makes the same exception.
+        assert set(orch._declared_task_paths) == {
+            "deploy/compose.yaml", "deploy/Dockerfile", "deploy/.env.example",
+            "README.md",
+        }
+
+    def test_files_listed_in_frontmatter_count_too(self, tmp_path: Path) -> None:
+        root = tmp_path / "proj"
+        _project(
+            root, toolchain_yaml=NO_COVERAGE, task_type="feature",
+            frontmatter_extra=["files_to_create:", "  - compose.yaml"],
+        )
+        orch, _, _ = _orchestrator(tmp_path, root)
+        with patch.object(
+            AutoBuildOrchestrator, "_loop_phase", return_value=([], "max_turns_exceeded")
+        ) as loop:
+            _run(orch)
+        loop.assert_called_once()
+
+    def test_a_task_with_one_source_file_still_stops_before_any_work(
+        self, tmp_path: Path
+    ) -> None:
+        root = tmp_path / "proj"
+        _project(
+            root, toolchain_yaml=NO_COVERAGE, task_type="feature",
+            body=WITH_ONE_SOURCE_FILE,
+        )
+        orch, invoker, pre_loop_calls = _orchestrator(tmp_path, root)
+        with patch.object(
+            AutoBuildOrchestrator, "_loop_phase",
+            side_effect=AssertionError("the loop must not start"),
+        ):
+            result = _run(orch)
+        assert result.final_decision == "configuration_error"
+        assert result.total_turns == 0
+        assert "a feature task needs measured coverage" in result.error
+        invoker.invoke_player.assert_not_called()
+        assert pre_loop_calls == []
+
+
+def _gate_results(**overrides: Any) -> dict:
+    """A task-work results block whose every gate but coverage passes."""
+    results: dict = {
+        "task_id": "TASK-COV-001",
+        "completed": True,
+        "quality_gates": {"all_passed": True, "tests_failed": 0},
+        "code_review": {"score": 95},
+        "plan_audit": {"status": "passed", "violations": 0},
+    }
+    results.update(overrides)
+    return results
+
+
+class TestNoSourceFilesInTheCoach:
+    """The Coach's half: the same exception, checked against what the
+    builder actually wrote as well as what the task declared."""
+
+    def _gates(self, tmp_path: Path, declared, results, toolchain=None):
+        validator = CoachValidator(str(tmp_path), toolchain=toolchain)
+        return validator.verify_quality_gates(
+            results, profile=get_profile(TaskType.FEATURE),
+            declared_files=declared,
+        )
+
+    def test_config_only_task_is_relaxed_by_name(self, tmp_path: Path) -> None:
+        gates = self._gates(
+            tmp_path, CONFIG_ONLY,
+            _gate_results(files_authored=["deploy/compose.yaml", "README.md"]),
+        )
+        assert gates.coverage_relaxed_by == "no_source_files"
+        assert gates.coverage_met is True
+        assert gates.all_gates_passed is True
+
+    def test_legacy_record_without_files_authored_reads_created_and_modified(
+        self, tmp_path: Path
+    ) -> None:
+        gates = self._gates(
+            tmp_path, CONFIG_ONLY,
+            _gate_results(
+                files_created=["deploy/compose.yaml"], files_modified=["README.md"]
+            ),
+        )
+        assert gates.coverage_relaxed_by == "no_source_files"
+
+    def test_a_source_file_the_builder_wrote_keeps_coverage_unknown(
+        self, tmp_path: Path
+    ) -> None:
+        gates = self._gates(
+            tmp_path, CONFIG_ONLY,
+            _gate_results(files_authored=["deploy/compose.yaml", "src/server.go"]),
+        )
+        assert gates.coverage_relaxed_by is None
+        assert gates.coverage_met is None
+        assert gates.all_gates_passed is False
+
+    @pytest.mark.parametrize("declared", [
+        None, [], CONFIG_ONLY + ["src/server.go"],
+    ])
+    def test_declared_source_or_nothing_declared_keeps_coverage_unknown(
+        self, tmp_path: Path, declared
+    ) -> None:
+        gates = self._gates(
+            tmp_path, declared, _gate_results(files_authored=["compose.yaml"])
+        )
+        assert gates.coverage_relaxed_by is None
+        assert gates.coverage_met is None
+
+    def test_a_declared_coverage_command_still_decides(
+        self, tmp_path: Path
+    ) -> None:
+        gates = self._gates(
+            tmp_path, CONFIG_ONLY,
+            _gate_results(files_authored=["compose.yaml"]),
+            toolchain=ROOT_ONLY,
+        )
+        assert gates.coverage_relaxed_by is None
+        assert gates.coverage_met is None  # left for the declared command
+
+    def test_an_unrecorded_authored_set_is_not_taken_as_clean(
+        self, tmp_path: Path
+    ) -> None:
+        gates = self._gates(
+            tmp_path, CONFIG_ONLY,
+            # An empty list without the tracking marker: never recorded.
+            _gate_results(files_authored=[]),
+        )
+        assert gates.coverage_relaxed_by is None
+
+
+class TestTheCoachIsToldTheDeclaredFiles:
+    """Both Coach paths hand the task's declared files to the validator."""
+
+    def _capture(self, tmp_path: Path, method: str, declared):
+        orch = AutoBuildOrchestrator(
+            repo_root=tmp_path, enable_pre_loop=False,
+            worktree_manager=MagicMock(), enable_context=False,
+        )
+        orch._declared_task_paths = declared
+        seen: list = []
+
+        def capture(self, *args: Any, **kwargs: Any):
+            seen.append(kwargs["task"])
+            raise RuntimeError("captured")
+
+        worktree = MagicMock(spec=Worktree)
+        worktree.path = tmp_path
+        target = "gather_evidence" if method == "_invoke_coach_primary" else "validate"
+        with patch.object(CoachValidator, target, capture), patch.object(
+            CoachValidator, "_is_docker_available", return_value=False
+        ):
+            try:
+                getattr(orch, method)(
+                    task_id="TASK-COV-001", turn=1, requirements="reqs",
+                    player_report={"task_id": "TASK-COV-001"},
+                    worktree=worktree, acceptance_criteria=["AC-001: x"],
+                    task_type="feature", skip_arch_review=True,
+                    requires_infrastructure=None, consumer_context=None,
+                    remaining_budget=None, wave_size=1, peer_changed_files=None,
+                    context_prompt="", start_time=0.0,
+                )
+            except Exception:  # noqa: BLE001 - only the handed-over task matters
+                pass
+        assert seen, f"{method} never reached the validator"
+        return seen[0]
+
+    @pytest.mark.parametrize("method", ["_invoke_coach_primary", "_invoke_coach_legacy"])
+    def test_declared_files_reach_the_validator(
+        self, tmp_path: Path, method: str
+    ) -> None:
+        task = self._capture(tmp_path, method, ["compose.yaml", "README.md"])
+        assert task["declared_files"] == ["compose.yaml", "README.md"]
+
+    @pytest.mark.parametrize("method", ["_invoke_coach_primary", "_invoke_coach_legacy"])
+    def test_no_declared_files_leaves_the_task_unchanged(
+        self, tmp_path: Path, method: str
+    ) -> None:
+        task = self._capture(tmp_path, method, [])
+        assert "declared_files" not in task

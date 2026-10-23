@@ -321,7 +321,12 @@ class TestATaskThatDeclaresTheCommand:
         root = tmp_path / "proj"
         _project(
             root, body="No file sections here.\n",
-            frontmatter_extra=["files_to_modify:", "  - ./.guardkit/config.yaml"],
+            # The Makefile keeps this a task with code to measure: a task
+            # declaring only configuration files needs no coverage at all
+            # (23 October 2026).
+            frontmatter_extra=[
+                "files_to_modify:", "  - ./.guardkit/config.yaml", "  - Makefile",
+            ],
         )
         worktree = _shared_worktree(root, tmp_path / "shared")
         orch = _orchestrator(tmp_path, root, worktree)
