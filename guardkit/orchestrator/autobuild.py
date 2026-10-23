@@ -6361,13 +6361,22 @@ class AutoBuildOrchestrator:
             changed, Path(worktree.path)
         )
         # 23 October 2026: a reinstall that failed earlier in this task still
-        # stands until a later reinstall succeeds. A turn that changes no
-        # dependency file re-runs it, so the reviewer can never approve the
-        # task over an environment that was never installed.
+        # stands until a later reinstall succeeds. Every later turn re-runs it
+        # with the earlier failed files added to whatever that turn changed,
+        # so neither a turn that changes no dependency file nor one that
+        # changes a different one can clear it without those files
+        # installing, and the reviewer can never approve the task over an
+        # environment that was never installed.
         standing = getattr(self, "_standing_reinstall_failure", None)
         if not isinstance(standing, tuple):
             standing = None
-        if not manifests_changed and standing is not None:
+        modified_by = "this turn"
+        if standing is not None:
+            modified_by = (
+                f"turns {standing[0]} and {turn}"
+                if manifests_changed
+                else f"turn {standing[0]}"
+            )
             changed = changed + [p for p in standing[1] if p not in changed]
             manifests_changed = changed_dependency_manifests(
                 changed, Path(worktree.path)
@@ -6376,7 +6385,7 @@ class AutoBuildOrchestrator:
             self._standing_reinstall_failure = None
             return None
         feedback = AutoBuildOrchestrator._refresh_venv_for_manifests(
-            self, changed, manifests_changed, worktree, turn
+            self, changed, manifests_changed, worktree, turn, modified_by
         )
         if feedback is None:
             self._standing_reinstall_failure = None
@@ -6396,12 +6405,16 @@ class AutoBuildOrchestrator:
         manifests_changed: List[str],
         worktree: Any,
         turn: int,
+        modified_by: str = "this turn",
     ) -> Optional[str]:
         """Run one reinstall for :meth:`_maybe_refresh_venv_for_manifest_change`.
 
         Returns ``None`` on success, else the feedback string. A tool the
-        project declares that is missing from the build environment also sets
+        project declares that is missing from the build environment, or an
+        install program that is not there at all, also sets
         ``self._reinstall_environment_gap``: the builder cannot fix that.
+        ``modified_by`` says which turn changed the files ("this turn", or
+        an earlier turn when a standing failure is re-run).
         """
         from guardkit.orchestrator.environment_bootstrap import (
             BootstrapEnvironmentLeakError,
@@ -6434,7 +6447,7 @@ class AutoBuildOrchestrator:
             return self._reinstall_environment_gap
         except BootstrapEnvironmentLeakError as exc:
             return (
-                "Dependency reinstall after this turn's manifest change landed "
+                f"Dependency reinstall after {modified_by}'s manifest change landed "
                 f"outside the worktree venv: {exc}"
             )
         except Exception as exc:  # noqa: BLE001 - surface, never silently pass
@@ -6445,7 +6458,7 @@ class AutoBuildOrchestrator:
                 exc_info=True,
             )
             return (
-                "Dependency reinstall failed after this turn modified "
+                f"Dependency reinstall failed after {modified_by} modified "
                 f"{', '.join(manifests_changed)}: {exc}"
             )
 
@@ -6453,13 +6466,31 @@ class AutoBuildOrchestrator:
             return None
 
         if not result.success:
+            essential = [d for d in result.failure_details if d.essential]
+            if essential and all(
+                getattr(d, "missing_tool", None) for d in essential
+            ):
+                # The install program itself is not where the build runs:
+                # the same gap as a declared tool that is missing. A failure
+                # replayed from the saved record carries no program name and
+                # stays an ordinary, blocking failure.
+                first = essential[0]
+                self._reinstall_environment_gap = _declared_tool_missing_message(
+                    DeclaredToolMissingError(
+                        first.stderr_excerpt,
+                        tool=first.missing_tool,
+                        declaring_file=first.manifest_path,
+                    ),
+                    Path(worktree.path),
+                    manifests_changed,
+                )
+                return self._reinstall_environment_gap
             details = "; ".join(
                 f"{d.stack} ({Path(d.manifest_path).name}): {d.stderr_excerpt}"
-                for d in result.failure_details
-                if d.essential
+                for d in essential
             ) or (result.error or "unknown install error")
             return (
-                "Dependency reinstall failed after this turn modified "
+                f"Dependency reinstall failed after {modified_by} modified "
                 f"{', '.join(manifests_changed)}. The Coach would otherwise "
                 "verify against a stale environment. Fix the dependency "
                 f"declaration so the install succeeds. Details: {details}"

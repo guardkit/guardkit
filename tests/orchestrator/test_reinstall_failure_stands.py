@@ -40,6 +40,7 @@ from guardkit.orchestrator.environment_bootstrap import (
     BootstrapResult,
     DeclaredToolMissingError,
     UvSourcesRequireUvError,
+    _missing_program,
 )
 
 TASK = "TASK-RFS-001"
@@ -244,6 +245,9 @@ class TestFailedReinstallStands:
         assert second is not None
         assert "has not succeeded since turn 1" in second
         assert "cannot be approved" in second
+        # Says which turn changed the files, not "this turn".
+        assert "after turn 1 modified pyproject.toml" in second
+        assert "this turn" not in second
 
         # Turn 3 changes only source and the re-run reinstall succeeds.
         with patch(REFRESH, return_value=_ok_result()) as refresh:
@@ -273,3 +277,100 @@ class TestFailedReinstallStands:
         refresh.assert_called_once()
         assert "installer crashed" in again
         assert "has not succeeded since turn 1" in again
+
+    def test_a_different_dependency_file_cannot_clear_it(self, worktree: Path) -> None:
+        """Turn 1 fails on pyproject.toml; turn 2 changes only package.json.
+        The re-run must still include pyproject.toml, so the failure stands
+        while pyproject.toml does not install."""
+        orch = _bare_orchestrator()
+        wt = SimpleNamespace(path=str(worktree))
+        (worktree / "package.json").write_text("{}")
+
+        def refresh(root, changed, relevant_stacks=None):
+            return (
+                _failed_result(worktree)
+                if "pyproject.toml" in list(changed)
+                else _ok_result()
+            )
+
+        with patch(REFRESH, side_effect=refresh):
+            assert orch._maybe_refresh_venv_for_manifest_change(
+                _player(files_modified=["pyproject.toml"]), wt, 1
+            )
+        with patch(REFRESH, side_effect=refresh) as mock_refresh:
+            second = orch._maybe_refresh_venv_for_manifest_change(
+                _player(files_modified=["package.json"]), wt, 2
+            )
+        passed = list(mock_refresh.call_args.args[1])
+        assert "pyproject.toml" in passed and "package.json" in passed
+        assert "python" in (mock_refresh.call_args.kwargs.get("relevant_stacks") or [])
+        assert second is not None
+        assert "after turns 1 and 2 modified" in second
+        assert orch._standing_reinstall_failure is not None
+        assert orch._standing_reinstall_failure[0] == 1
+
+
+# ---------------------------------------------------------------------------
+# An install program that is not in the build environment at all
+# ---------------------------------------------------------------------------
+
+
+class TestMissingInstallProgram:
+    def test_a_lockfile_naming_a_missing_installer_ends_the_task(
+        self, worktree: Path, tmp_path_factory, monkeypatch
+    ) -> None:
+        """Through the real bootstrap: the lock file names an installer that
+        is not on PATH. The task gets the environment-gap sentence, never
+        advice to fix the declaration."""
+        (worktree / "pyproject.toml").unlink()
+        (worktree / "package.json").write_text('{"name":"demo","version":"0.0.1"}')
+        (worktree / "pnpm-lock.yaml").write_text("lockfileVersion: '9.0'\n")
+        empty_path = tmp_path_factory.mktemp("empty-path")
+        monkeypatch.setenv("PATH", str(empty_path))
+
+        orch = _bare_orchestrator()
+        msg = orch._maybe_refresh_venv_for_manifest_change(
+            _player(files_modified=["package.json"]),
+            SimpleNamespace(path=str(worktree)),
+            1,
+        )
+        assert msg is not None
+        assert msg == orch._reinstall_environment_gap
+        assert "`pnpm`" in msg
+        assert "pnpm-lock.yaml declares" in msg
+        assert "build environment" in msg
+        assert "Fix the dependency declaration" not in msg
+        assert "remov" not in msg.lower()
+
+    def test_a_partly_missing_or_replayed_failure_stays_blocking(
+        self, worktree: Path
+    ) -> None:
+        """Only when every essential failure is a missing program does the
+        task end; a failure replayed from the saved record has no program
+        name and stays an ordinary, blocking failure."""
+        failed = _failed_result(worktree)
+        failed.failure_details.append(
+            BootstrapFailureDetail(
+                stack="node",
+                manifest_path=str(worktree / "pnpm-lock.yaml"),
+                stderr_excerpt="[Errno 2] No such file or directory: 'pnpm'",
+                essential=True,
+                missing_tool="pnpm",
+            )
+        )
+        orch = _bare_orchestrator()
+        with patch(REFRESH, return_value=failed):
+            msg = orch._maybe_refresh_venv_for_manifest_change(
+                _player(files_modified=["pyproject.toml"]),
+                SimpleNamespace(path=str(worktree)),
+                1,
+            )
+        assert msg is not None and orch._reinstall_environment_gap is None
+        assert orch._standing_reinstall_failure is not None
+
+    def test_only_the_program_itself_counts_as_missing(self, tmp_path: Path) -> None:
+        program = FileNotFoundError(2, "No such file or directory", "pnpm")
+        folder = FileNotFoundError(2, "No such file or directory", str(tmp_path / "gone"))
+        assert _missing_program(program, ["pnpm", "install"]) == "pnpm"
+        assert _missing_program(folder, ["pnpm", "install"]) is None
+        assert _missing_program(PermissionError(13, "denied", "pnpm"), ["pnpm"]) is None

@@ -609,6 +609,11 @@ class BootstrapFailureDetail:
         True when this failure counted toward ``installs_failed`` (i.e. the
         stack was considered essential at bootstrap time). False when the
         failure was filtered into ``non_relevant_failures``.
+    missing_tool : Optional[str]
+        The install program itself, when it could not be started because it
+        is not where the build runs (the program, not the working folder,
+        was not found). A gap in the build environment, not in the project.
+        None otherwise, and for a failure replayed from the saved record.
     """
 
     stack: str
@@ -617,6 +622,7 @@ class BootstrapFailureDetail:
     is_pep668: bool = False
     requires_python: Optional[str] = None
     essential: bool = True
+    missing_tool: Optional[str] = None
 
 
 @dataclass
@@ -775,6 +781,24 @@ class DeclaredToolMissingError(RuntimeError):
         super().__init__(message)
         self.tool = tool
         self.declaring_file = declaring_file
+
+
+def _missing_program(exc: OSError, cmd: Sequence[str]) -> Optional[str]:
+    """The install program, when *exc* says that program could not be found.
+
+    Install commands run without a shell, so a ``FileNotFoundError`` whose
+    ``filename`` is the command's first word means the program is not where
+    the build runs. A missing working folder names the folder instead, and
+    is not a missing program.
+    """
+    if (
+        isinstance(exc, FileNotFoundError)
+        and cmd
+        and exc.filename is not None
+        and str(exc.filename) == str(cmd[0])
+    ):
+        return str(cmd[0])
+    return None
 
 
 class UvSourcesRequireUvError(DeclaredToolMissingError):
@@ -1196,8 +1220,8 @@ def _resolve_python_pyproject_install_command(
             f"{pyproject_path} declares [tool.uv.sources] but `uv` is not on PATH. "
             "pip cannot honour these sibling-source overrides — installing "
             "would silently produce a broken environment. "
-            "Fix by installing uv (https://astral.sh/uv) or removing the "
-            "[tool.uv.sources] block from pyproject.toml.",
+            "uv is missing from the build environment: add it there "
+            "(https://astral.sh/uv) and retry. The declaration is correct.",
             tool="uv",
             declaring_file=str(pyproject_path),
         )
@@ -1846,6 +1870,7 @@ class EnvironmentBootstrapper:
         # detail name the settings that were held back.
         self._ran_project_command: bool = False
         self._last_failure_is_pep668: bool = False
+        self._last_failure_missing_tool: Optional[str] = None
 
     def bootstrap(
         self,
@@ -2032,6 +2057,7 @@ class EnvironmentBootstrapper:
                     is_pep668=self._last_failure_is_pep668,
                     requires_python=manifest.get_requires_python(),
                     essential=essential,
+                    missing_tool=self._last_failure_missing_tool,
                 )
             )
 
@@ -2964,6 +2990,7 @@ class EnvironmentBootstrapper:
         # see stale values from a previous install.
         self._last_failure_stderr = ""
         self._last_failure_is_pep668 = False
+        self._last_failure_missing_tool = None
         self._ran_project_command = False
         cmd = list(manifest.install_command)
         is_python_cmd = cmd and cmd[0] == sys.executable
@@ -3162,6 +3189,7 @@ class EnvironmentBootstrapper:
                 exc,
             )
             self._last_failure_stderr = str(exc)
+            self._last_failure_missing_tool = _missing_program(exc, cmd)
             return False
         except subprocess.TimeoutExpired as exc:
             logger.warning(
@@ -3202,6 +3230,7 @@ class EnvironmentBootstrapper:
         """
         self._last_failure_stderr = ""
         self._last_failure_is_pep668 = False
+        self._last_failure_missing_tool = None
         self._ran_project_command = False
 
         run_cmd = list(cmd)
@@ -3286,6 +3315,7 @@ class EnvironmentBootstrapper:
         except OSError as exc:
             logger.warning("Command raised OSError: %s: %s", " ".join(run_cmd), exc)
             self._last_failure_stderr = str(exc)
+            self._last_failure_missing_tool = _missing_program(exc, run_cmd)
             return False
         except subprocess.TimeoutExpired as exc:
             logger.warning(

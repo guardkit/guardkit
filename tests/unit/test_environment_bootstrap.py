@@ -448,11 +448,14 @@ class TestPyprojectUvSourcesDetection:
             detector.detect()
 
         message = str(exc_info.value)
-        # Actionable error: must name the file, must list both fixes.
+        # Actionable error: must name the file and say uv is missing from
+        # the build environment; never advise removing a correct declaration
+        # (23 October 2026).
         assert "pyproject.toml" in message
         assert "[tool.uv.sources]" in message
         assert "astral.sh/uv" in message
-        assert "removing" in message.lower()
+        assert "missing from the build environment" in message
+        assert "remov" not in message.lower()
         # Must NOT route operators to the wrong escape hatch.
         assert "bootstrap_failure_mode" not in message
         assert "warn" not in message.lower()
