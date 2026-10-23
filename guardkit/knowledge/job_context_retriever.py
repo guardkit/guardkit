@@ -1524,10 +1524,37 @@ class JobContextRetriever:
     @staticmethod
     def _context_item_identity(item: Dict[str, Any]) -> Tuple[str, str]:
         """Return a stable per-category identity for a retrieved record."""
+        record_identity: Optional[Tuple[str, str]] = None
         for field_name in ("uuid", "natural_key", "id", "key"):
             value = item.get(field_name)
-            if value is not None:
-                return field_name, str(value)
+            if value is not None and str(value):
+                record_identity = (field_name, str(value))
+                break
+
+        # Fleet declared-rule search returns independently ranked sections of
+        # one document with the same UUID. Preserve those distinct excerpts,
+        # while repeated copies of the same section still share an identity.
+        section_provenance = {
+            field_name: item[field_name]
+            for field_name in (
+                "section_sha256",
+                "section_start_byte",
+                "section_end_byte",
+            )
+            if field_name in item
+        }
+        if section_provenance:
+            return "section", json.dumps(
+                {
+                    "record": record_identity,
+                    "section": section_provenance,
+                },
+                sort_keys=True,
+                default=str,
+            )
+
+        if record_identity is not None:
+            return record_identity
         return "value", json.dumps(item, sort_keys=True, default=str)
 
     def _trim_to_budget(

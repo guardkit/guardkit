@@ -3094,6 +3094,7 @@ class TestAutoBuildSpareCapacityReuse:
                 return []
 
         retriever = JobContextRetriever(InterleavedMemory(), cache_ttl=0)
+
         def task(name):
             return {
                 "id": f"TASK-{name}",
@@ -3113,3 +3114,93 @@ class TestAutoBuildSpareCapacityReuse:
         assert beta.similar_outcomes[0]["uuid"] == "outcome:beta"
         assert alpha.architecture_context[0]["uuid"] == "adr:synthetic:alpha"
         assert beta.architecture_context[0]["uuid"] == "adr:synthetic:beta"
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("method_name", ["retrieve", "retrieve_parallel"])
+    async def test_preserves_distinct_declared_rule_sections(self, method_name):
+        from types import SimpleNamespace
+
+        from guardkit.knowledge.budget_calculator import DynamicBudgetCalculator
+        from guardkit.knowledge.fleet_memory_client import (
+            _declared_rule_section_hits,
+        )
+        from guardkit.knowledge.job_context_retriever import JobContextRetriever
+        from guardkit.knowledge.task_analyzer import TaskAnalyzer, TaskPhase
+
+        body = (
+            "# Synthetic rules\n\n"
+            "## First\nKeep the first requirement.\n\n"
+            "## Second\nKeep the second requirement.\n\n"
+            "## Overflow\nKeep the overflow requirement. "
+            + "Additional public detail. " * 40
+            + "\n"
+        )
+        inner = json.dumps({"entity_type": "rule", "content": body})
+        inner += "\n\n---\n_metadata:\n```json\n{}\n```"
+        raw = json.dumps(
+            {
+                "content": inner,
+                "domain_tags": ["rules_synthetic"],
+                "source_ref": "rules_synthetic",
+            }
+        )
+        stored = SimpleNamespace(
+            value={
+                "content": raw,
+                "natural_key": "document:synthetic:rules",
+            },
+            score=0.9,
+        )
+        hits = _declared_rule_section_hits(
+            [stored], "requirement", ["rules_synthetic"], 10
+        )
+        assert len(hits) == 3
+        assert len({item["uuid"] for item in hits}) == 1
+        assert len({item["section_sha256"] for item in hits}) == 3
+
+        class SectionMemory:
+            supports_document_source_tags = True
+
+            def reset_circuit_breaker(self):
+                return None
+
+            async def search(self, query, group_ids=None, **kwargs):
+                if kwargs.get("document_source_tags"):
+                    return [*hits, hits[1].copy()]
+                if group_ids is None:
+                    return [{"score": 0.9} for _ in range(3)]
+                return []
+
+        memory = SectionMemory()
+        retriever = JobContextRetriever(
+            memory,
+            cache_ttl=0,
+            relevant_pattern_document_tags=("rules_synthetic",),
+        )
+        task = {
+            "id": "TASK-SECTION-BUDGET",
+            "description": "requirement",
+            "complexity": 8,
+            "is_autobuild": True,
+            "current_actor": "player",
+            "turn_number": 1,
+        }
+        characteristics = await TaskAnalyzer(memory).analyze(
+            task, TaskPhase.IMPLEMENT
+        )
+        budget = DynamicBudgetCalculator().calculate(characteristics)
+        initial, initial_tokens = retriever._trim_to_budget(
+            hits, budget.get_allocation("relevant_patterns")
+        )
+        assert initial == hits[:2]
+        assert initial_tokens <= budget.get_allocation("relevant_patterns")
+
+        result = await getattr(retriever, method_name)(
+            task, TaskPhase.IMPLEMENT
+        )
+
+        assert result.relevant_patterns == hits
+        assert result.budget_used == sum(
+            retriever._estimate_tokens(item) for item in hits
+        )
+        assert result.budget_used <= result.budget_total
