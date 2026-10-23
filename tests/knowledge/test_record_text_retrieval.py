@@ -217,3 +217,63 @@ def test_the_real_writer_shape_when_fleet_memory_is_installed():
     text = _record_as_text(_hit(fact, payload.natural_key))["content"]
     assert f"Decision: {DECISION}" in text and f"Context: {CONTEXT}" in text
     assert "{" not in text
+
+
+# ---------------------------------------------------------------------------
+# The budget charges the rendered text, not its JSON form
+# ---------------------------------------------------------------------------
+
+# Multi-line and non-ASCII: JSON escapes each line break as two characters
+# and each of these letters as six, so a JSON-based charge is far higher.
+NON_ASCII_BODY = "Ünïcödé façade — naïve café.\nZweite Zeile: Grüße.\nДругая строка."
+
+
+def _rendered_document(body: str) -> tuple:
+    """A stored document whose rendered text has an even length, and that
+    text, so the charge is exactly ``len(text) / 2`` tokens."""
+    hit = _hit(_stored(_document_payload(content=body)), "document:demo:doc")
+    text = _record_as_text(hit)["content"]
+    if len(text) % JobContextRetriever.CHARS_PER_TOKEN:
+        body += "."
+        hit = _hit(_stored(_document_payload(content=body)), "document:demo:doc")
+        text = _record_as_text(hit)["content"]
+    return hit, text
+
+
+@pytest.mark.asyncio
+async def test_a_rendered_document_fits_a_share_of_exactly_its_text():
+    hit, text = _rendered_document(NON_ASCII_BODY)
+    assert "\n" in text and "Ü" in text
+    exact = len(text) // JobContextRetriever.CHARS_PER_TOKEN
+
+    _, items, tokens = await _architecture([hit], budget=exact)
+    assert [i["content"] for i in items] == [text]
+    assert tokens == exact
+
+    _, items, tokens = await _architecture([hit], budget=exact - 1)
+    assert items == [] and tokens == 0
+
+
+@pytest.mark.asyncio
+async def test_a_rendered_decision_record_is_charged_on_its_text():
+    payload = _adr_payload(
+        context="Zeile eins: Gründe.\nLigne deux : raisons économiques.",
+        decision="Behalte één database — überall.",
+    )
+    hit = _hit(_stored(payload), "adr:demo:x")
+    text = _record_as_text(hit)["content"]
+    exact = len(text) // JobContextRetriever.CHARS_PER_TOKEN
+    _, items, tokens = await _architecture([hit], budget=exact)
+    assert [i["content"] for i in items] == [text]
+    assert tokens == exact
+    # The JSON form of the same item would not have fitted.
+    assert len(json.dumps(items[0])) // JobContextRetriever.CHARS_PER_TOKEN > exact
+
+
+def test_other_items_keep_the_json_charge():
+    retriever = JobContextRetriever(MagicMock())
+    plain = {"content": NON_ASCII_BODY, "uuid": "k", "score": 0.9}
+    assert retriever._estimate_tokens(plain) == max(
+        1, len(json.dumps(plain, default=str)) // JobContextRetriever.CHARS_PER_TOKEN
+    )
+

@@ -6980,8 +6980,50 @@ The detailed specifications are in the task markdown file.
         # Preserve worktree for human review
         self._worktree_manager.preserve_on_failure(worktree)
 
+        # A failed task that stopped with one plain sentence (an environment
+        # gap: a tool the project declares is missing from the build
+        # environment, 23 October 2026) gives the feature its reason, when no
+        # feature-level reason above already did. The same one stdout line as
+        # the whole-feature check's early stop carries it to Forge.
+        task_stopped_because: Optional[str] = None
+        if (
+            not success
+            and not timeout_fenced
+            and twin_error is None
+            and feature_check_error is None
+        ):
+            task_stopped_because = next(
+                (
+                    r.stopped_because
+                    for wave in wave_results
+                    for r in wave.results
+                    if not r.success
+                    and isinstance(getattr(r, "stopped_because", None), str)
+                    and r.stopped_because
+                ),
+                None,
+            )
+            if task_stopped_because:
+                logger.error(
+                    "Feature %s stopped: %s", feature.id, task_stopped_because
+                )
+                try:
+                    print(
+                        stopped_because_line(feature.id, task_stopped_because),
+                        flush=True,
+                    )
+                except Exception as exc:  # noqa: BLE001 — a line never fails a build
+                    logger.warning(
+                        "The stop reason's stdout line could not be written: %s",
+                        type(exc).__name__,
+                    )
+
         # Display summary
         self._display_summary(feature, wave_results, worktree, final_status)
+        if task_stopped_because and not self.quiet:
+            console.print(
+                f"Stopped: {task_stopped_because}", style="red", markup=False
+            )
 
         orchestration_result = FeatureOrchestrationResult(
             feature_id=feature.id,
@@ -7002,6 +7044,8 @@ The detailed specifications are in the task markdown file.
                     if twin_error is not None
                     else feature_check_error
                     if feature_check_error is not None
+                    else task_stopped_because
+                    if task_stopped_because
                     else (
                         "smoke gate failed between waves"
                         if smoke_gate_failed and tasks_failed == 0

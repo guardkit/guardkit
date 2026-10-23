@@ -4108,6 +4108,9 @@ class AutoBuildOrchestrator:
                     None
                     if success
                     else getattr(self, "_plan_contradicts_check_sentence", None)
+                    or self._environment_gap_stopped_on(
+                        final_decision, turn_history
+                    )
                 ),
             )
 
@@ -5577,6 +5580,8 @@ class AutoBuildOrchestrator:
         # (first failing turn, dependency files). Fresh per task loop.
         self._standing_reinstall_failure: Optional[Tuple[int, List[str]]] = None
         self._reinstall_environment_gap: Optional[str] = None
+        # The environment-gap sentence the task stopped on, if it did.
+        self._environment_gap_stop: Optional[str] = None
 
         # Track loop start time for SDK-level timeout remaining budget (TASK-ABFIX-006)
         import time as _time
@@ -6467,15 +6472,15 @@ class AutoBuildOrchestrator:
 
         if not result.success:
             essential = [d for d in result.failure_details if d.essential]
-            if essential and all(
-                getattr(d, "missing_tool", None) for d in essential
-            ):
+            missing = [d for d in essential if getattr(d, "missing_tool", None)]
+            if missing:
                 # The install program itself is not where the build runs:
-                # the same gap as a declared tool that is missing. A failure
-                # replayed from the saved record carries no program name and
-                # stays an ordinary, blocking failure.
-                first = essential[0]
-                self._reinstall_environment_gap = _declared_tool_missing_message(
+                # the same gap as a declared tool that is missing, and the
+                # builder cannot fix it whatever else failed beside it. A
+                # failure replayed from the saved record carries no program
+                # name and stays an ordinary, blocking failure.
+                first = missing[0]
+                gap = _declared_tool_missing_message(
                     DeclaredToolMissingError(
                         first.stderr_excerpt,
                         tool=first.missing_tool,
@@ -6484,7 +6489,14 @@ class AutoBuildOrchestrator:
                     Path(worktree.path),
                     manifests_changed,
                 )
-                return self._reinstall_environment_gap
+                others = len(essential) - 1
+                if others:
+                    gap += (
+                        f" {others} other install(s) also failed in the same "
+                        "reinstall; see the build log."
+                    )
+                self._reinstall_environment_gap = gap
+                return gap
             details = "; ".join(
                 f"{d.stack} ({Path(d.manifest_path).name}): {d.stderr_excerpt}"
                 for d in essential
@@ -7343,6 +7355,7 @@ class AutoBuildOrchestrator:
             # so the task ends now as a configuration error with the plain
             # reason — the same outcome as any check that could not run.
             logger.error("[%s] turn %s: %s", task_id, turn, environment_gap)
+            self._environment_gap_stop = environment_gap
             self._progress_display.complete_turn(
                 "error",
                 "Build environment is missing a declared tool",
@@ -13039,6 +13052,27 @@ class AutoBuildOrchestrator:
 
         return "\n".join(parts)
 
+    def _environment_gap_stopped_on(
+        self, final_decision: str, turn_history: List[TurnRecord]
+    ) -> Optional[str]:
+        """The environment-gap sentence, when the task stopped on it.
+
+        23 October 2026: a tool the project declares, or an install program,
+        is missing from the build environment, and the task ended on that
+        turn as a configuration error. The sentence is carried as the task's
+        ``stopped_because`` and leads its summary, so the feature's final
+        reason names the tool and the file. None on every other outcome.
+        """
+        gap = getattr(self, "_environment_gap_stop", None)
+        if final_decision != "configuration_error" or not isinstance(gap, str):
+            return None
+        config_turn = next(
+            (t for t in reversed(turn_history) if t.is_configuration_error), None
+        )
+        if config_turn is None or config_turn.feedback != gap:
+            return None
+        return gap
+
     def _build_summary_details(
         self,
         turn_history: List[TurnRecord],
@@ -13488,6 +13522,18 @@ class AutoBuildOrchestrator:
             config_turn = next(
                 (t for t in reversed(turn_history) if t.is_configuration_error), None
             )
+            environment_gap = self._environment_gap_stopped_on(
+                final_decision, turn_history
+            )
+            if environment_gap:
+                # 23 October 2026: a tool the project declares is missing
+                # from the build environment. Its sentence comes first.
+                return (
+                    f"{environment_gap}\n"
+                    f"Stopped on turn {config_turn.turn} as a configuration "
+                    f"error; the Player cannot fix this.\n"
+                    f"Worktree preserved for inspection."
+                )
             coverage_refusal = getattr(self, "_coverage_declaration_refusal", None)
             if coverage_refusal:
                 # No coverage command is declared and this task's type needs
@@ -13651,6 +13697,11 @@ class AutoBuildOrchestrator:
             config_turn = next(
                 (t for t in reversed(turn_history) if t.is_configuration_error), None
             )
+            environment_gap = self._environment_gap_stopped_on(
+                final_decision, turn_history
+            )
+            if environment_gap:
+                return environment_gap
             coverage_refusal = getattr(self, "_coverage_declaration_refusal", None)
             if coverage_refusal:
                 if getattr(self, "_coverage_refusal_after_turn", False):

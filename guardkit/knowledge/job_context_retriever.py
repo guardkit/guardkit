@@ -336,6 +336,10 @@ def _outcome_as_paragraph(item: Dict[str, Any]) -> Dict[str, Any]:
     return {"content": lessons, "uuid": item.get("uuid"), "score": item.get("score", 1.0)}
 
 
+#: Marks an item :func:`_record_as_text` rendered, so the budget charges its
+#: text as the builder sees it, not its JSON serialisation.
+RENDERED_RECORD_KEY = "rendered_from"
+
 _ADR_TEXT_FIELDS = (
     ("decision", "Decision"),
     ("context", "Context"),
@@ -355,9 +359,11 @@ def _record_as_text(item: Dict[str, Any]) -> Dict[str, Any]:
     a heading (its title or identifier, with its status) and its decision,
     context, consequences and alternatives as labelled lines; a ``document``
     record becomes its identifier and its ``content`` body. The result is
-    ``{"content", "uuid", "score"}``, so ``_format_item`` prints the text as
-    it is and ``_estimate_tokens`` costs the text. Anything that cannot be
-    decoded, or is another kind of record, is left exactly as it came.
+    ``{"content", "uuid", "score", "rendered_from"}``: ``_format_item``
+    prints the text as it is, and ``_estimate_tokens`` charges the rendered
+    text itself, never its JSON form (which escapes line breaks and
+    non-ASCII characters and counts the key and score). Anything that cannot
+    be decoded, or is another kind of record, is left exactly as it came.
     """
     if (
         not isinstance(item, dict)
@@ -420,6 +426,7 @@ def _record_as_text(item: Dict[str, Any]) -> Dict[str, Any]:
         "content": "\n".join(lines),
         "uuid": item.get("uuid"),
         "score": item.get("score", 1.0),
+        RENDERED_RECORD_KEY: kind,
     }
 
 
@@ -1314,6 +1321,13 @@ class JobContextRetriever:
         Returns:
             Estimated token count
         """
+        # A decision record or document rendered as text is charged on that
+        # text, as the builder sees it (23 October 2026).
+        if item.get(RENDERED_RECORD_KEY) in ("adr", "document") and isinstance(
+            item.get("content"), str
+        ):
+            return max(1, len(item["content"]) // self.CHARS_PER_TOKEN)
+
         # Convert to string for character count
         item_str = json.dumps(item, default=str)
         char_count = len(item_str)

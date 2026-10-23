@@ -572,6 +572,7 @@ class TestContextCategoryQueries:
                 "Decision: Keep all records in one relational database.",
                 "uuid": "adr:example:ADR_ARCH_001",
                 "score": 0.9,
+                "rendered_from": "adr",
             }
         ]
         assert "Use one relational store" in result.to_prompt()

@@ -342,12 +342,13 @@ class TestMissingInstallProgram:
         assert "Fix the dependency declaration" not in msg
         assert "remov" not in msg.lower()
 
-    def test_a_partly_missing_or_replayed_failure_stays_blocking(
+    def test_a_missing_program_beside_an_ordinary_failure_ends_the_task(
         self, worktree: Path
     ) -> None:
-        """Only when every essential failure is a missing program does the
-        task end; a failure replayed from the saved record has no program
-        name and stays an ordinary, blocking failure."""
+        """One essential failure is a missing installer, another is an
+        ordinary failure: the missing installer still ends the task, the
+        sentence explains it and mentions the other failure, and there is no
+        advice to fix the declaration."""
         failed = _failed_result(worktree)
         failed.failure_details.append(
             BootstrapFailureDetail(
@@ -365,7 +366,26 @@ class TestMissingInstallProgram:
                 SimpleNamespace(path=str(worktree)),
                 1,
             )
+        assert msg == orch._reinstall_environment_gap
+        assert msg.startswith("The build environment is missing `pnpm`")
+        assert "pnpm-lock.yaml declares" in msg
+        assert "1 other install(s) also failed" in msg
+        assert "Fix the dependency declaration" not in msg
+
+    def test_a_replayed_failure_without_a_program_name_stays_blocking(
+        self, worktree: Path
+    ) -> None:
+        """A failure replayed from the saved record has no program name: it
+        stays an ordinary, blocking failure."""
+        orch = _bare_orchestrator()
+        with patch(REFRESH, return_value=_failed_result(worktree)):
+            msg = orch._maybe_refresh_venv_for_manifest_change(
+                _player(files_modified=["pyproject.toml"]),
+                SimpleNamespace(path=str(worktree)),
+                1,
+            )
         assert msg is not None and orch._reinstall_environment_gap is None
+        assert "Fix the dependency declaration" in msg
         assert orch._standing_reinstall_failure is not None
 
     def test_only_the_program_itself_counts_as_missing(self, tmp_path: Path) -> None:
@@ -384,3 +404,167 @@ class TestMissingInstallProgram:
         assert _missing_program(missing, [venv_python, "-m", "pip"]) is None
         script = FileNotFoundError(2, "No such file or directory", "./scripts/install.sh")
         assert _missing_program(script, ["./scripts/install.sh"]) is None
+
+
+# ---------------------------------------------------------------------------
+# The environment-gap sentence is the task's and the feature's final reason
+# ---------------------------------------------------------------------------
+
+
+def _orchestrator_with_uv_missing_turn(worktree: Path) -> AutoBuildOrchestrator:
+    invoker = Mock()
+    invoker.invoke_player = AsyncMock(
+        return_value=AgentInvocationResult(
+            task_id=TASK, turn=1, agent_type="player", success=True,
+            report={"task_id": TASK, "files_modified": [],
+                    "files_created": ["pyproject.toml"], "tests_written": []},
+            duration_seconds=60.0,
+        )
+    )
+    invoker.invoke_coach = AsyncMock()
+    invoker._get_implementation_mode.return_value = "direct"
+    manager = Mock()
+    manager.worktrees_dir = worktree
+    return AutoBuildOrchestrator(
+        repo_root=worktree,
+        max_turns=5,
+        worktree_manager=manager,
+        agent_invoker=invoker,
+        progress_display=MagicMock(),
+        enable_pre_loop=False,
+        enable_checkpoints=False,
+    )
+
+
+class TestTheReasonReachesTheEnd:
+    def test_the_task_stops_and_its_summary_leads_with_the_sentence(
+        self, worktree: Path
+    ) -> None:
+        orch = _orchestrator_with_uv_missing_turn(worktree)
+        wt = SimpleNamespace(path=worktree, branch_name="main")
+        with patch.object(orch, "_attempt_state_recovery", return_value=None), \
+                patch.object(orch, "_invoke_coach_safely") as coach, \
+                patch(
+                    "guardkit.orchestrator.environment_bootstrap._uv_on_path",
+                    return_value=False,
+                ):
+            history, decision = orch._loop_phase(
+                TASK, "Set up the workspace", ["AC-001: the workspace installs"], wt
+            )
+        coach.assert_not_called()
+        assert decision == "configuration_error"
+        assert len(history) == 1
+
+        sentence = orch._environment_gap_stopped_on(decision, history)
+        assert sentence is not None
+        assert sentence.startswith("The build environment is missing `uv`")
+        assert "pyproject.toml declares" in sentence
+
+        # The task's error and summary lead with it; the cause the loop
+        # printed is the same sentence (_configuration_error_cause).
+        error = orch._build_error_message(decision, history)
+        assert error == sentence
+        details = orch._build_summary_details(history, decision)
+        assert details.splitlines()[0] == sentence
+        assert "Stopped on turn 1" in details
+        assert "task_type" not in details
+        assert _configuration_error_cause(history[-1]) == (sentence, False)
+
+    def test_no_sentence_on_other_outcomes(self, worktree: Path) -> None:
+        orch = _bare_orchestrator()
+        orch._environment_gap_stop = "The build environment is missing `uv`."
+        assert orch._environment_gap_stopped_on("max_turns_exceeded", []) is None
+        assert orch._environment_gap_stopped_on("configuration_error", []) is None
+
+
+def _feature_with_one_task():
+    feature = MagicMock()
+    feature.id = "FEAT-RFS1"
+    feature.name = "Reinstall gap feature"
+    feature.scenarios = {}
+    task = MagicMock()
+    task.id = TASK
+    feature.tasks = [task]
+    return feature
+
+
+def _failed_wave(stopped_because=None):
+    from guardkit.orchestrator.feature_orchestrator import (
+        TaskExecutionResult,
+        WaveExecutionResult,
+    )
+
+    return WaveExecutionResult(
+        wave_number=1,
+        task_ids=[TASK],
+        results=[
+            TaskExecutionResult(
+                task_id=TASK,
+                success=False,
+                total_turns=1,
+                final_decision="configuration_error",
+                error="The build environment is missing `uv` ...",
+                stopped_because=stopped_because,
+            )
+        ],
+        all_succeeded=False,
+    )
+
+
+def _finalize(tmp_path: Path, waves, quiet: bool = True):
+    from guardkit.orchestrator.feature_orchestrator import FeatureOrchestrator
+    from guardkit.worktrees import Worktree
+
+    (tmp_path / "repo").mkdir(exist_ok=True)
+    wt_path = tmp_path / "wt"
+    wt_path.mkdir(exist_ok=True)
+    orchestrator = FeatureOrchestrator(
+        repo_root=tmp_path / "repo",
+        max_turns=1,
+        worktree_manager=MagicMock(),
+        quiet=quiet,
+    )
+    worktree = Worktree(
+        task_id="FEAT-RFS1",
+        branch_name="autobuild/FEAT-RFS1",
+        path=wt_path,
+        base_branch="main",
+    )
+    with patch(
+        "guardkit.orchestrator.feature_orchestrator.FeatureLoader.save_feature"
+    ):
+        return orchestrator._finalize_phase(_feature_with_one_task(), waves, worktree)
+
+
+class TestTheFeatureLevel:
+    SENTENCE = (
+        "The build environment is missing `uv`, which pyproject.toml declares "
+        "is needed to install this project's dependencies, so the dependency "
+        "reinstall could not run."
+    )
+
+    def test_the_feature_error_and_summary_lead_with_the_sentence(
+        self, tmp_path: Path, capsys
+    ) -> None:
+        result = _finalize(
+            tmp_path, [_failed_wave(stopped_because=self.SENTENCE)], quiet=False
+        )
+        assert result.success is False
+        assert result.error == self.SENTENCE
+        out = capsys.readouterr().out
+        # One machine-readable line for Forge, and the plain line on the
+        # console summary.
+        marker = [l for l in out.splitlines() if l.startswith("GUARDKIT_STOPPED_BECAUSE ")]
+        assert len(marker) == 1
+        import json as _json
+
+        payload = _json.loads(marker[0].split(" ", 1)[1])
+        assert payload == {"feature_id": "FEAT-RFS1", "sentence": self.SENTENCE}
+        assert "Stopped: The build environment is missing `uv`" in " ".join(out.split())
+
+    def test_without_a_sentence_the_count_is_unchanged(
+        self, tmp_path: Path, capsys
+    ) -> None:
+        result = _finalize(tmp_path, [_failed_wave()])
+        assert result.error == "1 task(s) failed"
+        assert "GUARDKIT_STOPPED_BECAUSE" not in capsys.readouterr().out
