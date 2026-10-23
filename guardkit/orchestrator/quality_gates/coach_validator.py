@@ -10662,12 +10662,19 @@ class CoachValidator:
         (23 October 2026).
 
         The Coach's half of the task-start exception in
-        ``undeclared_coverage_refusal``: the task declared files and none is
-        source code (``declares_no_source_files``), the files the builder
-        wrote this turn (``_compute_authored_set``) include no source code
-        either, and the project declares no coverage command for the task. A
-        declared command still runs as before, and an authored set that was
-        never recorded is not taken as clean.
+        ``undeclared_coverage_refusal``. All of these must hold:
+
+        * the task declared files and none is source code
+          (``declares_no_source_files``);
+        * the files the builder wrote with its file tools
+          (``_compute_authored_set``) include no source code, and that list
+          was recorded;
+        * ``files_created`` and ``files_modified``, which also carry files a
+          shell command wrote, include no source code once the files other
+          tasks of the same wave changed are set aside. A leftover file from
+          another task can only refuse the exception, never grant it;
+        * the project declares no coverage command for the task. A declared
+          command still runs as before.
         """
         from guardkit.orchestrator.toolchain_declaration import (
             declares_no_source_files,
@@ -10681,12 +10688,21 @@ class CoachValidator:
         authored, status = _compute_authored_set(task_work_results)
         if status == STATUS_UNKNOWN:
             return False
-        if not all(is_non_source_file(path) for path in authored):
+        peer_files: set = set()
+        for files in self._peer_changed_files.values():
+            peer_files.update(files)
+        changed = [
+            str(f)
+            for key in ("files_created", "files_modified")
+            for f in (task_work_results.get(key) or [])
+            if f and str(f) not in peer_files
+        ]
+        if not all(is_non_source_file(path) for path in authored + changed):
             return False
         try:
             return self._declared_coverage_command() is None
         except AttributeError:  # a validator built without a toolchain
-            return True
+            return False
 
     def _declared_coverage_command(self) -> Optional[str]:
         """Return the declared ``coverage`` command for THIS TASK, or ``None``.

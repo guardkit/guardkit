@@ -534,17 +534,45 @@ class TestFileKinds:
         "Containerfile", "app.dockerfile", ".gitignore", ".dockerignore",
         "LICENSE", "config/app.yml", "pom.xml", "yarn.lock", "go.sum",
         "`deploy/compose.yaml`", "deploy\\compose.yaml", "logo.svg",
+        # deployment scripts, make files, service units, version pins
+        "scripts/deploy.sh", "lib.bash", "env.zsh", "Makefile", "GNUmakefile",
+        "rules.mk", "CMakeLists.txt", "requirements.txt", "notes.txt",
+        "deploy/systemd/app.service", "app.timer", "deploy/Caddyfile",
+        "deploy/crontab", ".tool-versions", ".nvmrc",
+        # a template or example is the kind of the file it stands for
+        "deploy/settings.sh.template", "deploy/profile.yaml.template",
+        "nginx.conf.tmpl", "config.json.example", "app.ini.sample",
+        "phpunit.xml.dist",
     ])
     def test_not_source(self, path: str) -> None:
         assert is_non_source_file(path) is True
 
     @pytest.mark.parametrize("path", [
         "src/server.go", "app/main.py", "web/index.ts", "lib/thing.rs",
-        "scripts/deploy.sh", "Makefile", "CMakeLists.txt", "notes.txt",
+        "migrations/001.sql", "web/styles.css", "web/index.html",
+        "src/main.py.template", "foo.template", ".template",
         "deploy/", "deploy", "src/unknown.kind", "", None, 3,
     ])
     def test_source_or_unknown(self, path: Any) -> None:
         assert is_non_source_file(path) is False
+
+    def test_every_file_of_the_shipped_deploy_kit_is_not_source(self) -> None:
+        """The deploy kit GuardKit itself ships: a task that copies it into a
+        project writes no source code."""
+        kit = (
+            Path(__file__).resolve().parents[2]
+            / "installer" / "core" / "templates" / "common" / "deploy"
+        )
+        files = [p for p in kit.rglob("*") if p.is_file()]
+        assert files, f"no deploy kit found at {kit}"
+        source = [
+            p.relative_to(kit).as_posix() for p in files
+            if not is_non_source_file(p.relative_to(kit).as_posix())
+        ]
+        assert source == []
+        assert declares_no_source_files(
+            [f"deploy/{p.relative_to(kit).as_posix()}" for p in files]
+        )
 
     def test_any_source_file_makes_the_task_a_source_task(self) -> None:
         assert declares_no_source_files(CONFIG_ONLY) is True
@@ -667,8 +695,13 @@ class TestNoSourceFilesInTheCoach:
     """The Coach's half: the same exception, checked against what the
     builder actually wrote as well as what the task declared."""
 
-    def _gates(self, tmp_path: Path, declared, results, toolchain=None):
-        validator = CoachValidator(str(tmp_path), toolchain=toolchain)
+    def _gates(
+        self, tmp_path: Path, declared, results, toolchain=None, peers=None
+    ):
+        validator = CoachValidator(
+            str(tmp_path), toolchain=toolchain, task_id="TASK-COV-001",
+            peer_changed_files=peers,
+        )
         return validator.verify_quality_gates(
             results, profile=get_profile(TaskType.FEATURE),
             declared_files=declared,
@@ -704,6 +737,53 @@ class TestNoSourceFilesInTheCoach:
         assert gates.coverage_relaxed_by is None
         assert gates.coverage_met is None
         assert gates.all_gates_passed is False
+
+    def test_a_source_file_a_shell_command_wrote_keeps_coverage_unknown(
+        self, tmp_path: Path
+    ) -> None:
+        """The builder's file tools wrote only the compose file, but a shell
+        command (``cat > src/server.go``) wrote source code, which only the
+        created and modified lists show."""
+        gates = self._gates(
+            tmp_path, ["deploy/compose.yaml"],
+            _gate_results(
+                files_authored=["deploy/compose.yaml"],
+                files_authored_tracking="tracked",
+                shell_command_tool_uses=3,
+                files_created=["deploy/compose.yaml", "src/server.go"],
+            ),
+        )
+        assert gates.coverage_relaxed_by is None
+        assert gates.coverage_met is None
+        assert gates.all_gates_passed is False
+
+    def test_a_source_file_only_another_wave_task_changed_is_set_aside(
+        self, tmp_path: Path
+    ) -> None:
+        results = _gate_results(
+            files_authored=["deploy/compose.yaml"],
+            files_authored_tracking="tracked",
+            files_modified=["deploy/compose.yaml", "src/server.go"],
+        )
+        gates = self._gates(
+            tmp_path, ["deploy/compose.yaml"], results,
+            peers={"TASK-COV-002": ["src/server.go"]},
+        )
+        assert gates.coverage_relaxed_by == "no_source_files"
+        # Without the peer's record the same file refuses the exception.
+        gates = self._gates(tmp_path, ["deploy/compose.yaml"], results)
+        assert gates.coverage_relaxed_by is None
+
+    def test_a_validator_that_cannot_answer_fails_closed(
+        self, tmp_path: Path
+    ) -> None:
+        validator = CoachValidator(str(tmp_path))
+        with patch.object(
+            CoachValidator, "_declared_coverage_command", side_effect=AttributeError
+        ):
+            assert validator._touches_no_source_files(
+                ["compose.yaml"], _gate_results(files_authored=["compose.yaml"])
+            ) is False
 
     @pytest.mark.parametrize("declared", [
         None, [], CONFIG_ONLY + ["src/server.go"],

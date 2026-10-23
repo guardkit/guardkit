@@ -948,43 +948,58 @@ def declares_config_file(paths: Iterable[Any]) -> bool:
 
 # File kinds no coverage command measures (23 October 2026): the
 # configuration, deployment, documentation, compose, container, lock and data
-# files of any project. Decided by file kind alone, never by project or
-# language. Anything not named here counts as source code, so an unfamiliar
-# kind keeps the coverage requirement. Plain ``.txt`` and ``Makefile`` are left
-# out on purpose: build scripts such as ``CMakeLists.txt`` and make rules are
-# logic, not configuration.
+# files of any project, with the shell scripts, make files and service units
+# that deploy it. Decided by file kind alone, never by project or language.
+# Anything not named here counts as source code, so an unfamiliar kind keeps
+# the coverage requirement. This only matters when the project declares no
+# coverage command: a project that measures its shell scripts declares the
+# command, and the exception is then off. SQL, CSS and HTML stay source.
 _NON_SOURCE_SUFFIXES = frozenset({
-    # documentation
-    ".md", ".markdown", ".rst", ".adoc",
+    # documentation and plain text (CMakeLists.txt, requirements.txt)
+    ".md", ".markdown", ".rst", ".adoc", ".txt",
     # configuration and data
     ".yaml", ".yml", ".json", ".jsonc", ".json5", ".toml", ".ini", ".cfg",
     ".conf", ".properties", ".env", ".xml", ".csv", ".tsv",
     # lock files
     ".lock",
-    # containers and infrastructure declarations
+    # containers, infrastructure declarations and service units
     ".dockerfile", ".containerfile", ".tf", ".tfvars", ".hcl",
+    ".service", ".timer",
+    # deployment scripts and make files
+    ".sh", ".bash", ".zsh", ".mk",
     # images
     ".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico",
 })
 _NON_SOURCE_NAMES = frozenset({
     "dockerfile", "containerfile", "procfile", "codeowners",
+    "makefile", "gnumakefile", "caddyfile", "crontab",
     "readme", "changelog", "license", "licence", "notice",
     "go.mod", "go.sum",
     ".env", ".gitignore", ".dockerignore", ".gitattributes", ".editorconfig",
+    ".tool-versions", ".nvmrc",
 })
+# A template or example of a file is the same kind as the file:
+# ``profile.yaml.template`` is classified as ``profile.yaml``.
+_TEMPLATE_ENDINGS = (".template", ".tmpl", ".example", ".sample", ".dist")
 
 
 def is_non_source_file(path: Any) -> bool:
     """True when ``path`` is a file kind no coverage command measures.
 
     Configuration, deployment, documentation, compose, container, lock and
-    data files, by extension or well-known name (``Dockerfile.dev`` and
-    ``.env.example`` count). Anything else, an unrecognised kind or a folder
-    included, is treated as source code.
+    data files, deployment scripts and make files, by extension or
+    well-known name (``Dockerfile.dev`` and ``.env.example`` count). A name
+    ending ``.template``, ``.tmpl``, ``.example``, ``.sample`` or ``.dist``
+    is classified without that ending. Anything else, an unrecognised kind
+    or a folder included, is treated as source code.
     """
     if not isinstance(path, str):
         return False
     name = posixpath.basename(path.strip().strip("`").replace("\\", "/")).lower()
+    for ending in _TEMPLATE_ENDINGS:
+        if name.endswith(ending):
+            name = name[: -len(ending)]
+            break
     if not name:
         return False
     if name in _NON_SOURCE_NAMES:

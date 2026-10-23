@@ -62,12 +62,19 @@ WITH_COVERAGE = (
     f'  coverage: "{COVERAGE_COMMAND}"\n  coverage_timeout: 120\n'
 )
 
+# Both declare a source file, so coverage is still needed. A task declaring
+# only configuration files is covered by TestAConfigurationOnlySetupTask.
 DECLARES_CONFIG = (
     "## Files to Create\n- _none_\n\n"
     "## Files to Modify\n- `.guardkit/config.yaml` — declare the coverage command\n"
-    "- `Makefile`\n"
+    "- `src/greeting.c`\n"
 )
-DECLARES_OTHER = "## Files to Create\n- `src/greeting.txt`\n\n## Files to Modify\n- _none_\n"
+DECLARES_OTHER = "## Files to Create\n- `src/greeting.c`\n\n## Files to Modify\n- _none_\n"
+DECLARES_ONLY_CONFIG = (
+    "## Files to Create\n- _none_\n\n"
+    "## Files to Modify\n- `.guardkit/config.yaml` — declare the coverage command\n"
+    "- `deploy/compose.yaml`\n"
+)
 
 
 def _decl(**raw: Any) -> ToolchainDeclaration:
@@ -321,12 +328,7 @@ class TestATaskThatDeclaresTheCommand:
         root = tmp_path / "proj"
         _project(
             root, body="No file sections here.\n",
-            # The Makefile keeps this a task with code to measure: a task
-            # declaring only configuration files needs no coverage at all
-            # (23 October 2026).
-            frontmatter_extra=[
-                "files_to_modify:", "  - ./.guardkit/config.yaml", "  - Makefile",
-            ],
+            frontmatter_extra=["files_to_modify:", "  - ./.guardkit/config.yaml"],
         )
         worktree = _shared_worktree(root, tmp_path / "shared")
         orch = _orchestrator(tmp_path, root, worktree)
@@ -336,6 +338,54 @@ class TestATaskThatDeclaresTheCommand:
         assert result.final_decision == "approved", result.error
         assert turns.coach_receipts[0]["command"] == COVERAGE_COMMAND
 
+
+
+class TestAConfigurationOnlySetupTask:
+    """23 October 2026: a task that declares only configuration files, one of
+    them .guardkit/config.yaml, still takes the setup path, so a coverage
+    command it writes is pinned and measured on its own turn; but declaring
+    none does not stop it, because it has no source code to measure."""
+
+    def test_the_command_it_writes_is_measured_on_its_own_turn(
+        self, tmp_path: Path
+    ) -> None:
+        root = tmp_path / "proj"
+        _project(root, body=DECLARES_ONLY_CONFIG)
+        worktree = _shared_worktree(root, tmp_path / "shared")
+        orch = _orchestrator(tmp_path, root, worktree)
+        turns = _Turns(worktree, WITH_COVERAGE)
+        result = _run_real_loop(orch, turns)
+        assert turns.player_turns == 1
+        assert result.final_decision == "approved", result.error
+        assert turns.coach_receipts[0]["command"] == COVERAGE_COMMAND
+        assert load_toolchain_snapshot(TASK, worktree).coverage == COVERAGE_COMMAND
+
+    def test_declaring_no_command_does_not_stop_it(self, tmp_path: Path) -> None:
+        root = tmp_path / "proj"
+        _project(root, body=DECLARES_ONLY_CONFIG)
+        worktree = _shared_worktree(root, tmp_path / "shared")
+        orch = _orchestrator(tmp_path, root, worktree)
+        turns = _Turns(worktree, NO_COVERAGE + '  build: "make"\n')
+        result = _run_real_loop(orch, turns)
+        assert turns.player_turns == 1
+        assert result.final_decision == "approved", result.error
+        assert turns.coach_receipts == [None]  # nothing declared, nothing run
+        assert orch._coverage_declaration_refusal is None
+        assert orch._coverage_due_from_task is None
+
+    def test_a_command_that_does_nothing_still_stops_it(
+        self, tmp_path: Path
+    ) -> None:
+        root = tmp_path / "proj"
+        _project(root, body=DECLARES_ONLY_CONFIG)
+        worktree = _shared_worktree(root, tmp_path / "shared")
+        orch = _orchestrator(tmp_path, root, worktree)
+        turns = _Turns(worktree, NO_COVERAGE + '  coverage: "true"\n')
+        result = _run_real_loop(orch, turns)
+        assert turns.player_turns == 1
+        assert result.final_decision == "configuration_error"
+        assert "The coverage command `true`" in result.error
+        assert result.error.startswith("Stopped after the task's turn")
 
 
 NO_TOOLCHAIN = "memory:\n  project: demo\n"
@@ -518,7 +568,7 @@ class TestDeclaresConfigFile:
             "---\nid: X\n---\n\n" + DECLARES_CONFIG, {}
         )
         assert ".guardkit/config.yaml" in paths
-        assert "Makefile" in paths
+        assert "src/greeting.c" in paths
 
 
 def _pin(task_id: str, worktree: Path, decl: ToolchainDeclaration) -> None:

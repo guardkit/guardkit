@@ -3827,16 +3827,13 @@ class AutoBuildOrchestrator:
             # pass (only the declared command measures coverage). Found out
             # here, from the pinned declaration the Coach will read, before
             # the pre-loop phase or any Player turn, instead of after every
-            # turn has been refused "Coverage is UNKNOWN". 23 October 2026:
-            # a task whose declared files are all configuration, deployment,
-            # documentation or data files is not stopped, whatever its type.
+            # turn has been refused "Coverage is UNKNOWN".
             coverage_refusal = self._undeclared_coverage_refusal(
                 task_id,
                 worktree,
                 task_type=task_type,
                 component=component,
                 implementation_mode=_implementation_mode_raw,
-                declared_paths=_declared_task_paths,
             )
             if coverage_refusal is not None and self._task_declares_coverage_setup(
                 task_id, worktree, _declared_task_paths, component=component
@@ -3845,13 +3842,38 @@ class AutoBuildOrchestrator:
                 # .guardkit/config.yaml, which is where the missing command
                 # goes. It is given its turn; the command is read from the
                 # worktree before the Coach judges it, and the task stops
-                # then, with the same plain reason, if there is still none.
-                self._coverage_due_from_task = {"component": component}
+                # then, with the same plain reason, if there is still none
+                # (unless it writes no source code: see
+                # _coverage_refusal_after_task_turn).
+                self._coverage_due_from_task = {
+                    "component": component,
+                    "declared_paths": list(_declared_task_paths),
+                }
                 logger.info(
                     "Task %s needs a coverage command and none is declared, "
                     "but it says it will change .guardkit/config.yaml, so it "
                     "is not stopped: the coverage command is read from the "
                     "worktree after its turn.",
+                    task_id,
+                )
+                coverage_refusal = None
+            elif coverage_refusal is not None and self._undeclared_coverage_refusal(
+                task_id,
+                worktree,
+                task_type=task_type,
+                component=component,
+                implementation_mode=_implementation_mode_raw,
+                declared_paths=_declared_task_paths,
+            ) is None:
+                # 23 October 2026: every file this task declares is a
+                # configuration, deployment, documentation or data file, so
+                # coverage has nothing to measure, whatever its type. Decided
+                # after the setup path above, so a task declaring the
+                # coverage command still has it pinned and measured on its
+                # own turn.
+                logger.info(
+                    "Task %s declares no source files, so it needs no "
+                    "coverage command and is not stopped.",
                     task_id,
                 )
                 coverage_refusal = None
@@ -4602,6 +4624,7 @@ class AutoBuildOrchestrator:
         from guardkit.orchestrator.toolchain_declaration import (
             coverage_view_of_pin,
             declared_coverage_command,
+            declares_no_source_files,
             undeclared_coverage_refusal,
         )
 
@@ -4613,6 +4636,21 @@ class AutoBuildOrchestrator:
         pinned = coverage_view_of_pin(task_id, Path(worktree.path))
         if declared_coverage_command(pinned, component):
             self._coverage_due_from_task = None
+            return None
+        if do_nothing is None and declares_no_source_files(
+            due.get("declared_paths")
+        ):
+            # 23 October 2026: it declared no coverage command, but every
+            # file it declares is a configuration, deployment, documentation
+            # or data file, so there is nothing for coverage to measure. It
+            # goes on to the Coach (which makes the same exception) instead
+            # of being stopped. A command that does nothing is still refused.
+            self._coverage_due_from_task = None
+            logger.info(
+                "Task %s declared no coverage command on turn %s, but it "
+                "declares no source files, so it is not stopped.",
+                task_id, turn,
+            )
             return None
         refusal = do_nothing or undeclared_coverage_refusal(
             task_type=task_type,
