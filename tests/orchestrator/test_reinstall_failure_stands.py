@@ -374,3 +374,13 @@ class TestMissingInstallProgram:
         assert _missing_program(program, ["pnpm", "install"]) == "pnpm"
         assert _missing_program(folder, ["pnpm", "install"]) is None
         assert _missing_program(PermissionError(13, "denied", "pnpm"), ["pnpm"]) is None
+
+    def test_a_missing_path_is_not_a_missing_tool(self, tmp_path: Path) -> None:
+        """The worktree's own interpreter can be rebuilt, and a project
+        script is the project's: neither is a tool missing from the build
+        environment, so both stay ordinary, blocking failures."""
+        venv_python = str(tmp_path / ".venv" / "bin" / "python")
+        missing = FileNotFoundError(2, "No such file or directory", venv_python)
+        assert _missing_program(missing, [venv_python, "-m", "pip"]) is None
+        script = FileNotFoundError(2, "No such file or directory", "./scripts/install.sh")
+        assert _missing_program(script, ["./scripts/install.sh"]) is None

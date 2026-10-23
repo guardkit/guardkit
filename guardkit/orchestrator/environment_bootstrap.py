@@ -789,13 +789,16 @@ def _missing_program(exc: OSError, cmd: Sequence[str]) -> Optional[str]:
     Install commands run without a shell, so a ``FileNotFoundError`` whose
     ``filename`` is the command's first word means the program is not where
     the build runs. A missing working folder names the folder instead, and
-    is not a missing program.
+    is not a missing program. Only a bare program name looked up on PATH
+    counts: a path (the worktree's own interpreter, which can be rebuilt, or
+    a project script) is not a tool missing from the build environment.
     """
     if (
         isinstance(exc, FileNotFoundError)
         and cmd
         and exc.filename is not None
         and str(exc.filename) == str(cmd[0])
+        and os.path.basename(str(cmd[0])) == str(cmd[0])
     ):
         return str(cmd[0])
     return None
