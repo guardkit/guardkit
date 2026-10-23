@@ -7433,6 +7433,14 @@ class CoachValidator:
         at all — a timeout, or a failure before any exit code existed. There
         is no exit code to misread there and nothing was verified either way,
         so it stays what it is: the check could not run.
+
+        A command that EXITED 0 in the worktree started and finished, so it
+        could run, whatever its output said. When no test count was
+        recognised in that output the result stays an absent signal, exactly
+        as a wave of one reports it: never a pass, and the Coach and the
+        builder see it. Ending the turn as an estate fault instead stopped a
+        whole feature on a project check that passed but ran no tests the
+        stack profile recognises (23 October 2026).
         """
         if result.check_could_not_run:
             return True
@@ -7440,6 +7448,8 @@ class CoachValidator:
             return False
         if worktree_returncode is None:
             return True
+        if worktree_returncode == 0:
+            return False
         return (
             self._absence_from_run(
                 worktree_returncode,

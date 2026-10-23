@@ -8968,17 +8968,32 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         # TASK-AB-ZEROTESTLOUD01 (AC-002): follow with the honest
         # infrastructure framing — an absent signal can never mean "Player
         # code is bad", so tell the Player not to rewrite the implementation.
-        rationale = (
-            "Independent test verification did not complete (signal absent) — "
-            "cannot independently confirm the Player's reported tests. "
-            "Verification infrastructure could not collect/run any tests "
-            f"(interpreter: {resolved_interpreter or 'unknown'}, "
-            f"command: {test_command or 'unknown'}) — this is NOT a signal "
-            "about your code; do not rewrite the implementation in response. "
-            "Check the worktree venv / re-run environment bootstrap so the "
-            "verifier can produce a verdict. "
-            f"Independent-test oracle output: {summary or '<empty>'}"
-        )
+        if getattr(independent, "exit_code", None) == 0:
+            # The command ran and exited 0, but no test count was recognised
+            # in its output (23 October 2026). Nothing is broken in the
+            # environment, so say what the builder can do about it instead.
+            rationale = (
+                "Independent test verification did not complete (signal "
+                "absent) — cannot independently confirm the Player's reported "
+                f"tests. The declared check (command: {test_command or 'unknown'}) "
+                "ran and exited 0, but its output showed no test running, so "
+                "no test count was recognised. If this task's tests are meant "
+                "to run, make sure that command runs them and prints their "
+                "results; this alone does not mean your code is wrong. "
+                f"Independent-test oracle output: {summary or '<empty>'}"
+            )
+        else:
+            rationale = (
+                "Independent test verification did not complete (signal absent) — "
+                "cannot independently confirm the Player's reported tests. "
+                "Verification infrastructure could not collect/run any tests "
+                f"(interpreter: {resolved_interpreter or 'unknown'}, "
+                f"command: {test_command or 'unknown'}) — this is NOT a signal "
+                "about your code; do not rewrite the implementation in response. "
+                "Check the worktree venv / re-run environment bootstrap so the "
+                "verifier can produce a verdict. "
+                f"Independent-test oracle output: {summary or '<empty>'}"
+            )
 
         override_issue = {
             "severity": "must_fix",

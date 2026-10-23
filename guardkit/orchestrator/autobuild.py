@@ -1459,6 +1459,36 @@ def _coach_report_issues(
     return [issue for issue in issues if isinstance(issue, dict)]
 
 
+def _configuration_error_cause(
+    turn_record: Optional["TurnRecord"],
+) -> Tuple[Optional[str], bool]:
+    """The cause of a configuration-error turn, and whether it is the task_type.
+
+    Returns ``(cause, is_task_type)``; ``cause`` is ``None`` when the turn
+    recorded none. An invalid task_type issue names its own cause. Any other
+    configuration error (a check that could not run, for one) carries its
+    cause as the Coach's rationale: that sentence comes first, never the
+    turn's feedback, which can lead with should-fix records that did not stop
+    the task. The turn's feedback is used only when there is no rationale.
+    Only an invalid task_type is a task_type problem, so only then may the
+    caller advise fixing the task_type (23 October 2026).
+    """
+    if turn_record is None:
+        return None, False
+    for issue in _coach_report_issues(turn_record):
+        if issue.get("category") == INVALID_TASK_TYPE_CAUSE:
+            return issue.get("description") or None, True
+    report = (
+        getattr(turn_record.coach_result, "report", None)
+        if turn_record.coach_result is not None
+        else None
+    )
+    rationale = report.get("rationale") if isinstance(report, dict) else None
+    if isinstance(rationale, str) and rationale.strip():
+        return rationale.strip(), False
+    return turn_record.feedback or None, False
+
+
 # ----------------------------------------------------------------------------
 # Vetoes on the "already there" receipt (TASK-AB-NOCHANGE01, part 2 hardening)
 # ----------------------------------------------------------------------------
@@ -5858,12 +5888,10 @@ class AutoBuildOrchestrator:
                 # Fast-exit on configuration errors (TASK-ABFIX-003)
                 # The Player cannot fix task frontmatter — retrying is futile.
                 if turn_record.is_configuration_error:
-                    config_issue = next(
-                        (i for i in (turn_record.coach_result.report.get("issues", []) if turn_record.coach_result else [])
-                         if i.get("category") == "invalid_task_type"),
-                        None,
+                    error_detail, is_task_type = _configuration_error_cause(
+                        turn_record
                     )
-                    error_detail = config_issue["description"] if config_issue else turn_record.feedback or "unknown configuration error"
+                    error_detail = error_detail or "unknown configuration error"
                     coverage_stop = getattr(
                         self, "_coverage_declaration_refusal", None
                     )
@@ -5879,15 +5907,28 @@ class AutoBuildOrchestrator:
                             f"  {coverage_stop}\n"
                         )
                         return turn_history, "configuration_error"
+                    if is_task_type:
+                        logger.error(
+                            f"Configuration error for {task_id}: {error_detail}. "
+                            f"This is a task file issue — the Player cannot fix it."
+                        )
+                        self._progress_display.console.print(
+                            f"\n[bold red]ERROR: Configuration error for {task_id}:[/bold red]\n"
+                            f"  {error_detail}\n"
+                            f"  [yellow]This is a task file configuration issue — the Player cannot fix it.[/yellow]\n"
+                            f"  [green]Fix the task_type in the task .md file and retry.[/green]\n"
+                        )
+                        return turn_history, "configuration_error"
+                    # Not a task file problem (a check that could not run,
+                    # for one): name the cause, and no task_type advice.
                     logger.error(
-                        f"Configuration error for {task_id}: {error_detail}. "
-                        f"This is a task file issue — the Player cannot fix it."
+                        f"Configuration error for {task_id}: {error_detail} "
+                        f"The Player cannot fix this."
                     )
                     self._progress_display.console.print(
                         f"\n[bold red]ERROR: Configuration error for {task_id}:[/bold red]\n"
                         f"  {error_detail}\n"
-                        f"  [yellow]This is a task file configuration issue — the Player cannot fix it.[/yellow]\n"
-                        f"  [green]Fix the task_type in the task .md file and retry.[/green]\n"
+                        f"  [yellow]The Player cannot fix this. Fix the cause above and retry.[/yellow]\n"
                     )
                     return turn_history, "configuration_error"
 
@@ -13239,11 +13280,17 @@ class AutoBuildOrchestrator:
                     f"documents it names, then retry.\n"
                     f"Worktree preserved for inspection."
                 )
-            detail = config_turn.feedback if config_turn and config_turn.feedback else "unknown configuration error"
+            detail, is_task_type = _configuration_error_cause(config_turn)
+            detail = detail or "unknown configuration error"
+            action = (
+                "Fix the task_type in the task .md file and retry."
+                if is_task_type
+                else "Fix the cause above and retry; the Player cannot fix it."
+            )
             return (
                 f"Configuration error detected — loop exited immediately.\n"
                 f"Detail: {detail}\n"
-                f"Action: Fix the task_type in the task .md file and retry.\n"
+                f"Action: {action}\n"
                 f"Worktree preserved for inspection."
             )
 
@@ -13372,11 +13419,14 @@ class AutoBuildOrchestrator:
                 if getattr(self, "_coverage_refusal_after_turn", False):
                     return f"Stopped after the task's turn: {coverage_refusal}"
                 return f"Stopped before any model call: {coverage_refusal}"
-            if config_turn and config_turn.feedback:
-                return (
-                    f"Configuration error: {config_turn.feedback}. "
-                    f"Fix the task_type in the task .md file and retry."
-                )
+            detail, is_task_type = _configuration_error_cause(config_turn)
+            if detail:
+                if is_task_type:
+                    return (
+                        f"Configuration error: {detail}. "
+                        f"Fix the task_type in the task .md file and retry."
+                    )
+                return f"Configuration error: {detail}"
             documents_refusal = getattr(self, "_project_documents_refusal", None)
             if documents_refusal:
                 return f"Stopped before any model call: {documents_refusal}"

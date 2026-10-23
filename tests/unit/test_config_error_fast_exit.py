@@ -569,3 +569,118 @@ class TestBuildErrorMessage:
         orch = self._make_orchestrator()
         msg = orch._build_error_message("configuration_error", [])
         assert "configuration" in msg.lower()
+
+
+# ============================================================================
+# A configuration error names its own cause (23 October 2026)
+# ============================================================================
+# A configuration error that is not a task_type problem — a check that could
+# not run anywhere, for one — carries its cause as the Coach's rationale and
+# no issues. The turn's feedback can still lead with a should-fix record that
+# did not stop the task. The message must name the real cause first, and must
+# not advise fixing the task_type.
+
+_CAUSE = (
+    "The check could not run anywhere. Command: qa/run-suite.sh. "
+    "What was missing: the runner the command needs."
+)
+_SHOULD_FIX_FEEDBACK = (
+    "- Deterministic honesty record (claim_audit_unmodified, "
+    "severity=should_fix): the Player claimed a file it did not change."
+)
+
+
+def _estate_fault_turn_record() -> TurnRecord:
+    coach = AgentInvocationResult(
+        task_id="TASK-001",
+        turn=1,
+        agent_type="coach",
+        success=True,
+        report={
+            "task_id": "TASK-001",
+            "turn": 1,
+            "decision": "feedback",
+            "issues": [],
+            "rationale": _CAUSE,
+            "is_configuration_error": True,
+        },
+        duration_seconds=3.0,
+        error=None,
+    )
+    return TurnRecord(
+        turn=1,
+        player_result=make_player_result(),
+        coach_result=coach,
+        decision="feedback",
+        feedback=_SHOULD_FIX_FEEDBACK,
+        timestamp="2025-01-01T00:00:00",
+        is_configuration_error=True,
+    )
+
+
+class TestConfigurationErrorNamesItsCause:
+    def _printed_and_logged(self, record, caplog):
+        orch = TestLoopPhaseFastExit()._make_orchestrator()
+        worktree = Mock()
+        worktree.path = Path("/tmp/worktrees/TASK-001")
+        with patch.object(orch, "_execute_turn", return_value=record), \
+             patch.object(orch, "_capture_turn_state"), \
+             patch.object(orch, "_record_honesty"), \
+             patch.object(orch, "_display_criteria_progress"), \
+             caplog.at_level("ERROR"):
+            _, decision = orch._loop_phase(
+                task_id="TASK-001",
+                requirements="do something",
+                acceptance_criteria=["do something"],
+                worktree=worktree,
+            )
+        printed = "".join(
+            str(call.args[0])
+            for call in orch._progress_display.console.print.call_args_list
+            if call.args
+        )
+        logged = "\n".join(
+            r.getMessage() for r in caplog.records
+            if "Configuration error for" in r.getMessage()
+        )
+        return decision, printed, logged
+
+    def test_the_loop_names_the_cause_not_the_should_fix_record(self, caplog):
+        decision, printed, logged = self._printed_and_logged(
+            _estate_fault_turn_record(), caplog
+        )
+
+        assert decision == "configuration_error"
+        for text in (printed, logged):
+            assert _CAUSE in text
+            assert "should_fix" not in text
+            assert "task_type" not in text
+
+    def test_the_summary_and_error_message_name_the_cause(self):
+        orch = AutoBuildOrchestrator.__new__(AutoBuildOrchestrator)
+        orch.max_turns = 5
+        record = _estate_fault_turn_record()
+
+        summary = orch._build_summary_details([record], "configuration_error")
+        error = orch._build_error_message("configuration_error", [record])
+
+        for text in (summary, error):
+            assert _CAUSE in text
+            assert "should_fix" not in text
+            assert "task_type" not in text
+
+    def test_an_invalid_task_type_still_says_fix_the_task_type(self, caplog):
+        record = TestLoopPhaseFastExit()._make_config_error_turn_record()
+        decision, printed, logged = self._printed_and_logged(record, caplog)
+
+        assert decision == "configuration_error"
+        assert "Invalid task_type 'enhancement'" in printed
+        assert "Fix the task_type" in printed
+
+        orch = AutoBuildOrchestrator.__new__(AutoBuildOrchestrator)
+        orch.max_turns = 5
+        summary = orch._build_summary_details([record], "configuration_error")
+        error = orch._build_error_message("configuration_error", [record])
+        for text in (summary, error):
+            assert "Invalid task_type 'enhancement'" in text
+            assert "Fix the task_type" in text

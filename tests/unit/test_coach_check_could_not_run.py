@@ -883,3 +883,144 @@ class TestTheRuleOnTheLivePath:
         assert result.report["decision"] == "feedback"
         assert result.report["issues"] != []
         assert result.report.get("is_configuration_error", False) is False
+
+
+# ---------------------------------------------------------------------------
+# 5. A CHECK THAT EXITED 0 COULD RUN (23 October 2026)
+# ---------------------------------------------------------------------------
+# A project's declared check passed (exit 0) but printed no test count the
+# declared classifier recognises — a starter check script that runs no tests
+# yet. That is an absent signal: never a pass, and never an estate fault. In
+# a wave of two it used to end the whole feature as a configuration error,
+# because the worktree close-out read "no test count recognised" as "the
+# check could not run anywhere". The command started and finished, so it
+# could run; only the test count is missing, exactly as a wave of one says.
+
+_RAN_MARKER = r"(?m)^[1-9]\d* checks? passed"
+
+
+def _make_repo_requiring_a_test_count(tmp_path: Path) -> Path:
+    """A repository whose declared check must print a test count to pass."""
+    root = tmp_path / "product"
+    worktree = root / ".guardkit" / "worktrees" / _TASK_ID
+    worktree.mkdir(parents=True)
+    (root / ".guardkit" / "config.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "toolchain": {
+                    "test": _DECLARED_COMMAND,
+                    "ran_marker_regex": _RAN_MARKER,
+                    "requires_ran_marker": True,
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    snapshot_task_toolchain(_TASK_ID, worktree, root)
+    _executable(
+        worktree / "qa" / "run-suite.sh",
+        "#!/bin/sh\necho 'lint: passed'\necho 'no parts yet; later tasks add checks'\n",
+    )
+    return worktree
+
+
+class TestACheckThatExitedZeroCouldRun:
+    def test_a_wave_of_two_is_an_absent_signal_not_an_estate_fault(
+        self, tmp_path: Path
+    ) -> None:
+        worktree = _make_repo_requiring_a_test_count(tmp_path)
+
+        result = _validator(worktree, wave_size=2).run_independent_tests()
+
+        assert result.check_could_not_run is False
+        assert result.check_could_not_run_detail is None
+        # Never a pass: nothing showed a test running.
+        assert result.signal_absent is True
+        assert result.tests_passed is False
+        assert result.exit_code == 0
+        assert "no parts yet" in (result.raw_output or "")
+
+    def test_a_wave_of_two_is_no_worse_than_a_wave_of_one(
+        self, tmp_path: Path
+    ) -> None:
+        one = _validator(
+            _make_repo_requiring_a_test_count(tmp_path / "alone"), wave_size=1
+        ).run_independent_tests()
+        two = _validator(
+            _make_repo_requiring_a_test_count(tmp_path / "together"),
+            wave_size=2,
+        ).run_independent_tests()
+
+        assert one.signal_absent is True
+        assert two.check_could_not_run == one.check_could_not_run
+        assert two.signal_absent == one.signal_absent
+        assert two.tests_passed == one.tests_passed
+
+    def test_the_close_out_never_ends_a_turn_on_exit_zero(
+        self, tmp_path: Path
+    ) -> None:
+        worktree = _make_repo_requiring_a_test_count(tmp_path)
+        validator = _validator(worktree, wave_size=2)
+        # The profile a run would pick up from the declaration.
+        validator._active_stack_profile = validator._declared_stack_profile(
+            _DECLARED_COMMAND
+        )
+        assert validator._active_stack_profile is not None
+        absent = IndependentTestResult.absent(
+            test_command=_DECLARED_COMMAND,
+            test_output_summary="no parts yet",
+            duration_seconds=0.1,
+        )
+
+        assert validator._worktree_run_said_nothing(absent, 0) is False
+        # A command that could not start is still an estate fault.
+        assert validator._worktree_run_said_nothing(absent, 127) is True
+        assert validator._worktree_run_said_nothing(absent, None) is True
+
+    def test_the_builder_is_told_what_to_do_and_the_loop_goes_on(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """On the live path the turn is ordinary feedback: the reviewer's
+        findings reach the builder, the note says the check exited 0 with no
+        test count, and the turn is not a configuration error."""
+        monkeypatch.delenv("GUARDKIT_COACH_SYNTHESIS", raising=False)
+        monkeypatch.delenv("GUARDKIT_COACH_GATHER", raising=False)
+        invoker = _invoker(tmp_path)
+        ran_nothing = IndependentTestResult.from_run(
+            tests_passed=False,
+            test_command=_DECLARED_COMMAND,
+            test_output_summary="no parts yet; later tasks add checks",
+            duration_seconds=0.1,
+            output="no parts yet; later tasks add checks\n",
+            resolved_interpreter=None,
+            signal_absent=True,
+            exit_code=0,
+        )
+        bundle = CoachEvidenceBundle(
+            honesty=HonestyVerification(
+                verified=True, discrepancies=[], honesty_score=1.0,
+                resolved_paths=[],
+            ),
+            gathering_status="complete",
+            independent_tests=ran_nothing,
+        )
+
+        result = _ask_the_coach(
+            invoker,
+            task_id=_TASK_ID,
+            turn=1,
+            verdict=_the_reviewer_blames_the_builder(_TASK_ID, 1),
+            bundle=bundle,
+        )
+
+        assert result.report["decision"] == "feedback"
+        assert result.report.get("is_configuration_error", False) is False
+        notes = [
+            issue["description"]
+            for issue in result.report["issues"]
+            if (issue.get("details") or {}).get("signal_absent") is True
+        ]
+        assert notes, result.report["issues"]
+        assert "exited 0" in notes[-1]
+        assert "no test count was recognised" in notes[-1]
+        assert "venv" not in notes[-1]
