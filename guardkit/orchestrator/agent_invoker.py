@@ -12213,6 +12213,20 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                 f"{requirements}\n"
             )
 
+        # This route serves the ordinary task-work Player and does not consume
+        # _build_player_prompt().  Keep the acceptance-criterion reporting
+        # contract in the assembled prompt so both full and medium execution
+        # protocols receive it.
+        criterion_reporting_section = (
+            "\n## Acceptance-Criterion Reporting\n"
+            "\n"
+            "A documented conflict or implementation departure does not satisfy "
+            "an acceptance criterion. Mark it incomplete unless an authoritative "
+            "amendment changes the target. Report an unsafe or conflicting "
+            "requirement as a concern; do not restore unsafe behaviour merely to "
+            "make the words match.\n"
+        )
+
         # --- Section 3b: the third outcome, on the first turn only ---
         # A task the tree already satisfies should cost one turn, not five.
         # See ALREADY_SATISFIED_PROMPT_SECTION.
@@ -12307,6 +12321,7 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
             header
             + turn_section
             + requirements_section
+            + criterion_reporting_section
             + already_satisfied_section
             + feedback_section
             + context_section

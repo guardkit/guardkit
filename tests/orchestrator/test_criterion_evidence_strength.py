@@ -16,6 +16,11 @@ import pytest
 
 from guardkit.orchestrator.agent_invoker import AgentInvoker
 from guardkit.orchestrator.coach_verification import HonestyVerification
+from guardkit.orchestrator.feature_check import (
+    FeatureCheckAttempt,
+    FeatureCheckOutcome,
+    write_feature_check_receipt,
+)
 from guardkit.orchestrator.quality_gates.coach_evidence import CoachEvidenceBundle
 from guardkit.orchestrator.quality_gates.coach_validator import (
     CLAIMED,
@@ -386,6 +391,105 @@ def test_criterion_bound_gate_can_still_verify_a_claim(tmp_path: Path) -> None:
     )["criteria_results"][0]["result"] == VERIFIED
 
 
+@pytest.mark.parametrize(
+    "receipt",
+    [
+        pytest.param({"criteria_covered": ["AC-PORT"]}, id="absent"),
+        pytest.param(
+            {"status": "", "criteria_covered": ["AC-PORT"]},
+            id="empty",
+        ),
+        pytest.param(
+            {"status": {"unexpected": True}, "criteria_covered": ["AC-PORT"]},
+            id="malformed",
+        ),
+    ],
+)
+def test_receipt_without_valid_passing_status_cannot_verify_through_prompt(
+    tmp_path: Path,
+    receipt: Dict[str, Any],
+) -> None:
+    criterion = "AC-PORT: The service listens on port 7401"
+    receipt_path = (
+        tmp_path / ".guardkit" / "autobuild-private" / "feature_check.json"
+    )
+    receipt_path.parent.mkdir(parents=True)
+    receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+    validator = _validator(tmp_path)
+    validation = validator.validate_requirements(
+        _task(criterion),
+        {
+            "task_id": TASK_ID,
+            "completion_promises": [
+                {"criterion_id": "AC-PORT", "status": "complete"}
+            ],
+        },
+        turn=1,
+    )
+
+    corroborated = validator.corroborate_claims(validation)
+
+    assert corroborated.criteria_results[0].result == CLAIMED
+    bundle = CoachEvidenceBundle(
+        honesty=_honesty(),
+        requirements=corroborated,
+    )
+    serialized = bundle.to_dict()["requirements"]
+    assert serialized["criteria_results"][0]["result"] == CLAIMED
+    for synthesis in (False, True):
+        prompt_requirements = _requirements_in_prompt(
+            tmp_path, corroborated, synthesis=synthesis
+        )
+        assert prompt_requirements["criteria_results"][0]["result"] == CLAIMED
+
+
+def test_explicit_passing_receipt_can_verify_through_prompt(tmp_path: Path) -> None:
+    criterion = "AC-PORT: The service listens on port 7401"
+    write_feature_check_receipt(
+        FeatureCheckOutcome(
+            feature_id="FEATURE-EVIDENCE",
+            status="passed",
+            declared=True,
+            attempts=[
+                FeatureCheckAttempt(
+                    attempt=1,
+                    command="project-feature-check",
+                    candidate_sha="abc123",
+                    passed=True,
+                    outcome="passed",
+                    scenarios_covered=["AC-PORT"],
+                )
+            ],
+        ),
+        tmp_path,
+    )
+    validator = _validator(tmp_path)
+    validation = validator.validate_requirements(
+        _task(criterion),
+        {
+            "task_id": TASK_ID,
+            "completion_promises": [
+                {"criterion_id": "AC-PORT", "status": "complete"}
+            ],
+        },
+        turn=1,
+    )
+
+    corroborated = validator.corroborate_claims(validation)
+
+    assert corroborated.criteria_results[0].result == VERIFIED
+    assert (
+        CoachEvidenceBundle(honesty=_honesty(), requirements=corroborated)
+        .to_dict()["requirements"]["criteria_results"][0]["result"]
+        == VERIFIED
+    )
+    for synthesis in (False, True):
+        prompt_requirements = _requirements_in_prompt(
+            tmp_path, corroborated, synthesis=synthesis
+        )
+        assert prompt_requirements["criteria_results"][0]["result"] == VERIFIED
+
+
 def test_served_player_prompt_and_agent_files_forbid_self_waiver(
     tmp_path: Path,
 ) -> None:
@@ -400,6 +504,18 @@ def test_served_player_prompt_and_agent_files_forbid_self_waiver(
     )
     assert "Only an authoritative amended criterion changes the target" in player_prompt
     assert "do not restore unsafe behaviour" in player_prompt
+
+    for multiplier in (1.0, 2.0):
+        ordinary_prompt = AgentInvoker(
+            worktree_path=tmp_path,
+            timeout_multiplier=multiplier,
+        )._build_autobuild_implementation_prompt(
+            task_id=TASK_ID,
+            requirements="Use the exact configured value.",
+        )
+        assert "implementation departure does not satisfy" in ordinary_prompt
+        assert "authoritative amendment changes the target" in ordinary_prompt
+        assert "do not restore unsafe behaviour" in ordinary_prompt
 
     repo_root = Path(__file__).resolve().parents[2]
     player_definition = (

@@ -10564,7 +10564,7 @@ class CoachValidator:
         if not isinstance(data, dict):
             return set()
         status = str(data.get("status", "")).strip().lower()
-        if status and status not in {"pass", "passed", "green"}:
+        if status not in {"pass", "passed", "green"}:
             return set()
         covered: Set[str] = set()
         for key in ("scenarios_covered", "criteria_covered"):
