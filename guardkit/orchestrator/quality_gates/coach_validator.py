@@ -7421,26 +7421,28 @@ class CoachValidator:
         The same wrong answer would come back for ``go test`` and for
         ``npm test``.
 
-        So the absence is re-asked through ``_absence_from_run``, the shared
-        fence the isolated path uses, which separates the stack-agnostic
-        readings (the command could not be STARTED at all) from the
-        pytest-shaped ones (asked only of a command that really invokes
-        pytest). Anything the fence does not recognise is a verdict: the red
-        stays the builder's, and the receipt simply records that the check
-        fell back.
+        So only a command that could not START counts here: the
+        stack-agnostic reading (exit 126 or 127, or one of the shell's own
+        missing-tool sentences, ``_is_host_substrate_gap``), and, for a
+        command that really invokes pytest, the test runner itself missing
+        where it ran. Everything else is what a wave of one would report. A
+        red stays the builder's, and the receipt simply records that the
+        check fell back.
+
+        A run that started and reported no tests — pytest exit 5, a stack's
+        "no tests" phrase, a declared absence phrase, an exit 0 with no test
+        count recognised — stays an absent signal, exactly as a wave of one
+        reports it: never a pass, and the Coach and the builder see it. Ending
+        the turn as an estate fault instead made a wave of two worse than a
+        wave of one, and stopped a whole feature on a project check that
+        passed but ran no tests the stack profile recognises (23 October
+        2026). The isolated copy still asks the wider ``_absence_from_run``
+        question, so such a run there still falls back to the worktree.
 
         ``worktree_returncode`` is ``None`` when the command never completed
         at all — a timeout, or a failure before any exit code existed. There
         is no exit code to misread there and nothing was verified either way,
         so it stays what it is: the check could not run.
-
-        A command that EXITED 0 in the worktree started and finished, so it
-        could run, whatever its output said. When no test count was
-        recognised in that output the result stays an absent signal, exactly
-        as a wave of one reports it: never a pass, and the Coach and the
-        builder see it. Ending the turn as an estate fault instead stopped a
-        whole feature on a project check that passed but ran no tests the
-        stack profile recognises (23 October 2026).
         """
         if result.check_could_not_run:
             return True
@@ -7450,14 +7452,11 @@ class CoachValidator:
             return True
         if worktree_returncode == 0:
             return False
-        return (
-            self._absence_from_run(
-                worktree_returncode,
-                result.raw_output or "",
-                result.tests_passed,
-                result.test_command,
-            )
-            is not None
+        return self._is_host_substrate_gap(
+            worktree_returncode, result.raw_output or ""
+        ) or (
+            self._command_runs_pytest(result.test_command)
+            and "No module named pytest" in (result.raw_output or "")
         )
 
     def _after_isolation_fallback(
@@ -7471,12 +7470,14 @@ class CoachValidator:
         No-op unless an isolated attempt could not start this turn. When one
         did:
 
-        * the worktree run produced a verdict — keep it, and record on the
-          receipt that it fell back and why. A red is a red: it reaches the
-          builder exactly as a wave of one would have delivered it;
-        * the worktree run could not produce one either — the turn ends as an
-          estate fault, naming the command, both directories and what was
-          missing, in the operator's log and on the receipt.
+        * the worktree run started — keep its result, and record on the
+          receipt that it fell back and why. A red is a red and an absent
+          signal is an absent signal: each reaches the builder exactly as a
+          wave of one would have delivered it;
+        * the command could not start in the worktree either (or never
+          finished) — the turn ends as an estate fault, naming the command,
+          both directories and what was missing, in the operator's log and on
+          the receipt.
 
         Which of the two it is comes from ``_worktree_run_said_nothing``, not
         from the worktree run's own inline reading. ``worktree_returncode``

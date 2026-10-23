@@ -359,7 +359,8 @@ class TestAFallbackNeverErasesARed:
         self, tmp_path: Path
     ) -> None:
         """The reading itself, asked straight. A shell wrapper keeps its own
-        meaning for exit 5; a pytest command keeps pytest's; a command that
+        meaning for exit 5; a pytest run that collected nothing is the absent
+        signal a wave of one reports, not an estate fault; a command that
         could not START at all is an estate fault in any language; and a
         command that never finished has no exit code to misread."""
         _root, worktree = _make_repo(tmp_path)
@@ -383,7 +384,15 @@ class TestAFallbackNeverErasesARed:
 
         for command in ("pytest -q", "python -m pytest", "uv run pytest"):
             shaped = _absent(command)
-            assert validator._worktree_run_said_nothing(shaped, 5) is True
+            assert validator._worktree_run_said_nothing(shaped, 5) is False
+
+        # The test runner itself missing where a pytest command ran is a
+        # command that could not start.
+        no_runner = dataclass_replace(
+            _absent("pytest -q"),
+            raw_output="/venv/bin/python: No module named pytest",
+        )
+        assert validator._worktree_run_said_nothing(no_runner, 1) is True
 
         # A run that produced a verdict is never an estate fault.
         ran_and_failed = IndependentTestResult.from_run(
@@ -1024,3 +1033,59 @@ class TestACheckThatExitedZeroCouldRun:
         assert "exited 0" in notes[-1]
         assert "no test count was recognised" in notes[-1]
         assert "venv" not in notes[-1]
+
+
+class TestANonZeroNoTestsResultIsNoWorseInAWaveOfTwo:
+    """A run that started and reported no tests with a non-zero exit — here a
+    declared absence phrase with exit 1 — is the absent signal a wave of one
+    reports, in a wave of two too. A command that could not start (127) is
+    still an estate fault after the fallback."""
+
+    def _repo(self, tmp_path: Path, body: str) -> Path:
+        root = tmp_path / "product"
+        worktree = root / ".guardkit" / "worktrees" / _TASK_ID
+        worktree.mkdir(parents=True)
+        (root / ".guardkit" / "config.yaml").write_text(
+            yaml.safe_dump(
+                {
+                    "toolchain": {
+                        "test": _DECLARED_COMMAND,
+                        "absent_substrings": ["nothing to check yet"],
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        snapshot_task_toolchain(_TASK_ID, worktree, root)
+        _executable(worktree / "qa" / "run-suite.sh", body)
+        return worktree
+
+    _PHRASE_EXIT_1 = "#!/bin/sh\necho 'nothing to check yet' >&2\nexit 1\n"
+    _CANNOT_START = "#!/bin/sh\necho 'run-suite: no runner here' >&2\nexit 127\n"
+
+    def test_a_declared_absence_phrase_with_exit_1(self, tmp_path: Path) -> None:
+        one = _validator(
+            self._repo(tmp_path / "alone", self._PHRASE_EXIT_1), wave_size=1
+        ).run_independent_tests()
+        two = _validator(
+            self._repo(tmp_path / "together", self._PHRASE_EXIT_1), wave_size=2
+        ).run_independent_tests()
+
+        assert one.signal_absent is True
+        assert one.check_could_not_run is False
+        assert two.check_could_not_run is False
+        assert two.signal_absent == one.signal_absent
+        assert two.tests_passed == one.tests_passed is False
+        # The receipt still records that it fell back, and why.
+        assert two.isolation_fallback_reason is not None
+
+    def test_a_command_that_cannot_start_is_still_an_estate_fault(
+        self, tmp_path: Path
+    ) -> None:
+        two = _validator(
+            self._repo(tmp_path, self._CANNOT_START), wave_size=2
+        ).run_independent_tests()
+
+        assert two.check_could_not_run is True
+        assert two.signal_absent is True
+        assert two.tests_passed is False

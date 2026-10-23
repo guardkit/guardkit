@@ -18,6 +18,7 @@ import pytest
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from unittest.mock import Mock, MagicMock, patch, call
+import dataclasses
 from dataclasses import fields
 
 import sys
@@ -684,3 +685,28 @@ class TestConfigurationErrorNamesItsCause:
         for text in (summary, error):
             assert "Invalid task_type 'enhancement'" in text
             assert "Fix the task_type" in text
+
+    def test_the_log_line_separates_a_cause_without_a_full_stop(self, caplog):
+        record = _estate_fault_turn_record()
+        record.coach_result.report["rationale"] = "the runner was missing"
+        _, _, logged = self._printed_and_logged(record, caplog)
+
+        assert "the runner was missing. The Player cannot fix this." in logged
+
+    def test_the_log_line_keeps_a_single_full_stop(self, caplog):
+        _, _, logged = self._printed_and_logged(
+            _estate_fault_turn_record(), caplog
+        )
+
+        assert f"{_CAUSE} The Player cannot fix this." in logged
+        assert ".. The Player" not in logged
+
+    def test_no_recorded_cause_says_so(self):
+        orch = AutoBuildOrchestrator.__new__(AutoBuildOrchestrator)
+        orch.max_turns = 5
+        record = dataclasses.replace(_estate_fault_turn_record(), feedback=None)
+        record.coach_result.report["rationale"] = ""
+
+        error = orch._build_error_message("configuration_error", [record])
+
+        assert error == "Configuration error (no cause recorded)"

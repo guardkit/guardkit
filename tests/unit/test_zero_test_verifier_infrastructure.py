@@ -878,6 +878,30 @@ class TestTerminalStallMessage:
         # It must NOT imply Player quality.
         assert "Review task_type classification" not in message
 
+    def test_a_check_that_exited_0_is_not_told_to_fix_the_venv(
+        self, tmp_path: Path
+    ) -> None:
+        """23 October 2026: when the declared check ran and exited 0 but
+        showed no test running, the stall message says so and asks for the
+        command to run this task's tests — not the venv advice."""
+        orchestrator = self._orchestrator(tmp_path)
+        history = []
+        for turn in (1, 2, 3):
+            record = _marked_absent_turn(turn)
+            record.coach_result.report["issues"][0]["details"]["exit_code"] = 0
+            history.append(record)
+
+        message = orchestrator._build_summary_details(
+            history, "unrecoverable_stall"
+        )
+
+        assert f"[{STALL_ENVIRONMENT}]" in message
+        assert _COMMAND in message
+        assert "exited 0" in message
+        assert "make that command run this task's tests" in message
+        assert "venv" not in message
+        assert "environment bootstrap" not in message
+
     def test_unmarked_stall_keeps_existing_messages(self, tmp_path: Path) -> None:
         orchestrator = self._orchestrator(tmp_path)
         history = [
@@ -969,3 +993,52 @@ class TestStallThresholdSingleSource:
             .default
             == STALL_CLASSIFICATION_THRESHOLD
         )
+
+
+
+class TestTheMarkerCarriesTheExitCode:
+    """23 October 2026: the marker issue records the command's own exit
+    status, so the stall message can tell "ran and exited 0 with no test
+    count" from a verifier that could not run."""
+
+    def test_an_exit_0_run_is_recorded_on_the_marker(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("GUARDKIT_COACH_SYNTHESIS", raising=False)
+        monkeypatch.delenv("GUARDKIT_COACH_GATHER", raising=False)
+        invoker = _make_invoker(tmp_path)
+        ran_nothing = IndependentTestResult.from_run(
+            tests_passed=False,
+            test_command=_COMMAND,
+            test_output_summary="nothing to check yet",
+            duration_seconds=0.1,
+            output="nothing to check yet\n",
+            resolved_interpreter=None,
+            signal_absent=True,
+            exit_code=0,
+        )
+
+        result = _run_coach(
+            invoker, task_id="TASK-ZTL", turn=1, bundle=_bundle(ran_nothing),
+        )
+
+        markers = _marker_issues(result.report)
+        assert markers
+        assert markers[0]["details"]["exit_code"] == 0
+        assert "exited 0" in markers[0]["description"]
+
+    def test_an_absent_run_without_an_exit_code_records_none(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("GUARDKIT_COACH_SYNTHESIS", raising=False)
+        monkeypatch.delenv("GUARDKIT_COACH_GATHER", raising=False)
+        invoker = _make_invoker(tmp_path)
+
+        result = _run_coach(
+            invoker, task_id="TASK-ZTL", turn=1,
+            bundle=_bundle(_absent_independent()),
+        )
+
+        markers = _marker_issues(result.report)
+        assert markers
+        assert markers[0]["details"]["exit_code"] is None

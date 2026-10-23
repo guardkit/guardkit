@@ -5921,9 +5921,10 @@ class AutoBuildOrchestrator:
                         return turn_history, "configuration_error"
                     # Not a task file problem (a check that could not run,
                     # for one): name the cause, and no task_type advice.
+                    stop = "" if error_detail.rstrip().endswith((".", "!", "?")) else "."
                     logger.error(
-                        f"Configuration error for {task_id}: {error_detail} "
-                        f"The Player cannot fix this."
+                        f"Configuration error for {task_id}: "
+                        f"{error_detail.rstrip()}{stop} The Player cannot fix this."
                     )
                     self._progress_display.console.print(
                         f"\n[bold red]ERROR: Configuration error for {task_id}:[/bold red]\n"
@@ -12692,6 +12693,21 @@ class AutoBuildOrchestrator:
         test_command = details.get("test_command") or "unknown"
 
         n_turns = len(turn_history)
+        if details.get("exit_code") == 0:
+            # The declared check ran and exited 0 but showed no test running
+            # (23 October 2026). Nothing in the environment is broken, so the
+            # venv advice below would not apply.
+            return "\n".join([
+                f"Unrecoverable stall detected after {n_turns} turn(s) "
+                f"[{STALL_ENVIRONMENT}].",
+                f"The declared check (command: {test_command}) ran and "
+                "exited 0 on every trailing turn, but its output showed no "
+                "test running, so no test count was recognised and the "
+                "Player's reported tests could not be confirmed.",
+                "Remediation: make that command run this task's tests and "
+                "print their results.",
+                "Worktree preserved for inspection.",
+            ])
         parts = [
             f"Unrecoverable stall detected after {n_turns} turn(s) "
             f"[{STALL_ENVIRONMENT}].",
@@ -13430,7 +13446,7 @@ class AutoBuildOrchestrator:
             documents_refusal = getattr(self, "_project_documents_refusal", None)
             if documents_refusal:
                 return f"Stopped before any model call: {documents_refusal}"
-            return "Configuration error in task file — fix task_type and retry"
+            return "Configuration error (no cause recorded)"
 
         elif final_decision == "pre_loop_blocked":
             return "Pre-loop quality gates blocked execution"

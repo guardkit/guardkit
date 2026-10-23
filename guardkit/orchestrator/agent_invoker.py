@@ -9008,6 +9008,10 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                 "resolved_interpreter": resolved_interpreter,
                 "test_command": test_command,
                 "test_output_summary": summary,
+                # The command's own exit status, when it had one: 0 means it
+                # ran and passed but showed no test running (read by the
+                # stall diagnostic, 23 October 2026).
+                "exit_code": getattr(independent, "exit_code", None),
                 "overridden_decision": original_decision,
             },
         }
