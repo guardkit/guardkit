@@ -183,12 +183,18 @@ class DynamicBudgetCalculator:
         "implementation_modes": 0.0,
     }
 
-    # AutoBuild-specific allocation (sums to 1.0)
+    # AutoBuild-specific allocation. It sums to 1.05, not 1.0: the
+    # architecture category also carries the project's decision records
+    # (ADRs) since they were added to its memory lookup, and one typical
+    # decision record (about 2-3 KB) did not fit in a 0.10 share. Its extra
+    # 0.05 is taken proportionally from every other category by the
+    # normalisation in _adjust_autobuild_allocation (each keeps over 95% of
+    # its former share); the shares calculate() returns always sum to 1.0.
     AUTOBUILD_ALLOCATION: Dict[str, float] = {
         "feature_context": 0.10,
         "similar_outcomes": 0.15,
         "relevant_patterns": 0.15,
-        "architecture_context": 0.10,
+        "architecture_context": 0.15,  # architecture documents and decision records
         "warnings": 0.10,
         "domain_knowledge": 0.05,
         "role_constraints": 0.10,      # Player/Coach boundaries

@@ -419,6 +419,15 @@ class JobContextRetriever:
         "domain_knowledge",    # 5%  - lowest priority
     ]
 
+    # Memory groups searched for the architecture category: the project's
+    # architecture documents and its decision records (ADRs). /system-arch,
+    # /system-plan and ``guardkit memory seed`` save each ADR as an ``adr``
+    # record tagged ``architecture``; ``project_architecture`` alone asks for
+    # ``document`` records only, so no decision record was ever found. With
+    # fleet memory this scope reads both ``document`` and ``adr`` records
+    # tagged ``architecture`` (or ``project``, the decision group's own tag).
+    ARCHITECTURE_GROUP_IDS = ("project_architecture", "project_decisions")
+
     # AutoBuild category priority (appended after standard categories)
     AUTOBUILD_CATEGORY_PRIORITY = [
         "role_constraints",
@@ -636,12 +645,12 @@ class JobContextRetriever:
         # Define category query order with allocations for early termination
         # Priority order (high to low): feature_specs, task_outcomes, patterns, architecture, warnings, domain
         category_configs = [
-            ("feature_specs", "feature_context", budget.get_allocation("feature_context")),
-            ("task_outcomes", "similar_outcomes", budget.get_allocation("similar_outcomes")),
-            ("patterns", "relevant_patterns", budget.get_allocation("relevant_patterns")),
-            ("project_architecture", "architecture_context", budget.get_allocation("architecture_context")),
-            ("failure_patterns", "warnings", budget.get_allocation("warnings")),
-            ("domain_knowledge", "domain_knowledge", budget.get_allocation("domain_knowledge")),
+            (["feature_specs"], "feature_context", budget.get_allocation("feature_context")),
+            (["task_outcomes"], "similar_outcomes", budget.get_allocation("similar_outcomes")),
+            (["patterns"], "relevant_patterns", budget.get_allocation("relevant_patterns")),
+            (list(self.ARCHITECTURE_GROUP_IDS), "architecture_context", budget.get_allocation("architecture_context")),
+            (["failure_patterns"], "warnings", budget.get_allocation("warnings")),
+            (["domain_knowledge"], "domain_knowledge", budget.get_allocation("domain_knowledge")),
         ]
 
         # Helper to check if we should stop (early termination)
@@ -659,7 +668,7 @@ class JobContextRetriever:
             self.graphiti.reset_circuit_breaker()
 
         # Query categories in priority order
-        for group_id, category_name, allocation in category_configs:
+        for group_ids, category_name, allocation in category_configs:
             if should_stop():
                 results[category_name] = []
                 continue
@@ -680,7 +689,7 @@ class JobContextRetriever:
 
             category_results, tokens = await self._query_category(
                 query=description,
-                group_ids=[group_id],
+                group_ids=group_ids,
                 budget_allocation=effective_allocation,
                 threshold=threshold,
                 metrics_collector=metrics_collector,
@@ -884,7 +893,7 @@ class JobContextRetriever:
             ),
             self._query_category(
                 query=description,
-                group_ids=["project_architecture"],
+                group_ids=list(self.ARCHITECTURE_GROUP_IDS),
                 budget_allocation=budget.get_allocation("architecture_context"),
                 threshold=threshold,
                 metrics_collector=metrics_collector,

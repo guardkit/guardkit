@@ -425,13 +425,50 @@ class TestAutoBuildAllocation:
         assert allocation["implementation_modes"] == 0.05
 
     def test_autobuild_allocation_sums_to_one(self):
-        """Test that AUTOBUILD_ALLOCATION values sum to 1.0."""
+        """The AutoBuild shares calculate() returns sum to 1.0.
+
+        AUTOBUILD_ALLOCATION itself sums to 1.05 (the architecture category's
+        extra share for decision records); it is always normalised before use.
+        """
         from guardkit.knowledge.budget_calculator import DynamicBudgetCalculator
 
         allocation = DynamicBudgetCalculator.AUTOBUILD_ALLOCATION
-        total = sum(allocation.values())
+        assert abs(sum(allocation.values()) - 1.05) < 0.001
 
-        assert abs(total - 1.0) < 0.001, f"AUTOBUILD_ALLOCATION sums to {total}, not 1.0"
+        calculator = DynamicBudgetCalculator()
+        for actor in ("player", "coach"):
+            for turn, refinement in ((1, False), (3, False), (3, True)):
+                shares = calculator._calculate_allocation(
+                    _autobuild_characteristics(actor, turn, refinement)
+                )
+                total = sum(shares.values())
+                assert abs(total - 1.0) < 0.001, (actor, turn, refinement, total)
+
+    def test_architecture_share_grows_without_starving_others(self):
+        """Decision records get a modest extra architecture share.
+
+        Every other category keeps at least 95% of the share it had when
+        architecture_context was 0.10.
+        """
+        from guardkit.knowledge.budget_calculator import DynamicBudgetCalculator
+
+        assert DynamicBudgetCalculator.AUTOBUILD_ALLOCATION["architecture_context"] == 0.15
+
+        class Before(DynamicBudgetCalculator):
+            AUTOBUILD_ALLOCATION = {
+                **DynamicBudgetCalculator.AUTOBUILD_ALLOCATION,
+                "architecture_context": 0.10,
+            }
+
+        for actor in ("player", "coach"):
+            for turn, refinement in ((1, False), (3, False), (3, True)):
+                char = _autobuild_characteristics(actor, turn, refinement)
+                old = Before()._calculate_allocation(char)
+                new = DynamicBudgetCalculator()._calculate_allocation(char)
+                assert new["architecture_context"] > old["architecture_context"] * 1.4
+                for name, share in old.items():
+                    if name != "architecture_context" and share > 0:
+                        assert new[name] >= share * 0.95, (actor, turn, name)
 
 
 # ============================================================================
@@ -1701,3 +1738,32 @@ class TestEdgeCasesAndBoundaries:
         # 6240 -> int(6240 * 1.15) = 7175 (floating point: 7175.999...)
         # 7175 -> int(7175 * 1.10) = 7892
         assert result.total_tokens == 7892
+
+
+def _autobuild_characteristics(actor: str, turn: int, refinement: bool):
+    from guardkit.knowledge.task_analyzer import (
+        TaskCharacteristics,
+        TaskType,
+        TaskPhase,
+    )
+
+    return TaskCharacteristics(
+        task_id="TASK-001",
+        description="Test task",
+        tech_stack="python",
+        task_type=TaskType.IMPLEMENTATION,
+        current_phase=TaskPhase.IMPLEMENT,
+        complexity=5,
+        is_first_of_type=False,
+        similar_task_count=10,
+        feature_id=None,
+        is_refinement=refinement,
+        refinement_attempt=1 if refinement else 0,
+        previous_failure_type=None,
+        avg_turns_for_type=3.0,
+        success_rate_for_type=0.8,
+        is_autobuild=True,
+        current_actor=actor,
+        turn_number=turn,
+        has_previous_turns=turn > 1,
+    )

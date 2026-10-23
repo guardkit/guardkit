@@ -265,6 +265,45 @@ class TestFleetMemoryClientSearch:
         assert captured["request"]["payload_types"] == ["document"]
         assert captured["request"]["domain_tags"] == ["architecture"]
 
+    async def test_architecture_scope_reads_decision_records(
+        self, fleet_client, monkeypatch
+    ):
+        """The builder's architecture lookup reads ADRs as the commands save them.
+
+        /system-arch, /system-plan and ``guardkit memory seed`` save each
+        decision record as payload type ``adr`` tagged ``architecture``; the
+        architecture category's groups (real mapping, not patched) must ask
+        for that type and that tag as well as architecture documents.
+        """
+        from guardkit.knowledge.job_context_retriever import JobContextRetriever
+
+        captured: dict = {}
+        _install_fake_fleet_memory_retrieval(
+            monkeypatch, context_block="block", coverage=0.5, captured=captured
+        )
+        fleet_client._read_available = True
+        fleet_client._store = object()
+
+        await fleet_client.search(
+            query="arch", group_ids=list(JobContextRetriever.ARCHITECTURE_GROUP_IDS)
+        )
+
+        assert captured["request"]["payload_types"] == ["adr", "document"]
+        assert "architecture" in captured["request"]["domain_tags"]
+
+        # The savers' own format: the seeder's tags and the commands' examples.
+        from pathlib import Path
+
+        from guardkit.memory.seed import ADR_TAGS, DDR_TAGS
+
+        assert set(ADR_TAGS) & set(captured["request"]["domain_tags"])
+        assert set(DDR_TAGS) & set(captured["request"]["domain_tags"])
+        commands = Path(__file__).resolve().parents[3] / "installer/core/commands"
+        for name in ("system-arch.md", "system-plan.md"):
+            text = (commands / name).read_text()
+            assert '"payload_type": "adr"' in text, name
+            assert '"domain_tags": ["architecture"]' in text, name
+
 
 class TestSearchArmGateAndRetrievalLog:
     """TASK-ABL1-003: retrieval arm gate inside search() + per-item JSONL log.

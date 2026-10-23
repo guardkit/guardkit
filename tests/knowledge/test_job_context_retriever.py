@@ -514,6 +514,61 @@ class TestContextCategoryQueries:
         assert any("project_architecture" in groups for groups in group_ids_used)
 
     @pytest.mark.asyncio
+    async def test_architecture_query_includes_decision_records(self):
+        """Both retrieval paths ask for architecture documents AND decision records."""
+        from guardkit.knowledge.job_context_retriever import JobContextRetriever
+        from guardkit.knowledge.task_analyzer import TaskPhase
+
+        task = {
+            "id": "TASK-001",
+            "description": "Implement authentication",
+            "tech_stack": "python",
+        }
+        for method in ("retrieve", "retrieve_parallel"):
+            mock_graphiti = AsyncMock()
+            mock_graphiti.search = AsyncMock(return_value=[])
+            retriever = JobContextRetriever(mock_graphiti, cache_ttl=0)
+
+            await getattr(retriever, method)(task, TaskPhase.IMPLEMENT)
+
+            group_ids_used = [
+                c[1].get("group_ids", []) for c in mock_graphiti.search.call_args_list
+            ]
+            assert ["project_architecture", "project_decisions"] in group_ids_used, method
+
+    @pytest.mark.asyncio
+    async def test_decision_record_lands_in_architecture_context(self):
+        """A decision record that fits the architecture budget reaches the prompt."""
+        from guardkit.knowledge.job_context_retriever import JobContextRetriever
+        from guardkit.knowledge.task_analyzer import TaskPhase
+
+        adr = {
+            "fact": '{"payload_type": "adr", "title": "Use one relational store", '
+                    '"decision": "Keep all records in one relational database."}',
+            "uuid": "adr:example:ADR_ARCH_001",
+            "score": 0.9,
+        }
+
+        async def search(query, group_ids=None, **kwargs):
+            return [adr] if "project_decisions" in (group_ids or []) else []
+
+        mock_graphiti = AsyncMock()
+        mock_graphiti.search = AsyncMock(side_effect=search)
+        retriever = JobContextRetriever(mock_graphiti, cache_ttl=0)
+        task = {
+            "id": "TASK-001",
+            "description": "Implement authentication",
+            "tech_stack": "python",
+            "is_autobuild": True,
+            "current_actor": "player",
+        }
+
+        result = await retriever.retrieve(task, TaskPhase.IMPLEMENT)
+
+        assert result.architecture_context == [adr]
+        assert "Use one relational store" in result.to_prompt()
+
+    @pytest.mark.asyncio
     async def test_queries_warnings(self):
         """Test that retrieve() queries failure_patterns group."""
         from guardkit.knowledge.job_context_retriever import JobContextRetriever
