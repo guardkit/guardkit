@@ -663,9 +663,20 @@ class TestNoSourceFilesAtTaskStart:
         ("## Files to Create\n- `compose.yaml`\n- `src/*`\n", False),
         ("## Files to Create\n- `deploy/*.yaml`\n- `compose.yaml`\n", True),
         ("## Files to Create\n- `compose.yaml`\n\n## Files to Modify\n- _none_\n", True),
+        (
+            "## Files to Create\n- `compose.yaml`\n\n"
+            "## Files to Modify\n- `- _none_`\n",
+            True,
+        ),
+        (
+            "## Files to Create\n- `compose.yaml`\n- `src/server.go`\n\n"
+            "## Files to Modify\n- `- _none_`\n",
+            False,
+        ),
     ], ids=[
         "underscore-source", "wildcard-source", "bare-wildcard",
-        "wildcard-config", "no-file-marker",
+        "wildcard-config", "no-file-marker", "nested-marker-config-only",
+        "nested-marker-with-source",
     ])
     def test_every_declared_entry_counts(
         self, tmp_path: Path, body: str, reaches_loop: bool

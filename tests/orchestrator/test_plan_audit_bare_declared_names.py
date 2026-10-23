@@ -115,6 +115,136 @@ LIVE_MODIFY = [
     "Shelf.tsx",
 ]
 
+FOUR_CREATED_FILES = [
+    "src/catalog/index.ts",
+    "src/catalog/reader.ts",
+    "test/catalog.test.ts",
+    "vitest.config.ts",
+]
+
+
+class TestNestedNoFileMarkerParsing:
+    def test_exact_observed_marker_is_explicit_empty_in_both_modes(self) -> None:
+        text = "## Files to Modify\n- `- _none_`\n"
+
+        assert AgentInvoker.declared_file_sections_in_text(text) == {
+            "create": None,
+            "modify": [],
+        }
+        assert AgentInvoker.declared_file_sections_in_text(
+            text, keep_every_entry=True
+        ) == {"create": None, "modify": []}
+
+        assert AgentInvoker.declared_file_sections_in_text("notes only") == {
+            "create": None,
+            "modify": None,
+        }
+        assert AgentInvoker.declared_file_sections_in_text(
+            "## Files to Modify\n"
+        ) == {"create": None, "modify": None}
+
+    @pytest.mark.parametrize("marker", ["_none_", "none", "N/A", "tbd"])
+    def test_existing_markers_remain_empty(self, marker: str) -> None:
+        text = f"## Files to Modify\n- `{marker}`\n"
+
+        assert AgentInvoker.declared_file_sections_in_text(text)["modify"] == []
+        assert AgentInvoker.declared_file_sections_in_text(
+            text, keep_every_entry=True
+        )["modify"] == []
+
+    def test_real_paths_are_returned_without_normalising_them(self) -> None:
+        text = (
+            "## Files to Modify\n"
+            "- `-release.py`\n"
+            "- `none.py`\n"
+            "- `src/none`\n"
+            "- `__init__.py`\n"
+            "- `src/*`\n"
+            "- `src/*.py`\n"
+        )
+
+        assert AgentInvoker.declared_file_sections_in_text(text)["modify"] == [
+            "-release.py",
+            "none.py",
+            "src/none",
+        ]
+        assert AgentInvoker.declared_file_sections_in_text(
+            text, keep_every_entry=True
+        )["modify"] == [
+            "-release.py",
+            "none.py",
+            "src/none",
+            "__init__.py",
+            "src/*",
+            "src/*.py",
+        ]
+
+
+class TestNestedNoFileMarkerAudit:
+    def test_four_created_files_pass_without_fake_modify_findings(
+        self, tmp_path: Path
+    ) -> None:
+        repo = _repo(tmp_path, FOUR_CREATED_FILES, ["- _none_"])
+        for path in FOUR_CREATED_FILES:
+            _write(repo, path)
+
+        verdict = _verdict(repo)
+
+        assert verdict["status"] == "passed", verdict
+        assert verdict["missing_files"] == []
+        assert verdict["missing_modifications"] == []
+        assert verdict["extra_modifications"] == []
+        assert verdict["message"].endswith("all 4 declared file(s) are on disk")
+
+    def test_a_genuinely_missing_created_file_still_fails(
+        self, tmp_path: Path
+    ) -> None:
+        repo = _repo(tmp_path, FOUR_CREATED_FILES, ["- _none_"])
+        for path in FOUR_CREATED_FILES[:-1]:
+            _write(repo, path)
+
+        verdict = _verdict(repo)
+
+        assert verdict["status"] == "violation", verdict
+        assert verdict["severity"] == "high"
+        assert verdict["missing_files"] == [FOUR_CREATED_FILES[-1]]
+        assert verdict["missing_modifications"] == []
+
+    def test_three_unplanned_created_files_keep_the_high_severity_refusal(
+        self, tmp_path: Path
+    ) -> None:
+        repo = _repo(tmp_path, FOUR_CREATED_FILES, ["- _none_"])
+        for path in FOUR_CREATED_FILES:
+            _write(repo, path)
+        extras = [
+            "src/sprawl/one.ts",
+            "src/sprawl/two.ts",
+            "test/sprawl.test.ts",
+        ]
+        for path in extras:
+            _write(repo, path)
+
+        verdict = _verdict(repo)
+
+        assert verdict["status"] == "violation", verdict
+        assert verdict["severity"] == "high"
+        assert verdict["extra_files"] == sorted(extras)
+
+    def test_a_real_unplanned_modification_remains_visible_without_escalation(
+        self, tmp_path: Path
+    ) -> None:
+        repo = _repo(tmp_path, FOUR_CREATED_FILES, ["- _none_"])
+        for path in FOUR_CREATED_FILES:
+            _write(repo, path)
+        _write(repo, "README.md", "changed invented app\n")
+
+        verdict = _verdict(repo)
+
+        assert verdict["status"] == "passed", verdict
+        assert verdict["severity"] == "low"
+        assert verdict["extra_modifications"] == ["README.md"]
+        assert verdict["missing_modifications"] == []
+
 
 class TestTheLiveShape:
     def test_full_paths_and_bare_names_of_the_edited_files_pass(

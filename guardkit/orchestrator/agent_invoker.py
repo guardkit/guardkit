@@ -14432,18 +14432,35 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                 candidate = item.split()[0] if item else ""
             if not candidate:
                 continue
+            # A generated task can render the no-file marker as an outer
+            # Markdown bullet whose code-span text is "- _none_". Compare a
+            # separately normalised value so that shape remains an empty
+            # declaration without changing any real path this parser returns.
+            sentinel_candidate = candidate
+            has_nested_bullet = sentinel_candidate.startswith(("- ", "* "))
+            if has_nested_bullet:
+                sentinel_candidate = sentinel_candidate[2:].strip()
             if keep_every_entry:
                 # Only a no-file marker (``_none_``, ``None``, ``n/a``) is
                 # left out; every other entry is kept as written.
-                if candidate.strip("_*.").lower() not in {"n/a", "none", "tbd"}:
+                if sentinel_candidate.strip("_*. ").lower() not in {
+                    "n/a",
+                    "none",
+                    "tbd",
+                }:
                     if candidate not in paths:
                         paths.append(candidate)
                 continue
-            if candidate.startswith("_") or candidate.lower() in {
-                "n/a",
-                "none",
-                "tbd",
-            }:
+            nested_no_file_marker = (
+                has_nested_bullet
+                and sentinel_candidate.strip("_*. ").lower()
+                in {"n/a", "none", "tbd"}
+            )
+            if (
+                candidate.startswith("_")
+                or candidate.lower() in {"n/a", "none", "tbd"}
+                or nested_no_file_marker
+            ):
                 continue
             if "*" in candidate:
                 continue
