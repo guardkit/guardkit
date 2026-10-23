@@ -961,6 +961,9 @@ def test_real_candidate_promote_cycle(tmp_path: Path) -> None:
         "RUN mkdir -p /www && echo ok > /www/health\n"
         'CMD ["httpd", "-f", "-p", "8080", "-h", "/www"]\n'
     )
+    # Bound to loopback here because this test runs on a host machine, not in
+    # the factory's sandbox; deploy/README.md tells projects to publish on all
+    # of the sandbox's interfaces instead. The kit works with either form.
     (project / "compose.yaml").write_text(
         "services:\n"
         "  web:\n"

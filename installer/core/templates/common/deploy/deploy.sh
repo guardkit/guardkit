@@ -30,7 +30,8 @@
 # removed by exact name; nothing is pruned.
 #
 # The compose file is the project's own root compose.yaml. The kit exports
-# APP_PORT (the loopback port the public service must publish) and adds a
+# APP_PORT (the port the public service must publish, on all of the
+# sandbox's interfaces) and adds a
 # generated override that labels every container with the identity and, for
 # a promote, pins every service to its checked image. A successful candidate
 # or promote records the identity and port for the health check and live gate

@@ -7,9 +7,13 @@ implemented in them; the project only supplies its own service.
 ## What the project provides
 
 1. **A root `compose.yaml`** that starts the service. The public service
-   publishes `127.0.0.1:${APP_PORT}` to whatever port the app listens on
-   inside its container. The kit sets `APP_PORT` (the live port or the
-   candidate port); only one service publishes it:
+   publishes `${APP_PORT}` to whatever port the app listens on inside its
+   container (for example `"${APP_PORT}:8080"`, with no address in front).
+   The kit sets `APP_PORT` (the live port or the candidate port); only one
+   service publishes it. Do not write `127.0.0.1:${APP_PORT}`: the factory's
+   sandbox forwards the port to the host machine's own loopback address only,
+   and a port bound to the sandbox's 127.0.0.1 cannot be reached from the
+   host at all:
 
    ```yaml
    services:
@@ -19,7 +23,7 @@ implemented in them; the project only supplies its own service.
          PORT: "8080"
          DATABASE_URL: "postgres://app@db:5432/app"
        ports:
-         - "127.0.0.1:${APP_PORT:?APP_PORT is required}:8080"
+         - "${APP_PORT:?APP_PORT is required}:8080"
        depends_on:
          - db
      db:

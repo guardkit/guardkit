@@ -97,7 +97,10 @@ def next_steps(health_path: str) -> list[str]:
     """The three things the project still does (same words as deploy/README.md)."""
     return [
         "1. Add a root compose.yaml: the public service publishes "
-        "127.0.0.1:${APP_PORT} to whatever port the app listens on; only "
+        "${APP_PORT} to whatever port the app listens on (for example "
+        "\"${APP_PORT}:8080\", not 127.0.0.1:${APP_PORT}: the sandbox forwards "
+        "the port only to the host's loopback, and a port bound to the "
+        "sandbox's 127.0.0.1 cannot be reached from the host); only "
         "that service publishes APP_PORT. Every service must keep running "
         "(run migrations and seeding in the app's start-up, not as services that exit).",
         f"2. Make {health_path} answer HTTP 200 when the app is up; keep data "

@@ -52,9 +52,22 @@ def test_init_writes_the_whole_kit(tmp_path: Path) -> None:
     assert "valid deploy-profile" in done.output
     # Tells the project, in the README's words, what is still its own.
     assert "What to do next:" in done.output
-    assert "publishes 127.0.0.1:${APP_PORT} to whatever port the app listens on" in done.output
+    assert "publishes ${APP_PORT} to whatever port the app listens on" in done.output
+    # Binding to the sandbox's own loopback makes the app unreachable from the host.
+    assert '"${APP_PORT}:8080", not 127.0.0.1:${APP_PORT}' in done.output
+    assert "cannot be reached from the host" in done.output
     assert "never bind-mount a project folder" in done.output
     assert "Every service must keep running" in done.output
+
+
+def test_readme_publishes_app_port_on_all_sandbox_interfaces(tmp_path: Path) -> None:
+    # The sandbox forwards ports only to the host's loopback; a mapping bound to
+    # the sandbox's own 127.0.0.1 is unreachable from the host.
+    _init(tmp_path)
+    readme = (tmp_path / "deploy" / "README.md").read_text()
+    assert '- "${APP_PORT:?APP_PORT is required}:8080"' in readme
+    assert '"127.0.0.1:${APP_PORT' not in readme
+    assert "cannot be reached from the" in readme
 
 
 def test_scripts_are_executable(tmp_path: Path) -> None:
