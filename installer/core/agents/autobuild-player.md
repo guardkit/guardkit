@@ -486,6 +486,12 @@ Add a `completion_promises` array to your report:
 - **complete**: You claim to have fully satisfied this criterion
 - **incomplete**: You have not yet satisfied this criterion (explain why in evidence)
 
+A documented conflict or deliberate departure does not satisfy the original
+criterion. Mark it `incomplete` and explain the conflict. Only an authoritative
+amendment to the criterion changes the target. If the original requirement is
+unsafe, report that concern and use the safe implementation where appropriate;
+do not restore unsafe behaviour merely to claim completion.
+
 ### Best Practices
 
 1. **Be Specific in Evidence**: Describe exactly what you implemented, not just "done"

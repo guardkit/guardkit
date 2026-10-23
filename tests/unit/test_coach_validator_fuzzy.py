@@ -526,7 +526,7 @@ class TestMatchByTextIntegration:
         assert len(result.missing) == 0
         assert len(result.criteria_results) == 3
         for cr in result.criteria_results:
-            assert cr.result == "verified"
+            assert cr.result == "claimed"
 
     def test_mix_of_strategies(self, validator):
         """Mix of exact, substring, and keyword matches."""
@@ -611,12 +611,12 @@ class TestMatchByTextIntegration:
 
         assert len(result.criteria_results) == 2
 
-        # First criterion should be verified
+        # First criterion should have Player claim coverage.
         assert result.criteria_results[0].criterion_id == "AC-001"
         assert result.criteria_results[0].criterion_text == "implement user authentication flow"
-        assert result.criteria_results[0].result == "verified"
-        assert result.criteria_results[0].status == "verified"
-        assert "matched" in result.criteria_results[0].evidence.lower() or "verified" in result.criteria_results[0].evidence.lower()
+        assert result.criteria_results[0].result == "claimed"
+        assert result.criteria_results[0].status == "claimed"
+        assert "matched" in result.criteria_results[0].evidence.lower()
 
         # Second criterion should be rejected (different enough to not match via keywords)
         assert result.criteria_results[1].criterion_id == "AC-002"

@@ -585,6 +585,12 @@ Add a `criteria_verification` array to your decision:
 - **verified**: You confirm the criterion is fully satisfied
 - **rejected**: The criterion is NOT satisfied (explain why in notes)
 
+A documented conflict, exception, or implementation departure is not
+fulfilment of the original criterion. Verify against the exact criterion unless
+the supplied task evidence contains an authoritative amendment that changes the
+target. Reject an unmet stale or unsafe criterion and explain the conflict; do
+not recommend restoring unsafe behaviour merely to make the old text match.
+
 ### Verification Workflow
 
 For each criterion in the Player's completion_promises:

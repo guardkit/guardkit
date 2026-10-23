@@ -24,8 +24,9 @@ test requirements
 1. Independently verify the Player's claims
 2. Run the tests yourself (don't trust Player's report)
 3. Verify EACH acceptance criterion systematically
-4. create a criteria_verification entry for each criterion
-5. Either APPROVE or provide specific FEEDBACK
+4. A documented conflict or departure is not fulfilment. Judge the exact criterion supplied here unless an authoritative amended criterion is present; do not recommend restoring unsafe behaviour merely to match stale text
+5. create a criteria_verification entry for each criterion
+6. Either APPROVE or provide specific FEEDBACK
 
 ## Decision Format
 

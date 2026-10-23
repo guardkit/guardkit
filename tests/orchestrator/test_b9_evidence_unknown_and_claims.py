@@ -12,9 +12,9 @@ control that the existing valid path is unchanged:
    ``coverage_relaxed_by: direct_mode`` without ever inventing a measurement.
 
 2. **Promises are claims.** ``_match_by_promises`` records ``claimed``; only
-   ``corroborate_claims`` can raise that to ``verified``, and a machine-class
-   pass-bar criterion needs a bound verifier receipt, never a green generic
-   suite. The per-turn arithmetic is untouched: a claim still counts as met.
+   ``corroborate_claims`` can raise that to ``verified``, and every criterion
+   needs a bound verifier receipt or gate, never a green generic suite. The
+   per-turn arithmetic is untouched: a claim still counts as met.
 
 3. A non-Python fixture (a shell coverage command in a ``Makefile`` project)
    drives the declared-coverage path, because nothing here may assume Python.
@@ -523,7 +523,7 @@ class TestPromisesAreClaims:
         assert cr.result == "rejected"
         assert validation.all_criteria_met is False
 
-    def test_corroboration_raises_a_claim_to_verified(self, tmp_path):
+    def test_generic_tests_and_file_honesty_leave_a_claim_unverified(self, tmp_path):
         task, results = _task_with_promises()
         v = _validator(tmp_path)
         validation = v.validate_requirements(task, results, turn=1)
@@ -533,8 +533,7 @@ class TestPromisesAreClaims:
             honesty_verification=_honesty(True),
         )
         (cr,) = corroborated.criteria_results
-        assert cr.result == VERIFIED
-        assert "Corroborated by" in cr.evidence
+        assert cr.result == CLAIMED
         assert corroborated.criteria_met == validation.criteria_met
 
     def test_an_absent_test_signal_does_not_corroborate(self, tmp_path):

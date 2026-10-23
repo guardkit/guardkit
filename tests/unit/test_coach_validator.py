@@ -3628,8 +3628,8 @@ class TestCriteriaVerification:
         validation = validator.validate_requirements(task, results)
 
         assert len(validation.criteria_results) == 3
-        assert all(cr.result == "verified" for cr in validation.criteria_results)
-        assert all(cr.status == "verified" for cr in validation.criteria_results)
+        assert all(cr.result == "claimed" for cr in validation.criteria_results)
+        assert all(cr.status == "claimed" for cr in validation.criteria_results)
         assert validation.criteria_results[0].criterion_id == "AC-001"
         assert validation.criteria_results[1].criterion_id == "AC-002"
         assert validation.criteria_results[2].criterion_id == "AC-003"
@@ -3643,7 +3643,7 @@ class TestCriteriaVerification:
         validation = validator.validate_requirements(task, results)
 
         assert len(validation.criteria_results) == 3
-        assert validation.criteria_results[0].result == "verified"
+        assert validation.criteria_results[0].result == "claimed"
         assert validation.criteria_results[1].result == "rejected"
         assert validation.criteria_results[2].result == "rejected"
 
@@ -3792,7 +3792,7 @@ class TestCriteriaVerification:
             assert "criterion_id" in cr_dict
             assert "result" in cr_dict
             assert "notes" in cr_dict
-            assert cr_dict["result"] in ("verified", "rejected")
+            assert cr_dict["result"] in ("claimed", "verified", "rejected")
 
     def test_count_criteria_passed_format_compatibility(self, tmp_worktree):
         """AC4: acceptance_criteria_verification.criteria_results format matches _count_criteria_passed."""
@@ -3802,10 +3802,8 @@ class TestCriteriaVerification:
 
         validation = validator.validate_requirements(task, results)
 
-        # Simulate what _count_criteria_passed does
-        cr_dicts = [cr.to_dict() for cr in validation.criteria_results]
-        count = sum(1 for r in cr_dicts if r.get("status") == "verified")
-        assert count == 2
+        # Claim coverage keeps the internal progress arithmetic unchanged.
+        assert validation.criteria_met == 2
 
     def test_existing_gate_evaluation_unchanged(self, tmp_worktree, task_work_results_dir):
         """AC5: Existing quality gate evaluation is unaffected by criteria verification."""
@@ -3841,7 +3839,7 @@ class TestCriteriaVerification:
         validation = validator.validate_requirements(task, results)
 
         assert len(validation.criteria_results) == 1
-        assert validation.criteria_results[0].result == "verified"
+        assert validation.criteria_results[0].result == "claimed"
 
     def test_whitespace_normalized_criteria_results(self, tmp_worktree):
         """AC6: Whitespace normalization produces correct per-criterion results."""
@@ -3852,7 +3850,7 @@ class TestCriteriaVerification:
         validation = validator.validate_requirements(task, results)
 
         assert len(validation.criteria_results) == 1
-        assert validation.criteria_results[0].result == "verified"
+        assert validation.criteria_results[0].result == "claimed"
 
     def test_criterion_result_dataclass(self):
         """Test CriterionResult dataclass fields and to_dict."""
@@ -3908,13 +3906,12 @@ class TestCriteriaVerification:
 
         # _display_criteria_progress consumer
         assert len(d["criteria_verification"]) == 3
-        assert all(v["result"] == "verified" for v in d["criteria_verification"])
+        assert all(v["result"] == "claimed" for v in d["criteria_verification"])
 
         # _count_criteria_passed consumer
         acv = d["acceptance_criteria_verification"]["criteria_results"]
         assert len(acv) == 3
-        count = sum(1 for r in acv if r.get("status") == "verified")
-        assert count == 3
+        assert d["validation_results"]["requirements"]["criteria_met"] == 3
 
 
 # ============================================================================
@@ -4051,7 +4048,7 @@ class TestCompletionPromisesMatching:
         validation = validator.validate_requirements(task, results)
 
         assert validation.all_criteria_met is True
-        assert all(cr.status == "verified" for cr in validation.criteria_results)
+        assert all(cr.status == "claimed" for cr in validation.criteria_results)
 
     def test_empty_promises_falls_back_to_text(self, tmp_worktree):
         """AC-005: Empty promises list falls back to text matching."""
@@ -5303,7 +5300,7 @@ class TestStripMarkdownFormatting:
         validation = validator._match_by_text(acceptance_criteria, requirements_met)
 
         assert len(validation.criteria_results) == 1
-        assert validation.criteria_results[0].result == 'verified'
+        assert validation.criteria_results[0].result == 'claimed'
 
 
 # ============================================================================

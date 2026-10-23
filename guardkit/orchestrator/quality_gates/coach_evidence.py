@@ -438,6 +438,28 @@ class CoachEvidenceBundle:
         from dataclasses import asdict
 
         data = asdict(self)
+        # The RequirementsValidation names are retained inside the validator
+        # because existing turn arithmetic treats Player claims as covered.
+        # The Coach-facing bundle must not make those compatibility counters
+        # sound like independent fulfilment. Give the serialized aggregate
+        # explicit claim-coverage names while leaving each criterion's
+        # claimed/verified/rejected result intact.
+        requirements = data.get("requirements")
+        if isinstance(requirements, dict):
+            requirements["criteria_with_claim_coverage"] = requirements.pop(
+                "criteria_met", 0
+            )
+            requirements["all_criteria_have_claim_coverage"] = requirements.pop(
+                "all_criteria_met", False
+            )
+            requirements["criteria_without_claim_coverage"] = requirements.pop(
+                "missing", []
+            )
+            requirements["aggregate_meaning"] = (
+                "Claim coverage only. A claimed row records what the Player "
+                "reported; only a verified row carries criterion-bound "
+                "independent proof."
+            )
         # Present only in a whole-feature repair round (see the field).
         if data.get("whole_feature_check") is None:
             data.pop("whole_feature_check", None)

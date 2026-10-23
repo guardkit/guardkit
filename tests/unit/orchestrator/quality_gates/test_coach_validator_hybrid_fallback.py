@@ -109,14 +109,14 @@ def test_ac011a_promise_status_incomplete_does_not_upgrade(tmp_worktree: Path):
 
 
 # ---------------------------------------------------------------------------
-# AC-011b: No completion promise branch still upgrades when AC has no file path
+# AC-011b: No completion promise branch still covers a path-free AC
 # ---------------------------------------------------------------------------
 
 
 def test_ac011b_no_completion_promise_branch_still_upgrades_when_safe(
     tmp_worktree: Path,
 ):
-    """AC-011b: ``No completion promise`` upgrade still works for path-free ACs."""
+    """AC-011b: text fallback still supplies claim coverage for path-free ACs."""
     validator = CoachValidator(str(tmp_worktree))
 
     acceptance_criteria = [
@@ -134,9 +134,9 @@ def test_ac011b_no_completion_promise_branch_still_upgrades_when_safe(
         promise_validation, acceptance_criteria, requirements_addressed
     )
 
-    # AC text has no file path → branch still upgrades when text matches.
+    # AC text has no file path → matching Player text supplies claim coverage.
     assert merged.all_criteria_met is True
-    assert merged.criteria_results[0].result == "verified"
+    assert merged.criteria_results[0].result == "claimed"
 
 
 # ---------------------------------------------------------------------------
@@ -173,7 +173,7 @@ def test_ac011c_no_completion_promise_branch_blocks_upgrade_when_path_missing(
 def test_ac011c_no_completion_promise_branch_upgrades_when_path_exists(
     tmp_worktree: Path,
 ):
-    """AC-011c-paired: AC names a file path that DOES exist → upgrade still works."""
+    """AC-011c-paired: an existing cited path allows claim coverage."""
     validator = CoachValidator(str(tmp_worktree))
 
     # Pre-create the file the AC names.
@@ -196,6 +196,6 @@ def test_ac011c_no_completion_promise_branch_upgrades_when_path_exists(
         promise_validation, acceptance_criteria, requirements_addressed
     )
 
-    # Path exists → branch behaves as today (upgrade allowed).
+    # Path exists → the matching Player text is retained as a claim.
     assert merged.all_criteria_met is True
-    assert merged.criteria_results[0].result == "verified"
+    assert merged.criteria_results[0].result == "claimed"

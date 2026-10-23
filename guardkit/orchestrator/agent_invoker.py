@@ -3891,6 +3891,9 @@ verify the work on disk rather than trusting the Player's report:
 - For any acceptance criterion you cannot confirm from the dossier below,
   probe the code directly (grep for the required behaviour; check that the
   implementation is real, not a stub returning a hardcoded default).
+- Treat a documented conflict or departure as unmet unless an authoritative
+  amended criterion changes the target. Do not recommend restoring unsafe
+  behaviour merely to make stale requirement text match.
 
 ## Original Requirements
 
@@ -4060,7 +4063,12 @@ Turn: {turn}
    is not a test of the code, and its failure diff can print live ambient
    values
 3. Run the tests and verify they pass
-4. Create your report with completion promises for each acceptance criterion
+4. Create your report with completion promises for each acceptance criterion.
+   Mark a criterion incomplete when your implementation departs from its exact
+   text, even when the departure is documented or resolves a safety problem.
+   Only an authoritative amended criterion changes the target. Report an
+   unsafe or conflicting requirement as a concern; do not claim it is fulfilled
+   and do not restore unsafe behaviour merely to make the words match.
 
 ## Report Format
 
@@ -4455,11 +4463,15 @@ the information here, {_v4_feedback_not_approval}.
                 "them, not the Player)\n"
                 "3. Verify EACH acceptance criterion against the evidence "
                 "systematically\n"
-                f"4. Honour the absence-of-failure guards: an ABSENT or "
+                "4. A documented conflict or departure is not fulfilment. "
+                "Judge the exact criterion supplied here unless an "
+                "authoritative amended criterion is present; do not recommend "
+                "restoring unsafe behaviour merely to match stale text\n"
+                f"5. Honour the absence-of-failure guards: an ABSENT or "
                 f"zero-cardinality oracle is NOT a pass — when the evidence "
                 f"for a criterion is missing, {_v4_feedback_not_approval_responsibilities}\n"
-                f"5. {_v4_findings_instruction}\n"
-                "6. "
+                f"6. {_v4_findings_instruction}\n"
+                "7. "
                 + (
                     "CONSIDER HONESTY DISCREPANCIES in your decision"
                     if self._turn_rejecting_discrepancies(honesty_verification)
@@ -4483,8 +4495,12 @@ the information here, {_v4_feedback_not_approval}.
                 "1. Independently verify the Player's claims\n"
                 "2. Run the tests yourself (don't trust Player's report)\n"
                 "3. Verify EACH acceptance criterion systematically\n"
-                f"4. {_v4_findings_instruction}\n"
-                "5. "
+                "4. A documented conflict or departure is not fulfilment. "
+                "Judge the exact criterion supplied here unless an "
+                "authoritative amended criterion is present; do not recommend "
+                "restoring unsafe behaviour merely to match stale text\n"
+                f"5. {_v4_findings_instruction}\n"
+                "6. "
                 + (
                     "CONSIDER HONESTY DISCREPANCIES in your decision"
                     if self._turn_rejecting_discrepancies(honesty_verification)

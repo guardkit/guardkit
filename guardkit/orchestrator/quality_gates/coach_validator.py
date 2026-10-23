@@ -1406,9 +1406,8 @@ class SuiteComparedToBase:
 #: it yet. A claim is still counted for the per-turn decision (the turn behaves
 #: exactly as it did before this split), but the receipt and the evidence
 #: dossier say which of the two it was, so nobody downstream can read a promise
-#: as a proof. Machine-class criteria — a behaviour at a delivered surface —
-#: stay ``"claimed"`` until a bound verifier receipt or a bound gate result
-#: covers them.
+#: as a proof. Every criterion stays ``"claimed"`` until a bound verifier
+#: receipt or a bound gate result covers that criterion by id.
 CLAIMED = "claimed"
 VERIFIED = "verified"
 #: Results that count as "met" wherever the code used to test ``== "verified"``.
@@ -3814,7 +3813,8 @@ class CoachValidator:
         # ------------------------------------------------------------------
         # 4c. Corroboration (B9 Lane C). Promise-backed criteria are recorded
         # as ``claimed``; this is the only place one can become ``verified``,
-        # and only on the Coach's own evidence. The counts do not move.
+        # and only on evidence bound to that criterion. Generic suite and file
+        # facts remain separately visible in the bundle. The counts do not move.
         # ------------------------------------------------------------------
         requirements = self.corroborate_claims(
             requirements,
@@ -9063,7 +9063,9 @@ class CoachValidator:
         label. Unlabelled criteria fall back to index-based IDs of the form
         ``AC-{i+1:03d}`` (TASK-CVAC-001 — preserves backwards compatibility
         with task definitions that have no AC IDs in the markdown).
-        A criterion is verified when a matching promise has status ``complete``.
+        A criterion is claimed when a matching promise has status ``complete``
+        or ``partial``.  A Player promise is coverage of the criterion, not
+        independent proof that its exact text is satisfied.
 
         Parameters
         ----------
@@ -9588,8 +9590,11 @@ class CoachValidator:
 
             # Strategy 1: Exact match
             if normalized in normalized_met:
-                result_str = "verified"
-                evidence = f"Matched in Player requirements_met: '{criterion_text}'"
+                result_str = CLAIMED
+                evidence = (
+                    "[Claimed by Player text matching, not yet corroborated] "
+                    f"Matched in Player requirements_met: '{criterion_text}'"
+                )
                 strategy = "exact"
                 confidence = 1.0
             else:
@@ -9598,8 +9603,11 @@ class CoachValidator:
                     normalized_met_text = met_text.lower().strip()
                     # Check if criterion is contained in requirement or vice versa
                     if normalized in normalized_met_text or normalized_met_text in normalized:
-                        result_str = "verified"
-                        evidence = f"Substring match with '{met_text}'"
+                        result_str = CLAIMED
+                        evidence = (
+                            "[Claimed by Player text matching, not yet corroborated] "
+                            f"Substring match with '{met_text}'"
+                        )
                         strategy = "substring"
                         confidence = 0.9
                         break
@@ -9637,16 +9645,21 @@ class CoachValidator:
                                     best_match_text = met_text
 
                         if best_match_score >= keyword_threshold:
-                            result_str = "verified"
-                            evidence = f"Keyword overlap match ({best_match_score:.0%} similarity) with '{best_match_text}'"
+                            result_str = CLAIMED
+                            evidence = (
+                                "[Claimed by Player text matching, not yet "
+                                "corroborated] Keyword overlap match "
+                                f"({best_match_score:.0%} similarity) with "
+                                f"'{best_match_text}'"
+                            )
                             strategy = "keyword"
                             confidence = best_match_score
 
             # Log the strategy used for successful matches
-            if result_str == "verified" and strategy:
+            if result_str in MET_RESULTS and strategy:
                 logger.debug(f"{criterion_id}: Matched via {strategy} (confidence: {confidence:.2f})")
 
-            # Add to missing list if not verified
+            # Add to missing when no Player claim matched.
             if result_str == "rejected":
                 missing.append(criterion_text)
 
@@ -9848,8 +9861,8 @@ class CoachValidator:
 
         When promise-based matching rejects criteria (no matching promise), this
         method gives them a second chance via text matching against
-        ``requirements_addressed``. Criteria already verified by promises are
-        kept as-is.
+        ``requirements_addressed``. Criteria already covered by promises are
+        kept as-is. A successful fallback remains a Player claim.
 
         Parameters
         ----------
@@ -9868,11 +9881,11 @@ class CoachValidator:
         # Run text matching against requirements_addressed
         text_validation = self._match_by_text(acceptance_criteria, requirements_addressed)
 
-        # Merge: keep promise results for verified criteria,
-        # upgrade rejected criteria if text matching verifies them
+        # Merge: keep promise results for covered criteria, and use Player text
+        # only to establish claim coverage for a missing promise.
         merged_results: List[CriterionResult] = []
         merged_missing: List[str] = []
-        upgraded_count = 0
+        covered_count = 0
 
         for promise_cr, text_cr in zip(
             promise_validation.criteria_results,
@@ -9881,7 +9894,7 @@ class CoachValidator:
             if promise_cr.result in MET_RESULTS:
                 merged_results.append(promise_cr)
             elif (
-                text_cr.result == "verified"
+                text_cr.result == CLAIMED
                 and promise_cr.result == "rejected"
                 and "No completion promise" in promise_cr.evidence
                 and self._ac_text_paths_all_exist_on_disk(
@@ -9899,13 +9912,13 @@ class CoachValidator:
                 # The "No completion promise" branch is further
                 # tightened (TASK-AB-FIX-INVAB1 AC-004): when the AC
                 # text names a file path, that file must exist on disk
-                # before Player text fallback may verify the criterion.
-                upgraded_count += 1
+                # before Player text fallback may cover the criterion.
+                covered_count += 1
                 merged_results.append(CriterionResult(
                     criterion_id=text_cr.criterion_id,
                     criterion_text=text_cr.criterion_text,
-                    result="verified",
-                    status="verified",
+                    result=CLAIMED,
+                    status=CLAIMED,
                     evidence=f"[Text fallback] {text_cr.evidence}",
                 ))
             else:
@@ -9914,10 +9927,10 @@ class CoachValidator:
 
         criteria_met = len(acceptance_criteria) - len(merged_missing)
 
-        if upgraded_count > 0:
+        if covered_count > 0:
             logger.info(
-                f"Hybrid fallback upgraded {upgraded_count} criteria "
-                f"via text matching against requirements_addressed"
+                f"Hybrid fallback supplied claim coverage for {covered_count} "
+                f"criteria via text matching against requirements_addressed"
             )
 
         return RequirementsValidation(
@@ -10568,20 +10581,13 @@ class CoachValidator:
         honesty_verification: Optional[Any] = None,
         gate_verified_ids: Optional[Set[str]] = None,
     ) -> Optional[RequirementsValidation]:
-        """Raise ``claimed`` criteria to ``verified`` where evidence supports it.
+        """Raise ``claimed`` criteria to ``verified`` on criterion-bound proof.
 
-        THE ONE PLACE A PROMISE CAN BECOME A VERDICT. The bar, exactly as the
-        B9 design states it:
-
-        * the Coach's OWN independent test run passed, and tests actually
-          executed (not an absent signal, not a run that could not run), and
-        * the honesty check found the files the promise cites (``verified``,
-          no fabricated path), and
-        * for a criterion whose pass bar class is ``machine`` — a behaviour at
-          a delivered surface — a bound verifier receipt (Lane D's
-          ``feature_check.json``) or a bound gate result covers it by id.
-          A green generic suite is NOT corroboration of a surface behaviour:
-          that is precisely the gap B9 walked through.
+        THE ONE PLACE A PROMISE CAN BECOME A VERDICT. A bound verifier receipt
+        (Lane D's ``feature_check.json``) or a bound gate result must cover the
+        criterion by id. A passing generic suite and honest file references
+        remain separate test/file facts; they cannot prove that the exact
+        criterion is fulfilled, whatever its pass-bar classification.
 
         Counts are untouched: ``criteria_met``, ``all_criteria_met`` and
         ``missing`` are identical before and after, because ``claimed`` already
@@ -10590,17 +10596,9 @@ class CoachValidator:
         if requirements is None or not requirements.criteria_results:
             return requirements
 
-        run_corroborates = bool(
-            independent_tests is not None
-            and independent_tests.tests_passed
-            and not independent_tests.signal_absent
-            and not independent_tests.check_could_not_run
-        )
-        honesty_corroborates = bool(
-            honesty_verification is not None
-            and getattr(honesty_verification, "verified", False)
-        )
-        classes = self._pass_bar_criterion_classes()
+        # Keep the independent-tests and honesty parameters for caller/API
+        # compatibility. Their facts remain in the evidence bundle, but are
+        # intentionally not criterion-bound corroboration.
         covered = set(gate_verified_ids or set()) | self._feature_check_covered_ids()
 
         upgraded = 0
@@ -10609,13 +10607,8 @@ class CoachValidator:
             if cr.result != CLAIMED:
                 new_results.append(cr)
                 continue
-            is_machine = classes.get(cr.criterion_id) == "machine"
-            if is_machine:
-                promoted = cr.criterion_id in covered
-                why = "bound verifier receipt / bound gate result"
-            else:
-                promoted = run_corroborates and honesty_corroborates
-                why = "the Coach's own passing test run and the honesty check"
+            promoted = cr.criterion_id in covered
+            why = "bound verifier receipt / bound gate result"
             if not promoted:
                 new_results.append(cr)
                 continue
@@ -10631,7 +10624,7 @@ class CoachValidator:
         if upgraded:
             logger.info(
                 "Corroboration raised %d claimed criteria to verified "
-                "(machine-class criteria need a bound receipt or gate).",
+                "from criterion-bound receipts or gates.",
                 upgraded,
             )
         return dataclass_replace(requirements, criteria_results=new_results)
