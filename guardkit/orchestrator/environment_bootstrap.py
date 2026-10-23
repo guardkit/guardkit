@@ -754,7 +754,30 @@ def _declared_install_serves(
 #     requiring per-repo preflight scripts. (TASK-FIX-AB61)
 
 
-class UvSourcesRequireUvError(RuntimeError):
+class DeclaredToolMissingError(RuntimeError):
+    """
+    A tool the project's own declarations need to install its dependencies
+    is not on PATH where the build runs.
+
+    This is a gap in the build environment, not a defect in the project: the
+    declaration is right and the environment cannot honour it. ``tool`` names
+    the missing tool and ``declaring_file`` the file whose declaration needs
+    it, when known. Callers decide on this class, never on a language name.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        tool: Optional[str] = None,
+        declaring_file: Optional[str] = None,
+    ) -> None:
+        super().__init__(message)
+        self.tool = tool
+        self.declaring_file = declaring_file
+
+
+class UvSourcesRequireUvError(DeclaredToolMissingError):
     """
     Raised at detection time when a pyproject.toml declares
     ``[tool.uv.sources]`` but ``uv`` is not on PATH.
@@ -1174,7 +1197,9 @@ def _resolve_python_pyproject_install_command(
             "pip cannot honour these sibling-source overrides — installing "
             "would silently produce a broken environment. "
             "Fix by installing uv (https://astral.sh/uv) or removing the "
-            "[tool.uv.sources] block from pyproject.toml."
+            "[tool.uv.sources] block from pyproject.toml.",
+            tool="uv",
+            declaring_file=str(pyproject_path),
         )
 
     target = "."
@@ -3762,6 +3787,7 @@ __all__ = [
     "stacks_for_changed_manifests",
     "refresh_environment_for_changes",
     "RequiresPythonMismatch",
+    "DeclaredToolMissingError",
     "UvSourcesRequireUvError",
     "BootstrapEnvironmentLeakError",
     "check_requires_python_precheck",

@@ -1489,6 +1489,39 @@ def _configuration_error_cause(
     return turn_record.feedback or None, False
 
 
+def _declared_tool_missing_message(
+    exc: Any, worktree_root: Path, manifests_changed: List[str]
+) -> str:
+    """Say, as a gap in the build environment, which declared tool is missing.
+
+    23 October 2026: the reinstall could not run because a tool the project's
+    own declaration needs is not where the build runs. The declaration is
+    right, so the sentence names the tool and the declaring file and never
+    tells anyone to change the project's declared stack. The builder cannot
+    install into the build environment, so the task stops with this reason.
+    """
+    tool = getattr(exc, "tool", None)
+    declaring = getattr(exc, "declaring_file", None)
+    if declaring:
+        try:
+            declaring = Path(declaring).resolve().relative_to(
+                worktree_root.resolve()
+            ).as_posix()
+        except (OSError, ValueError):
+            pass
+    else:
+        declaring = ", ".join(manifests_changed)
+    named = f"`{tool}`" if tool else "a tool"
+    return (
+        f"The build environment is missing {named}, which {declaring} "
+        "declares is needed to install this project's dependencies, so the "
+        "dependency reinstall could not run. This is a gap in the build "
+        "environment, not in the project: the declaration is correct and "
+        "should stay as it is. The builder cannot fix this from inside the "
+        f"task; add {named} to the build environment, then resume."
+    )
+
+
 # ----------------------------------------------------------------------------
 # Vetoes on the "already there" receipt (TASK-AB-NOCHANGE01, part 2 hardening)
 # ----------------------------------------------------------------------------
@@ -5540,6 +5573,10 @@ class AutoBuildOrchestrator:
         self._checkpoint_refusal: Optional[str] = None
         # Why protected paths could not be put back, when they could not.
         self._protected_paths_failure: Optional[str] = None
+        # A dependency reinstall that failed and has not since succeeded:
+        # (first failing turn, dependency files). Fresh per task loop.
+        self._standing_reinstall_failure: Optional[Tuple[int, List[str]]] = None
+        self._reinstall_environment_gap: Optional[str] = None
 
         # Track loop start time for SDK-level timeout remaining budget (TASK-ABFIX-006)
         import time as _time
@@ -6288,7 +6325,8 @@ class AutoBuildOrchestrator:
         into the existing worktree venv so the Coach's independent pytest run for
         THIS turn sees newly declared dependencies (TASK-AB-COACHVENV01). No-op
         when no manifest changed — unaffected turns pay only a cheap basename
-        scan.
+        scan — unless an earlier reinstall in this task failed and has not
+        since succeeded: that one is re-run until it does.
 
         Parameters
         ----------
@@ -6309,13 +6347,10 @@ class AutoBuildOrchestrator:
             ``self._venv_python`` from the refreshed interpreter when available.
         """
         from guardkit.orchestrator.environment_bootstrap import (
-            BootstrapEnvironmentLeakError,
-            UvSourcesRequireUvError,
             changed_dependency_manifests,
-            refresh_environment_for_changes,
-            stacks_for_changed_manifests,
         )
 
+        self._reinstall_environment_gap = None
         if worktree is None or player_result is None:
             return None
         report = getattr(player_result, "report", None) or {}
@@ -6325,8 +6360,55 @@ class AutoBuildOrchestrator:
         manifests_changed = changed_dependency_manifests(
             changed, Path(worktree.path)
         )
+        # 23 October 2026: a reinstall that failed earlier in this task still
+        # stands until a later reinstall succeeds. A turn that changes no
+        # dependency file re-runs it, so the reviewer can never approve the
+        # task over an environment that was never installed.
+        standing = getattr(self, "_standing_reinstall_failure", None)
+        if not isinstance(standing, tuple):
+            standing = None
+        if not manifests_changed and standing is not None:
+            changed = changed + [p for p in standing[1] if p not in changed]
+            manifests_changed = changed_dependency_manifests(
+                changed, Path(worktree.path)
+            )
         if not manifests_changed:
+            self._standing_reinstall_failure = None
             return None
+        feedback = AutoBuildOrchestrator._refresh_venv_for_manifests(
+            self, changed, manifests_changed, worktree, turn
+        )
+        if feedback is None:
+            self._standing_reinstall_failure = None
+            return None
+        if standing is not None and not self._reinstall_environment_gap:
+            feedback = (
+                f"{feedback}\n\nThis reinstall has not succeeded since turn "
+                f"{standing[0]}, and the task cannot be approved until it does."
+            )
+        first_turn = standing[0] if standing is not None else turn
+        self._standing_reinstall_failure = (first_turn, list(manifests_changed))
+        return feedback
+
+    def _refresh_venv_for_manifests(
+        self,
+        changed: List[str],
+        manifests_changed: List[str],
+        worktree: Any,
+        turn: int,
+    ) -> Optional[str]:
+        """Run one reinstall for :meth:`_maybe_refresh_venv_for_manifest_change`.
+
+        Returns ``None`` on success, else the feedback string. A tool the
+        project declares that is missing from the build environment also sets
+        ``self._reinstall_environment_gap``: the builder cannot fix that.
+        """
+        from guardkit.orchestrator.environment_bootstrap import (
+            BootstrapEnvironmentLeakError,
+            DeclaredToolMissingError,
+            refresh_environment_for_changes,
+            stacks_for_changed_manifests,
+        )
 
         logger.info(
             "Turn %d modified dependency manifest(s) %s — refreshing worktree "
@@ -6345,11 +6427,11 @@ class AutoBuildOrchestrator:
                 changed,
                 relevant_stacks=stacks_for_changed_manifests(changed) or None,
             )
-        except UvSourcesRequireUvError as exc:
-            return (
-                "Dependency reinstall could not run after this turn modified "
-                f"{', '.join(manifests_changed)}: {exc}"
+        except DeclaredToolMissingError as exc:
+            self._reinstall_environment_gap = _declared_tool_missing_message(
+                exc, Path(worktree.path), manifests_changed
             )
+            return self._reinstall_environment_gap
         except BootstrapEnvironmentLeakError as exc:
             return (
                 "Dependency reinstall after this turn's manifest change landed "
@@ -7222,6 +7304,34 @@ class AutoBuildOrchestrator:
         venv_refresh_feedback = self._maybe_refresh_venv_for_manifest_change(
             player_result, worktree, turn
         )
+        environment_gap = getattr(self, "_reinstall_environment_gap", None)
+        if environment_gap and venv_refresh_feedback == environment_gap:
+            # A tool the project declares is missing from the build
+            # environment (23 October 2026). The builder cannot fix it, and
+            # the next wave's setup would stop on the same gap hours later,
+            # so the task ends now as a configuration error with the plain
+            # reason — the same outcome as any check that could not run.
+            logger.error("[%s] turn %s: %s", task_id, turn, environment_gap)
+            self._progress_display.complete_turn(
+                "error",
+                "Build environment is missing a declared tool",
+                error=environment_gap,
+            )
+            return TurnRecord(
+                turn=turn,
+                player_result=player_result,
+                coach_result=None,
+                decision="feedback",
+                feedback=environment_gap,
+                timestamp=timestamp,
+                player_context_status=player_context_status,
+                sdk_turns_used=getattr(player_result, 'sdk_turns_used', None),
+                sdk_max_turns=getattr(player_result, 'sdk_max_turns', None),
+                sdk_ceiling_hit=getattr(player_result, 'sdk_ceiling_hit', None),
+                is_configuration_error=True,
+                command_results=tuple(command_exec_results) if command_exec_results else None,
+                files_changed_this_turn=files_changed_this_turn,
+            )
         if venv_refresh_feedback is not None:
             self._progress_display.complete_turn(
                 "feedback", "Dependency reinstall failed - feeding back to Player"
