@@ -902,6 +902,26 @@ class TestTerminalStallMessage:
         assert "venv" not in message
         assert "environment bootstrap" not in message
 
+    def test_a_mixed_window_keeps_the_general_message(
+        self, tmp_path: Path
+    ) -> None:
+        """Only the latest turn exited 0 ([5, 5, 0]): the message must not
+        claim the check exited 0 on every trailing turn."""
+        orchestrator = self._orchestrator(tmp_path)
+        history = []
+        for turn, code in ((1, 5), (2, 5), (3, 0)):
+            record = _marked_absent_turn(turn)
+            record.coach_result.report["issues"][0]["details"]["exit_code"] = code
+            history.append(record)
+
+        message = orchestrator._build_summary_details(
+            history, "unrecoverable_stall"
+        )
+
+        assert "Verifier infrastructure failure" in message
+        assert "exited 0" not in message
+        assert "worktree venv" in message
+
     def test_unmarked_stall_keeps_existing_messages(self, tmp_path: Path) -> None:
         orchestrator = self._orchestrator(tmp_path)
         history = [

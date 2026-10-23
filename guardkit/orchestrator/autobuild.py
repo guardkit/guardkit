@@ -12769,10 +12769,14 @@ class AutoBuildOrchestrator:
         test_command = details.get("test_command") or "unknown"
 
         n_turns = len(turn_history)
-        if details.get("exit_code") == 0:
-            # The declared check ran and exited 0 but showed no test running
-            # (23 October 2026). Nothing in the environment is broken, so the
-            # venv advice below would not apply.
+        if all(
+            ((signal or {}).get("details") or {}).get("exit_code") == 0
+            for signal in vi_signals
+        ):
+            # The declared check ran and exited 0 but showed no test running,
+            # on every trailing turn (23 October 2026). Nothing in the
+            # environment is broken, so the venv advice below would not
+            # apply. A window with any other exit code keeps that advice.
             return "\n".join([
                 f"Unrecoverable stall detected after {n_turns} turn(s) "
                 f"[{STALL_ENVIRONMENT}].",
