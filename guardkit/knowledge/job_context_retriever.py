@@ -530,6 +530,19 @@ class JobContextRetriever:
         "implementation_modes",
     ]
 
+    # RetrievedContext field order, from highest to lowest retrieval priority.
+    # AutoBuild uses this order when an eligible record that missed its category
+    # share can fit in otherwise-unused total capacity.
+    RESULT_CATEGORY_PRIORITY = [
+        "feature_context",
+        "similar_outcomes",
+        "relevant_patterns",
+        "architecture_context",
+        "warnings",
+        "domain_knowledge",
+        *AUTOBUILD_CATEGORY_PRIORITY,
+    ]
+
     def __init__(
         self,
         graphiti: Any,
@@ -725,6 +738,16 @@ class JobContextRetriever:
                 },
             )
 
+        # AutoBuild may reuse capacity left by sparse categories. Keep the
+        # already-fetched, threshold-filtered candidates local to this call;
+        # production can issue concurrent reads through one retriever.
+        is_autobuild = task.get("is_autobuild", False)
+        candidate_pools: Optional[Dict[str, List[Dict[str, Any]]]] = (
+            {name: [] for name in self.RESULT_CATEGORY_PRIORITY}
+            if is_autobuild
+            else None
+        )
+
         # Track total budget used
         budget_used = 0
 
@@ -788,6 +811,11 @@ class JobContextRetriever:
                 threshold=threshold,
                 metrics_collector=metrics_collector,
                 category=category_name,
+                candidate_pool=(
+                    candidate_pools[category_name]
+                    if candidate_pools is not None
+                    else None
+                ),
             )
             results[category_name] = category_results
             budget_used += tokens
@@ -801,33 +829,41 @@ class JobContextRetriever:
         domain_knowledge = results.get("domain_knowledge", [])
 
         # AutoBuild categories (only if is_autobuild)
-        is_autobuild = task.get("is_autobuild", False)
-
         role_constraints: List[Dict[str, Any]] = []
         quality_gate_configs: List[Dict[str, Any]] = []
         turn_states: List[Dict[str, Any]] = []
         implementation_modes: List[Dict[str, Any]] = []
 
         if is_autobuild:
+            assert candidate_pools is not None
             if not should_stop():
+                remaining_budget = max(0, budget.total_tokens - budget_used)
                 role_constraints, tokens = await self._query_category(
                     query=description,
                     group_ids=["role_constraints"],
-                    budget_allocation=budget.get_allocation("role_constraints"),
+                    budget_allocation=min(
+                        budget.get_allocation("role_constraints"), remaining_budget
+                    ),
                     threshold=threshold,
                     metrics_collector=metrics_collector,
                     category="role_constraints",
+                    candidate_pool=candidate_pools["role_constraints"],
                 )
                 budget_used += tokens
 
             if not should_stop():
+                remaining_budget = max(0, budget.total_tokens - budget_used)
                 quality_gate_configs, tokens = await self._query_category(
                     query=description,
                     group_ids=["quality_gate_configs"],
-                    budget_allocation=budget.get_allocation("quality_gate_configs"),
+                    budget_allocation=min(
+                        budget.get_allocation("quality_gate_configs"),
+                        remaining_budget,
+                    ),
                     threshold=threshold,
                     metrics_collector=metrics_collector,
                     category="quality_gate_configs",
+                    candidate_pool=candidate_pools["quality_gate_configs"],
                 )
                 budget_used += tokens
 
@@ -835,25 +871,60 @@ class JobContextRetriever:
                 # Query turn_states with feature_id/task_id format for cross-turn learning
                 feature_id = task.get("feature_id", "")
                 task_id_val = task.get("id", "")
+                remaining_budget = max(0, budget.total_tokens - budget_used)
                 turn_states, tokens = await self._query_turn_states(
                     feature_id=feature_id,
                     task_id=task_id_val,
-                    budget_allocation=budget.get_allocation("turn_states"),
+                    budget_allocation=min(
+                        budget.get_allocation("turn_states"), remaining_budget
+                    ),
                     threshold=threshold,
                     metrics_collector=metrics_collector,
+                    candidate_pool=candidate_pools["turn_states"],
                 )
                 budget_used += tokens
 
             if not should_stop():
+                remaining_budget = max(0, budget.total_tokens - budget_used)
                 implementation_modes, tokens = await self._query_category(
                     query=description,
                     group_ids=["implementation_modes"],
-                    budget_allocation=budget.get_allocation("implementation_modes"),
+                    budget_allocation=min(
+                        budget.get_allocation("implementation_modes"),
+                        remaining_budget,
+                    ),
                     threshold=threshold,
                     metrics_collector=metrics_collector,
                     category="implementation_modes",
+                    candidate_pool=candidate_pools["implementation_modes"],
                 )
                 budget_used += tokens
+
+            selected = {
+                "feature_context": feature_context,
+                "similar_outcomes": similar_outcomes,
+                "relevant_patterns": relevant_patterns,
+                "architecture_context": architecture_context,
+                "warnings": warnings,
+                "domain_knowledge": domain_knowledge,
+                "role_constraints": role_constraints,
+                "quality_gate_configs": quality_gate_configs,
+                "turn_states": turn_states,
+                "implementation_modes": implementation_modes,
+            }
+            budget_used = self._reuse_autobuild_capacity(
+                selected, candidate_pools, budget.total_tokens
+            )
+            feature_context = selected["feature_context"]
+            similar_outcomes = selected["similar_outcomes"]
+            relevant_patterns = selected["relevant_patterns"]
+            architecture_context = selected["architecture_context"]
+            warnings = selected["warnings"]
+            domain_knowledge = selected["domain_knowledge"]
+            role_constraints = selected["role_constraints"]
+            quality_gate_configs = selected["quality_gate_configs"]
+            turn_states = selected["turn_states"]
+            implementation_modes = selected["implementation_modes"]
 
         # Collect final quality metrics if requested
         quality_metrics: Optional[ContextQualityMetrics] = None
@@ -959,6 +1030,13 @@ class JobContextRetriever:
                 },
             )
 
+        is_autobuild = task.get("is_autobuild", False)
+        candidate_pools: Optional[Dict[str, List[Dict[str, Any]]]] = (
+            {name: [] for name in self.RESULT_CATEGORY_PRIORITY}
+            if is_autobuild
+            else None
+        )
+
         # Build list of coroutines for standard categories
         standard_queries = [
             self._query_category(
@@ -968,6 +1046,11 @@ class JobContextRetriever:
                 threshold=threshold,
                 metrics_collector=metrics_collector,
                 category="feature_context",
+                candidate_pool=(
+                    candidate_pools["feature_context"]
+                    if candidate_pools is not None
+                    else None
+                ),
             ),
             self._query_category(
                 query=description,
@@ -976,6 +1059,11 @@ class JobContextRetriever:
                 threshold=threshold,
                 metrics_collector=metrics_collector,
                 category="similar_outcomes",
+                candidate_pool=(
+                    candidate_pools["similar_outcomes"]
+                    if candidate_pools is not None
+                    else None
+                ),
             ),
             self._query_category(
                 query=description,
@@ -984,6 +1072,11 @@ class JobContextRetriever:
                 threshold=threshold,
                 metrics_collector=metrics_collector,
                 category="relevant_patterns",
+                candidate_pool=(
+                    candidate_pools["relevant_patterns"]
+                    if candidate_pools is not None
+                    else None
+                ),
             ),
             self._query_category(
                 query=description,
@@ -992,6 +1085,11 @@ class JobContextRetriever:
                 threshold=threshold,
                 metrics_collector=metrics_collector,
                 category="architecture_context",
+                candidate_pool=(
+                    candidate_pools["architecture_context"]
+                    if candidate_pools is not None
+                    else None
+                ),
             ),
             self._query_category(
                 query=description,
@@ -1000,6 +1098,11 @@ class JobContextRetriever:
                 threshold=threshold,
                 metrics_collector=metrics_collector,
                 category="warnings",
+                candidate_pool=(
+                    candidate_pools["warnings"]
+                    if candidate_pools is not None
+                    else None
+                ),
             ),
             self._query_category(
                 query=description,
@@ -1008,6 +1111,11 @@ class JobContextRetriever:
                 threshold=threshold,
                 metrics_collector=metrics_collector,
                 category="domain_knowledge",
+                candidate_pool=(
+                    candidate_pools["domain_knowledge"]
+                    if candidate_pools is not None
+                    else None
+                ),
             ),
         ]
 
@@ -1033,14 +1141,13 @@ class JobContextRetriever:
         )
 
         # AutoBuild categories (only if is_autobuild)
-        is_autobuild = task.get("is_autobuild", False)
-
         role_constraints: List[Dict[str, Any]] = []
         quality_gate_configs: List[Dict[str, Any]] = []
         turn_states: List[Dict[str, Any]] = []
         implementation_modes: List[Dict[str, Any]] = []
 
         if is_autobuild:
+            assert candidate_pools is not None
             # Reset circuit breaker before AutoBuild queries (RC7: TASK-REV-F8BA)
             if hasattr(self.graphiti, 'reset_circuit_breaker'):
                 self.graphiti.reset_circuit_breaker()
@@ -1056,6 +1163,7 @@ class JobContextRetriever:
                     threshold=threshold,
                     metrics_collector=metrics_collector,
                     category="role_constraints",
+                    candidate_pool=candidate_pools["role_constraints"],
                 ),
                 self._query_category(
                     query=description,
@@ -1064,6 +1172,7 @@ class JobContextRetriever:
                     threshold=threshold,
                     metrics_collector=metrics_collector,
                     category="quality_gate_configs",
+                    candidate_pool=candidate_pools["quality_gate_configs"],
                 ),
                 self._query_turn_states(
                     feature_id=feature_id,
@@ -1071,6 +1180,7 @@ class JobContextRetriever:
                     budget_allocation=budget.get_allocation("turn_states"),
                     threshold=threshold,
                     metrics_collector=metrics_collector,
+                    candidate_pool=candidate_pools["turn_states"],
                 ),
                 self._query_category(
                     query=description,
@@ -1079,17 +1189,66 @@ class JobContextRetriever:
                     threshold=threshold,
                     metrics_collector=metrics_collector,
                     category="implementation_modes",
+                    candidate_pool=candidate_pools["implementation_modes"],
                 ),
             ]
 
-            autobuild_results = await asyncio.gather(*autobuild_queries)
+            await asyncio.gather(*autobuild_queries)
 
-            role_constraints, role_tokens = autobuild_results[0]
-            quality_gate_configs, gate_tokens = autobuild_results[1]
-            turn_states, turn_tokens = autobuild_results[2]
-            implementation_modes, mode_tokens = autobuild_results[3]
+            remaining_budget = max(0, budget.total_tokens - budget_used)
+            role_constraints, role_tokens = self._trim_to_budget(
+                candidate_pools["role_constraints"],
+                min(budget.get_allocation("role_constraints"), remaining_budget),
+            )
+            remaining_budget -= role_tokens
+            quality_gate_configs, gate_tokens = self._trim_to_budget(
+                candidate_pools["quality_gate_configs"],
+                min(
+                    budget.get_allocation("quality_gate_configs"),
+                    remaining_budget,
+                ),
+            )
+            remaining_budget -= gate_tokens
+            turn_states, turn_tokens = self._trim_to_budget(
+                candidate_pools["turn_states"],
+                min(budget.get_allocation("turn_states"), remaining_budget),
+            )
+            remaining_budget -= turn_tokens
+            implementation_modes, mode_tokens = self._trim_to_budget(
+                candidate_pools["implementation_modes"],
+                min(
+                    budget.get_allocation("implementation_modes"),
+                    remaining_budget,
+                ),
+            )
 
             budget_used += role_tokens + gate_tokens + turn_tokens + mode_tokens
+
+            selected = {
+                "feature_context": feature_context,
+                "similar_outcomes": similar_outcomes,
+                "relevant_patterns": relevant_patterns,
+                "architecture_context": architecture_context,
+                "warnings": warnings,
+                "domain_knowledge": domain_knowledge,
+                "role_constraints": role_constraints,
+                "quality_gate_configs": quality_gate_configs,
+                "turn_states": turn_states,
+                "implementation_modes": implementation_modes,
+            }
+            budget_used = self._reuse_autobuild_capacity(
+                selected, candidate_pools, budget.total_tokens
+            )
+            feature_context = selected["feature_context"]
+            similar_outcomes = selected["similar_outcomes"]
+            relevant_patterns = selected["relevant_patterns"]
+            architecture_context = selected["architecture_context"]
+            warnings = selected["warnings"]
+            domain_knowledge = selected["domain_knowledge"]
+            role_constraints = selected["role_constraints"]
+            quality_gate_configs = selected["quality_gate_configs"]
+            turn_states = selected["turn_states"]
+            implementation_modes = selected["implementation_modes"]
 
         # Collect final quality metrics if requested
         quality_metrics: Optional[ContextQualityMetrics] = None
@@ -1127,6 +1286,7 @@ class JobContextRetriever:
         threshold: float,
         metrics_collector: Optional[MetricsCollector] = None,
         category: str = "",
+        candidate_pool: Optional[List[Dict[str, Any]]] = None,
     ) -> tuple[List[Dict[str, Any]], int]:
         """Query a single context category from the memory backend.
 
@@ -1137,6 +1297,8 @@ class JobContextRetriever:
             threshold: Minimum relevance score to include
             metrics_collector: Optional MetricsCollector for tracking quality
             category: Category name for metrics tracking
+            candidate_pool: Optional per-invocation destination for all
+                threshold-filtered candidates, before category trimming
 
         Returns:
             Tuple of (filtered_results, tokens_used)
@@ -1191,6 +1353,9 @@ class JobContextRetriever:
                 if score >= threshold:
                     filtered.append(item)
 
+            if candidate_pool is not None:
+                candidate_pool.extend(filtered)
+
             # Trim to fit budget allocation
             trimmed, tokens_used = self._trim_to_budget(filtered, budget_allocation)
 
@@ -1210,6 +1375,7 @@ class JobContextRetriever:
         budget_allocation: int,
         threshold: float,
         metrics_collector: Optional[MetricsCollector] = None,
+        candidate_pool: Optional[List[Dict[str, Any]]] = None,
     ) -> tuple[List[Dict[str, Any]], int]:
         """Query turn_states for cross-turn learning.
 
@@ -1222,6 +1388,8 @@ class JobContextRetriever:
             budget_allocation: Maximum token budget for this category
             threshold: Minimum relevance score to include
             metrics_collector: Optional MetricsCollector for tracking quality
+            candidate_pool: Optional per-invocation destination for the sorted,
+                last-five threshold-filtered candidates before budget trimming
 
         Returns:
             Tuple of (filtered_results, tokens_used)
@@ -1260,6 +1428,9 @@ class JobContextRetriever:
             if len(filtered) > 5:
                 filtered = filtered[-5:]
 
+            if candidate_pool is not None:
+                candidate_pool.extend(filtered)
+
             # Trim to fit budget allocation
             trimmed, tokens_used = self._trim_to_budget(filtered, budget_allocation)
 
@@ -1274,6 +1445,90 @@ class JobContextRetriever:
                 e,
             )
             return [], 0
+
+    def _reuse_autobuild_capacity(
+        self,
+        selected: Dict[str, List[Dict[str, Any]]],
+        candidate_pools: Dict[str, List[Dict[str, Any]]],
+        total_budget: int,
+    ) -> int:
+        """Fill unused AutoBuild capacity from candidates already retrieved.
+
+        The first pass remains category-budgeted. Its selected identities are
+        reserved before any extra candidate is considered, so a larger
+        high-ranked record cannot evict a smaller record that already fitted.
+        Added records follow the existing category priority, and each category
+        is finally emitted in its original source rank order.
+
+        Args:
+            selected: Mutable selected records by RetrievedContext field name.
+            candidate_pools: Threshold-filtered records fetched by this call.
+            total_budget: Strict total selected-record token budget.
+
+        Returns:
+            Estimated tokens used by the final selected records.
+        """
+        total_budget = max(0, total_budget)
+        tokens_used = 0
+        selected_by_id: Dict[str, Dict[Tuple[str, str], Dict[str, Any]]] = {}
+        selected_order: Dict[str, List[Tuple[str, str]]] = {}
+
+        # Reserve every valid first-pass selection before reusing spare capacity.
+        for category in self.RESULT_CATEGORY_PRIORITY:
+            selected_by_id[category] = {}
+            selected_order[category] = []
+            for item in selected.get(category, []):
+                identity = self._context_item_identity(item)
+                if identity in selected_by_id[category]:
+                    continue
+                item_tokens = self._estimate_tokens(item)
+                if tokens_used + item_tokens > total_budget:
+                    continue
+                selected_by_id[category][identity] = item
+                selected_order[category].append(identity)
+                tokens_used += item_tokens
+
+        # Add only unselected identities. An oversized record does not prevent
+        # a smaller lower-ranked record in the same already-fetched pool.
+        for category in self.RESULT_CATEGORY_PRIORITY:
+            for item in candidate_pools.get(category, []):
+                identity = self._context_item_identity(item)
+                if identity in selected_by_id[category]:
+                    continue
+                item_tokens = self._estimate_tokens(item)
+                if tokens_used + item_tokens > total_budget:
+                    continue
+                selected_by_id[category][identity] = item
+                selected_order[category].append(identity)
+                tokens_used += item_tokens
+
+        # Source-pool order is the original rank order. The fallback tail is
+        # only for a defensive case where an initial selection is absent from
+        # the retained pool; it preserves that selection's first-pass order.
+        for category in self.RESULT_CATEGORY_PRIORITY:
+            emitted: set[Tuple[str, str]] = set()
+            ordered: List[Dict[str, Any]] = []
+            for item in candidate_pools.get(category, []):
+                identity = self._context_item_identity(item)
+                if identity in selected_by_id[category] and identity not in emitted:
+                    ordered.append(selected_by_id[category][identity])
+                    emitted.add(identity)
+            for identity in selected_order[category]:
+                if identity not in emitted:
+                    ordered.append(selected_by_id[category][identity])
+                    emitted.add(identity)
+            selected[category] = ordered
+
+        return tokens_used
+
+    @staticmethod
+    def _context_item_identity(item: Dict[str, Any]) -> Tuple[str, str]:
+        """Return a stable per-category identity for a retrieved record."""
+        for field_name in ("uuid", "natural_key", "id", "key"):
+            value = item.get(field_name)
+            if value is not None:
+                return field_name, str(value)
+        return "value", json.dumps(item, sort_keys=True, default=str)
 
     def _trim_to_budget(
         self,

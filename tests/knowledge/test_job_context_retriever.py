@@ -21,6 +21,9 @@ TDD RED PHASE: These tests are designed to FAIL initially because
 the implementation doesn't exist yet. This is intentional.
 """
 
+import asyncio
+import json
+
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock, call
 from typing import Dict, List, Any
@@ -2746,3 +2749,367 @@ class TestJobContextRetrieverRealSeam:
             ctx.feature_context or ctx.similar_outcomes or ctx.architecture_context
             or ctx.warnings or ctx.domain_knowledge
         ), "expected at least one context category populated from the live store"
+
+
+# ============================================================================
+# 23. AutoBuild spare total-capacity reuse (23 October 2026)
+# ============================================================================
+
+
+def _sized_context_item(retriever, identity: str, tokens: int) -> Dict[str, Any]:
+    """Create a synthetic record charged at exactly ``tokens``."""
+    item = {"uuid": identity, "score": 0.9, "content": ""}
+    while retriever._estimate_tokens(item) < tokens:
+        item["content"] += "x"
+    assert retriever._estimate_tokens(item) == tokens
+    return item
+
+
+def _plain_text_adr_hit(tokens: int = 783) -> tuple[Dict[str, Any], str]:
+    """Create a public-safe Fleet hit rendering to an exact-sized ADR."""
+    prefix = "Decision record: Keep complete context (accepted)\nDecision: "
+    decision = "A" * (tokens * 2 - len(prefix))
+    rendered = prefix + decision
+    hit = {
+        "uuid": "adr:synthetic:ADR_CONTEXT_001",
+        "score": 0.9,
+        "fact": json.dumps(
+            {
+                "title": "Keep complete context",
+                "decision": decision,
+                "status": "accepted",
+            }
+        ),
+    }
+    assert len(rendered) // 2 == tokens
+    return hit, rendered
+
+
+class _BudgetReuseMemory:
+    """Synthetic memory boundary for deterministic retriever tests."""
+
+    supports_substantive_search = False
+
+    def __init__(self, outcome, adr_hit, fail_warnings: bool = False):
+        self.outcome = outcome
+        self.adr_hit = adr_hit
+        self.fail_warnings = fail_warnings
+        self.calls = []
+
+    def reset_circuit_breaker(self):
+        return None
+
+    async def search(self, query, group_ids=None, **kwargs):
+        self.calls.append((query, tuple(group_ids or ()), dict(kwargs)))
+        if group_ids is None:
+            return [
+                {"score": 0.9, "status": "success"},
+                {"score": 0.85, "status": "success"},
+                {"score": 0.8, "status": "success"},
+            ]
+        if group_ids == ["task_outcomes"]:
+            return [self.outcome]
+        if "project_decisions" in group_ids:
+            return [self.adr_hit, {"uuid": "adr:synthetic:below", "score": 0.1}]
+        if group_ids == ["failure_patterns"] and self.fail_warnings:
+            raise RuntimeError("synthetic warning lookup failure")
+        return []
+
+
+class TestAutoBuildSpareCapacityReuse:
+    """AutoBuild can use spare total capacity without replacing first-pass items."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("method_name", ["retrieve", "retrieve_parallel"])
+    async def test_reuses_fetched_pool_and_keeps_initial_outcome(self, method_name):
+        from guardkit.knowledge.job_context_retriever import (
+            JobContextRetriever,
+            _record_as_text,
+        )
+        from guardkit.knowledge.task_analyzer import TaskPhase
+
+        sizing = JobContextRetriever(AsyncMock(), cache_ttl=0)
+        outcome = _sized_context_item(sizing, "outcome:initial", 508)
+        adr_hit, complete_adr = _plain_text_adr_hit()
+        assert sizing._estimate_tokens(_record_as_text(adr_hit)) == 783
+        memory = _BudgetReuseMemory(outcome, adr_hit, fail_warnings=True)
+        retriever = JobContextRetriever(memory, cache_ttl=0)
+        task = {
+            "id": "TASK-CONTEXT-001",
+            "feature_id": "FEAT-CONTEXT",
+            "description": "Use architecture decisions while implementing the task",
+            "tech_stack": "typescript",
+            "complexity": 5,
+            "is_autobuild": True,
+            "current_actor": "player",
+            "turn_number": 1,
+            "has_previous_turns": False,
+        }
+
+        result = await getattr(retriever, method_name)(
+            task, TaskPhase.IMPLEMENT, collect_metrics=True
+        )
+
+        assert result.budget_total == 4000
+        assert result.similar_outcomes == [outcome]
+        assert result.architecture_context[0]["content"] == complete_adr
+        assert complete_adr in result.to_prompt()
+        assert result.budget_used == 508 + 783
+        assert result.budget_used == sum(
+            retriever._estimate_tokens(item)
+            for category in retriever.RESULT_CATEGORY_PRIORITY
+            for item in getattr(result, category)
+        )
+        assert result.budget_used <= result.budget_total
+        # Analyzer plus the same ten category searches; reuse adds no read.
+        assert len(memory.calls) == 11
+        assert result.quality_metrics.items_above_threshold == 2
+        assert retriever.failed_reads == 1
+
+    def test_preserves_initial_identity_and_restores_source_rank(self):
+        from guardkit.knowledge.job_context_retriever import JobContextRetriever
+
+        retriever = JobContextRetriever(AsyncMock(), cache_ttl=0)
+        high = _sized_context_item(retriever, "rank-1", 600)
+        initial = _sized_context_item(retriever, "rank-2", 400)
+        lower = _sized_context_item(retriever, "rank-3", 300)
+        selected = {name: [] for name in retriever.RESULT_CATEGORY_PRIORITY}
+        pools = {name: [] for name in retriever.RESULT_CATEGORY_PRIORITY}
+        selected["architecture_context"] = [initial, initial.copy()]
+        pools["architecture_context"] = [high, initial, initial.copy(), lower]
+
+        used = retriever._reuse_autobuild_capacity(selected, pools, 700)
+
+        assert used == 700
+        assert [item["uuid"] for item in selected["architecture_context"]] == [
+            "rank-2",
+            "rank-3",
+        ]
+
+        selected["architecture_context"] = [initial]
+        used = retriever._reuse_autobuild_capacity(selected, pools, 1000)
+        assert used == 1000
+        assert [item["uuid"] for item in selected["architecture_context"]] == [
+            "rank-1",
+            "rank-2",
+        ]
+
+    def test_reserves_first_pass_selections_in_all_ten_categories(self):
+        from guardkit.knowledge.job_context_retriever import JobContextRetriever
+
+        retriever = JobContextRetriever(AsyncMock(), cache_ttl=0)
+        selected = {name: [] for name in retriever.RESULT_CATEGORY_PRIORITY}
+        pools = {name: [] for name in retriever.RESULT_CATEGORY_PRIORITY}
+        for category in retriever.RESULT_CATEGORY_PRIORITY:
+            initial = _sized_context_item(retriever, f"initial:{category}", 100)
+            extra = _sized_context_item(retriever, f"extra:{category}", 100)
+            selected[category] = [initial]
+            pools[category] = [extra, initial]
+
+        used = retriever._reuse_autobuild_capacity(selected, pools, 2000)
+
+        assert used == 2000
+        for category in retriever.RESULT_CATEGORY_PRIORITY:
+            assert [item["uuid"] for item in selected[category]] == [
+                f"extra:{category}",
+                f"initial:{category}",
+            ]
+
+    @pytest.mark.asyncio
+    async def test_non_autobuild_keeps_category_only_budgeting(self):
+        from guardkit.knowledge.job_context_retriever import JobContextRetriever
+        from guardkit.knowledge.task_analyzer import TaskPhase
+
+        sizing = JobContextRetriever(AsyncMock(), cache_ttl=0)
+        outcome = _sized_context_item(sizing, "outcome:standard", 508)
+        adr_hit, _ = _plain_text_adr_hit()
+        memory = _BudgetReuseMemory(outcome, adr_hit)
+        retriever = JobContextRetriever(memory, cache_ttl=0)
+
+        result = await retriever.retrieve(
+            {
+                "id": "TASK-STANDARD",
+                "description": "ordinary implementation",
+                "complexity": 5,
+                "is_autobuild": False,
+            },
+            TaskPhase.IMPLEMENT,
+        )
+
+        assert result.similar_outcomes == [outcome]
+        assert result.architecture_context == []
+        assert len(memory.calls) == 7  # analyzer plus six standard categories
+
+    @pytest.mark.asyncio
+    async def test_early_termination_reuses_only_queried_pools(self):
+        from guardkit.knowledge.job_context_retriever import JobContextRetriever
+        from guardkit.knowledge.task_analyzer import TaskPhase
+
+        retriever = JobContextRetriever(AsyncMock(), cache_ttl=0)
+
+        class FullMemory:
+            def __init__(self):
+                self.calls = []
+
+            def reset_circuit_breaker(self):
+                return None
+
+            async def search(self, query, group_ids=None, **kwargs):
+                self.calls.append(tuple(group_ids or ()))
+                if group_ids is None:
+                    return [{"score": 0.9} for _ in range(3)]
+                group = group_ids[0]
+                return [
+                    _sized_context_item(retriever, f"{group}:{index}", 100)
+                    for index in range(30)
+                ]
+
+        memory = FullMemory()
+        retriever.graphiti = memory
+        result = await retriever.retrieve(
+            {
+                "id": "TASK-EARLY",
+                "description": "fill the available context",
+                "complexity": 5,
+                "is_autobuild": True,
+                "current_actor": "player",
+                "turn_number": 1,
+            },
+            TaskPhase.IMPLEMENT,
+            early_termination=True,
+        )
+
+        queried = set(memory.calls)
+        assert ("domain_knowledge",) not in queried
+        assert ("role_constraints",) not in queried
+        assert ("implementation_modes",) not in queried
+        assert result.budget_used <= result.budget_total
+        assert len(memory.calls) == 6  # analyzer plus five categories
+
+    @pytest.mark.asyncio
+    async def test_near_capacity_caps_first_autobuild_category(self):
+        from guardkit.knowledge.job_context_retriever import JobContextRetriever
+        from guardkit.knowledge.task_analyzer import TaskPhase
+
+        sizing = JobContextRetriever(AsyncMock(), cache_ttl=0)
+        by_group = {
+            "feature_specs": [_sized_context_item(sizing, "feature", 690)],
+            "task_outcomes": [_sized_context_item(sizing, "outcome", 1040)],
+            "patterns": [_sized_context_item(sizing, "pattern", 1040)],
+            "project_architecture": [
+                _sized_context_item(sizing, "architecture", 990)
+            ],
+            # This fits the role category's normal allocation but not the 240
+            # tokens left in the total after the standard categories.
+            "role_constraints": [_sized_context_item(sizing, "role", 300)],
+        }
+
+        class NearCapacityMemory:
+            def __init__(self):
+                self.calls = []
+
+            def reset_circuit_breaker(self):
+                return None
+
+            async def search(self, query, group_ids=None, **kwargs):
+                self.calls.append(tuple(group_ids or ()))
+                if group_ids is None:
+                    return [{"score": 0.9} for _ in range(3)]
+                return by_group.get(group_ids[0], [])
+
+        memory = NearCapacityMemory()
+        retriever = JobContextRetriever(memory, cache_ttl=0)
+        result = await retriever.retrieve(
+            {
+                "id": "TASK-NEAR-CAPACITY",
+                "description": "near total context capacity",
+                "complexity": 5,
+                "is_autobuild": True,
+                "current_actor": "player",
+                "turn_number": 1,
+            },
+            TaskPhase.IMPLEMENT,
+            early_termination=True,
+        )
+
+        assert result.budget_used == 3760
+        assert result.role_constraints == []
+        assert ("role_constraints",) in memory.calls
+        assert result.budget_used <= result.budget_total
+
+    @pytest.mark.asyncio
+    async def test_cached_autobuild_result_is_stable_without_new_searches(self):
+        from guardkit.knowledge.job_context_retriever import JobContextRetriever
+        from guardkit.knowledge.task_analyzer import TaskPhase
+
+        sizing = JobContextRetriever(AsyncMock(), cache_ttl=0)
+        outcome = _sized_context_item(sizing, "outcome:cache", 508)
+        adr_hit, _ = _plain_text_adr_hit()
+        memory = _BudgetReuseMemory(outcome, adr_hit)
+        retriever = JobContextRetriever(memory, cache_ttl=300)
+        task = {
+            "id": "TASK-CACHE-AUTOBUILD",
+            "description": "stable cached AutoBuild context",
+            "complexity": 5,
+            "is_autobuild": True,
+            "current_actor": "player",
+            "turn_number": 1,
+        }
+
+        first = await retriever.retrieve(task, TaskPhase.IMPLEMENT)
+        snapshot = first.to_prompt()
+        calls_after_first = len(memory.calls)
+        second = await retriever.retrieve(task, TaskPhase.IMPLEMENT)
+
+        assert len(memory.calls) == calls_after_first
+        assert second.to_prompt() == snapshot
+        assert second.budget_used == first.budget_used
+
+    @pytest.mark.asyncio
+    async def test_concurrent_retrievals_do_not_mix_candidate_pools(self):
+        from guardkit.knowledge.job_context_retriever import JobContextRetriever
+        from guardkit.knowledge.task_analyzer import TaskPhase
+
+        sizing = JobContextRetriever(AsyncMock(), cache_ttl=0)
+        outcomes = {
+            name: _sized_context_item(sizing, f"outcome:{name}", 508)
+            for name in ("alpha", "beta")
+        }
+        adrs = {name: _plain_text_adr_hit()[0] for name in ("alpha", "beta")}
+        adrs["alpha"]["uuid"] = "adr:synthetic:alpha"
+        adrs["beta"]["uuid"] = "adr:synthetic:beta"
+
+        class InterleavedMemory:
+            def reset_circuit_breaker(self):
+                return None
+
+            async def search(self, query, group_ids=None, **kwargs):
+                await asyncio.sleep(0 if query == "alpha" else 0.001)
+                if group_ids is None:
+                    return [{"score": 0.9} for _ in range(3)]
+                if group_ids == ["task_outcomes"]:
+                    return [outcomes[query]]
+                if "project_decisions" in group_ids:
+                    return [adrs[query]]
+                return []
+
+        retriever = JobContextRetriever(InterleavedMemory(), cache_ttl=0)
+        def task(name):
+            return {
+                "id": f"TASK-{name}",
+                "description": name,
+                "complexity": 5,
+                "is_autobuild": True,
+                "current_actor": "player",
+                "turn_number": 1,
+            }
+
+        alpha, beta = await asyncio.gather(
+            retriever.retrieve(task("alpha"), TaskPhase.IMPLEMENT),
+            retriever.retrieve(task("beta"), TaskPhase.IMPLEMENT),
+        )
+
+        assert alpha.similar_outcomes[0]["uuid"] == "outcome:alpha"
+        assert beta.similar_outcomes[0]["uuid"] == "outcome:beta"
+        assert alpha.architecture_context[0]["uuid"] == "adr:synthetic:alpha"
+        assert beta.architecture_context[0]["uuid"] == "adr:synthetic:beta"

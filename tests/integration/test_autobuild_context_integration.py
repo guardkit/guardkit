@@ -22,6 +22,8 @@ References:
     - FEAT-GR-006: Job-Specific Context Retrieval
 """
 
+import json
+
 import pytest
 import sys
 from pathlib import Path
@@ -726,3 +728,124 @@ class TestContextPromptFormatting:
         emoji_patterns = ["###", "Budget:"]  # Headers and budget indicator
         found_patterns = sum(1 for p in emoji_patterns if p in prompt)
         assert found_patterns > 0, "Prompt should have formatting markers"
+
+
+# ============================================================================
+# Test: Real loader-to-prompt spare-capacity path (23 October 2026)
+# ============================================================================
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("record_kind", "record_tokens"),
+    [("adr", 783), ("document", 696)],
+)
+async def test_loader_delivers_complete_oversized_architecture_record(
+    record_kind,
+    record_tokens,
+):
+    """Spare total capacity carries a complete record through the real loader."""
+    from guardkit.knowledge.autobuild_context_loader import AutoBuildContextLoader
+    from guardkit.knowledge.budget_calculator import DynamicBudgetCalculator
+    from guardkit.knowledge.job_context_retriever import _record_as_text
+    from guardkit.knowledge.task_analyzer import TaskAnalyzer
+
+    class LoaderMemory:
+        supports_substantive_search = False
+
+        def __init__(self):
+            self.outcome = None
+            self.architecture = None
+
+        def reset_circuit_breaker(self):
+            return None
+
+        async def search(self, query, group_ids=None, **kwargs):
+            if group_ids is None:
+                return [{"score": 0.9} for _ in range(3)]
+            if group_ids == ["task_outcomes"]:
+                return [self.outcome]
+            if "project_decisions" in group_ids:
+                return [self.architecture]
+            return []
+
+    memory = LoaderMemory()
+    loader = AutoBuildContextLoader(graphiti=memory)
+    retriever = loader.retriever
+    assert retriever is not None
+
+    outcome = {"uuid": "outcome:synthetic", "score": 0.9, "content": ""}
+    while retriever._estimate_tokens(outcome) < 508:
+        outcome["content"] += "o"
+    assert retriever._estimate_tokens(outcome) == 508
+    memory.outcome = outcome
+
+    if record_kind == "adr":
+        prefix = "Decision record: Keep the complete ADR (accepted)\nDecision: "
+        body = "A" * (record_tokens * 2 - len(prefix))
+        architecture = {
+            "uuid": "adr:synthetic:ADR_COMPLETE",
+            "score": 0.9,
+            "fact": json.dumps(
+                {
+                    "title": "Keep the complete ADR",
+                    "decision": body,
+                    "status": "accepted",
+                }
+            ),
+        }
+    else:
+        prefix = "Document: Architecture summary\n"
+        body = "D" * (record_tokens * 2 - len(prefix))
+        architecture = {
+            "uuid": "document:synthetic:ARCHITECTURE_SUMMARY",
+            "score": 0.9,
+            "fact": json.dumps(
+                {
+                    "identifier": "Architecture summary",
+                    "content": body,
+                    "source_ref": "tests/synthetic-architecture.md",
+                }
+            ),
+        }
+    rendered = _record_as_text(architecture)
+    assert retriever._estimate_tokens(rendered) == record_tokens
+    memory.architecture = architecture
+
+    task = loader._build_task_dict(
+        task_id="TASK-LOADER-BUDGET",
+        feature_id="FEAT-LOADER-BUDGET",
+        turn_number=1,
+        description="Use the project's architecture while implementing this task",
+        tech_stack="typescript",
+        complexity=5,
+        current_actor="player",
+        has_previous_turns=False,
+    )
+    characteristics = await TaskAnalyzer(memory).analyze(task, TaskPhase.IMPLEMENT)
+    budget = DynamicBudgetCalculator().calculate(characteristics)
+    assert budget.total_tokens == 4000
+    assert budget.get_allocation("architecture_context") == 521
+
+    result = await loader.get_player_context(
+        task_id="TASK-LOADER-BUDGET",
+        feature_id="FEAT-LOADER-BUDGET",
+        turn_number=1,
+        description="Use the project's architecture while implementing this task",
+        tech_stack="typescript",
+        complexity=5,
+    )
+
+    assert result.budget_total == 4000
+    assert result.context.similar_outcomes == [outcome]
+    assert result.context.architecture_context == [rendered]
+    assert rendered["content"] in result.prompt_text
+    assert result.budget_used == 508 + record_tokens
+    assert result.budget_used == sum(
+        retriever._estimate_tokens(item)
+        for category in retriever.RESULT_CATEGORY_PRIORITY
+        for item in getattr(result.context, category)
+    )
+    assert result.budget_used <= result.budget_total
+    assert result.memory.above_line == 2
+    assert result.memory.delivered == 2
