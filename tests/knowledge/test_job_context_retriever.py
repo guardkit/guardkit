@@ -565,7 +565,15 @@ class TestContextCategoryQueries:
 
         result = await retriever.retrieve(task, TaskPhase.IMPLEMENT)
 
-        assert result.architecture_context == [adr]
+        # Delivered as plain text, not as the stored JSON (23 October 2026).
+        assert result.architecture_context == [
+            {
+                "content": "Decision record: Use one relational store\n"
+                "Decision: Keep all records in one relational database.",
+                "uuid": "adr:example:ADR_ARCH_001",
+                "score": 0.9,
+            }
+        ]
         assert "Use one relational store" in result.to_prompt()
 
     @pytest.mark.asyncio

@@ -336,6 +336,93 @@ def _outcome_as_paragraph(item: Dict[str, Any]) -> Dict[str, Any]:
     return {"content": lessons, "uuid": item.get("uuid"), "score": item.get("score", 1.0)}
 
 
+_ADR_TEXT_FIELDS = (
+    ("decision", "Decision"),
+    ("context", "Context"),
+    ("consequences", "Consequences"),
+)
+
+
+def _record_as_text(item: Dict[str, Any]) -> Dict[str, Any]:
+    """Give a stored decision record or document to the builder as plain text.
+
+    23 October 2026: fleet memory stores each record as its whole payload in
+    JSON, and every search hit carries that JSON string as ``fact``. Printed
+    and costed like that, a decision record's decision, context and
+    consequences reached the builder as escaped JSON inside JSON, and the
+    escaping counted against the small architecture share, so fewer records
+    fitted. Following :func:`_outcome_as_paragraph`, an ``adr`` record becomes
+    a heading (its title or identifier, with its status) and its decision,
+    context, consequences and alternatives as labelled lines; a ``document``
+    record becomes its identifier and its ``content`` body. The result is
+    ``{"content", "uuid", "score"}``, so ``_format_item`` prints the text as
+    it is and ``_estimate_tokens`` costs the text. Anything that cannot be
+    decoded, or is another kind of record, is left exactly as it came.
+    """
+    if (
+        not isinstance(item, dict)
+        or not isinstance(item.get("fact"), str)
+        or "score_kind" in item
+    ):
+        return item
+    try:
+        record = json.loads(item["fact"])
+    except ValueError:
+        return item
+    if not isinstance(record, dict):
+        return item
+    # The record's type is the first part of its key ("adr:<project>:<id>").
+    # A hit without a typed key is recognised by the fields its type requires.
+    key = item.get("uuid")
+    kind = key.split(":", 1)[0] if isinstance(key, str) and ":" in key else None
+    if kind is None:
+        if isinstance(record.get("decision"), str) and isinstance(
+            record.get("status"), str
+        ):
+            kind = "adr"
+        elif isinstance(record.get("content"), str) and isinstance(
+            record.get("source_ref"), str
+        ):
+            kind = "document"
+
+    def text(name: str) -> Optional[str]:
+        value = record.get(name)
+        return value.strip() if isinstance(value, str) and value.strip() else None
+
+    heading = text("title") or text("identifier")
+    lines: List[str] = []
+    if kind == "adr":
+        if text("decision") is None:
+            return item
+        status = text("status")
+        lines.append(
+            f"Decision record: {heading or 'untitled'}"
+            + (f" ({status})" if status else "")
+        )
+        lines.extend(
+            f"{label}: {text(name)}" for name, label in _ADR_TEXT_FIELDS if text(name)
+        )
+        alternatives = record.get("alternatives")
+        if isinstance(alternatives, list):
+            chosen = [a.strip() for a in alternatives if isinstance(a, str) and a.strip()]
+            if chosen:
+                lines.append("Alternatives considered: " + "; ".join(chosen))
+    elif kind == "document":
+        body = text("content")
+        if body is None:
+            return item
+        if heading:
+            lines.append(f"Document: {heading}")
+        lines.append(body)
+    else:
+        return item
+    return {
+        "content": "\n".join(lines),
+        "uuid": item.get("uuid"),
+        "score": item.get("score", 1.0),
+    }
+
+
 class JobContextRetriever:
     """Retrieves job-specific context from the memory backend.
 
@@ -1083,6 +1170,7 @@ class JobContextRetriever:
 
             if category == "similar_outcomes" and group_ids == ["task_outcomes"]:
                 results = [_outcome_as_paragraph(item) for item in results]
+            results = [_record_as_text(item) for item in results]
 
             # Filter by relevance threshold and collect metrics
             filtered = []
