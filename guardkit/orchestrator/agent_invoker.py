@@ -4409,16 +4409,22 @@ Quality Gates:
             # builder honest if it is ever invoked with synthesis=True and no
             # bundle directly (so the prompt never claims evidence it lacks).
             if evidence_bundle is not None:
-                # train==serve parity: the corpus banner ends at
-                # "...honesty verification." — no extra clause under v4.
+                # The bundle mixes execution receipts with report-derived
+                # facts.  Keep their attribution explicit so a generic
+                # independent check cannot be narrated as proof of unrelated
+                # Player-reported counts or coverage.
                 _v4_feedback_not_approval_bundle = ""
                 synthesis_banner = f"""\
 **TOOLLESS SYNTHESIS** — You have NO tools available (no Read, Bash, Grep, or
-Glob). Do not attempt to run tests or read files; you cannot. The orchestrator
-has ALREADY run the tests, coverage, honesty checks, plan audit, BDD oracle,
-and architectural review independently — their results are in the Deterministic
-Evidence Bundle above. Base your verdict ENTIRELY on that evidence, the
-acceptance criteria, the Player's report, and the honesty verification{
+Glob). Do not attempt to run tests or read files; you cannot. The Deterministic
+Evidence Bundle above contains execution receipts and report-derived facts;
+read each field according to its recorded receipt, provenance, and status. An
+independent receipt establishes only the command, output, and measurements it
+records. Player-reported test counts and coverage remain Player-reported unless
+an independent receipt records those measurements. A non-required or relaxed
+gate is not a measurement, and an exit-zero generic check does not certify an
+unrelated suite count or coverage percentage. Base your verdict ENTIRELY on
+that evidence, the acceptance criteria, the Player's report, and the honesty verification{
     _v4_feedback_not_approval_bundle
 }.
 
@@ -4458,9 +4464,11 @@ the information here, {_v4_feedback_not_approval}.
                 "1. Synthesise a verdict from the Deterministic Evidence "
                 "Bundle above — do NOT attempt to investigate (you have no "
                 "tools)\n"
-                "2. Treat the bundle's independent_tests / tests / coverage "
-                "as the authoritative test signal (the orchestrator ran "
-                "them, not the Player)\n"
+                "2. Preserve measurement attribution: independent_tests proves "
+                "only its recorded command, output, and measurements; tests and "
+                "coverage_details may contain Player-reported facts and keep "
+                "their recorded provenance; quality-gate required/relaxed state "
+                "is a decision, not a measurement\n"
                 "3. Verify EACH acceptance criterion against the evidence "
                 "systematically\n"
                 "4. A documented conflict or departure is not fulfilment. "
