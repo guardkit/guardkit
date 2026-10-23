@@ -371,7 +371,8 @@ class TestAConfigurationOnlySetupTask:
         assert result.final_decision == "approved", result.error
         assert turns.coach_receipts == [None]  # nothing declared, nothing run
         assert orch._coverage_declaration_refusal is None
-        assert orch._coverage_due_from_task is None
+        # Still watched: a later turn's coverage command would be read.
+        assert orch._coverage_due_from_task is not None
 
     def test_a_command_that_does_nothing_still_stops_it(
         self, tmp_path: Path
@@ -386,6 +387,75 @@ class TestAConfigurationOnlySetupTask:
         assert result.final_decision == "configuration_error"
         assert "The coverage command `true`" in result.error
         assert result.error.startswith("Stopped after the task's turn")
+
+    def test_a_command_declared_on_a_later_turn_is_measured_on_that_turn(
+        self, tmp_path: Path
+    ) -> None:
+        root = tmp_path / "proj"
+        _project(root, body=DECLARES_ONLY_CONFIG)
+        worktree = _shared_worktree(root, tmp_path / "shared")
+        orch = _orchestrator(tmp_path, root, worktree)
+        turns = _TwoTurns(
+            worktree, [NO_COVERAGE + '  build: "make"\n', WITH_COVERAGE]
+        )
+        result = _run_real_loop(orch, turns)
+        assert turns.player_turns == 2
+        assert result.final_decision == "approved", result.error
+        assert turns.coach_receipts[0] is None
+        assert turns.coach_receipts[1]["command"] == COVERAGE_COMMAND
+        assert (worktree / "coverage-ran.marker").exists()
+        assert load_toolchain_snapshot(TASK, worktree).coverage == COVERAGE_COMMAND
+        assert orch._coverage_due_from_task is None
+
+    def test_a_command_that_does_nothing_on_a_later_turn_stops_it(
+        self, tmp_path: Path
+    ) -> None:
+        root = tmp_path / "proj"
+        _project(root, body=DECLARES_ONLY_CONFIG)
+        worktree = _shared_worktree(root, tmp_path / "shared")
+        orch = _orchestrator(tmp_path, root, worktree)
+        turns = _TwoTurns(
+            worktree,
+            [NO_COVERAGE + '  build: "make"\n', NO_COVERAGE + '  coverage: "true"\n'],
+        )
+        result = _run_real_loop(orch, turns)
+        assert turns.player_turns == 2
+        assert turns.coach_receipts == [None]  # turn 2 never reached the Coach
+        assert result.final_decision == "configuration_error"
+        assert "The coverage command `true`" in result.error
+        assert load_toolchain_snapshot(TASK, worktree).coverage is None
+
+
+class _TwoTurns(_Turns):
+    """Each Player turn writes the next config; the first Coach asks for
+    another turn, the second approves."""
+
+    def __init__(self, worktree: Path, configs: List[str]) -> None:
+        super().__init__(worktree, None)
+        self.configs = list(configs)
+
+    def player(self, *args: Any, **kwargs: Any) -> AgentInvocationResult:
+        self.new_config = self.configs[min(self.player_turns, len(self.configs) - 1)]
+        return super().player(*args, **kwargs)
+
+    def coach(self, *args: Any, **kwargs: Any) -> AgentInvocationResult:
+        approved = super().coach(*args, **kwargs)
+        if kwargs["turn"] > 1:
+            return approved
+        return AgentInvocationResult(
+            task_id=kwargs["task_id"], turn=kwargs["turn"], agent_type="coach",
+            success=True,
+            report={
+                "task_id": kwargs["task_id"], "turn": kwargs["turn"],
+                "decision": "feedback",
+                "issues": [{
+                    "severity": "must_fix", "category": "requirements",
+                    "description": "Finish the deployment settings.",
+                }],
+                "rationale": "one more turn", "is_configuration_error": False,
+            },
+            duration_seconds=1.0, error=None,
+        )
 
 
 NO_TOOLCHAIN = "memory:\n  project: demo\n"

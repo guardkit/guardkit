@@ -574,6 +574,18 @@ class TestFileKinds:
             [f"deploy/{p.relative_to(kit).as_posix()}" for p in files]
         )
 
+    @pytest.mark.parametrize("paths,clean", [
+        (["deploy/*.yaml"], True),
+        (["**/*.yml", "compose.yaml"], True),
+        (["compose.yaml", "src/*.py"], False),
+        (["compose.yaml", "src/*"], False),
+        (["compose.yaml", "__init__.py"], False),
+        (["compose.yaml", "None"], True),
+        (["None"], False),
+    ])
+    def test_wildcards_by_kind_and_no_file_markers(self, paths, clean) -> None:
+        assert declares_no_source_files(paths) is clean
+
     def test_any_source_file_makes_the_task_a_source_task(self) -> None:
         assert declares_no_source_files(CONFIG_ONLY) is True
         assert declares_no_source_files(CONFIG_ONLY + ["src/server.go"]) is False
@@ -643,6 +655,50 @@ class TestNoSourceFilesAtTaskStart:
             "deploy/compose.yaml", "deploy/Dockerfile", "deploy/.env.example",
             "README.md",
         }
+
+    @pytest.mark.parametrize("body,reaches_loop", [
+        # Entries the default reading drops still count (review round 1).
+        ("## Files to Create\n- `compose.yaml`\n- `__init__.py`\n", False),
+        ("## Files to Create\n- `compose.yaml`\n- `src/*.py`\n", False),
+        ("## Files to Create\n- `compose.yaml`\n- `src/*`\n", False),
+        ("## Files to Create\n- `deploy/*.yaml`\n- `compose.yaml`\n", True),
+        ("## Files to Create\n- `compose.yaml`\n\n## Files to Modify\n- _none_\n", True),
+    ], ids=[
+        "underscore-source", "wildcard-source", "bare-wildcard",
+        "wildcard-config", "no-file-marker",
+    ])
+    def test_every_declared_entry_counts(
+        self, tmp_path: Path, body: str, reaches_loop: bool
+    ) -> None:
+        root = tmp_path / "proj"
+        _project(root, toolchain_yaml=NO_COVERAGE, task_type="feature", body=body)
+        orch, invoker, _ = _orchestrator(tmp_path, root)
+        with patch.object(
+            AutoBuildOrchestrator, "_loop_phase", return_value=([], "max_turns_exceeded")
+        ) as loop:
+            result = _run(orch)
+        if reaches_loop:
+            loop.assert_called_once()
+            assert orch._coverage_declaration_refusal is None
+        else:
+            loop.assert_not_called()
+            assert result.final_decision == "configuration_error"
+            assert "declares no coverage command" in result.error
+            invoker.invoke_player.assert_not_called()
+
+    def test_the_default_reading_of_the_sections_is_unchanged(self) -> None:
+        from guardkit.orchestrator.agent_invoker import AgentInvoker
+
+        text = (
+            "## Files to Create\n- `compose.yaml`\n- `__init__.py`\n"
+            "- `src/*.py`\n- _none_\n"
+        )
+        assert AgentInvoker.declared_file_sections_in_text(text)["create"] == [
+            "compose.yaml"
+        ]
+        assert AgentInvoker.declared_file_sections_in_text(
+            text, keep_every_entry=True
+        )["create"] == ["compose.yaml", "__init__.py", "src/*.py"]
 
     def test_files_listed_in_frontmatter_count_too(self, tmp_path: Path) -> None:
         root = tmp_path / "proj"
@@ -820,7 +876,28 @@ class TestNoSourceFilesInTheCoach:
 
 
 class TestTheCoachIsToldTheDeclaredFiles:
-    """Both Coach paths hand the task's declared files to the validator."""
+    """Both Coach paths hand the task's declared files to the validator, read
+    the same way as at task start."""
+
+    def test_the_coach_gets_the_unfiltered_reading(self, tmp_path: Path) -> None:
+        root = tmp_path / "proj"
+        _project(
+            root, toolchain_yaml=WITH_COVERAGE, task_type="feature",
+            body="## Files to Create\n- `compose.yaml`\n- `__init__.py`\n",
+        )
+        orch, _, _ = _orchestrator(tmp_path, root)
+        with patch.object(
+            AutoBuildOrchestrator, "_loop_phase", return_value=([], "max_turns_exceeded")
+        ):
+            _run(orch)
+        assert orch._declared_task_paths == ["compose.yaml", "__init__.py"]
+        validator = CoachValidator(str(tmp_path))
+        gates = validator.verify_quality_gates(
+            _gate_results(files_authored=["compose.yaml"]),
+            profile=get_profile(TaskType.FEATURE),
+            declared_files=orch._declared_task_paths,
+        )
+        assert gates.coverage_relaxed_by is None
 
     def _capture(self, tmp_path: Path, method: str, declared):
         orch = AutoBuildOrchestrator(

@@ -1014,11 +1014,17 @@ def declares_no_source_files(paths: Optional[Iterable[Any]]) -> bool:
 
     ``paths`` is what a task says it will create or change (see
     :func:`declares_config_file`). A task that declares no files at all is
-    not known to be free of source code, so this is ``False`` for it.
+    not known to be free of source code, so this is ``False`` for it. A
+    no-file marker (``_none_``, ``None``, ``n/a``, ``tbd``) is not a file.
+    A wildcard is judged by the kind its name pattern shows: ``deploy/*.yaml``
+    is configuration, ``src/*`` or ``src/*.py`` is source.
     """
     named = [
         raw for raw in (paths or [])
-        if isinstance(raw, str) and raw.strip().strip("`").strip()
+        if isinstance(raw, str)
+        and raw.strip().strip("`").strip()
+        and raw.strip().strip("`").strip().strip("_*.").lower()
+        not in {"n/a", "none", "tbd"}
     ]
     return bool(named) and all(is_non_source_file(raw) for raw in named)
 

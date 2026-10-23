@@ -14345,12 +14345,19 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
     @staticmethod
     def declared_file_sections_in_text(
         content: str,
+        *,
+        keep_every_entry: bool = False,
     ) -> Dict[str, Optional[List[str]]]:
         """The ``create`` / ``modify`` answer of
         :meth:`_read_declared_file_sections`, read from a task document's text
         (with or without its frontmatter). The one parser of those sections:
         the orchestrator's task-start coverage check asks it too (20 October
         2026).
+
+        ``keep_every_entry`` (23 October 2026) keeps the entries the default
+        reading drops, names starting with ``_`` and wildcards, and leaves
+        out only the no-file markers. The coverage check uses it, because a
+        dropped ``__init__.py`` or ``src/*`` must still count as source.
         """
         import re as _re
 
@@ -14376,7 +14383,7 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
             if match is None:
                 continue
             has_bullets, paths = AgentInvoker._paths_in_declared_section(
-                match.group(1)
+                match.group(1), keep_every_entry=keep_every_entry
             )
             if not has_bullets:
                 # A heading with nothing at all under it is not a claim, it is
@@ -14389,6 +14396,8 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
     @staticmethod
     def _paths_in_declared_section(
         section_text: str,
+        *,
+        keep_every_entry: bool = False,
     ) -> Tuple[bool, List[str]]:
         """Read one declared section: was anything listed, and which paths.
 
@@ -14422,6 +14431,13 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
             else:
                 candidate = item.split()[0] if item else ""
             if not candidate:
+                continue
+            if keep_every_entry:
+                # Only a no-file marker (``_none_``, ``None``, ``n/a``) is
+                # left out; every other entry is kept as written.
+                if candidate.strip("_*.").lower() not in {"n/a", "none", "tbd"}:
+                    if candidate not in paths:
+                        paths.append(candidate)
                 continue
             if candidate.startswith("_") or candidate.lower() in {
                 "n/a",

@@ -4345,11 +4345,17 @@ class AutoBuildOrchestrator:
         sections (the same parser the plan audit uses) and from the
         ``files_to_create`` / ``files_to_modify`` frontmatter lists. Never
         raises; anything unreadable is simply not a declared path.
+
+        Read only by the coverage checks, so every entry is kept (23 October
+        2026): names starting with ``_`` and wildcards stay, and are judged
+        by their file kind; only no-file markers are left out.
         """
         paths: List[str] = []
         try:
             if isinstance(content, str) and content:
-                sections = AgentInvoker.declared_file_sections_in_text(content)
+                sections = AgentInvoker.declared_file_sections_in_text(
+                    content, keep_every_entry=True
+                )
                 for key in ("create", "modify"):
                     paths.extend(sections.get(key) or [])
             if isinstance(frontmatter, dict):
@@ -4616,7 +4622,9 @@ class AutoBuildOrchestrator:
         is now pinned for the task (the Coach then measures coverage with it
         on this very turn). Otherwise returns the same plain reason the
         task-start check gives, worded for a stop after the turn, or the
-        reason the command it wrote does nothing.
+        reason the command it wrote does nothing. A task that declares only
+        non-source files and has declared no command yet also gets ``None``,
+        and is checked again after its next turn (23 October 2026).
         """
         due = getattr(self, "_coverage_due_from_task", None)
         if not due:
@@ -4645,10 +4653,12 @@ class AutoBuildOrchestrator:
             # or data file, so there is nothing for coverage to measure. It
             # goes on to the Coach (which makes the same exception) instead
             # of being stopped. A command that does nothing is still refused.
-            self._coverage_due_from_task = None
+            # The marker stays set, so a command a later turn of this task
+            # writes is still pinned and measured on that turn.
             logger.info(
                 "Task %s declared no coverage command on turn %s, but it "
-                "declares no source files, so it is not stopped.",
+                "declares no source files, so it is not stopped; a coverage "
+                "command a later turn declares will still be read.",
                 task_id, turn,
             )
             return None
