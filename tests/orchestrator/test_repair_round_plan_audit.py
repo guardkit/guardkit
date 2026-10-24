@@ -11,7 +11,8 @@ task:
   high"; it is named for the reviewer, whose prompt says it is a repair round
   and asks it to refuse any file not needed to make the failing check pass;
 * a protected extra file the round made is high, always;
-* extra files an earlier, approved round made count as they did then.
+* earlier approved work is the repair scope baseline; only this round
+  is attributed to the current writer, including any protected edits.
 
 Ordinary turns are unchanged. The Coach's "Coverage is UNKNOWN" issue, when it
 only waits on another gate, is ordered after that gate, and the stall summary
@@ -44,6 +45,10 @@ from guardkit.orchestrator.autobuild import (
     _stall_refusal_line,
 )
 from guardkit.orchestrator.paths import TaskArtifactPaths
+from guardkit.orchestrator.task_work_scope import (
+    ScopeUnavailable, checkout_lease, register_fresh_checkout,
+)
+from guardkit.orchestrator.worktree_checkpoints import WorktreeCheckpointManager
 from guardkit.orchestrator.quality_gates.coach_validator import (
     CoachValidator,
     QualityGateStatus,
@@ -171,21 +176,43 @@ def _write(root: Path, rel: str, text: str = "// invented\n") -> None:
     path.write_text(text)
 
 
+class _AdmittedRound:
+    def __init__(self, root: Path, round_number: str = "initial"):
+        self.context = checkout_lease(root)
+        self.lease = self.context.__enter__()
+        self.scope = self.lease.admit(TASK_ID, round_id=round_number)
+        self.manager = WorktreeCheckpointManager(root, TASK_ID, task_work_scope=self.scope)
+        self.turn = 0
+
+    def close(self):
+        self.context.__exit__(None, None, None)
+
+
+_rounds: Dict[Path, _AdmittedRound] = {}
+
+
+@pytest.fixture(autouse=True)
+def retained_rounds():
+    """Keep the actual admission object alive through each audit assertion."""
+    yield
+    while _rounds:
+        _, admitted = _rounds.popitem()
+        admitted.close()
+
+
 def _commit(root: Path, message: str) -> str:
+    if root in _rounds:
+        admitted = _rounds[root]
+        admitted.turn += 1
+        return admitted.manager.create_checkpoint(admitted.turn, True).commit_hash
     _git(root, "add", "-A")
     _git(root, "commit", "-q", "-m", message)
     return _git(root, "rev-parse", "HEAD")
 
 
 def _checkpoint(root: Path, *commits: str) -> None:
-    path = root / ".guardkit" / "autobuild" / TASK_ID / "checkpoints.json"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({
-        "task_id": TASK_ID,
-        "checkpoints": [
-            {"turn": n, "commit_hash": c} for n, c in enumerate(commits, start=1)
-        ],
-    }))
+    # Verify actual retained checkpoints; saved JSON cannot authorize them.
+    assert [c.commit_hash for c in _rounds[root].manager.checkpoints][-len(commits):] == list(commits)
 
 
 @pytest.fixture
@@ -227,6 +254,8 @@ def _make_repo(
         + "\n## Acceptance Criteria\n\n- [ ] The shelf page lists books.\n",
     )
     _commit(root, "base")
+    register_fresh_checkout(root, _git(root, "rev-parse", "HEAD"))
+    _rounds[root] = _AdmittedRound(root)
     return root
 
 
@@ -242,10 +271,14 @@ def _approve_round_one(root: Path, extra: Optional[Dict[str, str]] = None) -> st
     return commit
 
 
-def _reopen(root: Path) -> RepairRound:
-    """What the re-open hands the task's orchestrator: the round, in memory."""
-    round_ = begin_repair_round(root, 2, GATE_OUTPUT)
+def _reopen(root: Path, round_number: int = 2, gate_output: str = GATE_OUTPUT,
+            **kwargs) -> RepairRound:
+    """Finish approved work, then capture the baseline at new admission."""
+    _rounds.pop(root).close()
+    _rounds[root] = _AdmittedRound(root, str(round_number))
+    round_ = begin_repair_round(root, round_number, gate_output, **kwargs)
     assert round_ is not None
+    assert round_.start_commit == _rounds[root].scope.baseline_commit
     return round_
 
 
@@ -310,7 +343,8 @@ class TestTheAuditInARepairRound:
         verdict = _verdict(repo, round_)
 
         assert verdict["status"] == "passed", verdict
-        assert verdict["severity"] == "low"
+        assert verdict["severity"] == "medium", verdict
+        assert verdict["missing_modifications"] == PLANNED_MODIFY
         assert verdict["violations"] == 0
         made = [
             "scripts/seed-owner.sh",
@@ -356,7 +390,7 @@ class TestTheAuditInARepairRound:
         assert "db/migrations/0003_seed.sql" in verdict["extra_files"]
         assert not _gate_passes(repo, verdict)
 
-    def test_files_an_earlier_round_made_count_as_they_did(self, repo: Path) -> None:
+    def test_files_an_earlier_round_made_are_the_admitted_baseline(self, repo: Path) -> None:
         # Round 1 was approved with two extra files, one protected (medium).
         _approve_round_one(
             repo,
@@ -370,7 +404,9 @@ class TestTheAuditInARepairRound:
 
         verdict = _verdict(repo, round_)
 
-        assert verdict["severity"] == "medium"  # as round 1 was approved
+        assert verdict["severity"] == "medium", verdict
+        assert verdict["missing_modifications"] == PLANNED_MODIFY
+        assert verdict["extra_files"] == ["api/src/a.ts"]
         assert verdict["extra_files_for_the_reviewer"] == ["api/src/a.ts"]
         assert _gate_passes(repo, verdict)
 
@@ -382,17 +418,19 @@ class TestTheAuditInARepairRound:
         round_ = _reopen(repo)
         assert round_.start_commit == second
         _git(repo, "reset", "-q", "--hard", first)
-        _checkpoint(repo, first)
         _write_all(repo, NEAR_THE_FAILURE)
 
         verdict = _verdict(repo, round_)
 
         assert verdict["severity"] == "high"
         assert "repair_round" not in verdict
+        with pytest.raises(ScopeUnavailable, match="Unowned HEAD"):
+            _rounds.pop(repo).close()
 
     def test_a_round_from_before_the_task_is_audited_as_ordinary(self, repo: Path) -> None:
-        round_ = _reopen(repo)  # HEAD before this task's first checkpoint
+        round_ = begin_repair_round(repo, 2, GATE_OUTPUT)
         _approve_round_one(repo)
+        _reopen(repo)  # A later admission cannot use the earlier round record.
         _write_all(repo, NEAR_THE_FAILURE)
         assert _verdict(repo, round_)["severity"] == "high"
 
@@ -456,7 +494,7 @@ class TestTheAuditInARepairRound:
         })
         _commit(repo, "repair round approved")
 
-        second_repair = begin_repair_round(
+        second_repair = _reopen(
             repo, 3, "Smoke check failed: tests/e2e/shelf.spec.ts",
             approved_by_earlier_repairs=approving_turn.repair_round_inventory or (),
         )
@@ -466,12 +504,11 @@ class TestTheAuditInARepairRound:
         verdict = _verdict(repo, second_repair)
 
         assert verdict["status"] == "passed", verdict
-        assert verdict["extra_files_approved_by_a_repair"] == [
-            "scripts/seed-owner.sh", "scripts/seed-sample-book.sh",
-            "tests/e2e/sign-in.ts", "web/src/test-render.tsx",
-        ]
-        # Without the carried approvals the same re-entry would be high.
-        assert _verdict(repo, begin_repair_round(repo, 3, "x"))["severity"] == "high"
+        assert verdict["extra_files_approved_by_a_repair"] == []
+        assert verdict["extra_files"] == []
+        # The actual retained baseline excludes earlier approved work even
+        # without a list of prior repair claims.
+        assert _verdict(repo, begin_repair_round(repo, 3, "x"))["severity"] == "medium"
 
     def test_a_modify_only_task_cannot_make_a_migration_in_a_repair_round(
         self, tmp_path: Path
@@ -489,9 +526,12 @@ class TestTheAuditInARepairRound:
         assert verdict["severity"] == "high"
         assert "db/migrations/0003_seed.sql" in verdict["extra_files"]
         assert not _gate_passes(repo, verdict)
-        # Today's ordinary turn says nothing about it (no "files to create"
-        # section): reported, not changed by this work.
-        assert _verdict(repo)["severity"] == "low"
+        # The ordinary audit has no create declaration. It reports only that
+        # this repair scope did not repeat the original planned modification.
+        ordinary = _verdict(repo)
+        assert ordinary["severity"] == "medium"
+        assert ordinary["missing_modifications"] == PLANNED_MODIFY
+        assert ordinary["violations"] == 0
 
     def test_a_repair_round_cannot_edit_a_protected_file(self, tmp_path: Path) -> None:
         repo = _make_repo(tmp_path, declare_create=False)
@@ -506,8 +546,13 @@ class TestTheAuditInARepairRound:
         assert verdict["severity"] == "high"
         assert "deploy/Dockerfile" in verdict["extra_files"]
         assert not _gate_passes(repo, verdict)
-        # The same edit on an ordinary turn is a low "unplanned modification".
-        assert _verdict(repo)["severity"] == "low"
+        # The ordinary audit reports this edit and the original modification
+        # that was not repeated in the admitted repair scope.
+        ordinary = _verdict(repo)
+        assert ordinary["severity"] == "medium"
+        assert ordinary["extra_modifications"] == ["deploy/Dockerfile"]
+        assert ordinary["missing_modifications"] == PLANNED_MODIFY
+        assert ordinary["violations"] == 0
 
     def test_a_protected_file_an_earlier_round_was_approved_with_is_refused_when_edited(
         self, repo: Path
@@ -521,7 +566,7 @@ class TestTheAuditInARepairRound:
             },
         )
         # Even an approval carried by name never exempts a protected file.
-        round_ = begin_repair_round(
+        round_ = _reopen(
             repo, 2, GATE_OUTPUT,
             approved_by_earlier_repairs={"db/migrations/0002_items.sql"},
         )

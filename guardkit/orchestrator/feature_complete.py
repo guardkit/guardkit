@@ -71,6 +71,7 @@ class FeatureCompleteResult:
     total_tasks: int
     worktree_path: Optional[str] = None
     error: Optional[str] = None
+    tasks_deferred: int = 0
 
 
 # ============================================================================
@@ -339,7 +340,8 @@ class FeatureCompleteOrchestrator:
                 feature_id=feature.id,
                 success=True,
                 status="completed",
-                tasks_completed=len(feature.tasks),
+                tasks_completed=sum(task.status == "completed" for task in feature.tasks),
+                tasks_deferred=sum(task.status == "deferred" for task in feature.tasks),
                 total_tasks=len(feature.tasks),
                 worktree_path=str(worktree.path) if worktree else None,
             )

@@ -69,8 +69,8 @@ class CriterionStatus(str, Enum):
 class VerificationResult(str, Enum):
     """Coach verification result for a criterion.
 
-    Simplified from 3 states to 2 per YAGNI principle.
-    Coach either verifies the promise or rejects it.
+    Claims and unavailable verification remain distinct from rejection.
+    Only VERIFIED confirms a criterion.
 
     Attributes:
         VERIFIED: Coach confirms the criterion is satisfied
@@ -79,6 +79,8 @@ class VerificationResult(str, Enum):
 
     VERIFIED = "verified"
     REJECTED = "rejected"
+    CLAIMED = "claimed"
+    PENDING = "pending"
 
 
 @dataclass
@@ -232,9 +234,13 @@ class CriterionVerification:
             <VerificationResult.VERIFIED: 'verified'>
         """
         raw_result = data.get("result", "rejected")
+        notes = data.get("notes", "")
+        if isinstance(raw_result, str) and raw_result in {"unverified", "cannot_verify"}:
+            raw_result = "pending"
         try:
             result = VerificationResult(raw_result)
-        except ValueError:
+        except (ValueError, TypeError):
+            notes = f"{notes} [Unknown verification state: {raw_result!r}]"
             # Coach LLMs sometimes emit a third state (e.g. "unverified",
             # "pending", "cannot_verify") when the GATHERING-STATUS GUARD
             # in coach_evidence.py blocks them from endorsing or rejecting
@@ -254,7 +260,7 @@ class CriterionVerification:
         return cls(
             criterion_id=data.get("criterion_id", ""),
             result=result,
-            notes=data.get("notes", ""),
+            notes=notes,
         )
 
 
@@ -363,7 +369,7 @@ def format_verification_summary(verifications: List[CriterionVerification]) -> s
 
     lines = ["Verification Results:"]
     for v in verifications:
-        result_marker = "VERIFIED" if v.result == VerificationResult.VERIFIED else "REJECTED"
+        result_marker = v.result.value.upper()
         # Truncate notes if too long
         notes_short = v.notes[:50] + "..." if len(v.notes) > 50 else v.notes
         lines.append(f"  [{result_marker}] {v.criterion_id}: {notes_short}")

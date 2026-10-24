@@ -1114,8 +1114,8 @@ class TestMergePromises:
         assert len(result) == 1
         assert result[0]["status"] == "complete"
 
-    def test_keeps_higher_status_from_primary(self):
-        """Primary 'complete' is kept over secondary 'partial'."""
+    def test_preserves_secondary_partial_over_completion(self):
+        """A completion inference cannot erase a partial observation."""
         primary = [
             {"criterion_id": "AC-001", "status": "complete", "evidence": "file"},
         ]
@@ -1124,11 +1124,11 @@ class TestMergePromises:
         ]
         result = _merge_promises(primary, secondary)
         assert len(result) == 1
-        assert result[0]["status"] == "complete"
-        assert result[0]["evidence"] == "file"
+        assert result[0]["status"] == "partial"
+        assert result[0]["evidence"] == "code"
 
-    def test_upgrades_status_from_secondary(self):
-        """Secondary 'partial' upgrades primary 'incomplete'."""
+    def test_preserves_primary_incomplete(self):
+        """Partial inference cannot erase an explicit incomplete observation."""
         primary = [
             {"criterion_id": "AC-001", "status": "incomplete", "evidence": "none"},
         ]
@@ -1137,8 +1137,8 @@ class TestMergePromises:
         ]
         result = _merge_promises(primary, secondary)
         assert len(result) == 1
-        assert result[0]["status"] == "partial"
-        assert result[0]["evidence"] == "code"
+        assert result[0]["status"] == "incomplete"
+        assert result[0]["evidence"] == "none"
 
     def test_merges_disjoint_criteria(self):
         """Disjoint criterion IDs are both included."""
@@ -1251,8 +1251,8 @@ class TestBuildSyntheticReportCodePatterns:
 
         promises = report.get("completion_promises", [])
         assert len(promises) >= 1
-        # File-existence should give "complete" for the file match
+        # The file exists, but code evidence establishes only partial delivery.
         ac1 = [p for p in promises if p["criterion_id"] == "AC-001"]
         assert len(ac1) == 1
-        # "complete" from file-existence should be preserved (not downgraded)
-        assert ac1[0]["status"] == "complete"
+        # File presence cannot erase the partial code observation.
+        assert ac1[0]["status"] == "partial"

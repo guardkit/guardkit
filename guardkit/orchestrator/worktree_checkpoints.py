@@ -944,6 +944,9 @@ class Checkpoint:
     # via ``Checkpoint(**data)``.
     evidence_commits: Dict[str, str] = field(default_factory=dict)
 
+    scope_id: str = ""
+    baseline_commit: str = ""
+
     def to_dict(self) -> Dict:
         """Convert to dictionary for JSON serialization.
 
@@ -1099,6 +1102,7 @@ class WorktreeCheckpointManager:
         evidence_repos: Optional[List[EvidenceRepo]] = None,
         expected_branch: Optional[str] = None,
         refuse_without_branch: bool = False,
+        task_work_scope=None,
     ):
         """Initialize WorktreeCheckpointManager.
 
@@ -1123,6 +1127,7 @@ class WorktreeCheckpointManager:
                 sets it: a build whose branch could not be determined at its
                 start must not commit wherever HEAD happens to be.
         """
+        self.task_work_scope = task_work_scope
         self.worktree_path = Path(worktree_path)
         self.task_id = task_id
         self.expected_branch = expected_branch
@@ -1187,10 +1192,23 @@ class WorktreeCheckpointManager:
             f"(tests: {format_test_status(tests_passed)}, count: {test_count})"
         )
 
+        from guardkit.orchestrator.task_work_scope import current_lease, ScopeUnavailable
+        lease = current_lease(self.worktree_path)
+        if lease is None or self.task_work_scope is None or self.task_work_scope is not lease.scope:
+            raise ScopeUnavailable("Checkpoint requires its retained admitted task scope")
+        lease.verify(self.task_work_scope)
+        declared = {(r.name, str(r.root.resolve())) for r in self.evidence_repos}
+        admitted = {(r.name, r.root) for r in self.task_work_scope.repositories[1:]}
+        if declared != admitted:
+            raise ScopeUnavailable("Checkpoint sibling membership differs from admitted scope")
+
         # Serialize git operations to prevent index.lock conflicts
         # when multiple tasks share the same worktree.
         checkpoint = self._create_checkpoint_locked(turn, tests_passed, test_count)
 
+        lease.checkpoint_completed()
+        checkpoint.scope_id = self.task_work_scope.scope_id
+        checkpoint.baseline_commit = self.task_work_scope.baseline_commit
         self.checkpoints.append(checkpoint)
         self._save_checkpoints()
 
@@ -1315,6 +1333,9 @@ class WorktreeCheckpointManager:
         unstage_private_records(self.git_executor, self.worktree_path)
         if self.after_stage is not None:
             self.after_stage()
+
+        from guardkit.orchestrator.task_work_scope import current_lease
+        current_lease(self.worktree_path).verify(self.task_work_scope)
 
         # Create checkpoint commit message
         status = format_test_status(tests_passed)
@@ -1524,15 +1545,22 @@ class WorktreeCheckpointManager:
                         repo.name,
                         turn,
                     )
-            except Exception as exc:  # noqa: BLE001 -- never abort the checkpoint
-                logger.warning(
-                    "Sibling repo %s checkpoint failed at turn %d: %s "
-                    "(state UNVERSIONED for this turn).",
-                    repo.name,
-                    turn,
-                    exc,
-                )
+            except Exception as exc:
+                from guardkit.orchestrator.task_work_scope import ScopeUnavailable
+                raise ScopeUnavailable(f"Sibling checkpoint failed; partial changes preserved: {repo.name}: {exc}") from exc
         return evidence_commits
+
+    def _require_sibling_owner(self, repo):
+        from guardkit.orchestrator.task_work_scope import current_lease, identity, _git, ScopeUnavailable
+        lease = current_lease(self.worktree_path)
+        if lease is None or self.task_work_scope is None or lease.scope is not self.task_work_scope:
+            raise ScopeUnavailable("Sibling write requires retained task ownership")
+        recorded = next((r for r in self.task_work_scope.repositories[1:] if r.name == repo.name), None)
+        if recorded is None or identity(repo.root) != (Path(recorded.root), Path(recorded.git_dir)):
+            raise ScopeUnavailable("Sibling identity is outside the admitted footprint")
+        if _git(repo.root, 'rev-parse', 'HEAD') != lease.expected[recorded.root] or _git(repo.root, 'symbolic-ref', '--short', 'HEAD') != recorded.branch:
+            raise ScopeUnavailable("Sibling HEAD/branch moved outside the owned checkpoint")
+        return lease
 
     def _commit_one_evidence_repo(
         self, repo: EvidenceRepo, message: str
@@ -1545,6 +1573,7 @@ class WorktreeCheckpointManager:
         option the task flagged; an additive commit is recoverable, a branch
         switch is disruptive).
         """
+        self._require_sibling_owner(repo)
         if not repo.root.exists():
             return None
 
@@ -1568,7 +1597,7 @@ class WorktreeCheckpointManager:
                     # written here literally (the launch guard).
                     ["git", *_CHECKPOINT_ADD_ARGV[1:]],
                     cwd=repo.root,
-                    check=False,
+                    check=True,
                     timeout=_EVIDENCE_GIT_TIMEOUT_S,
                 )
                 # As at the worktree checkpoint. A failure here raises, and
@@ -1581,13 +1610,13 @@ class WorktreeCheckpointManager:
                 self.git_executor.execute(
                     ["git", "commit", "-m", message, "--allow-empty"],
                     cwd=repo.root,
-                    check=False,
+                    check=True,
                     timeout=_EVIDENCE_GIT_TIMEOUT_S,
                 )
                 result = self.git_executor.execute(
                     ["git", "rev-parse", "HEAD"],
                     cwd=repo.root,
-                    check=False,
+                    check=True,
                     timeout=_EVIDENCE_GIT_TIMEOUT_S,
                 )
             except subprocess.TimeoutExpired:
@@ -1633,6 +1662,15 @@ class WorktreeCheckpointManager:
         Raises:
             subprocess.CalledProcessError: If git reset fails
         """
+        from guardkit.orchestrator.task_work_scope import current_lease, ScopeUnavailable
+        lease = current_lease(self.worktree_path)
+        if lease is None or self.task_work_scope is None or self.task_work_scope is not lease.scope:
+            raise ScopeUnavailable("Rollback requires its retained admitted task scope")
+        lease.verify(self.task_work_scope)
+        declared = {(r.name, str(r.root.resolve())) for r in self.evidence_repos}
+        admitted = {(r.name, r.root) for r in self.task_work_scope.repositories[1:]}
+        if declared != admitted:
+            raise ScopeUnavailable("Checkpoint sibling membership differs from admitted scope")
         # Only this round's checkpoints are rollback targets (20 October
         # 2026): a repair round numbers its turns from 1 again, so a turn
         # number alone can name an earlier, approved round's checkpoint, and
@@ -1642,6 +1680,16 @@ class WorktreeCheckpointManager:
             logger.warning(f"No checkpoint found for turn {turn} in this round")
             return False
         checkpoint = self.checkpoints[index]
+        target = checkpoint
+        if target is None or target.scope_id != self.task_work_scope.scope_id:
+            raise ScopeUnavailable("Rollback target is outside this admitted scope; work preserved")
+        expected_target = {str(self.worktree_path.resolve()): target.commit_hash}
+        for sibling in self.evidence_repos:
+            if sibling.name not in target.evidence_commits:
+                raise ScopeUnavailable("Rollback has no retained sibling checkpoint; work preserved")
+            expected_target[str(sibling.root.resolve())] = target.evidence_commits[sibling.name]
+        if tuple(sorted(expected_target.items())) not in lease.checkpoints:
+            raise ScopeUnavailable("Saved checkpoint is not a live owned checkpoint; rollback refused")
 
         logger.info(
             f"Rolling back {self.task_id} to turn {turn} "
@@ -1649,6 +1697,18 @@ class WorktreeCheckpointManager:
         )
 
         try:
+            # Preserve the full scope-qualified checkpoint history before a
+            # rollback truncates the active list. It remains diagnostic only.
+            import uuid
+            from guardkit.orchestrator.paths import TaskArtifactPaths
+            history_path = TaskArtifactPaths.private_artifact_path(
+                self.task_id, f"checkpoint-history-{self.task_work_scope.scope_id}-{uuid.uuid4().hex}.json",
+                self.worktree_path,
+            )
+            history_path.parent.mkdir(parents=True, exist_ok=True)
+            history_path.write_text(json.dumps({"task_id": self.task_id,
+                "scope_id": self.task_work_scope.scope_id,
+                "checkpoints": [cp.to_dict() for cp in self.checkpoints]}, indent=2))
             # TASK-FIX-RBSS AC-3: snapshot per-turn audit JSONs for turns
             # > target_turn before `git reset --hard` discards them. Audit
             # archival is best-effort: a snapshot failure must not block
@@ -1695,6 +1755,7 @@ class WorktreeCheckpointManager:
                 f"Rollback successful to turn {turn}, "
                 f"{len(self.checkpoints)} checkpoints remaining"
             )
+            lease.checkpoint_completed()
             return True
 
         except subprocess.CalledProcessError as e:
@@ -1880,6 +1941,7 @@ class WorktreeCheckpointManager:
         rolled_back: List[str] = []
         not_rolled_back: List[str] = []
         for repo in self.evidence_repos:
+            self._require_sibling_owner(repo)
             target = checkpoint.evidence_commits.get(repo.name)
             if not target:
                 not_rolled_back.append(repo.name)
@@ -1894,7 +1956,7 @@ class WorktreeCheckpointManager:
                 self.git_executor.execute(
                     ["git", "reset", "--hard", target],
                     cwd=repo.root,
-                    check=False,
+                    check=True,
                     timeout=_EVIDENCE_GIT_TIMEOUT_S,
                 )
                 rolled_back.append(repo.name)
@@ -1904,14 +1966,9 @@ class WorktreeCheckpointManager:
                     target[:8],
                     checkpoint.turn,
                 )
-            except Exception as exc:  # noqa: BLE001 -- never break the rollback
-                not_rolled_back.append(repo.name)
-                logger.warning(
-                    "Rollback: failed to reset sibling repo %s to %s: %s",
-                    repo.name,
-                    target[:8],
-                    exc,
-                )
+            except Exception as exc:
+                from guardkit.orchestrator.task_work_scope import ScopeUnavailable
+                raise ScopeUnavailable(f"Sibling rollback failed; partial changes preserved: {repo.name}: {exc}") from exc
 
         # Summary line so an operator diagnosing a worktree/sibling mismatch can
         # see at a glance which repos diverged from the rolled-back worktree.

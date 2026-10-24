@@ -73,9 +73,9 @@ class TestVerificationResult:
         assert VerificationResult.VERIFIED == "verified"
 
     def test_all_values(self):
-        """VerificationResult has exactly 2 values."""
+        """VerificationResult preserves each supported evidence state."""
         values = [result.value for result in VerificationResult]
-        assert len(values) == 2
+        assert set(values) == {"verified", "rejected", "claimed", "pending"}
         assert "verified" in values
         assert "rejected" in values
 
@@ -442,46 +442,21 @@ class TestCriterionVerification:
         assert restored.result == sample_verification.result
         assert restored.notes == sample_verification.notes
 
-    def test_from_dict_unknown_value_defaults_to_rejected(self, caplog):
-        """Unknown result values fall back to REJECTED with a warning.
-
-        Regression: TASK-REV-9A4B. Coach LLMs sometimes emit a third
-        state (e.g. "unverified", "pending", "cannot_verify") when the
-        GATHERING-STATUS GUARD blocks them from endorsing or rejecting.
-        Previously this raised ValueError and killed the orchestration.
-        """
-        import logging
-
-        data = {
-            "criterion_id": "AC-001",
-            "result": "unverified",
-            "notes": "Evidence pipeline aborted (partial_honesty_abort)",
-        }
-
-        with caplog.at_level(logging.WARNING, logger="guardkit.orchestrator.schemas"):
-            verification = CriterionVerification.from_dict(data)
-
-        assert verification.criterion_id == "AC-001"
-        assert verification.result == VerificationResult.REJECTED
-        assert (
-            verification.notes
-            == "Evidence pipeline aborted (partial_honesty_abort)"
+    @pytest.mark.parametrize("raw", ["pending", "unverified", "cannot_verify"])
+    def test_supported_pending_aliases_remain_pending(self, raw):
+        verification = CriterionVerification.from_dict(
+            {"criterion_id": "AC-001", "result": raw, "notes": "Evidence unavailable"}
         )
-        # Warning must cite the value and the absence-of-failure rule
-        # so an operator can find it in the log and understand the cause.
-        assert any(
-            "unverified" in rec.message and "absence-of-failure" in rec.message
-            for rec in caplog.records
-        ), f"Expected warning citing 'unverified' and the rule, got: {caplog.records}"
+        assert verification.result == VerificationResult.PENDING
+        assert verification.notes == "Evidence unavailable"
 
-    def test_from_dict_other_unknown_values_also_default(self):
-        """Other plausible third-state words also fall back safely."""
-        for raw in ("pending", "cannot_verify", "uncertain", "skipped", ""):
-            data = {"criterion_id": "AC-X", "result": raw, "notes": ""}
-            verification = CriterionVerification.from_dict(data)
-            assert verification.result == VerificationResult.REJECTED, (
-                f"Expected REJECTED fallback for raw={raw!r}"
-            )
+    @pytest.mark.parametrize("raw", ["uncertain", "skipped", "", None, [], {}])
+    def test_unknown_or_malformed_values_remain_non_approving(self, raw):
+        verification = CriterionVerification.from_dict(
+            {"criterion_id": "AC-X", "result": raw, "notes": ""}
+        )
+        assert verification.result == VerificationResult.REJECTED
+        assert repr(raw) in verification.notes
 
 
 # ============================================================================

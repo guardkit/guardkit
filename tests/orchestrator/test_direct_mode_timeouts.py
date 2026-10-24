@@ -80,7 +80,11 @@ def worktree(tmp_path: Path) -> Path:
     (tmp_path / "src" / "app.py").write_text("app = None\n")
     _git(tmp_path, "add", ".")
     _git(tmp_path, "commit", "-q", "-m", "base")
-    return tmp_path
+    from guardkit.orchestrator.task_work_scope import register_fresh_checkout, checkout_lease
+    register_fresh_checkout(tmp_path, "HEAD")
+    with checkout_lease(tmp_path) as lease:
+        lease.admit(TASK_A)
+        yield tmp_path
 
 
 def _create_task_file(worktree: Path, task_id: str, complexity: int) -> None:
@@ -141,10 +145,13 @@ def _write_player_report(worktree: Path, task_id: str, turn: int, report: Dict) 
 def _orchestrator(
     repo_root: Path, wave_size: int = 1, shares_working_copy: bool = False
 ) -> AutoBuildOrchestrator:
-    return AutoBuildOrchestrator(
+    orch = AutoBuildOrchestrator(
         repo_root=repo_root, enable_pre_loop=False, wave_size=wave_size,
         shares_working_copy=shares_working_copy,
     )
+    from guardkit.orchestrator.task_work_scope import current_lease
+    orch.task_work_scope = current_lease(repo_root).scope
+    return orch
 
 
 class _FakeWorktree:
@@ -231,7 +238,8 @@ class TestPlaceholderIsNotThePlayersReport:
         (worktree / "docs" / "remove-widget.md").write_text("# Remove\n")
         _write_player_report(worktree, TASK_A, 1, _placeholder(TASK_A, 1, 2340))
 
-        tracker = MultiLayeredStateTracker(task_id=TASK_A, worktree_path=worktree)
+        from guardkit.orchestrator.task_work_scope import current_lease
+        tracker = MultiLayeredStateTracker(task_id=TASK_A, worktree_path=worktree, task_work_scope=current_lease().scope)
         with patch(
             "guardkit.orchestrator.state_tracker.detect_test_results",
             return_value=None,
@@ -245,7 +253,7 @@ class TestPlaceholderIsNotThePlayersReport:
         assert "docs/remove-widget.md" in state.files_created
         assert state.has_work
 
-    def test_a_real_report_is_still_trusted(self, worktree: Path) -> None:
+    def test_an_unbound_old_report_is_diagnostic_only(self, worktree: Path) -> None:
         (worktree / "docs" / "widgets.md").write_text("# Widgets\n\nRemove.\n")
         report = _placeholder(TASK_A, 1, 2340)
         report.pop("error")
@@ -253,14 +261,16 @@ class TestPlaceholderIsNotThePlayersReport:
         report["files_modified"] = ["docs/widgets.md"]
         _write_player_report(worktree, TASK_A, 1, report)
 
-        tracker = MultiLayeredStateTracker(task_id=TASK_A, worktree_path=worktree)
+        from guardkit.orchestrator.task_work_scope import current_lease
+        tracker = MultiLayeredStateTracker(task_id=TASK_A, worktree_path=worktree, task_work_scope=current_lease().scope)
         with patch(
             "guardkit.orchestrator.state_tracker.detect_test_results",
             return_value=None,
         ):
             state = tracker.capture_state(turn=1)
 
-        assert state.detection_method == "player_report"
+        assert state.detection_method == "git_only"
+        assert state.player_report_loaded is False
         assert state.files_modified == ["docs/widgets.md"]
 
 

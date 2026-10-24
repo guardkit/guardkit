@@ -3417,7 +3417,46 @@ class AutoBuildOrchestrator:
             f"verbose={self.verbose}"
         )
 
-    def orchestrate(
+    def orchestrate(self, task_id, requirements, acceptance_criteria, base_branch="main", **kwargs):
+        from guardkit.orchestrator.task_work_scope import checkout_lease, ScopeUnavailable
+        if self.resume:
+            from guardkit.orchestrator.task_work_scope import current_lease
+            retained = current_lease()
+            if retained is None or getattr(self, "task_work_scope", None) is not retained.scope:
+                raise ScopeUnavailable("Process/legacy resume has no retained admission scope; preserve this checkout and start a fresh pinned attempt")
+            retained.verify_continuation(self.task_work_scope)
+            if self.task_work_scope.task_id != task_id:
+                raise ScopeUnavailable("Cannot resume a different task in the retained scope")
+        if self._existing_worktree is None:
+            self._existing_worktree = self._worktree_manager.create(task_id=task_id, base_branch=base_branch)
+        from guardkit.orchestrator.task_work_scope import current_lease, bind_fresh_footprint
+        if current_lease() is None and not self.resume:
+            task_path = kwargs.get("task_file_path")
+            if task_path is None:
+                try:
+                    task_path = TaskLoader.load_task(task_id, repo_root=self.repo_root).get("file_path")
+                except TaskNotFoundError:
+                    pass
+            bound_repos = bind_fresh_footprint(
+                self._existing_worktree.path, self.repo_root, task_path, kind="task",
+                expected=None,
+            )
+            if self._evidence_repos and self._evidence_repos != bound_repos:
+                raise ScopeUnavailable("Caller-supplied sibling footprint differs from the immutable source")
+            self._evidence_repos = bound_repos
+        with checkout_lease(self._existing_worktree.path, self._evidence_repos) as lease:
+            self.task_work_scope = lease.admit(task_id, str(getattr(self, 'feature_id', '') or ''))
+            from guardkit.orchestrator.task_work_scope import bootstrap_admitted_checkout
+            bootstrap_admitted_checkout(self.task_work_scope)
+            if self._agent_invoker is not None:
+                self._agent_invoker.task_work_scope = self.task_work_scope
+                self._agent_invoker._baseline_commit = self.task_work_scope.baseline_commit
+            result = self._orchestrate_owned(task_id, requirements, acceptance_criteria, base_branch, **kwargs)
+            if result.final_decision != "approved":
+                lease.poison(f"Task {task_id} was not approved; predecessor work preserved")
+            return result
+
+    def _orchestrate_owned(
         self,
         task_id: str,
         requirements: str,
@@ -3616,21 +3655,8 @@ class AutoBuildOrchestrator:
             # drive-19 shape) is refused at task load, same rule and message
             # as the feature-YAML schema.
             _test_ref_raw = frontmatter.get("test_ref")
-            # TASK-AB-XREPOEV01: single-task path may declare evidence_repos in
-            # frontmatter. Only resolve from frontmatter when a feature did NOT
-            # already supply them (feature config wins; avoids double-counting).
-            if not self._evidence_repos:
-                declared = frontmatter.get("evidence_repos")
-                if declared:
-                    self._evidence_repos = evidence_repos_lib.resolve_evidence_repos(
-                        declared, self.repo_root
-                    )
-                    if self._evidence_repos:
-                        logger.info(
-                            "Loaded %d evidence repo(s) from task frontmatter: %s",
-                            len(self._evidence_repos),
-                            ", ".join(r.name for r in self._evidence_repos),
-                        )
+            # Writable sibling membership was frozen from admitted source
+            # before this mutable task metadata was read.
         except TaskNotFoundError:
             logger.debug(f"Task file not found for {task_id}, continuing with task_type=None")
         except Exception as e:
@@ -5626,6 +5652,7 @@ class AutoBuildOrchestrator:
                     )
                 ),
                 refuse_without_branch=True,
+                task_work_scope=self.task_work_scope,
             )
             logger.info(
                 f"Checkpoint manager initialized for {task_id} "
@@ -6593,6 +6620,8 @@ class AutoBuildOrchestrator:
         - Coach errors: Mark turn as error, will exit loop
         - SDK timeouts: Treated as errors
         """
+        if self._agent_invoker is not None:
+            self._agent_invoker._original_invocation_failure = None
         timestamp = datetime.now().isoformat()
         recovered_failure_error: Optional[str] = None
         # What this turn's protected-path check put back, for the next turn.
@@ -6654,6 +6683,26 @@ class AutoBuildOrchestrator:
                 if ctx_line:
                     self._progress_display.console.print(f"   [dim]{ctx_line}[/dim]")
         else:
+            # Distinguish between missing report and actual failure
+            is_missing_report = (
+                player_result.error and
+                ("report not found" in player_result.error.lower() or
+                 "PlayerReportNotFoundError" in player_result.error)
+            )
+
+            # TASK-PFI-A1B2: Capture original error before potential overwrite
+            _original_error = player_result.error
+            receipt = getattr(self._agent_invoker, "_original_invocation_failure", None)
+            failure = dict(receipt) if isinstance(receipt, dict) and receipt.get("task_id") == task_id else {}
+
+            failure.update(type=failure.get("type") or player_result.report.get("error_type") or ("TimeoutError" if _player_result_timeout(player_result) else "ExecutionError"),
+                           message=_original_error or "Player invocation failed", phase="player",
+                           mode=self._implementation_mode(task_id),
+                           task_id=task_id, turn=turn,
+                           scope_id=getattr(getattr(self, "task_work_scope", None), "scope_id", None),
+                           report_missing_only=bool(is_missing_report))
+            player_result.report["original_failure"] = failure
+
             # Check for unrecoverable error first - exit immediately without retry (TASK-AB-FIX-003)
             is_unrecoverable = player_result.report.get("unrecoverable", False)
 
@@ -6672,20 +6721,13 @@ class AutoBuildOrchestrator:
                     player_result=player_result,
                     coach_result=None,
                     decision="error",
-                    feedback=None,
+                    feedback=self._feedback_after_turn_without_work(task_id, turn, player_result),
                     timestamp=timestamp,
                     player_context_status=player_context_status,
                     sdk_turns_used=getattr(player_result, 'sdk_turns_used', None),
                     sdk_max_turns=getattr(player_result, 'sdk_max_turns', None),
                     sdk_ceiling_hit=getattr(player_result, 'sdk_ceiling_hit', None),
                 )
-
-            # Distinguish between missing report and actual failure
-            is_missing_report = (
-                player_result.error and
-                ("report not found" in player_result.error.lower() or
-                 "PlayerReportNotFoundError" in player_result.error)
-            )
 
             if is_missing_report:
                 # Report missing but implementation may have succeeded
@@ -6706,9 +6748,6 @@ class AutoBuildOrchestrator:
                     f"Player failed: {player_result.error or 'Unknown error'}",
                     error=player_result.error,
                 )
-
-            # TASK-PFI-A1B2: Capture original error before potential overwrite
-            _original_error = player_result.error
 
             # Attempt multi-layered state detection
             recovered_player_result = self._attempt_state_recovery(
@@ -6736,7 +6775,7 @@ class AutoBuildOrchestrator:
                     and "timeout" in _original_error.lower()
                 )
 
-                if is_task_work_timeout:
+                if not is_missing_report:
                     # Recovery found useful partial state, not a successful
                     # implementation. Preserve the task-work failure receipt
                     # and keep this Player result failed so no Phase 4/5 or
@@ -7185,9 +7224,7 @@ class AutoBuildOrchestrator:
                                 # same criteria list the Coach gets below, and
                                 # the files the Player reported changed.
                                 acceptance_criteria=acceptance_criteria,
-                                reported_files=_si.reported_changed_files(
-                                    player_result.report
-                                ),
+                                reported_files=self._scoped_review_files(),
                             )
                         )
                     else:
@@ -7956,6 +7993,11 @@ class AutoBuildOrchestrator:
 
         return None
 
+    def _scoped_review_files(self):
+        from guardkit.orchestrator.task_work_scope import collect_changes
+        observed = collect_changes(self.task_work_scope)
+        return sorted(set(observed['created'] + observed['modified'] + observed['deleted']))
+
     def _attempt_state_recovery(
         self,
         task_id: str,
@@ -8036,6 +8078,7 @@ class AutoBuildOrchestrator:
             state_tracker = MultiLayeredStateTracker(
                 task_id=task_id,
                 worktree_path=worktree.path,
+                task_work_scope=getattr(self, "task_work_scope", None),
             )
 
             work_state = state_tracker.capture_state(turn=turn, test_paths=test_paths)
@@ -8070,6 +8113,14 @@ class AutoBuildOrchestrator:
 
             # Ensure task_id is populated in report (TASK-ACR-001)
             synthetic_report["task_id"] = task_id
+            failure = (player_report or {}).get("original_failure", {})
+            synthetic_report["original_failure"] = failure
+            synthetic_report.setdefault("_recovery_metadata", {})["original_failure"] = failure
+            synthetic_report["_recovery_metadata"]["state_recovered"] = True
+            synthetic_report["scope_id"] = self.task_work_scope.scope_id
+            if failure and not failure.get("report_missing_only"):
+                synthetic_report["success"] = False
+                synthetic_report["completed"] = False
 
             # TASK-CRV-1540: Enrich synthetic report with partial data from
             # response_messages if available (extracted during CancelledError)
@@ -8089,10 +8140,10 @@ class AutoBuildOrchestrator:
                 task_id=task_id,
                 turn=turn,
                 agent_type="player",
-                success=True,  # Recovery succeeded
+                success=bool(failure.get("report_missing_only")),  # State recovery is not invocation success
                 report=synthetic_report,
                 duration_seconds=0.0,
-                error=None,
+                error=original_error if not failure.get("report_missing_only") else None,
             )
 
         except Exception as e:
@@ -8149,7 +8200,7 @@ class AutoBuildOrchestrator:
         # task's evidence. A wave run one task at a time is not shared and
         # keeps its evidence.
         shared_working_copy = self.shares_working_copy
-        if shared_working_copy:
+        if shared_working_copy or getattr(self, "task_work_scope", None) is None:
             acceptance_criteria = None
 
         # Determine promise generation strategy
@@ -9558,7 +9609,10 @@ class AutoBuildOrchestrator:
         rejected_count = sum(
             1 for v in verifications if v.result == VerificationResult.REJECTED
         )
-        pending_count = total_criteria - len(verifications)
+        claimed_count = sum(v.result == VerificationResult.CLAIMED for v in verification_map.values())
+        pending_count = max(0, total_criteria - len(verification_map)) + sum(
+            v.result == VerificationResult.PENDING for v in verification_map.values()
+        )
 
         # Calculate percentage
         completion_percentage = calculate_completion_percentage(promises, verifications)
@@ -9571,7 +9625,10 @@ class AutoBuildOrchestrator:
 
         # Log detailed status for each criterion
         for i, criterion_text in enumerate(acceptance_criteria):
-            criterion_id = f"AC-{i+1:03d}"
+            _, natural_id = CoachValidator._extract_ac_id(
+                CoachValidator._strip_criterion_prefix(criterion_text)
+            )
+            criterion_id = natural_id or f"AC-{i+1:03d}"
 
             # Find matching promise
             promise = next((p for p in promises if p.criterion_id == criterion_id), None)
@@ -9582,8 +9639,8 @@ class AutoBuildOrchestrator:
                     status = "VERIFIED"
                     icon = "+"
                 else:
-                    status = "REJECTED"
-                    icon = "x"
+                    status = verification.result.value.upper()
+                    icon = "x" if verification.result == VerificationResult.REJECTED else "?"
             elif promise:
                 if promise.status == CriterionStatus.COMPLETE:
                     status = "PROMISED"
@@ -9607,7 +9664,7 @@ class AutoBuildOrchestrator:
         # Display summary via progress display if available
         if hasattr(self, '_progress_display') and self._progress_display:
             summary_lines = [
-                f"Criteria: {verified_count} verified, {rejected_count} rejected, {pending_count} pending",
+                f"Criteria: {verified_count} verified, {claimed_count} claimed, {rejected_count} rejected, {pending_count} pending",
             ]
 
             # Add rejection details if any
@@ -12052,7 +12109,7 @@ class AutoBuildOrchestrator:
                             # byte-identically, because the real miss was a
                             # promise that had not been matched.
                             f"Direct mode: {unmet}/{total} acceptance criteria "
-                            f"have no matching completion promise "
+                            f"have an absent or explicitly incomplete completion promise "
                             f"(unmet: {shown_ids}). Direct mode relaxes "
                             f"coverage/arch but NOT AC delivery."
                         ),
@@ -12231,6 +12288,11 @@ class AutoBuildOrchestrator:
         timeout = player_timeout_from_report(player_report)
         if timeout:
             return [player_timed_out_issue(task_id, turn, timeout)]
+        failure = player_report.get("original_failure") or player_report.get("_recovery_metadata", {}).get("original_failure")
+        if isinstance(failure, dict) and failure and not failure.get("report_missing_only"):
+            return [{"severity": "must_fix", "category": "player_execution_failure",
+                     "description": ("The task-work attempt failed: " if failure.get("mode") == "task-work" else "") + f"{failure.get('type', 'ExecutionError')}: {failure.get('message', 'Player failed')}",
+                     "suggestion": "Repair the original execution failure; recovered files do not establish completion."}]
         if player_report.get(SHARED_WORKING_COPY_FIELD):
             from guardkit.orchestrator.synthetic_report import (
                 player_no_own_report_issue,
@@ -12276,7 +12338,12 @@ class AutoBuildOrchestrator:
             for issue in issues
         ):
             return ""
-        if recovered_failure_error:
+        if recovered_failure_error and not _player_result_timeout(player_result):
+            original = self._why_no_player_report_issues(task_id, turn, player_result.report if player_result else {})
+            if any(isinstance(i, dict) and i.get("category") == "player_execution_failure" for i in issues):
+                return ""
+            return self._extract_feedback({"issues": original})
+        if recovered_failure_error and self._implementation_mode(task_id) != "direct":
             issue = task_work_timeout_issue(recovered_failure_error)
         else:
             details = _player_result_timeout(player_result)
@@ -12298,6 +12365,9 @@ class AutoBuildOrchestrator:
         player_turn_N.json itself, so the direct-mode advice does not apply.
         """
         details = _player_result_timeout(player_result)
+        original = self._why_no_player_report_issues(task_id, turn, player_result.report if player_result else {})
+        if original and not details:
+            return self._extract_feedback({"issues": original})
         if self._implementation_mode(task_id) == "task-work":
             issue = task_work_no_changes_issue(
                 task_id, turn, details, getattr(player_result, "error", None)
@@ -12397,16 +12467,7 @@ class AutoBuildOrchestrator:
                 "all_criteria_met": requirements.all_criteria_met,
                 "missing": list(requirements.missing),
             }
-            criteria_results_block = [
-                {
-                    "criterion_id": cr.criterion_id,
-                    "criterion_text": cr.criterion_text,
-                    "result": cr.result,
-                    "status": cr.status,
-                    "evidence": cr.evidence,
-                }
-                for cr in requirements.criteria_results
-            ]
+            criteria_results_block = [cr.to_dict() for cr in requirements.criteria_results]
 
         synthetic = {
             "task_id": task_id,
@@ -13784,7 +13845,7 @@ class AutoBuildOrchestrator:
         task_file_path: Path,
     ) -> Tuple[Worktree, int]:
         """
-        Resume orchestration from saved state in task frontmatter.
+        Continue the retained owner without trusting saved task frontmatter.
 
         Parameters
         ----------
@@ -13803,47 +13864,25 @@ class AutoBuildOrchestrator:
         SetupPhaseError
             If state cannot be loaded or worktree doesn't exist
         """
+        from guardkit.orchestrator.task_work_scope import current_lease, ScopeUnavailable
+        lease = current_lease()
+        scope = getattr(self, "task_work_scope", None)
+        if lease is None or scope is None or scope is not lease.scope or scope.task_id != task_id:
+            raise ScopeUnavailable("Resume requires the retained admitted task scope; saved records are diagnostic only")
+        lease.verify_continuation(scope)
         logger.info(f"Resuming orchestration for {task_id} from {task_file_path}")
 
         try:
-            with open(task_file_path, "r") as f:
-                content = f.read()
-
-            # Parse YAML frontmatter
-            if not content.startswith("---"):
-                raise SetupPhaseError("Task file missing frontmatter")
-
-            parts = content.split("---", 2)
-            if len(parts) < 3:
-                raise SetupPhaseError("Invalid task file format")
-
-            frontmatter = yaml.safe_load(parts[1])
-            autobuild_state = frontmatter.get("autobuild_state", {})
-
-            if not autobuild_state:
-                raise SetupPhaseError(
-                    f"No saved state found for {task_id}. "
-                    "Run without --resume to start fresh."
-                )
-
-            # Restore worktree
-            worktree_path = autobuild_state.get("worktree_path")
-            if not worktree_path or not Path(worktree_path).exists():
-                raise SetupPhaseError(
-                    f"Worktree not found at {worktree_path}. "
-                    "Run without --resume to start fresh."
-                )
-
+            # Saved frontmatter is diagnostic, not execution authority. The
+            # retained scope and in-memory history are the continuation state.
+            if not isinstance(getattr(self, "_turn_history", None), list):
+                raise ScopeUnavailable("Resume has no retained in-memory turn history")
             worktree = Worktree(
                 task_id=task_id,
-                branch_name=f"autobuild/{task_id}",
-                path=Path(worktree_path),
-                base_branch=autobuild_state.get("base_branch", "main"),
+                branch_name=scope.repositories[0].branch,
+                path=Path(scope.repositories[0].root),
+                base_branch=scope.baseline_commit,
             )
-
-            # Restore turn history
-            saved_turns = autobuild_state.get("turns", [])
-            self._turn_history = self._deserialize_turn_history(saved_turns)
 
             # Initialize AgentInvoker with worktree path
             if self._agent_invoker is None:

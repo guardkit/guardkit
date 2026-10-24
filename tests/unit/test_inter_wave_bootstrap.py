@@ -142,16 +142,19 @@ class TestInterWaveBootstrapHook:
         worktree = _make_worktree(tmp_path)
         feature, task_map = _make_feature([["TASK-001"], ["TASK-002"]])
 
+        pending_at_wave=[]
+        def dispatch(number, task_ids, *args):
+            pending_at_wave.append(bool(getattr(orchestrator, "_bootstrap_pending", False)))
+            orchestrator._bootstrap_pending=False  # The admitted task consumes it.
+            return _successful_wave_result(number, task_ids)
+
         with (
             patch.object(orchestrator, "_preflight_check"),
             patch.object(orchestrator, "_bootstrap_environment") as mock_bootstrap,
             patch.object(
                 orchestrator,
                 "_execute_wave",
-                side_effect=[
-                    _successful_wave_result(1, ["TASK-001"]),
-                    _successful_wave_result(2, ["TASK-002"]),
-                ],
+                side_effect=dispatch,
             ),
             patch.object(orchestrator, "_mark_wave_completed"),
             patch(
@@ -164,11 +167,10 @@ class TestInterWaveBootstrapHook:
         ):
             results = orchestrator._wave_phase(feature, worktree)
 
-        # Bootstrap should be called exactly once (before wave 2). Since
-        # TASK-GK-BS-001, ``_bootstrap_environment`` accepts a ``feature``
-        # kwarg so ``bootstrap_extras`` can be threaded into the install
-        # command.
-        mock_bootstrap.assert_called_once_with(worktree, feature=feature)
+        # Queue construction cannot run a checkout writer. The first
+        # admitted task consumes exactly one pending bootstrap per new wave.
+        mock_bootstrap.assert_not_called()
+        assert pending_at_wave == [False, True]
         assert len(results) == 2
 
     def test_timeout_fence_stops_next_wave_and_final_gates_even_when_continuing(
@@ -250,16 +252,19 @@ class TestInterWaveBootstrapHook:
             [["TASK-001"], ["TASK-002"], ["TASK-003"], ["TASK-004"]]
         )
 
+        pending_at_wave=[]
+        def dispatch(number, task_ids, *args):
+            pending_at_wave.append(bool(getattr(orchestrator, "_bootstrap_pending", False)))
+            orchestrator._bootstrap_pending=False
+            return _successful_wave_result(number, task_ids)
+
         with (
             patch.object(orchestrator, "_preflight_check"),
             patch.object(orchestrator, "_bootstrap_environment") as mock_bootstrap,
             patch.object(
                 orchestrator,
                 "_execute_wave",
-                side_effect=[
-                    _successful_wave_result(i, [f"TASK-00{i}"])
-                    for i in range(1, 5)
-                ],
+                side_effect=dispatch,
             ),
             patch.object(orchestrator, "_mark_wave_completed"),
             patch(
@@ -272,16 +277,8 @@ class TestInterWaveBootstrapHook:
         ):
             results = orchestrator._wave_phase(feature, worktree)
 
-        # Bootstrap called 3 times: before waves 2, 3, and 4. Same kwarg
-        # contract as the wave-2 test above (TASK-GK-BS-001).
-        assert mock_bootstrap.call_count == 3
-        mock_bootstrap.assert_has_calls(
-            [
-                call(worktree, feature=feature),
-                call(worktree, feature=feature),
-                call(worktree, feature=feature),
-            ]
-        )
+        mock_bootstrap.assert_not_called()
+        assert pending_at_wave == [False, True, True, True]
         assert len(results) == 4
 
 

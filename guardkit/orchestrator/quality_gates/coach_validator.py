@@ -1440,6 +1440,8 @@ class CriterionResult:
     result: str  # "verified" | "claimed" | "rejected" | "pending"
     status: str  # same as result, for _count_criteria_passed compatibility
     evidence: str
+    promise_present: bool = False
+    completion_status: str = "unknown"
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
@@ -1449,6 +1451,8 @@ class CriterionResult:
             "result": self.result,
             "status": self.status,
             "evidence": self.evidence,
+            "promise_present": self.promise_present,
+            "completion_status": self.completion_status,
             "notes": self.evidence,  # alias for _display_criteria_progress
         }
 
@@ -5129,6 +5133,7 @@ class CoachValidator:
                     "agent": agent,
                     "status": inv.get("status"),
                     "error": str(error),
+                    "review_record": inv.get("review_record"),
                 },
             })
         return advisories
@@ -5202,6 +5207,11 @@ class CoachValidator:
                     "verified": False,
                     "redacted": True,
                     "truncated": truncated,
+                    "review_completion": evidence.get("completion", "unknown"),
+                    "forced_finalization": evidence.get("forced_finalization", False),
+                    "actual_tool_rounds": evidence.get("actual_tool_rounds"),
+                    "tool_round_budget": evidence.get("tool_round_budget"),
+                    "ending_reason": evidence.get("ending_reason"),
                 },
             })
         return advisories
@@ -9105,7 +9115,9 @@ class CoachValidator:
         for p in completion_promises:
             cid = p.get("criterion_id") or p.get("ac_id", "")
             if cid:
-                promise_map[cid] = p
+                previous = promise_map.get(cid)
+                if previous is None or STATUS_ALIASES.get(previous.get("status"), previous.get("status")) == "complete":
+                    promise_map[cid] = p
             text_id: Optional[str] = None
             criterion_text_field = p.get("criterion_text")
             if criterion_text_field:
@@ -9150,6 +9162,17 @@ class CoachValidator:
             if padded and padded != cid and padded not in promise_map:
                 promise_map[padded] = p
                 fallback_origins[padded] = cid
+
+        # Numeric spelling aliases name the same criterion. A conflicting
+        # complete row cannot erase explicit current-turn noncompletion.
+        canonical_promises = {}
+        for key, row in promise_map.items():
+            canonical = self._normalize_numeric_ac_id(key) or key
+            prior = canonical_promises.get(canonical)
+            if prior is None or STATUS_ALIASES.get(prior.get("status"), prior.get("status")) == "complete":
+                canonical_promises[canonical] = row
+        for key in promise_map:
+            promise_map[key] = canonical_promises[self._normalize_numeric_ac_id(key) or key]
 
         criteria_results: List[CriterionResult] = []
         missing: List[str] = []
@@ -9204,24 +9227,12 @@ class CoachValidator:
                     f"Player completed {criterion_id}",
                 )
                 evidence = f"[Claimed by the Player, not yet corroborated] {evidence}"
-            elif promise and normalized_status == "partial":
-                # TASK-ACR-004: partial counts as met with lower confidence —
-                # and, B9 Lane C, it too is the Player's claim, never a proof.
-                result_str = CLAIMED
-                evidence_type = promise.get("evidence_type", "unknown")
-                base_evidence = promise.get(
-                    "evidence",
-                    f"Player partially completed {criterion_id}",
-                )
-                evidence = (
-                    f"[Claimed by the Player, not yet corroborated] "
-                    f"[Partial confidence - {evidence_type}] {base_evidence}"
-                )
             else:
                 result_str = "rejected"
                 if promise:
                     evidence = (
-                        f"Promise status: {promise.get('status', 'unknown')}"
+                        f"Promise status: {normalized_status or 'unknown'}; "
+                        f"{promise.get('evidence', '')}"
                     )
                 else:
                     evidence = f"No completion promise for {criterion_id}"
@@ -9244,6 +9255,8 @@ class CoachValidator:
                 result=result_str,
                 status=result_str,
                 evidence=evidence,
+                promise_present=promise is not None,
+                completion_status=normalized_status or "unknown",
             ))
 
         criteria_met_count = len(acceptance_criteria) - len(missing)
@@ -9896,7 +9909,7 @@ class CoachValidator:
             elif (
                 text_cr.result == CLAIMED
                 and promise_cr.result == "rejected"
-                and "No completion promise" in promise_cr.evidence
+                and not promise_cr.promise_present
                 and self._ac_text_paths_all_exist_on_disk(
                     promise_cr.criterion_text
                 )

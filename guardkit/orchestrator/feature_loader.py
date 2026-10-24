@@ -330,6 +330,7 @@ class FeatureExecution:
     worktree_path: Optional[str] = None
     total_turns: int = 0
     tasks_completed: int = 0
+    tasks_deferred: int = 0
     tasks_failed: int = 0
     current_wave: int = 0
     completed_waves: List[int] = field(default_factory=list)
@@ -1183,6 +1184,7 @@ class FeatureLoader:
             worktree_path=exec_data.get("worktree_path"),
             total_turns=exec_data.get("total_turns", 0),
             tasks_completed=exec_data.get("tasks_completed", 0),
+            tasks_deferred=exec_data.get("tasks_deferred", 0),
             tasks_failed=exec_data.get("tasks_failed", 0),
             current_wave=exec_data.get("current_wave", 0),
             completed_waves=exec_data.get("completed_waves", []),
@@ -2294,6 +2296,7 @@ class FeatureLoader:
             "worktree_path": feature.execution.worktree_path,
             "total_turns": feature.execution.total_turns,
             "tasks_completed": feature.execution.tasks_completed,
+            "tasks_deferred": feature.execution.tasks_deferred,
             "tasks_failed": feature.execution.tasks_failed,
             "current_wave": feature.execution.current_wave,
             "completed_waves": feature.execution.completed_waves,

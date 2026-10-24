@@ -381,6 +381,7 @@ class WaveProgressDisplay:
         tasks_failed: int,
         total_turns: int,
         worktree_path: str,
+        tasks_deferred: int = 0,
     ) -> None:
         """
         Render final feature orchestration summary.
@@ -418,7 +419,7 @@ class WaveProgressDisplay:
         # Feature info
         self.console.print(f"Feature: [cyan]{feature_id}[/cyan] - {feature_name}")
         self.console.print(f"Status: [bold]{status.upper()}[/bold]")
-        self.console.print(f"Tasks: {tasks_completed}/{total_tasks} completed", end="")
+        self.console.print(f"Tasks: {tasks_completed} approved, {tasks_deferred} deferred; deferred work not executed", end="")
         if tasks_failed > 0:
             self.console.print(f" [red]({tasks_failed} failed)[/red]")
         else:

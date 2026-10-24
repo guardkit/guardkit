@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import json
 import logging
+import subprocess
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -55,6 +56,7 @@ from guardkit.orchestrator.feature_orchestrator import (
 )
 from guardkit.orchestrator.smoke_gates import SmokeGateResult
 from guardkit.worktrees import Worktree
+from guardkit.orchestrator.task_work_scope import register_fresh_checkout
 
 
 def _orchestrator(tmp_path):
@@ -95,6 +97,26 @@ def _feature(smoke_command):
 
 
 def _worktree(path):
+    # The probe is a real checkout reader/writer. Register exactly the initial
+    # fixture source; later re-entry must retain its original Git boundary.
+    if not (path / ".git").exists():
+        def git(*args):
+            return subprocess.run(
+                ["git", *args], cwd=path, check=True, capture_output=True, text=True,
+            ).stdout.strip()
+
+        git("init", "-q", "-b", "autobuild/FEAT-X")
+        git("config", "user.email", "factory@example.invalid")
+        git("config", "user.name", "Factory Fixture")
+        git("config", "commit.gpgsign", "false")
+        # These invented Python repositories declare their disposable pytest
+        # outputs as ignored; no product file is excluded from the check.
+        (path / ".git" / "info" / "exclude").write_text(
+            "__pycache__/\n.pytest_cache/\n", encoding="utf-8",
+        )
+        git("add", "-A")
+        git("commit", "-q", "--allow-empty", "-m", "initial probe fixture")
+        register_fresh_checkout(path, git("rev-parse", "HEAD"))
     return Worktree(
         task_id="FEAT-X", branch_name="autobuild/FEAT-X",
         path=path, base_branch="main",
@@ -1536,7 +1558,7 @@ def test_a_repository_with_neither_declaration_writes_nothing_still(tmp_path):
     orch._run_baseline_probe(feature, _worktree(wt))
 
     assert orch._measured_baseline is None
-    assert list(wt.iterdir()) == []
+    assert {entry.name for entry in wt.iterdir()} == {".git"}
 
 
 # ---------------------------------------------------------------------------

@@ -150,9 +150,11 @@ def test_cross_language_exact_value_departure_remains_a_claim_in_served_prompt(
         honesty_verification=_honesty(),
     )
 
-    assert corroborated.criteria_results[0].result == CLAIMED
-    assert corroborated.criteria_met == 1
-    assert corroborated.all_criteria_met is True
+    covered = status == "complete"
+    expected_result = CLAIMED if covered else "rejected"
+    assert corroborated.criteria_results[0].result == expected_result
+    assert corroborated.criteria_met == int(covered)
+    assert corroborated.all_criteria_met is covered
 
     bundle = CoachEvidenceBundle(
         honesty=_honesty(),
@@ -160,8 +162,8 @@ def test_cross_language_exact_value_departure_remains_a_claim_in_served_prompt(
         independent_tests=_passing_run(),
     )
     serialized = bundle.to_dict()["requirements"]
-    assert serialized["criteria_with_claim_coverage"] == 1
-    assert serialized["all_criteria_have_claim_coverage"] is True
+    assert serialized["criteria_with_claim_coverage"] == int(covered)
+    assert serialized["all_criteria_have_claim_coverage"] is covered
     assert "criteria_met" not in serialized
     assert "all_criteria_met" not in serialized
 
@@ -175,8 +177,8 @@ def test_cross_language_exact_value_departure_remains_a_claim_in_served_prompt(
         synthesis=synthesis,
     )
     prompt_requirements = _rendered_bundle(prompt)["requirements"]
-    assert prompt_requirements["criteria_results"][0]["result"] == CLAIMED
-    assert prompt_requirements["all_criteria_have_claim_coverage"] is True
+    assert prompt_requirements["criteria_results"][0]["result"] == expected_result
+    assert prompt_requirements["all_criteria_have_claim_coverage"] is covered
     assert "Claim coverage only" in prompt_requirements["aggregate_meaning"]
     assert "documented conflict or departure is not fulfilment" in prompt
     assert "authoritative amended criterion" in prompt

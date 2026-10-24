@@ -226,6 +226,7 @@ class MultiLayeredStateTracker(StateTracker):
         self,
         task_id: str,
         worktree_path: Path,
+        task_work_scope=None,
     ):
         """Initialize MultiLayeredStateTracker.
 
@@ -233,6 +234,7 @@ class MultiLayeredStateTracker(StateTracker):
             task_id: Task identifier
             worktree_path: Path to git worktree
         """
+        self.task_work_scope = task_work_scope
         self.task_id = task_id
         self.worktree_path = Path(worktree_path)
         self.autobuild_dir = self.worktree_path / ".guardkit" / "autobuild" / task_id
@@ -258,10 +260,12 @@ class MultiLayeredStateTracker(StateTracker):
         logger.info(f"Capturing state for {self.task_id} turn {turn}")
 
         # Layer 1: Try Player report (highest fidelity)
-        player_report = self._load_player_report(turn)
+        # A path on disk is not a current-turn producer binding. Recover
+        # scoped observations only; preserve old reports as diagnostic files.
+        player_report = None
 
         # Layer 2: Git detection (always run for verification)
-        git_changes = detect_git_changes(self.worktree_path)
+        git_changes = detect_git_changes(self.worktree_path, self.task_work_scope)
 
         # Layer 3: Test detection (always run for verification)
         test_results = detect_test_results(

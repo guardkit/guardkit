@@ -1,4 +1,4 @@
-"""Real-git integration: WorktreeManager.create installs the BDD bridge.
+"""Real-git integration: Fresh worktree admission installs the BDD bridge under task ownership.
 
 TASK-AB-BDDNEUTRAL01 Half 2 — the autobuild worktree bootstrap auto-installs
 ``features/conftest.py`` when the checked-out worktree carries tagged
@@ -13,6 +13,7 @@ from __future__ import annotations
 import shutil
 import subprocess
 from pathlib import Path
+from types import MethodType, SimpleNamespace
 
 import pytest
 
@@ -57,6 +58,24 @@ def repo(tmp_path: Path) -> Path:
     return r
 
 
+def _admit_and_observe(repo, worktree):
+    from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
+    from guardkit.orchestrator.agent_invoker import AgentInvoker
+    from guardkit.orchestrator.worktree_checkpoints import WorktreeCheckpointManager
+    runner = AutoBuildOrchestrator(repo_root=repo, existing_worktree=worktree,
+                                   enable_context=False, enable_pre_loop=False)
+    observed = {}
+    def player_boundary(self, task_id, *args, **kwargs):
+        invoker = AgentInvoker(worktree_path=worktree.path)
+        observed.update(invoker._detect_git_changes())
+        WorktreeCheckpointManager(worktree.path, task_id,
+            task_work_scope=invoker.task_work_scope).create_checkpoint(1, True)
+        return SimpleNamespace(final_decision="approved")
+    runner._orchestrate_owned = MethodType(player_boundary, runner)
+    runner.orchestrate(worktree.task_id, "Fixture bridge", [])
+    return observed
+
+
 class TestWorktreeCreateInstallsBridge:
     def test_create_installs_bridge_when_feature_committed(self, repo: Path):
         # Commit a tagged .feature but NO conftest bridge (the FEAT-MEM-07 shape).
@@ -69,7 +88,10 @@ class TestWorktreeCreateInstallsBridge:
         worktree = manager.create("TASK-AB-001", base_branch="main")
 
         bridge = worktree.path / "features" / "conftest.py"
-        assert bridge.is_file(), "WorktreeManager.create must install the bridge"
+        assert not bridge.exists(), "Creation must preserve its pinned source before admission"
+        observed = _admit_and_observe(repo, worktree)
+        assert observed["created"] == ["features/conftest.py"]
+        assert bridge.is_file(), "The admitted bootstrap must install the existing bridge"
         assert "pytest_collect_file" in bridge.read_text(encoding="utf-8")
 
     def test_create_without_features_is_noop(self, repo: Path):
@@ -79,6 +101,7 @@ class TestWorktreeCreateInstallsBridge:
         manager = WorktreeManager(repo)
         worktree = manager.create("TASK-AB-002", base_branch="main")
 
+        assert _admit_and_observe(repo, worktree)["created"] == []
         assert not (worktree.path / "features").exists()
 
     def test_create_does_not_clobber_committed_conftest(self, repo: Path):
@@ -92,6 +115,7 @@ class TestWorktreeCreateInstallsBridge:
         manager = WorktreeManager(repo)
         worktree = manager.create("TASK-AB-003", base_branch="main")
 
+        assert _admit_and_observe(repo, worktree)["modified"] == []
         assert (worktree.path / "features" / "conftest.py").read_text(
             encoding="utf-8"
         ) == "# project's own bridge\n"

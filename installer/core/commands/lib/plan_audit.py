@@ -351,6 +351,7 @@ class PlanAuditor:
         workspace_root: Path = Path("."),
         path_exclusion: Optional[Callable[[str], bool]] = None,
         repair_round: Optional[Any] = None,
+        task_work_scope=None,
     ):
         """
         Initialize plan auditor.
@@ -367,6 +368,7 @@ class PlanAuditor:
                 over in memory (see ``_repair_round_split``). ``None`` -
                 every ordinary turn - audits exactly as before.
         """
+        self.task_work_scope = task_work_scope
         self.workspace_root = workspace_root
         self.path_exclusion = path_exclusion
         self.repair_round = repair_round
@@ -430,6 +432,13 @@ class PlanAuditor:
 
         # Compare and detect discrepancies
         discrepancies = self._compare(plan, actual, files_only=declared is not None)
+        if not actual["files_read"]:
+            discrepancies.append(Discrepancy(
+                category="files", severity="high",
+                message="Task attribution unavailable: no retained admitted scope or Git inventory",
+                planned=[], actual=[], variance=0,
+            ))
+
 
         # Calculate overall severity
         severity = self._calculate_severity(discrepancies)
@@ -572,8 +581,9 @@ class PlanAuditor:
         When there is no checkpoint file, nothing has been committed for this
         task yet, so the latest commit is the right place to measure from.
         """
-        first = self._first_checkpoint_commit(task_id)
-        return f"{first}^" if first else "HEAD"
+        if self.task_work_scope is None:
+            raise ValueError("Task attribution unavailable: no trusted admitted scope")
+        return self.task_work_scope.baseline_commit
 
     def _first_checkpoint_commit(self, task_id: Optional[str]) -> Optional[str]:
         """The commit of this task's first checkpoint, or ``None``."""
@@ -632,27 +642,19 @@ class PlanAuditor:
         start = round_.start_commit.strip()
         if not start:
             return None
-        first = self._first_checkpoint_commit(task_id)
-        if not first:
-            return None
-        if not (self._is_ancestor(first, start) and self._is_ancestor(start, "HEAD")):
+        if self.task_work_scope is None or start != self.task_work_scope.baseline_commit:
             return None
         existed = self._paths_at_commit(start)
         if existed is None:
             return None
         from guardkit.orchestrator.repair_round import implicated_paths
 
+        from guardkit.orchestrator.task_work_scope import collect_changes, ScopeUnavailable
         try:
-            from guardkit.orchestrator.arch_conformance import files_changed_since
-
-            # A rename is named as the path it left and the path it took, so
-            # moving a protected file away is seen as touching it.
-            since_start = files_changed_since(self.workspace_root, start, no_renames=True)
-        except (ImportError, ValueError, OSError):
+            observed = collect_changes(self.task_work_scope)
+        except (ScopeUnavailable, OSError, ValueError):
             return None
-        changed_this_round = sorted(
-            path for path in since_start if not self._is_player_excluded(path)
-        )
+        changed_this_round = sorted(set(observed['created'] + observed['modified'] + observed['deleted']))
         return {
             "round_number": getattr(round_, "round_number", None),
             "start_commit": start,
@@ -700,31 +702,12 @@ class PlanAuditor:
         ``None`` when git could not answer at all, which the caller must treat
         as "nobody counted" rather than as "nothing changed".
         """
+        from guardkit.orchestrator.task_work_scope import collect_changes, ScopeUnavailable
         try:
-            from guardkit.orchestrator.arch_conformance import files_changed_since
-        except ImportError:
+            changed = collect_changes(self.task_work_scope)
+        except (ScopeUnavailable, OSError, ValueError):
             return None
-
-        start = self._task_start_commit(task_id)
-        try:
-            changed = files_changed_since(self.workspace_root, start)
-        except (ValueError, OSError):
-            return None
-
-        existed_before = self._paths_at_commit(start)
-        if existed_before is None:
-            return None
-
-        created: List[str] = []
-        modified: List[str] = []
-        for rel_path in changed:
-            if self._is_player_excluded(rel_path):
-                continue
-            if rel_path in existed_before:
-                modified.append(rel_path)
-            else:
-                created.append(rel_path)
-        return {"created": sorted(created), "modified": sorted(modified)}
+        return {"created": changed["created"], "modified": sorted(set(changed["modified"] + changed["deleted"]))}
 
     def _is_player_excluded(self, rel_path: str) -> bool:
         """Whether a changed path is never counted as this task's work: the

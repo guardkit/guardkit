@@ -46,7 +46,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from guardkit.orchestrator.run_evidence import EvidenceRequest, start_command_evidence
-from guardkit.orchestrator.process_group import run_in_own_group
+from guardkit.orchestrator.process_group import run_in_own_group, CleanupUnavailableError
 from guardkit.orchestrator.project_command_env import (
     minimal_environment_note,
     project_command_environment,
@@ -1058,6 +1058,9 @@ def run_feature_check_command(
             env=env,
             timeout=timeout,
         )
+    except CleanupUnavailableError:
+        # The owning checkout lease must stay unavailable when child exit is unknown.
+        raise
     except OSError as exc:
         duration = time.monotonic() - started
         # A command that cannot even start (no such shell, unreadable cwd) is

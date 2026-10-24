@@ -480,6 +480,7 @@ class TaskExecutionResult:
     # whole-feature repair round stopped because the plan contradicts the
     # project's check. None on every other outcome.
     stopped_because: Optional[str] = None
+    error_type: Optional[str] = None
 
 
 @dataclass
@@ -616,6 +617,7 @@ class FeatureOrchestrationResult:
     wave_results: List[WaveExecutionResult]
     worktree: Worktree
     error: Optional[str] = None
+    tasks_deferred: int = 0
 
 
 # ============================================================================
@@ -1414,20 +1416,9 @@ class FeatureOrchestrator:
             feature.orchestration.recommended_parallel,
         )
 
-        # TASK-AB-XREPOEV01: resolve declared sibling evidence repos once per
-        # feature, relative to the source repo root. Threaded into every
-        # per-task AutoBuildOrchestrator so the post-turn diff, Coach honesty
-        # resolution, sibling-repo tests, and checkpoints all see the same
-        # set. Empty when the feature declares none (AC-003).
-        self._evidence_repos_resolved = evidence_repos_lib.resolve_evidence_repos(
-            feature.evidence_repos, self.repo_root
-        )
-        if self._evidence_repos_resolved:
-            names = ", ".join(r.name for r in self._evidence_repos_resolved)
-            console.print(
-                f"[green]✓[/green] Evidence repos: {names} "
-                f"({len(self._evidence_repos_resolved)} declared)"
-            )
+        # The immutable source declaration is resolved after actual fresh
+        # creation, before setup writes and Player admission.
+        self._evidence_repos_resolved = []
 
         # Pre-flight frontmatter validation (TASK-FIX-7537)
         if not self.skip_validation:
@@ -1462,6 +1453,15 @@ class FeatureOrchestrator:
                 total_waves=len(feature.orchestration.parallel_groups),
                 verbose=self.verbose,
             )
+
+        # Saved YAML is diagnostic state, not authority to reuse a writer.
+        # A fresh build from a pinned source uses a new checkout identity.
+        old_path = getattr(feature.execution, "worktree_path", None)
+        physical_path = self._worktree_manager.worktrees_dir / feature_id
+        if self.resume or (FeatureLoader.is_incomplete(feature) and not self.fresh):
+            raise FeatureOrchestrationError("Automatic process resume has no retained task ownership. Work is preserved; start a new build from the pinned source.")
+        if self.fresh and (physical_path.exists() or (old_path and Path(old_path).exists())):
+            raise FeatureOrchestrationError("Fresh attempt requires a new checkout identity; the previous checkout and reports are preserved.")
 
         # Handle fresh start
         #
@@ -1612,6 +1612,15 @@ class FeatureOrchestrator:
                 f"Failed to create worktree for {feature_id}: {e}"
             ) from e
 
+        from guardkit.orchestrator.task_work_scope import bind_fresh_footprint, checkout_lease
+        self._evidence_repos_resolved = bind_fresh_footprint(
+            worktree.path, self.repo_root, feature.file_path,
+            kind="feature", expected=feature.evidence_repos,
+        )
+        with checkout_lease(worktree.path, self._evidence_repos_resolved):
+            return self._prepare_fresh_worktree(feature, feature_id, base_branch, worktree)
+
+    def _prepare_fresh_worktree(self, feature, feature_id, base_branch, worktree):
         # WS3-S3 §1.3: capture the feature-base commit (the pre-wave-1 creation
         # commit) BEFORE any task copy / wave commit mutates the tree, so 2b/2d
         # config reads and CONFIG_TAMPER resolve against the un-launderable
@@ -1634,7 +1643,8 @@ class FeatureOrchestrator:
         self._arrange_uv_sources_symlinks(worktree)
 
         # Phase 1.5: Bootstrap environment (detect + install dependencies)
-        self._bootstrap_environment(worktree, feature=feature)
+        self._bootstrap_pending = True
+        self._baseline_probe_pending = True
 
         # Update feature with worktree path and start time
         feature.status = "in_progress"
@@ -2176,6 +2186,9 @@ class FeatureOrchestrator:
             )
             raise FeatureOrchestrationError(str(e)) from e
         except Exception as e:
+            from guardkit.orchestrator.process_group import CleanupUnavailableError
+            if isinstance(e, CleanupUnavailableError):
+                raise
             logger.warning(f"Environment bootstrap failed: {e}")
             console.print(f"[yellow]\u26a0[/yellow] Environment bootstrap failed: {e}")
             return None
@@ -2658,7 +2671,7 @@ The detailed specifications are in the task markdown file.
         # run the feature suite ONCE before wave 1 so a pre-existing red is
         # surfaced as a wave-0 warning rather than masquerading as the first
         # task's failure. Report-only — never blocks.
-        self._run_baseline_probe(feature, worktree)
+        self._baseline_probe_pending = True
 
         # Resolve every queued task's EFFECTIVE per-task budget once, before
         # wave 1 (TASK-FIX-TTO01). Both the wave-0 warnings and the
@@ -2690,7 +2703,7 @@ The detailed specifications are in the task markdown file.
             # Inter-wave bootstrap: re-detect and install new dependencies
             # (e.g., Wave 1 may have created pyproject.toml that Wave 2 needs)
             if wave_number > 1:
-                self._bootstrap_environment(worktree, feature=feature)
+                self._bootstrap_pending = True
 
             # Check dependencies satisfied
             for task_id in task_ids:
@@ -2989,7 +3002,7 @@ The detailed specifications are in the task markdown file.
 
         try:
             venv_python = probe_worktree_venv(worktree.path)
-            outcome = run_final_wave_boot_smoke(
+            outcome = self._checked_writer(worktree, run_final_wave_boot_smoke,
                 worktree.path,
                 venv_python=str(venv_python) if venv_python else None,
                 base_branch=worktree.base_branch,
@@ -3247,7 +3260,11 @@ The detailed specifications are in the task markdown file.
                     stopped_because=stopped_because,
                 )
 
-    def _one_feature_check_attempt(
+    def _one_feature_check_attempt(self, attempt_number, declaration, feature, worktree):
+        return self._checked_writer(worktree, self._one_feature_check_attempt_owned,
+                                    attempt_number, declaration, feature, worktree)
+
+    def _one_feature_check_attempt_owned(
         self,
         attempt_number: int,
         declaration: Any,
@@ -3770,7 +3787,7 @@ The detailed specifications are in the task markdown file.
         retries_remaining = self._smoke_gate_max_retries
         attempt = 0
         while True:
-            smoke_result = run_smoke_gate(
+            smoke_result = self._checked_writer(worktree, run_smoke_gate,
                 feature.smoke_gates,
                 cwd=Path(worktree.path),
                 wave_number=wave_number,
@@ -4481,7 +4498,7 @@ The detailed specifications are in the task markdown file.
                     ),
                 )
             try:
-                wiring_result = analyze_wiring(
+                wiring_result = self._checked_writer(worktree, analyze_wiring,
                     authored_files=authored,
                     worktree_path=worktree.path,
                     task_type="feature",
@@ -4717,24 +4734,9 @@ The detailed specifications are in the task markdown file.
                 # The repair round writes the same turn file names again, so
                 # the round that was just approved is moved aside first, names
                 # unchanged, into round-<N>/ (18 October 2026). Never fails.
-                archived_round = self._archive_previous_round(task_id, worktree)
-                # The task's plan audit and Coach are told it is a repair round
-                # (20 October 2026; see repair_round.py): its number, where it
-                # starts and the gate's output, handed down IN MEMORY to this
-                # task's orchestrator. Nothing on disk says so. Never fails.
-                # The files this task's earlier repair rounds showed the
-                # reviewer on the turns it approved are carried forward, so a
-                # later gate's re-entry does not recount them.
-                approvals = self.__dict__.setdefault("_repair_approvals", {})
-                # Always a round, even when its facts could not be read: an
-                # unavailable round refuses every turn, it never runs as an
-                # ordinary task (begin_repair_round never raises).
-                repair_rounds[task_id] = begin_repair_round(
-                    worktree.path,
-                    (archived_round + 1) if archived_round else None,
-                    seed_feedback,
-                    approved_by_earlier_repairs=approvals.get(task_id, ()),
-                )
+                # Queue only the intent. Fingerprints and baseline are captured
+                # by the actual writer after checkout ownership is acquired.
+                repair_rounds[task_id] = True
             if task.status == "completed":
                 if self._wave_display:
                     self._wave_display.update_task_status(
@@ -4791,8 +4793,7 @@ The detailed specifications are in the task markdown file.
                 results.append(deferred_result)
                 continue
 
-            # Mark task as started for resume tracking
-            self._update_task_started(feature, task_id)
+            # The actual checkout owner marks this task started at admission.
 
             # Display task start
             if self._wave_display:
@@ -4902,20 +4903,21 @@ The detailed specifications are in the task markdown file.
                 if self._timeout_fence_is_set():
                     return self._timeout_fence_result(task_id)
                 try:
-                    return await asyncio.wait_for(
-                        asyncio.to_thread(
-                            self._execute_task,
-                            task,
-                            feature,
-                            worktree,
-                            shares_working_copy=shares_working_copy,
-                            effective_concurrency=resolved_effective_concurrency,
-                            **call_kwargs,
-                        ),
-                        timeout=call_timeout,
-                    )
+                    admitted = asyncio.Event()
+                    loop = asyncio.get_running_loop()
+                    worker = asyncio.create_task(asyncio.to_thread(
+                        self._execute_task, task, feature, worktree,
+                        shares_working_copy=False, effective_concurrency=1,
+                        admission_event=lambda: loop.call_soon_threadsafe(admitted.set), **call_kwargs,
+                    ))
+                    await admitted.wait()
+                    return await asyncio.wait_for(asyncio.shield(worker), timeout=call_timeout)
                 except asyncio.TimeoutError:
                     self._set_timeout_fence()
+                    for event_name in ("cancellation_event", "timeout_event"):
+                        event = call_kwargs.get(event_name)
+                        if event is not None:
+                            event.set()
                     raise
 
             tasks_to_execute = [
@@ -4970,78 +4972,8 @@ The detailed specifications are in the task markdown file.
             # Process results and handle exceptions
             for task_id, result in zip(task_id_mapping, parallel_results):
                 if isinstance(result, asyncio.TimeoutError):
-                    # TASK-ATR-003: Reconcile late-arriving Coach approvals.
-                    # `asyncio.to_thread` cannot be hard-cancelled; the worker
-                    # thread may have written `coach_turn_<N>.json` with
-                    # `decision=approve` after the timer fired. If that write
-                    # landed within LATE_APPROVAL_GRACE_S, treat the task as
-                    # APPROVED_LATE rather than TIMEOUT.
-                    timer_fire_time = time.time()
-                    late_decision = self._check_late_approval(
-                        task_id, timer_fire_time
-                    )
-                    if late_decision == "approve":
-                        total_turns = self._read_total_turns(task_id) or 0
-                        # Re-stat the latest coach_turn for audit logging:
-                        # path + mtime delta. Failures are non-fatal — the
-                        # reclassification proceeds even if logging fields
-                        # can't be gathered.
-                        # TASK-FIX-LATEAPPR R1.3: share the candidate-dirs
-                        # walk with ``_check_late_approval`` so the audit
-                        # path correctly identifies the worktree source
-                        # for worktree-backed runs.
-                        coach_audit_path: Optional[Path] = None
-                        coach_mtime_delta: Optional[float] = None
-                        try:
-                            coach_audit_path = (
-                                self._latest_coach_turn_path(task_id)
-                            )
-                            if coach_audit_path is not None:
-                                coach_mtime_delta = abs(
-                                    coach_audit_path.stat().st_mtime
-                                    - timer_fire_time
-                                )
-                        except Exception:
-                            pass
-                        delta_str = (
-                            f"{coach_mtime_delta:.2f}s"
-                            if coach_mtime_delta is not None
-                            else "unknown"
-                        )
-                        path_str = (
-                            str(coach_audit_path)
-                            if coach_audit_path is not None
-                            else "unknown"
-                        )
-                        logger.info(
-                            f"[{task_id}] APPROVED_LATE: Coach approved within "
-                            f"{LATE_APPROVAL_GRACE_S}s of timer fire; "
-                            f"reclassifying. total_turns={total_turns}, "
-                            f"mtime_delta={delta_str}, source={path_str}"
-                        )
-                        late_result = TaskExecutionResult(
-                            task_id=task_id,
-                            success=True,
-                            total_turns=total_turns,
-                            final_decision="approved_late",
-                            error=None,
-                            decision_subtype=(
-                                f"late_approval_window={LATE_APPROVAL_GRACE_S}s"
-                            ),
-                        )
-                        results.append(late_result)
-                        if self._wave_display:
-                            self._wave_display.update_task_status(
-                                task_id, "success",
-                                "Coach approved late",
-                                turns=total_turns,
-                                decision="approved_late",
-                            )
-                        self._update_feature(
-                            feature, task_id, late_result, wave_number
-                        )
-                        continue
-
+                    # A late writable Coach artifact cannot settle the still-running
+                    # worker or replace the original deadline failure.
                     # TASK-ATR-001: Use per-task resolved timeout for messages
                     effective_task_timeout = per_task_timeouts.get(task_id, self.task_timeout)
                     timeout_msg = (
@@ -5789,7 +5721,7 @@ The detailed specifications are in the task markdown file.
         def _measure(config: SmokeGates, measured_source: str):
             """Run one command over the worktree; ``None`` if it cannot run."""
             try:
-                run = run_smoke_gate(
+                run = self._checked_writer(worktree, run_smoke_gate,
                     config,
                     cwd=worktree.path,
                     wave_number=0,
@@ -6224,7 +6156,79 @@ The detailed specifications are in the task markdown file.
             logger.info(message)
         return resolved
 
-    def _execute_task(
+    def _execute_task(self, task, feature, worktree, **kwargs):
+        from guardkit.orchestrator.task_work_scope import checkout_lease, ScopeUnavailable
+        admitted = kwargs.pop("admission_event", None)
+        def cancelled():
+            return self._timeout_fence_is_set() or any(
+                event is not None and event.is_set() for event in
+                (kwargs.get("cancellation_event"), kwargs.get("timeout_event"))
+            )
+        try:
+            with checkout_lease(worktree.path, self._evidence_repos_resolved, cancelled=cancelled) as lease:
+                if cancelled():
+                    lease.poison("Task admission cancelled before Player; work preserved")
+                    return TaskExecutionResult(task_id=task.id, success=False, total_turns=0,
+                        final_decision="cancelled", error="Task admission cancelled before Player")
+                if self._timeout_fence_is_set():
+                    return self._timeout_fence_result(task.id)
+                if kwargs.get("repair_round") is True:
+                    archived = self._archive_previous_round(task.id, worktree)
+                    kwargs["repair_round"] = begin_repair_round(
+                        worktree.path, (archived + 1) if archived else None,
+                        kwargs.get("seed_feedback"),
+                        approved_by_earlier_repairs=getattr(self, "_repair_approvals", {}).get(task.id, ()),
+                    )
+                lease.admit(task.id, feature.id, getattr(kwargs.get('repair_round'), 'round_number', 'repair') if kwargs.get('repair_round') else 'initial')
+                from guardkit.orchestrator.task_work_scope import bootstrap_admitted_checkout
+                bootstrap_admitted_checkout(lease.scope)
+                # The full lease serializes this once-per-wave preparation.
+                # Product files generated by installers stay in this scope.
+                if getattr(self, "_bootstrap_pending", False):
+                    self._bootstrap_environment(worktree, feature=feature)
+                    self._bootstrap_pending = False
+                if getattr(self, "_baseline_probe_pending", False):
+                    self._run_baseline_probe(feature, worktree)
+                    self._baseline_probe_pending = False
+                self._update_task_started(feature, task.id)
+                kwargs['shares_working_copy'] = False
+                kwargs['effective_concurrency'] = 1
+                if admitted:
+                    admitted()
+                result = self._execute_task_owned(task, feature, worktree, **kwargs)
+                stopped = any(event is not None and event.is_set() for event in
+                              (kwargs.get("timeout_event"), kwargs.get("cancellation_event")))
+                if stopped and result.success:
+                    result.success = False
+                    result.final_decision = "timeout" if kwargs.get("timeout_event") and kwargs["timeout_event"].is_set() else "cancelled"
+                    result.error = "Writer completed after cancellation; work preserved without approval"
+                if not result.success or stopped:
+                    lease.poison(f"Task {task.id} was not approved or was cancelled; preserved predecessor work")
+                return result
+        except ScopeUnavailable as exc:
+            return TaskExecutionResult(task_id=task.id, success=False, total_turns=0,
+                                       final_decision="error", error=str(exc))
+        finally:
+            if admitted:
+                admitted()
+
+    def _checked_writer(self, worktree, callback, *args, **kwargs):
+        from guardkit.orchestrator.task_work_scope import checkout_lease, boundary_snapshot, ScopeUnavailable, _dirty
+        with checkout_lease(worktree.path, self._evidence_repos_resolved) as lease:
+            try:
+                if lease.scope is None and any(_dirty(root) for _, root, _ in lease.repositories):
+                    raise ScopeUnavailable("Feature check inherited unexplained product changes; boundary refused")
+                before = boundary_snapshot(lease)
+                result = callback(*args, **kwargs)
+                if boundary_snapshot(lease) != before:
+                    raise ScopeUnavailable("Feature check changed product files/index or HEAD; changes preserved and gate refused")
+                return result
+            except BaseException as exc:
+                self._writer_boundary_failure = str(exc)
+                lease.poison(str(exc))
+                raise
+
+    def _execute_task_owned(
         self,
         task: FeatureTask,
         feature: Feature,
@@ -6530,6 +6534,7 @@ The detailed specifications are in the task markdown file.
             total_turns=0,
             final_decision="error",
             error=str(error),
+            error_type=type(error.__cause__ or error).__name__,
         )
 
     # ------------------------------------------------------------------
@@ -6769,19 +6774,10 @@ The detailed specifications are in the task markdown file.
         """
         logger.info(f"Phase 3 (Finalize): Updating feature {feature.id}")
 
-        # Calculate totals
-        tasks_completed = sum(
-            1
-            for wave in wave_results
-            for r in wave.results
-            if r.success
-        )
-        tasks_failed = sum(
-            1
-            for wave in wave_results
-            for r in wave.results
-            if not r.success
-        )
+        # Task identities have one latest disposition, including gate repairs.
+        tasks_completed = sum(t.status == "completed" for t in feature.tasks)
+        tasks_deferred = sum(t.status == "deferred" for t in feature.tasks)
+        tasks_failed = sum(t.status == "failed" for t in feature.tasks)
         total_turns = sum(
             r.total_turns
             for wave in wave_results
@@ -6802,7 +6798,7 @@ The detailed specifications are in the task markdown file.
         if timeout_fenced:
             final_status = "failed"
             success = False
-        elif tasks_failed == 0 and tasks_completed == len(feature.tasks) and not smoke_gate_failed:
+        elif tasks_failed == 0 and tasks_completed + tasks_deferred == len(feature.tasks) and not smoke_gate_failed:
             final_status = "completed"
             success = True
         elif tasks_failed > 0 or smoke_gate_failed:
@@ -6969,11 +6965,16 @@ The detailed specifications are in the task markdown file.
                     )
                     break
 
+        if getattr(self, "_writer_boundary_failure", None):
+            final_status, success = "failed", False
+            feature_check_error = self._writer_boundary_failure
+
         # Update feature
         feature.status = final_status
         feature.execution.completed_at = datetime.now().isoformat()
         feature.execution.total_turns = total_turns
         feature.execution.tasks_completed = tasks_completed
+        feature.execution.tasks_deferred = tasks_deferred
         feature.execution.tasks_failed = tasks_failed
         FeatureLoader.save_feature(feature, self.repo_root)
 
@@ -7031,6 +7032,7 @@ The detailed specifications are in the task markdown file.
             status=final_status,
             total_tasks=len(feature.tasks),
             tasks_completed=tasks_completed,
+            tasks_deferred=tasks_deferred,
             tasks_failed=tasks_failed,
             wave_results=wave_results,
             worktree=worktree,
@@ -7277,6 +7279,7 @@ The detailed specifications are in the task markdown file.
             }
 
         # Update execution counters
+        feature.execution.tasks_deferred = sum(t.status == "deferred" for t in feature.tasks)
         feature.execution.tasks_completed = sum(
             1 for t in feature.tasks if t.status == "completed"
         )
@@ -7394,6 +7397,7 @@ The detailed specifications are in the task markdown file.
                 status=status,
                 total_tasks=len(feature.tasks),
                 tasks_completed=feature.execution.tasks_completed,
+                tasks_deferred=feature.execution.tasks_deferred,
                 tasks_failed=feature.execution.tasks_failed,
                 total_turns=feature.execution.total_turns,
                 worktree_path=str(worktree.path),
@@ -7408,7 +7412,7 @@ The detailed specifications are in the task markdown file.
                 Panel(
                     f"[green]✓ Feature completed successfully[/green]\n\n"
                     f"Feature: [cyan]{feature.id}[/cyan] - {feature.name}\n"
-                    f"Tasks: {len(feature.tasks)} completed\n"
+                    f"Tasks: {feature.execution.tasks_completed} approved, {feature.execution.tasks_deferred} deferred; deferred work not executed\n"
                     f"Waves: {len(wave_results)}\n"
                     f"Total Turns: {feature.execution.total_turns}\n"
                     f"Worktree: [cyan]{worktree.path}[/cyan]",
@@ -7550,6 +7554,7 @@ The detailed specifications are in the task markdown file.
         feature.status = "awaiting_merge"
         feature.execution.archived_at = datetime.now().isoformat()
         feature.execution.archived_to = str(dst.relative_to(self.repo_root))
+        feature.execution.tasks_deferred = sum(t.status == "deferred" for t in feature.tasks)
         feature.execution.tasks_completed = sum(
             1 for t in feature.tasks if t.status == "completed"
         )

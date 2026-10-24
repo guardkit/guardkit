@@ -1103,10 +1103,10 @@ def _merge_promises(
     primary: List[Dict[str, Any]],
     secondary: List[Dict[str, Any]],
 ) -> List[Dict[str, Any]]:
-    """Merge two promise lists, preferring higher-status results.
+    """Merge observations without erasing explicit noncompletion.
 
-    For each criterion_id, keeps the promise with the higher status.
-    Status hierarchy: complete > partial > incomplete.
+    For each criterion_id, noncompletion takes precedence over inferred
+    completion. Existing files and code patterns cannot erase partial work.
 
     Parameters
     ----------
@@ -1120,30 +1120,15 @@ def _merge_promises(
     List[Dict[str, Any]]
         Merged promise list with one entry per criterion_id.
     """
-    if not primary:
-        return list(secondary)
-    if not secondary:
-        return list(primary)
-
-    _STATUS_RANK = {"complete": 3, "partial": 2, "incomplete": 1}
-
-    # Index primary by criterion_id
+    status_rank = {"complete": 3, "partial": 2, "incomplete": 1}
     merged: Dict[str, Dict[str, Any]] = {}
-    for p in primary:
-        cid = p.get("criterion_id", "")
-        merged[cid] = p
-
-    # Merge secondary: upgrade status if secondary is higher
-    for s in secondary:
-        cid = s.get("criterion_id", "")
-        if cid not in merged:
-            merged[cid] = s
-        else:
-            existing = merged[cid]
-            existing_rank = _STATUS_RANK.get(existing.get("status"), 0)
-            secondary_rank = _STATUS_RANK.get(s.get("status"), 0)
-            if secondary_rank > existing_rank:
-                merged[cid] = s
+    def rank(promise):
+        status = promise.get("status")
+        return status_rank.get(status, 0) if isinstance(status, str) else 0
+    for promise in [*primary, *secondary]:
+        cid = promise.get("criterion_id", "")
+        if cid not in merged or rank(promise) < rank(merged[cid]):
+            merged[cid] = promise
 
     # Return in criterion_id order
     return sorted(merged.values(), key=lambda p: p.get("criterion_id", ""))

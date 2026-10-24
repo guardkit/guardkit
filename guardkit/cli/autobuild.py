@@ -1554,7 +1554,7 @@ def _display_complete_result(result: FeatureCompleteResult) -> None:
                 f"[green]✓ Feature completed successfully[/green]\n\n"
                 f"Feature: [cyan]{result.feature_id}[/cyan]\n"
                 f"Status: {result.status}\n"
-                f"Tasks: {result.tasks_completed}/{result.total_tasks} completed"
+                f"Tasks: {result.tasks_completed} approved, {result.tasks_deferred} deferred; deferred work not executed"
                 + (
                     f"\nWorktree: [cyan]{result.worktree_path}[/cyan]"
                     if result.worktree_path

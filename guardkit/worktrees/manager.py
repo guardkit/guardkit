@@ -24,7 +24,6 @@ from pathlib import Path
 from typing import Protocol, Optional
 
 from guardkit.lib.project_git import run_git
-from guardkit.templates.conftest_bridge import install_features_conftest_bridge
 from guardkit.worktrees.archive import RunArtifactArchiver, get_archive_root_from_env
 
 logger = logging.getLogger(__name__)
@@ -402,75 +401,33 @@ class WorktreeManager:
         branch_name = self._build_branch_name(task_id)
         worktree_path = self.worktrees_dir / task_id
 
+        if worktree_path.exists() or self._branch_exists(branch_name):
+            raise WorktreeCreationError(
+                f"Existing checkout or branch for {task_id} is preserved. "
+                "A fresh pinned attempt requires a new build identity."
+            )
+
         # Ensure worktrees directory exists
         self.worktrees_dir.mkdir(parents=True, exist_ok=True)
 
-        # Validate base branch exists before worktree creation
-        if not self._branch_exists(base_branch):
-            if self._is_empty_repo():
-                raise WorktreeCreationError(
-                    f"Cannot create worktree: repository has no commits. "
-                    f"Create an initial commit first: "
-                    f"git add . && git commit -m 'Initial commit'"
-                )
-            else:
-                available = self._list_branches()
-                branches_str = ", ".join(available) if available else "(none)"
-                raise WorktreeCreationError(
-                    f"Base branch '{base_branch}' does not exist. "
-                    f"Available branches: {branches_str}"
-                )
-
-        # Create worktree with new branch
-        worktree_add_cmd = self._build_worktree_add_cmd(
-            worktree_path, branch_name, base_branch
-        )
+        # Resolve once before creation. A racing existing branch is preserved;
+        # never delete/retry it and call the result a fresh admitted source.
         try:
+            source_commit = self._run_git(["rev-parse", "--verify", f"{base_branch}^{{commit}}"]).stdout.strip()
+            worktree_add_cmd = self._build_worktree_add_cmd(
+                worktree_path, branch_name, source_commit
+            )
             self._run_git(worktree_add_cmd)
-        except WorktreeError as e:
-            # Check if the add failed because the branch already exists. Git's
-            # own text is no longer read (the helper replaces it with a fixed
-            # sentence), so git is asked whether the branch is there.
-            if self._is_branch_exists_error(e) or self._branch_exists(branch_name):
-                # Attempt automatic cleanup: delete the existing branch
-                try:
-                    self._run_git(["branch", "-D", branch_name])
-                except WorktreeError:
-                    # Branch deletion failed, provide manual cleanup guidance
-                    raise WorktreeCreationError(
-                        f"Failed to create worktree for {task_id}: branch '{branch_name}' "
-                        f"already exists and automatic cleanup failed.\n"
-                        f"Manual cleanup steps:\n"
-                        f"  1. git worktree remove .guardkit/worktrees/{task_id} --force\n"
-                        f"  2. git branch -D {branch_name}\n"
-                        f"  3. Retry the operation"
-                    )
+        except WorktreeError as exc:
+            raise WorktreeCreationError(
+                f"Failed to create a fresh worktree for {task_id}; existing work is preserved: {exc}"
+            ) from exc
 
-                # Retry worktree creation after branch cleanup
-                try:
-                    self._run_git(worktree_add_cmd)
-                except WorktreeError as retry_error:
-                    raise WorktreeCreationError(
-                        f"Failed to create worktree for {task_id} after branch cleanup: "
-                        f"{retry_error}\n"
-                        f"Manual cleanup steps:\n"
-                        f"  1. git worktree remove .guardkit/worktrees/{task_id} --force\n"
-                        f"  2. git branch -D {branch_name}\n"
-                        f"  3. Retry the operation"
-                    )
-            else:
-                # Not a branch-exists error, raise original error
-                raise WorktreeCreationError(
-                    f"Failed to create worktree for {task_id}: {e}"
-                )
+        from guardkit.orchestrator.task_work_scope import register_fresh_checkout
+        register_fresh_checkout(worktree_path, source_commit, source_root=self.repo_root)
 
-        # Auto-install the features/conftest.py pytest-bdd bridge when the
-        # checked-out worktree carries tagged ``.feature`` files but no bridge
-        # (TASK-AB-BDDNEUTRAL01). Single bootstrap chokepoint for both
-        # standalone-task and shared-feature worktrees. Guarded + non-raising:
-        # a no-op for any worktree without BDD features, and it never fails
-        # worktree creation.
-        install_features_conftest_bridge(worktree_path)
+        # Product-writing bootstrap runs after the first task's admission,
+        # under its complete footprint lease, before Player.
 
         return Worktree(
             task_id=task_id,

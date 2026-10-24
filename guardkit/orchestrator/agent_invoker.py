@@ -2360,7 +2360,10 @@ class AgentInvoker:
         # (zero ``/v1/responses`` traffic for N seconds) from a slow-but-
         # progressing run. ``0.0`` until the first invocation resets it.
         self._last_activity_monotonic: float = 0.0
-        self._baseline_commit: Optional[str] = None
+        from guardkit.orchestrator.task_work_scope import current_lease
+        lease = current_lease(worktree_path)
+        self.task_work_scope = lease.scope if lease else None
+        self._baseline_commit: Optional[str] = (self.task_work_scope.baseline_commit if self.task_work_scope else None)
         # True when other tasks in the same wave are changing this working
         # copy at the same time. Set by the orchestrator. A report this
         # invoker builds from git is then marked as shared and carries no
@@ -4800,6 +4803,7 @@ Turn: {turn}
                 workspace_root=self.worktree_path,
                 path_exclusion=_excluded,
                 repair_round=round_,
+                task_work_scope=self.task_work_scope,
             )._repair_round_facts(task_id)
             if not facts:
                 return _unavailable(
@@ -6119,6 +6123,7 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         synthesis: bool = False,
         grammar: Optional[str] = None,
         recursion_limit: Optional[int] = None,
+        specialist_finalization: Optional[Dict[str, Any]] = None,
         max_tool_result_chars: Optional[int] = None,
         event_role: Optional[str] = None,
         event_agent_name: Optional[str] = None,
@@ -6348,6 +6353,7 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                 # select_harness before the SDK harness sees them; only the
                 # LangGraph branch honours them. The Coach gather sets them.
                 recursion_limit=recursion_limit,
+                specialist_finalization=specialist_finalization,
                 max_tool_result_chars=max_tool_result_chars,
                 model=model,
                 resume_session_id=resume_session_id,
@@ -7197,57 +7203,12 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                 git_modified = set(git_changes.get("modified", []))
                 git_created = set(git_changes.get("created", []))
 
-                # Merge using union (preserves existing + adds git-detected)
-                report["files_modified"] = sorted(list(original_modified | git_modified))
-                report["files_created"] = sorted(list(original_created | git_created))
-
-                # TASK-FIX-1B4C (Layer 3'): Filter orchestrator-induced ghost
-                # paths. When state_bridge moved a task file mid-turn (e.g.
-                # backlog → design_approved), `git diff --name-only` against
-                # the pre-move baseline reports the source path as deleted.
-                # Without -M rename detection, the union-merge above attributes
-                # that ghost path to the Player, who never wrote it. Subtract
-                # the persisted state-bridge moves so the ghost never reaches
-                # the Coach honesty verification. See FEAT-1B452 review report
-                # § C4 + § 3.
-                try:
-                    from guardkit.tasks.state_bridge import TaskStateBridge
-
-                    induced = TaskStateBridge.orchestrator_induced_paths_for(
-                        task_id, repo_root=self.worktree_path
-                    )
-                    if induced:
-                        before_modified = set(report["files_modified"])
-                        before_created = set(report["files_created"])
-                        report["files_modified"] = sorted(
-                            set(report["files_modified"]) - induced
-                        )
-                        report["files_created"] = sorted(
-                            set(report["files_created"]) - induced
-                        )
-                        filtered_paths = (
-                            (before_modified | before_created) & induced
-                        )
-                        if filtered_paths:
-                            logger.info(
-                                f"Filtered {len(filtered_paths)} "
-                                f"orchestrator-induced ghost path(s) for "
-                                f"{task_id}: {sorted(filtered_paths)}"
-                            )
-                except Exception as exc:  # noqa: BLE001 — never block report
-                    logger.warning(
-                        f"Ghost-path filter failed for {task_id}: {exc}"
-                    )
-
-                # TASK-FIX-PIPELINE: Filter invalid entries (Fix 4)
-                # TASK-FIX-PV01: Use centralised _is_valid_file_path which also
-                # rejects natural language words (e.g. 'house') that lack '/' or '.'.
-                report["files_modified"] = sorted(
-                    [p for p in report["files_modified"] if TaskWorkStreamParser._is_valid_file_path(p)]
-                )
-                report["files_created"] = sorted(
-                    [p for p in report["files_created"] if TaskWorkStreamParser._is_valid_file_path(p)]
-                )
+                report["claimed_files_modified"] = sorted(original_modified)
+                report["claimed_files_created"] = sorted(original_created)
+                report["files_modified"] = sorted(git_modified)
+                report["files_created"] = sorted(git_created)
+                report["scope_id"] = git_changes["scope_id"]
+                report["baseline_commit"] = git_changes["baseline_commit"]
 
                 # Log when git detection adds files not in original report
                 new_modified = git_modified - original_modified
@@ -7266,58 +7227,16 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         except Exception as e:
             logger.warning(f"Failed to detect git changes: {e}")
 
-        # TASK-AB-XREPOEV01: merge sibling-repo writes as repo-qualified paths.
-        # This runs AFTER the worktree filters (ghost-path subtraction,
-        # _is_valid_file_path) precisely so qualified paths bypass those
-        # worktree-specific filters: a "guardkitfactory:src/foo.py" claim is
-        # not a worktree path and must not be measured against the worktree's
-        # .gitignore or ghost-path set. Without this block a task whose only
-        # writes land in a declared sibling repo produces "0 files modified"
-        # and Coach honestly rejects it as "no implementation provided"
-        # (the FEAT-C332 run-1 false-red). Undeclared repos contribute
-        # nothing here, so their writes stay invisible (AC-003).
-        if self._evidence_repos:
-            try:
-                repo_changes = evidence_repos_lib.detect_all_repo_changes(
-                    self._evidence_repos, self._evidence_baselines
-                )
-                ev_modified, ev_created = evidence_repos_lib.qualified_paths_for_changes(
-                    repo_changes
-                )
-                if ev_modified:
-                    report["files_modified"] = sorted(
-                        set(report.get("files_modified", [])) | set(ev_modified)
-                    )
-                if ev_created:
-                    report["files_created"] = sorted(
-                        set(report.get("files_created", [])) | set(ev_created)
-                    )
-                if ev_modified or ev_created:
-                    logger.info(
-                        "Evidence-repo detection added %d modified, %d created "
-                        "sibling-repo file(s) for %s: %s",
-                        len(ev_modified),
-                        len(ev_created),
-                        task_id,
-                        sorted(set(ev_modified) | set(ev_created))[:10],
-                    )
-            except Exception as exc:  # noqa: BLE001 -- never block the report
-                logger.warning(
-                    "Evidence-repo change detection failed for %s: %s",
-                    task_id,
-                    exc,
-                )
-
         # Also use task_work_result.output if available
         if task_work_result.output:
             output = task_work_result.output
             # Merge with output data if present (union with git-enriched)
             if "files_modified" in output:
                 existing = set(report.get("files_modified", []))
-                report["files_modified"] = sorted(list(existing | set(output["files_modified"])))
+                report["claimed_files_modified"] = sorted(list(set(report.get("claimed_files_modified", [])) | set(output["files_modified"])))
             if "files_created" in output:
                 existing = set(report.get("files_created", []))
-                report["files_created"] = sorted(list(existing | set(output["files_created"])))
+                report["claimed_files_created"] = sorted(list(set(report.get("claimed_files_created", [])) | set(output["files_created"])))
             if "tests_passed" in output:
                 tests_passed_value = output["tests_passed"]
                 # Convert count to boolean for PLAYER_REPORT_SCHEMA compliance
@@ -7511,6 +7430,7 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                 f"and removed again without naming them: {written_then_removed}"
             )
 
+        self._apply_scope_inventory(report)
         # Write Player report
         with open(player_report_path, "w") as f:
             json.dump(report, f, indent=2)
@@ -7527,14 +7447,8 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
 
                 updated = False
 
-                # Update file lists if enriched data is richer
-                if len(report.get("files_modified", [])) > len(task_work_data.get("files_modified", [])):
-                    task_work_data["files_modified"] = report["files_modified"]
-                    updated = True
-
-                if len(report.get("files_created", [])) > len(task_work_data.get("files_created", [])):
-                    task_work_data["files_created"] = report["files_created"]
-                    updated = True
+                self._apply_scope_inventory(task_work_data)
+                updated = True
 
                 # Propagate completion_promises if not already present
                 if report.get("completion_promises") and not task_work_data.get("completion_promises"):
@@ -7696,40 +7610,31 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         )
 
     def _record_baseline(self) -> None:
-        """Record git HEAD hash before task execution starts (TASK-FIX-VL06).
+        """Use the admission baseline, never recapture a later HEAD."""
+        from guardkit.orchestrator.task_work_scope import current_lease, ScopeUnavailable
+        scope = self.task_work_scope
+        lease = current_lease(self.worktree_path)
+        if scope is None or lease is None:
+            raise ScopeUnavailable("No admitted task scope for baseline capture")
+        lease.verify(scope)
+        self._baseline_commit = scope.baseline_commit
+        self._evidence_baselines = {repo.root: repo.baseline for repo in scope.repositories[1:]}
 
-        In parallel wave execution, HEAD moves as tasks commit changes.
-        Recording a per-task baseline ensures _detect_git_changes() compares
-        against the correct starting point, preventing cross-task file
-        attribution.
-        """
+    def _apply_scope_inventory(self, report):
+        """Separate Player claims from the one authoritative observed inventory."""
         import subprocess
-
-        with self._git_lock:
-            try:
-                proc = run_git(["rev-parse", "HEAD"], cwd=self.worktree_path, timeout=30)
-                if proc.returncode == 0:
-                    self._baseline_commit = proc.stdout.strip()
-                    logger.info(f"Recorded baseline commit: {self._baseline_commit[:8]}")
-            except subprocess.TimeoutExpired:
-                logger.warning("git rev-parse HEAD timed out, falling back to HEAD")
-            except Exception as e:
-                logger.warning(f"Failed to record baseline commit: {e}")
-
-        # TASK-AB-XREPOEV01: record a per-task baseline for every declared
-        # sibling repo too, so the post-turn diff attributes only this task's
-        # sibling-repo writes (mirrors the per-task worktree baseline above).
-        if self._evidence_repos:
-            self._evidence_baselines = evidence_repos_lib.record_repo_baselines(
-                self._evidence_repos
-            )
-            for repo in self._evidence_repos:
-                base = self._evidence_baselines.get(str(repo.root))
-                logger.info(
-                    "Recorded evidence-repo baseline for %s: %s",
-                    repo.name,
-                    base[:8] if base else "(no git HEAD)",
-                )
+        from guardkit.orchestrator.task_work_scope import ScopeUnavailable
+        for name in ("modified", "created"):
+            report.setdefault("claimed_files_" + name, list(report.get("files_" + name, [])))
+        try:
+            changes = self._detect_git_changes()
+        except (ScopeUnavailable, OSError, subprocess.SubprocessError) as exc:
+            report.update(files_modified=[], files_created=[], file_inventory_available=False,
+                          file_inventory_error=str(exc))
+            return
+        report.update(files_modified=changes["modified"], files_created=changes["created"],
+                      file_inventory_available=True, scope_id=changes["scope_id"],
+                      baseline_commit=changes["baseline_commit"], round_id=self.task_work_scope.round_id)
 
     def _set_aside_written_then_removed(
         self,
@@ -7866,41 +7771,10 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         Returns:
             Dict with "modified" and "created" file lists
         """
-        import subprocess
-
-        result = {"modified": [], "created": []}
-
-        with self._git_lock:
-            try:
-                # Get modified files (tracked) - use baseline commit if available (TASK-FIX-VL06)
-                diff_ref = self._baseline_commit or "HEAD"
-                proc = run_git(
-                    ["diff", "--name-only", diff_ref],
-                    cwd=self.worktree_path,
-                    timeout=30,
-                )
-                if proc.returncode == 0:
-                    result["modified"] = [
-                        f.strip() for f in proc.stdout.strip().split("\n") if f.strip()
-                    ]
-
-                # Get untracked files (new)
-                proc = run_git(
-                    ["ls-files", "--others", "--exclude-standard"],
-                    cwd=self.worktree_path,
-                    timeout=30,
-                )
-                if proc.returncode == 0:
-                    result["created"] = [
-                        f.strip() for f in proc.stdout.strip().split("\n") if f.strip()
-                    ]
-
-            except subprocess.TimeoutExpired:
-                logger.warning("Git command timed out")
-            except Exception as e:
-                logger.warning(f"Git change detection failed: {e}")
-
-        return result
+        from guardkit.orchestrator.task_work_scope import collect_changes
+        observed = collect_changes(getattr(self, "task_work_scope", None))
+        observed["modified"] = sorted(set(observed["modified"] + observed["deleted"]))
+        return observed
 
     def _create_synthetic_direct_mode_report(
         self,
@@ -11973,6 +11847,12 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         if player_report.get("_synthetic"):
             results["_synthetic"] = True
 
+        scope = getattr(self, "task_work_scope", None)
+        if scope is not None:
+            results.update(scope_id=scope.scope_id, baseline_commit=scope.baseline_commit, round_id=scope.round_id)
+        if isinstance(player_report.get("original_failure"), dict):
+            results["original_failure"] = player_report["original_failure"]
+        self._apply_scope_inventory(results)
         results_file.write_text(json.dumps(results, indent=2))
         logger.info(f"Wrote direct mode results to {results_file}")
 
@@ -12059,6 +11939,14 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
             report["success"] = True
 
         # Write the report
+        scope = getattr(self, "task_work_scope", None)
+        if scope is not None:
+            report["scope_id"] = scope.scope_id
+            report["baseline_commit"] = scope.baseline_commit
+            report["round_id"] = scope.round_id
+        if isinstance(player_report.get("original_failure"), dict):
+            report["original_failure"] = player_report["original_failure"]
+        self._apply_scope_inventory(report)
         player_report_path.write_text(json.dumps(report, indent=2))
         logger.info(f"Wrote direct mode player report to {player_report_path}")
 
@@ -14008,6 +13896,12 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                             "redacted": True,
                             "truncated": truncated,
                         }
+            if phase_id == "5" and isinstance(block.get("review_record"), dict):
+                record["review_record"] = {key: block["review_record"][key] for key in (
+                    "tool_round_budget", "actual_tool_rounds", "forced_finalization", "completion", "ending_reason", "step_cap"
+                ) if key in block["review_record"]}
+                if "review_evidence" in record:
+                    record["review_evidence"].update(record["review_record"])
             orchestrator_records.append(record)
 
         merged = filtered + orchestrator_records
@@ -15174,6 +15068,7 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
             # orchestrator that re-opened it handed the round over in memory
             # (repair_round.py). ``None`` on every ordinary turn.
             auditor = PlanAuditor(
+                task_work_scope=self.task_work_scope,
                 workspace_root=self.worktree_path,
                 path_exclusion=_excluded_from_player_work,
                 repair_round=getattr(self, "repair_round", None),
@@ -15648,6 +15543,7 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
         )
 
         # Write results to file
+        self._apply_scope_inventory(results)
         results_file.write_text(json.dumps(results, indent=2))
         logger.info(f"Wrote task_work_results.json to {results_file}")
 
@@ -15689,6 +15585,9 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
             ... )
             PosixPath('.guardkit/autobuild/TASK-001/task_work_results.json')
         """
+        self._original_invocation_failure = {"type": error_type, "message": error,
+            "task_id": task_id, "phase": "player",
+            "scope_id": getattr(getattr(self, "task_work_scope", None), "scope_id", None)}
         # Ensure results directory exists (uses centralized paths)
         TaskArtifactPaths.ensure_autobuild_dir(task_id, self.worktree_path)
 
@@ -15722,6 +15621,7 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
         }
 
         # Write results to file
+        self._apply_scope_inventory(results)
         results_file.write_text(json.dumps(results, indent=2))
         logger.info(f"Wrote failure results to {results_file}")
 
@@ -15754,11 +15654,15 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
         except (OSError, json.JSONDecodeError):
             pass
 
-        if not results or results.get("success") is not False:
+        mode = player_report.get("original_failure", {}).get("mode") or results.get("implementation_mode") or "task-work"
+        if mode == "direct":
+            self._write_direct_mode_results(task_id, player_report, success=False, error=original_error)
+            results = json.loads(results_file.read_text())
+        elif not results or results.get("success") is not False:
             self._write_failure_results(
                 task_id,
                 original_error or "task-work invocation failed",
-                "TimeoutError",
+                player_report.get("original_failure", {}).get("type", "ExecutionError"),
             )
             results = json.loads(results_file.read_text())
 
@@ -15781,9 +15685,10 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
 
         # These status fields remain authoritative even when recovered tests
         # passed. A timed-out implementation has not completed or passed.
+        results["original_failure"] = player_report.get("original_failure", {})
         results["completed"] = False
         results["success"] = False
-        results["implementation_mode"] = "task-work"
+        results["implementation_mode"] = mode
         results["phases"] = (
             results.get("phases")
             if isinstance(results.get("phases"), dict)
@@ -15802,7 +15707,7 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
         if not isinstance(preserved_error, str) or not preserved_error:
             preserved_error = original_error or "task-work invocation failed"
             results["error"] = preserved_error
-        results.setdefault("error_type", "TimeoutError")
+        results.setdefault("error_type", player_report.get("original_failure", {}).get("type", "ExecutionError"))
 
         results["recovery"] = {
             "state_recovered": True,
@@ -15819,11 +15724,12 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
         }
         results["_synthetic"] = True
         results["summary"] = (
-            f"Failed: {results.get('error_type', 'TimeoutError')} - "
+            f"Failed: {results.get('error_type', 'ExecutionError')} - "
             f"{preserved_error}. Partial work was recovered for the next turn; "
             "completion was not established."
         )
 
+        self._apply_scope_inventory(results)
         results_file.write_text(json.dumps(results, indent=2))
         logger.info(
             "Preserved failed task-work receipt with recovered partial state at %s",

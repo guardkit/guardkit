@@ -527,6 +527,7 @@ async def run_specialist(
     no_activity_watchdog_seconds: Optional[float] = None,
     capture_final_message: bool = False,
     recursion_limit: Optional[int] = None,
+    specialist_finalization: Optional[dict[str, Any]] = None,
     max_tool_result_chars: Optional[int] = None,
     tool_counter: Any = None,
 ) -> SpecialistInvocationResult:
@@ -681,6 +682,8 @@ async def run_specialist(
         invoke_kwargs["return_events"] = True
     # 13 October 2026: the code reviewer's step cap and tool record. Added
     # only when asked for, so every other caller's call is unchanged.
+    if specialist_finalization is not None:
+        invoke_kwargs["specialist_finalization"] = specialist_finalization
     if recursion_limit is not None:
         invoke_kwargs["recursion_limit"] = recursion_limit
     if max_tool_result_chars is not None:
@@ -1374,7 +1377,7 @@ def _build_code_reviewer_prompt(
         "the review is stopped and lost, so write your review before then.\n"
         "5. For each criterion, say met, not met or cannot tell, naming the "
         "file and line. Then list any defects.\n"
-        "6. End with `Verdict: approve` or `Verdict: changes needed`.\n"
+        "6. End with `Verdict: approve`, `Verdict: changes needed`, or `Verdict: incomplete`.\n"
         "Do NOT modify source files: the Write tool is withheld."
     )
 
@@ -2441,6 +2444,7 @@ async def invoke_code_reviewer(
     tool_counter = ToolCallCounter()
     preparation_seconds = time.monotonic() - started_at
     run_started_at = time.monotonic()
+    finalization = {"tool_round_budget": _code_reviewer_tool_rounds(recursion_limit)}
     run_result = await run_specialist(
         specialist_name="code-reviewer",
         worktree_path=Path(worktree_path),
@@ -2458,6 +2462,7 @@ async def invoke_code_reviewer(
         capture_final_message=True,
         # 13 October 2026: the step cap, as the Coach evidence pass passes it.
         recursion_limit=recursion_limit,
+        specialist_finalization=finalization,
         max_tool_result_chars=max_tool_result_chars,
         tool_counter=tool_counter,
     )
@@ -2487,9 +2492,13 @@ async def invoke_code_reviewer(
             # boundary. The durable evidence text is the safe representation.
             run_result.final_message = review_evidence["text"]
 
+    if run_result.status != "passed":
+        finalization["completion"] = "incomplete" if finalization.get("forced_finalization") else "absent"
+        finalization["ending_reason"] = ended_by
     tool_counts = tool_counter.counts()
     review_record: dict[str, Any] = {
         "ended_by": ended_by,
+        **finalization,
         # The bounds in force for this review, so a changed setting shows
         # in the measurement.
         "step_cap": recursion_limit,
@@ -2511,6 +2520,7 @@ async def invoke_code_reviewer(
         "review_record": review_record,
     }
     if review_evidence is not None:
+        review_evidence.update(finalization)
         phase_5_block["review_evidence"] = review_evidence
         phase_5_block["output_summary"] = _PHASE_5_REVIEW_CAPTURED_SUMMARY
 

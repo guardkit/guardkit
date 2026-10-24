@@ -95,7 +95,7 @@ class TestResultsSummary:
     error: Optional[str] = None
 
 
-def detect_git_changes(worktree_path: Path) -> Optional[GitChangesSummary]:
+def detect_git_changes(worktree_path: Path, task_work_scope=None) -> Optional[GitChangesSummary]:
     """Detect uncommitted changes in a git worktree.
 
     Uses git status and git diff to detect:
@@ -120,73 +120,9 @@ def detect_git_changes(worktree_path: Path) -> Optional[GitChangesSummary]:
         ...     print(f"Added: {changes.files_added}")
         ...     print(f"Insertions: {changes.insertions}, Deletions: {changes.deletions}")
     """
-    worktree_path = Path(worktree_path)
-
-    if not worktree_path.exists():
-        logger.warning(f"Worktree path does not exist: {worktree_path}")
-        return None
-
-    try:
-        # Get git status in porcelain format (machine-readable).
-        # ``--untracked-files=all`` names each new file. Without it git folds
-        # a new folder into one ``?? folder/`` line, the recovered report then
-        # lists the folder as a created file, and the Coach's claim audit
-        # calls that folder a fabricated file: build FEAT-D31F's task 2 was
-        # refused on its recovery turn over ``.claude/task-plans/`` and
-        # ``.local/`` (19 October 2026).
-        status_result = run_git(
-            ["status", "--porcelain", "--untracked-files=all"],
-            cwd=worktree_path,
-            timeout=GIT_COMMAND_TIMEOUT_SECONDS,
-        )
-
-        if status_result.returncode != 0:
-            logger.warning(
-                f"git status failed: {status_result.stderr.strip()}"
-            )
-            return None
-
-        # Use rstrip() to preserve leading whitespace (important for git status format)
-        status_output = status_result.stdout.rstrip()
-        if not status_output:
-            logger.debug(f"No changes detected in {worktree_path}")
-            return None
-
-        # Parse status output
-        files_modified, files_added, files_deleted = _parse_git_status(status_output)
-
-        # Get diff statistics
-        diff_stats, insertions, deletions = _get_diff_stats(worktree_path)
-
-        summary = GitChangesSummary(
-            files_modified=files_modified,
-            files_added=files_added,
-            files_deleted=files_deleted,
-            diff_stats=diff_stats,
-            insertions=insertions,
-            deletions=deletions,
-            timestamp=datetime.now().isoformat(),
-        )
-
-        logger.info(
-            f"Git detection: {summary.total_files_changed} files changed "
-            f"(+{summary.insertions}/-{summary.deletions})"
-        )
-
-        return summary
-
-    except subprocess.TimeoutExpired:
-        logger.error(
-            f"git status timed out after {GIT_COMMAND_TIMEOUT_SECONDS}s "
-            f"in {worktree_path}"
-        )
-        return None
-    except FileNotFoundError:
-        logger.error("git command not found - is git installed?")
-        return None
-    except Exception as e:
-        logger.error(f"Git detection failed: {e}", exc_info=True)
-        return None
+    from guardkit.orchestrator.task_work_scope import collect_changes
+    changed = collect_changes(task_work_scope)
+    return GitChangesSummary(files_modified=changed['modified'], files_added=changed['created'], files_deleted=changed['deleted'])
 
 
 def _parse_git_status(status_output: str) -> tuple[List[str], List[str], List[str]]:

@@ -1090,35 +1090,43 @@ def test_a_valid_component_cwd_bootstraps_as_today(tmp_path: Path) -> None:
     assert any(list(c.args[0]) == ["npm", "ci"] for c in run.call_args_list)
 
 
-def test_a_refused_component_cwd_stops_phase_1_5_before_wave_1(
-    tmp_path: Path,
-) -> None:
-    """Through the Phase 1.5 call in ``_create_new_worktree``: the build stops
-    before the feature is marked in progress, so no wave runs."""
-    from guardkit.worktrees import Worktree
+def test_a_refused_component_cwd_stops_admitted_bootstrap_before_player(tmp_path: Path) -> None:
+    """Real creation and admission preserve a refused bootstrap's cause."""
+    import subprocess
+    from types import SimpleNamespace
+    from guardkit.worktrees import WorktreeManager
+    from guardkit.orchestrator.task_work_scope import checkout_lease, ScopeUnavailable
 
-    orchestrator = _build_orchestrator(tmp_path)  # no mode set: the default
-    worktree_path = _declared_web_worktree(tmp_path, "../outside-web")
-    orchestrator._worktree_manager.create.return_value = Worktree(
-        task_id="FEAT-WEB",
-        branch_name="autobuild/FEAT-WEB",
-        path=worktree_path,
-        base_branch="main",
-    )
+    source = _declared_web_worktree(tmp_path, "../outside-web")
+    for args in (["init", "-b", "main"], ["config", "user.name", "Fixture"],
+                 ["config", "user.email", "fixture@example.invalid"],
+                 ["add", "."], ["commit", "-m", "pinned source"]):
+        subprocess.run(["git", "-C", str(source), *args], check=True, capture_output=True)
+    orchestrator = FeatureOrchestrator(repo_root=source, worktree_manager=WorktreeManager(source),
+                                      enable_context=False, quiet=True)
     feature = MagicMock()
+    feature.id = "FEAT-WEB"
     feature.status = "planned"
-
-    with patch("subprocess.run", _no_installs()), patch.object(
-        orchestrator, "_copy_tasks_to_worktree"
-    ), patch(
+    feature.file_path = None
+    feature.evidence_repos = []
+    feature.bootstrap_extras = []
+    feature.smoke_gates = None
+    with patch.object(orchestrator, "_copy_tasks_to_worktree"), patch(
         "guardkit.orchestrator.feature_orchestrator.FeatureLoader.save_feature"
-    ) as save_feature:
+    ), patch("guardkit.orchestrator.feature_orchestrator.EnvironmentBootstrapper.bootstrap") as install, patch.object(
+        orchestrator, "_execute_task_owned"
+    ) as player:
+        _, worktree = orchestrator._create_new_worktree(feature, feature.id, "main")
         with pytest.raises(FeatureOrchestrationError) as exc:
-            orchestrator._create_new_worktree(feature, "FEAT-WEB", "main")
-
+            orchestrator._execute_task(SimpleNamespace(id="TASK-WEB"), feature, worktree)
     assert "../outside-web" in str(exc.value)
-    save_feature.assert_not_called()
-    assert feature.status == "planned"
+    install.assert_not_called()
+    player.assert_not_called()
+    result = orchestrator._create_error_result("TASK-WEB", exc.value)
+    assert result.error_type == type(exc.value.__cause__).__name__
+    with pytest.raises(ScopeUnavailable, match="Prior writer"):
+        with checkout_lease(worktree.path):
+            pass
 
 
 @pytest.mark.parametrize("failure_mode", ["warn", None], ids=["warn", "default"])

@@ -1257,6 +1257,7 @@ def select_harness(
     # and synthesis paths are unchanged. On the SDK path they are dropped:
     # the SDK bounds tool cycles via ``max_turns`` (already forwarded) and has
     # no per-tool-result truncation hook.
+    specialist_finalization = harness_kwargs.pop("specialist_finalization", None)
     recursion_limit = harness_kwargs.pop("recursion_limit", None)
     max_tool_result_chars = harness_kwargs.pop("max_tool_result_chars", None)
 
@@ -1360,6 +1361,8 @@ def select_harness(
 
         if sdk_env is not None:
             harness_kwargs["env"] = sdk_env
+        if specialist_finalization is not None:
+            raise ValueError("Specialist finalization requires the matched LangGraph harness")
         return ClaudeSDKHarness(**harness_kwargs)
 
     if name == "langgraph":
@@ -1533,6 +1536,8 @@ def select_harness(
         if player_config is not None:
             langgraph_kwargs["player_config"] = player_config
         try:
+            if specialist_finalization is not None:
+                langgraph_kwargs["specialist_finalization"] = specialist_finalization
             return LangGraphHarness(**langgraph_kwargs)
         except (TypeError, ValueError) as e:
             if harness_role == "player":
