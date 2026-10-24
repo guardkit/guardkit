@@ -28,6 +28,7 @@ import pytest
 from guardkit.orchestrator.coach_verification import CoachVerifier
 from guardkit.orchestrator.quality_gates.coach_validator import CoachValidator
 from guardkit.orchestrator.state_detection import detect_git_changes
+from tests.task_scope_fixtures import admitted_task
 
 
 TASK_ID = "TASK-SHELF-002"
@@ -435,10 +436,10 @@ class TestRecoveredStateNamesFilesNotFolders:
         _write(root, "README.md", "base\n")
         _git("add", "-A", cwd=root)
         _git("commit", "-m", "base", cwd=root)
-        _write(root, "drafts/plans/plan-1.md", "plan\n")
-        _write(root, "drafts/plans/plan-2.md", "plan\n")
-
-        changes = detect_git_changes(root)
+        with admitted_task(root, TASK_ID, register=True) as (_, scope):
+            _write(root, "drafts/plans/plan-1.md", "plan\n")
+            _write(root, "drafts/plans/plan-2.md", "plan\n")
+            changes = detect_git_changes(root, task_work_scope=scope)
 
         assert changes is not None
         assert sorted(changes.files_added) == [

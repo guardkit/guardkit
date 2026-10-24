@@ -22,6 +22,7 @@ disagreement, and a mock would hide rule drift.
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 import json
 import subprocess
 import sys
@@ -36,6 +37,7 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from guardkit.orchestrator.quality_gates import CoachValidator
+from tests.task_scope_fixtures import admitted_task
 
 
 # ---------------------------------------------------------------------------
@@ -511,6 +513,7 @@ def _tool_result(call_id: str, is_error: bool = False) -> Any:
 _TURN_TEXT = "5 tests passed, 0 tests failed\nAll quality gates passed"
 
 
+@contextmanager
 def _run_builder_turn(
     worktree: Path,
     task_id: str,
@@ -560,19 +563,21 @@ def _run_builder_turn(
         async def cancel(self) -> None:
             return None
 
-    invoker = AgentInvoker(
-        worktree_path=worktree, max_turns_per_agent=30, sdk_timeout_seconds=60
-    )
-    with patch(
-        "guardkit.orchestrator.agent_invoker.select_harness",
-        return_value=LocalReplay(),
-    ):
-        result = asyncio.run(
-            invoker._invoke_task_work_implement(task_id=task_id, mode="standard")
+    with admitted_task(worktree, task_id, register=True) as (_, scope):
+        invoker = AgentInvoker(
+            worktree_path=worktree, max_turns_per_agent=30, sdk_timeout_seconds=60
         )
-    assert result.success is True
-    invoker._create_player_report_from_task_work(task_id, 1, result)
-    return result
+        invoker.task_work_scope = scope
+        with patch(
+            "guardkit.orchestrator.agent_invoker.select_harness",
+            return_value=LocalReplay(),
+        ):
+            result = asyncio.run(
+                invoker._invoke_task_work_implement(task_id=task_id, mode="standard")
+            )
+        assert result.success is True
+        invoker._create_player_report_from_task_work(task_id, 1, result)
+        yield result
 
 
 def _make(path: Path) -> Any:
@@ -639,20 +644,20 @@ def test_e592_shape_with_scratch_folder_passes_honesty(
     git_worktree: Path, task: str
 ) -> None:
     task_id = f"TASK-{task.upper()}"
-    result = _run_builder_turn(git_worktree, task_id, _e592_steps(git_worktree, task))
+    with _run_builder_turn(git_worktree, task_id, _e592_steps(git_worktree, task)) as result:
 
-    # The returned result, the results file and the turn report all agree.
-    for files in [result.output["files_created"]] + [
-        r["files_created"] + r["files_modified"]
-        for r in _records(git_worktree, task_id)
-    ]:
-        assert not any("verify_" in path for path in files), files
-        assert "src/users/routes.py" in files
+        # The returned result, the results file and the turn report all agree.
+        for files in [result.output["files_created"]] + [
+            r["files_created"] + r["files_modified"]
+            for r in _records(git_worktree, task_id)
+        ]:
+            assert not any("verify_" in path for path in files), files
+            assert "src/users/routes.py" in files
 
-    coach_result, bundle = _coach(git_worktree, task_id)
-    assert _honesty_must_fix(coach_result) == [], coach_result.issues
-    assert coach_result.quality_gates is not None
-    assert bundle.gathering_status != "partial_honesty_abort"
+        coach_result, bundle = _coach(git_worktree, task_id)
+        assert _honesty_must_fix(coach_result) == [], coach_result.issues
+        assert coach_result.quality_gates is not None
+        assert bundle.gathering_status != "partial_honesty_abort"
 
 
 def test_fabricated_src_claim_still_aborts(git_worktree: Path) -> None:
@@ -677,17 +682,17 @@ def test_fabricated_src_claim_still_aborts(git_worktree: Path) -> None:
             )
         )
 
-    _run_builder_turn(
+    with _run_builder_turn(
         git_worktree,
         task_id,
         [builder_writes_its_report] + _e592_steps(git_worktree, "e592_003"),
         final_text="Created: src/users/not_written.py\n" + _TURN_TEXT,
-    )
+    ) as _result:
 
-    coach_result, bundle = _coach(git_worktree, task_id)
-    assert coach_result.quality_gates is None
-    assert "src/users/not_written.py" in json.dumps(_honesty_must_fix(coach_result))
-    assert bundle.gathering_status == "partial_honesty_abort"
+        coach_result, bundle = _coach(git_worktree, task_id)
+        assert coach_result.quality_gates is None
+        assert "src/users/not_written.py" in json.dumps(_honesty_must_fix(coach_result))
+        assert bundle.gathering_status == "partial_honesty_abort"
 
 
 def test_deleted_project_file_still_trips_the_checks_unchanged(
@@ -727,48 +732,48 @@ def test_deleted_project_file_still_trips_the_checks_unchanged(
         _tool_result("c1"),
         _tool_result("c2"),
     ]
-    _run_builder_turn(git_worktree, task_id, steps)
+    with _run_builder_turn(git_worktree, task_id, steps) as _result:
 
-    for record in _records(git_worktree, task_id):
-        # The removed scratch script is set aside, and still authored.
-        assert ".tmp/verify.py" not in record["files_created"]
-        assert ".tmp/verify.py" not in record["files_modified"]
-        assert record["files_written_then_removed"] == [".tmp/verify.py"]
-        assert ".tmp/verify.py" in record["files_authored"]
-        # The tracked deletion keeps its place and its authorship.
-        assert "a.md" in record["files_modified"]
-        assert "a.md" in record["files_authored"]
+        for record in _records(git_worktree, task_id):
+            # The removed scratch script is set aside, and still authored.
+            assert ".tmp/verify.py" not in record["files_created"]
+            assert ".tmp/verify.py" not in record["files_modified"]
+            assert record["files_written_then_removed"] == [".tmp/verify.py"]
+            assert ".tmp/verify.py" in record["files_authored"]
+            # The tracked deletion keeps its place and its authorship.
+            assert "a.md" in record["files_modified"]
+            assert "a.md" in record["files_authored"]
 
-    # The checks themselves: the tracked deletion is still a critical
-    # "file does not exist"; the set-aside script raises nothing.
-    from guardkit.orchestrator.coach_verification import CoachVerifier
+        # The checks themselves: the tracked deletion is still a critical
+        # "file does not exist"; the set-aside script raises nothing.
+        from guardkit.orchestrator.coach_verification import CoachVerifier
 
-    results, _ = _records(git_worktree, task_id)
-    verifier = CoachVerifier(git_worktree)
-    found = verifier._verify_files_exist(results) + verifier._verify_claims_were_staged(
-        results
-    )
-    assert any(
-        d.claim_type == "file_existence"
-        and d.player_claim == "files_modified: a.md"
-        and d.actual_value == "File does not exist"
-        and d.severity == "critical"
-        for d in found
-    ), found
-    assert not any(".tmp/verify.py" in d.player_claim for d in found), found
+        results, _ = _records(git_worktree, task_id)
+        verifier = CoachVerifier(git_worktree)
+        found = verifier._verify_files_exist(results) + verifier._verify_claims_were_staged(
+            results
+        )
+        assert any(
+            d.claim_type == "file_existence"
+            and d.player_claim == "files_modified: a.md"
+            and d.actual_value == "File does not exist"
+            and d.severity == "critical"
+            for d in found
+        ), found
+        assert not any(".tmp/verify.py" in d.player_claim for d in found), found
 
-    coach_result, bundle = _coach(git_worktree, task_id)
-    assert coach_result.decision == "feedback"
-    assert bundle.gathering_status != "complete"
-    honesty = [i for i in coach_result.issues if i.get("category") == "honesty"]
-    assert [i["details"] for i in honesty] == [
-        {
-            "claim_type": "file_existence",
-            "player_claim": "files_modified: a.md",
-            "actual_value": "File does not exist",
-        }
-    ]
-    assert ".tmp/verify.py" not in json.dumps(coach_result.issues)
+        coach_result, bundle = _coach(git_worktree, task_id)
+        assert coach_result.decision == "feedback"
+        assert bundle.gathering_status != "complete"
+        honesty = [i for i in coach_result.issues if i.get("category") == "honesty"]
+        assert [i["details"] for i in honesty] == [
+            {
+                "claim_type": "file_existence",
+                "player_claim": "files_modified: a.md",
+                "actual_value": "File does not exist",
+            }
+        ]
+        assert ".tmp/verify.py" not in json.dumps(coach_result.issues)
 
 
 def test_symlinked_scratch_folder_cannot_hide_a_fabricated_src_claim(
@@ -783,20 +788,21 @@ def test_symlinked_scratch_folder_cannot_hide_a_fabricated_src_claim(
     (git_worktree / "src").mkdir()
     builder_scratch_dir(git_worktree).symlink_to(git_worktree / "src")
 
-    _run_builder_turn(
+    with _run_builder_turn(
         git_worktree,
         task_id,
         [],
         final_text="Created: src/not_written.py\n" + _TURN_TEXT,
         provides_scratch=builder_scratch_dir(git_worktree),
-    )
+    ) as _result:
 
-    results, report = _records(git_worktree, task_id)
-    assert "src/not_written.py" in results["files_created"]
-    coach_result, bundle = _coach(git_worktree, task_id)
-    assert coach_result.quality_gates is None
-    assert "src/not_written.py" in json.dumps(_honesty_must_fix(coach_result))
-    assert bundle.gathering_status == "partial_honesty_abort"
+        results, report = _records(git_worktree, task_id)
+        assert "src/not_written.py" in results["claimed_files_created"]
+        assert "src/not_written.py" not in results["files_created"]
+        coach_result, bundle = _coach(git_worktree, task_id)
+        assert coach_result.quality_gates is None
+        assert "src/not_written.py" in json.dumps(_honesty_must_fix(coach_result))
+        assert bundle.gathering_status == "partial_honesty_abort"
 
 
 def test_claim_through_a_link_inside_the_scratch_folder_still_aborts(
@@ -812,19 +818,20 @@ def test_claim_through_a_link_inside_the_scratch_folder_still_aborts(
     (scratch / "project").symlink_to(git_worktree / "src")
     claimed = scratch / "project" / "not_written.py"
 
-    _run_builder_turn(
+    with _run_builder_turn(
         git_worktree,
         task_id,
         [],
         final_text=f"Created: {claimed}\n" + _TURN_TEXT,
-    )
+    ) as _result:
 
-    results, report = _records(git_worktree, task_id)
-    assert any("not_written.py" in path for path in results["files_created"])
-    coach_result, bundle = _coach(git_worktree, task_id)
-    assert coach_result.quality_gates is None
-    assert "not_written.py" in json.dumps(_honesty_must_fix(coach_result))
-    assert bundle.gathering_status == "partial_honesty_abort"
+        results, report = _records(git_worktree, task_id)
+        assert any("not_written.py" in path for path in results["claimed_files_created"])
+        assert not any("not_written.py" in path for path in results["files_created"])
+        coach_result, bundle = _coach(git_worktree, task_id)
+        assert coach_result.quality_gates is None
+        assert "not_written.py" in json.dumps(_honesty_must_fix(coach_result))
+        assert bundle.gathering_status == "partial_honesty_abort"
 
 
 def test_scratch_folder_swapped_for_a_symlink_mid_run_still_aborts(
@@ -846,20 +853,21 @@ def test_scratch_folder_swapped_for_a_symlink_mid_run_still_aborts(
         shutil.rmtree(scratch)
         scratch.symlink_to(git_worktree / "src")
 
-    _run_builder_turn(
+    with _run_builder_turn(
         git_worktree,
         task_id,
         [swap],
         final_text=f"Created: {claimed}\n" + _TURN_TEXT,
         provides_scratch=scratch,
-    )
+    ) as _result:
 
-    results, report = _records(git_worktree, task_id)
-    assert any("not_written.py" in path for path in results["files_created"])
-    coach_result, bundle = _coach(git_worktree, task_id)
-    assert coach_result.quality_gates is None
-    assert "not_written.py" in json.dumps(_honesty_must_fix(coach_result))
-    assert bundle.gathering_status == "partial_honesty_abort"
+        results, report = _records(git_worktree, task_id)
+        assert any("not_written.py" in path for path in results["claimed_files_created"])
+        assert not any("not_written.py" in path for path in results["files_created"])
+        coach_result, bundle = _coach(git_worktree, task_id)
+        assert coach_result.quality_gates is None
+        assert "not_written.py" in json.dumps(_honesty_must_fix(coach_result))
+        assert bundle.gathering_status == "partial_honesty_abort"
 
 
 def test_scratch_folder_removed_by_the_builder_still_passes_honesty(
@@ -886,17 +894,17 @@ def test_scratch_folder_removed_by_the_builder_still_passes_honesty(
         _tool_result("c2"),
     ]
 
-    result = _run_builder_turn(
+    with _run_builder_turn(
         git_worktree, task_id, steps, provides_scratch=scratch
-    )
+    ) as result:
 
-    for files in [result.output["files_created"]] + [
-        r["files_created"] + r["files_modified"]
-        for r in _records(git_worktree, task_id)
-    ]:
-        assert not any("verify.py" in path for path in files), files
-        assert "src/app.py" in files
-    coach_result, bundle = _coach(git_worktree, task_id)
-    assert _honesty_must_fix(coach_result) == [], coach_result.issues
-    assert coach_result.quality_gates is not None
-    assert bundle.gathering_status != "partial_honesty_abort"
+        for files in [result.output["files_created"]] + [
+            r["files_created"] + r["files_modified"]
+            for r in _records(git_worktree, task_id)
+        ]:
+            assert not any("verify.py" in path for path in files), files
+            assert "src/app.py" in files
+        coach_result, bundle = _coach(git_worktree, task_id)
+        assert _honesty_must_fix(coach_result) == [], coach_result.issues
+        assert coach_result.quality_gates is not None
+        assert bundle.gathering_status != "partial_honesty_abort"

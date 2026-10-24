@@ -7,6 +7,8 @@ sibling-repo work that was never versioned anywhere).
 
 from __future__ import annotations
 
+from contextlib import contextmanager
+import json
 import subprocess
 from pathlib import Path
 from unittest.mock import Mock
@@ -17,8 +19,34 @@ from guardkit.orchestrator.evidence_repos import EvidenceRepo
 from guardkit.orchestrator.worktree_checkpoints import (
     Checkpoint,
     GitCommandExecutor,
+    SubprocessGitExecutor,
     WorktreeCheckpointManager,
 )
+
+from guardkit.orchestrator.task_work_scope import bind_fresh_footprint, ScopeUnavailable
+from tests.task_scope_fixtures import admitted_task, git, register_clean_fresh_checkout
+
+
+@contextmanager
+def _checkpoint_scope(worktree, task_id, evidence_repos=()):
+    """Bind invented sibling inputs at the clean source, before Player writes."""
+    if evidence_repos:
+        declaration = worktree / ".guardkit" / "features" / "FEAT-CHECKPOINT.yaml"
+        declaration.parent.mkdir(parents=True, exist_ok=True)
+        raw = [str(repo.root) for repo in evidence_repos]
+        declaration.write_text(json.dumps({"evidence_repos": raw}))
+        git(worktree, "add", str(declaration.relative_to(worktree)))
+        git(worktree, "commit", "-m", "fixture sibling declaration")
+        register_clean_fresh_checkout(worktree)
+        bound = bind_fresh_footprint(
+            worktree, worktree, declaration, kind="feature", expected=raw
+        )
+        assert list(bound) == list(evidence_repos)
+    else:
+        register_clean_fresh_checkout(worktree)
+        bound = ()
+    with admitted_task(worktree, task_id, evidence_repos=bound) as (_, scope):
+        yield scope
 
 
 def _set_identity(path: Path) -> None:
@@ -73,70 +101,75 @@ class TestEvidenceRepoCheckpoint:
     def test_checkpoint_commits_sibling_repo_work(self, worktree_and_sibling):
         worktree, sibling = worktree_and_sibling
         repo = EvidenceRepo(name="guardkitfactory", root=sibling)
-        manager = WorktreeCheckpointManager(
-            worktree_path=worktree, task_id="TASK-X", evidence_repos=[repo]
-        )
+        with _checkpoint_scope(worktree, "TASK-X", [repo]) as scope:
+            manager = WorktreeCheckpointManager(
+                task_work_scope=scope,
+                worktree_path=worktree, task_id="TASK-X", evidence_repos=[repo]
+            )
 
-        # Player writes only in the sibling repo.
-        (sibling / "src").mkdir()
-        (sibling / "src" / "deliverable.py").write_text("def f(): return 1\n")
-        sibling_head_before = _head(sibling)
+            # Player writes only in the sibling repo.
+            (sibling / "src").mkdir()
+            (sibling / "src" / "deliverable.py").write_text("def f(): return 1\n")
+            sibling_head_before = _head(sibling)
 
-        cp = manager.create_checkpoint(turn=1, tests_passed=True, test_count=3)
+            cp = manager.create_checkpoint(turn=1, tests_passed=True, test_count=3)
 
-        # Sibling work is now committed and recorded on the checkpoint.
-        assert "guardkitfactory" in cp.evidence_commits
-        assert cp.evidence_commits["guardkitfactory"] == _head(sibling)
-        assert _head(sibling) != sibling_head_before
-        # The deliverable is versioned (tracked, clean tree). The one
-        # permitted residue is ``.guardkit-git.lock``: the sibling-commit
-        # path creates that lock in the repo root (``:674``) and the JX
-        # lane's junk-exclude keeps it OUT of the commit — before that, the
-        # checkpoint versioned the harness's own lock file, which is the
-        # defect, not this line.
-        status = subprocess.run(
-            ["git", "-C", str(sibling), "status", "--porcelain"],
-            capture_output=True,
-            text=True,
-        )
-        residue = [
-            line
-            for line in status.stdout.splitlines()
-            if line.strip() and not line.endswith(".guardkit-git.lock")
-        ]
-        assert residue == [], f"unexpected uncommitted sibling state: {residue}"
-        assert "?? .guardkit-git.lock" in status.stdout, (
-            "the harness lock must be left untracked, never checkpointed"
-        )
+            # Sibling work is now committed and recorded on the checkpoint.
+            assert "guardkitfactory" in cp.evidence_commits
+            assert cp.evidence_commits["guardkitfactory"] == _head(sibling)
+            assert _head(sibling) != sibling_head_before
+            # The deliverable is versioned (tracked, clean tree). The one
+            # permitted residue is ``.guardkit-git.lock``: the sibling-commit
+            # path creates that lock in the repo root (``:674``) and the JX
+            # lane's junk-exclude keeps it OUT of the commit — before that, the
+            # checkpoint versioned the harness's own lock file, which is the
+            # defect, not this line.
+            status = subprocess.run(
+                ["git", "-C", str(sibling), "status", "--porcelain"],
+                capture_output=True,
+                text=True,
+            )
+            residue = [
+                line
+                for line in status.stdout.splitlines()
+                if line.strip() and not line.endswith(".guardkit-git.lock")
+            ]
+            assert residue == [], f"unexpected uncommitted sibling state: {residue}"
+            assert "?? .guardkit-git.lock" in status.stdout, (
+                "the harness lock must be left untracked, never checkpointed"
+            )
 
     def test_rollback_resets_sibling_repo(self, worktree_and_sibling):
         worktree, sibling = worktree_and_sibling
         repo = EvidenceRepo(name="guardkitfactory", root=sibling)
-        manager = WorktreeCheckpointManager(
-            worktree_path=worktree, task_id="TASK-X", evidence_repos=[repo]
-        )
+        with _checkpoint_scope(worktree, "TASK-X", [repo]) as scope:
+            manager = WorktreeCheckpointManager(
+                task_work_scope=scope,
+                worktree_path=worktree, task_id="TASK-X", evidence_repos=[repo]
+            )
 
-        # Turn 1: good sibling work, checkpoint.
-        (sibling / "good.py").write_text("ok = True\n")
-        manager.create_checkpoint(turn=1, tests_passed=True)
-        good_head = _head(sibling)
+            # Turn 1: good sibling work, checkpoint.
+            (sibling / "good.py").write_text("ok = True\n")
+            manager.create_checkpoint(turn=1, tests_passed=True)
+            good_head = _head(sibling)
 
-        # Turn 2: polluted sibling work, checkpoint.
-        (sibling / "bad.py").write_text("broken = True\n")
-        manager.create_checkpoint(turn=2, tests_passed=False)
-        assert (sibling / "bad.py").exists()
+            # Turn 2: polluted sibling work, checkpoint.
+            (sibling / "bad.py").write_text("broken = True\n")
+            manager.create_checkpoint(turn=2, tests_passed=False)
+            assert (sibling / "bad.py").exists()
 
-        # Roll back to turn 1.
-        assert manager.rollback_to(1) is True
-        assert _head(sibling) == good_head
-        assert (sibling / "good.py").exists()
-        assert not (sibling / "bad.py").exists()  # polluted work discarded
+            # Roll back to turn 1.
+            assert manager.rollback_to(1) is True
+            assert _head(sibling) == good_head
+            assert (sibling / "good.py").exists()
+            assert not (sibling / "bad.py").exists()  # polluted work discarded
 
     def test_no_evidence_repos_is_unchanged_behaviour(self, worktree_and_sibling):
         worktree, _ = worktree_and_sibling
-        manager = WorktreeCheckpointManager(worktree_path=worktree, task_id="TASK-X")
-        cp = manager.create_checkpoint(turn=1, tests_passed=True)
-        assert cp.evidence_commits == {}
+        with _checkpoint_scope(worktree, "TASK-X", ()) as scope:
+            manager = WorktreeCheckpointManager(worktree_path=worktree, task_id="TASK-X", task_work_scope=scope)
+            cp = manager.create_checkpoint(turn=1, tests_passed=True)
+            assert cp.evidence_commits == {}
 
     def test_hung_sibling_commit_times_out_and_does_not_deadlock(self, tmp_path):
         # HIGH review fix: a hung git in the sibling repo must time out (it
@@ -146,43 +179,49 @@ class TestEvidenceRepoCheckpoint:
         worktree = tmp_path / "worktree"
         _init_repo(worktree)
         factory = tmp_path / "guardkitfactory"
-        factory.mkdir()
+        _init_repo(factory)
         repo = EvidenceRepo(name="guardkitfactory", root=factory)
 
-        ok = Mock(returncode=0, stdout="abc123\n", stderr="")
+        real_executor = SubprocessGitExecutor()
 
         def fake_execute(command, cwd, check=True, timeout=None):
             if Path(cwd) == factory:
                 raise subprocess.TimeoutExpired(cmd=command, timeout=timeout or 0)
-            return ok
+            return real_executor.execute(command, cwd, check=check, timeout=timeout)
 
         executor = Mock(spec=GitCommandExecutor)
         executor.execute.side_effect = fake_execute
 
-        manager = WorktreeCheckpointManager(
-            worktree_path=worktree,
-            task_id="TASK-X",
-            git_executor=executor,
-            evidence_repos=[repo],
-        )
-        cp = manager.create_checkpoint(turn=1, tests_passed=True)
-        assert cp.commit_hash == "abc123"  # worktree checkpoint still landed
-        assert "guardkitfactory" not in cp.evidence_commits  # timed out -> unversioned
+        with _checkpoint_scope(worktree, "TASK-X", [repo]) as scope:
+            manager = WorktreeCheckpointManager(
+                task_work_scope=scope,
+                worktree_path=worktree,
+                task_id="TASK-X",
+                git_executor=executor,
+                evidence_repos=[repo],
+            )
+            cp = manager.create_checkpoint(turn=1, tests_passed=True)
+            assert cp.commit_hash == _head(worktree)  # real primary checkpoint landed
+            assert "guardkitfactory" not in cp.evidence_commits  # timed out -> unversioned
 
-    def test_failed_sibling_commit_does_not_abort_checkpoint(self, tmp_path):
-        # Sibling path is not a git repo -> per-repo commit returns None, but
-        # the worktree checkpoint still succeeds (best-effort).
+    def test_non_git_sibling_is_refused_before_checkpoint(self, tmp_path):
         worktree = tmp_path / "worktree"
         _init_repo(worktree)
         not_a_repo = tmp_path / "plain"
         not_a_repo.mkdir()
+        (not_a_repo / "preserved.txt").write_text("unowned work\n")
         repo = EvidenceRepo(name="plain", root=not_a_repo)
-        manager = WorktreeCheckpointManager(
-            worktree_path=worktree, task_id="TASK-X", evidence_repos=[repo]
-        )
-        cp = manager.create_checkpoint(turn=1, tests_passed=True)
-        assert cp.commit_hash  # worktree checkpoint landed
-        assert "plain" not in cp.evidence_commits
+        before = _head(worktree)
+        with _checkpoint_scope(worktree, "TASK-X") as scope:
+            manager = WorktreeCheckpointManager(
+                worktree_path=worktree, task_id="TASK-X", evidence_repos=[repo],
+                task_work_scope=scope,
+            )
+            with pytest.raises(ScopeUnavailable, match="membership differs"):
+                manager.create_checkpoint(turn=1, tests_passed=True)
+        assert _head(worktree) == before
+        assert (not_a_repo / "preserved.txt").read_text() == "unowned work\n"
+        assert not (not_a_repo / ".git").exists()
 
 
 class TestCheckpointBackwardCompat:
@@ -233,27 +272,28 @@ class TestCheckpointJunkExclusion:
             ["git", "-C", str(wt), "commit", "-q", "--allow-empty", "-m", "seed"],
             check=True,
         )
-        # A real source change + the two junk classes.
-        (wt / "src").mkdir()
-        (wt / "src" / "real.py").write_text("x = 1\n")
-        (wt / ".cache" / "pip" / "http-v2").mkdir(parents=True)
-        (wt / ".cache" / "pip" / "http-v2" / "blob").write_text("junk")
-        (wt / ".guardkit").mkdir()
-        (wt / ".guardkit" / "bootstrap_state.json").write_text("{}")
+        with _checkpoint_scope(wt, "TASK-JUNK-1", ()) as scope:
+            # A real source change + the two junk classes.
+            (wt / "src").mkdir()
+            (wt / "src" / "real.py").write_text("x = 1\n")
+            (wt / ".cache" / "pip" / "http-v2").mkdir(parents=True)
+            (wt / ".cache" / "pip" / "http-v2" / "blob").write_text("junk")
+            (wt / ".guardkit").mkdir(exist_ok=True)
+            (wt / ".guardkit" / "bootstrap_state.json").write_text("{}")
 
-        mgr = WorktreeCheckpointManager(worktree_path=wt, task_id="TASK-JUNK-1")
-        cp = mgr.create_checkpoint(turn=1, tests_passed=True, test_count=0)
-        assert cp is not None
+            mgr = WorktreeCheckpointManager(worktree_path=wt, task_id="TASK-JUNK-1", task_work_scope=scope)
+            cp = mgr.create_checkpoint(turn=1, tests_passed=True, test_count=0)
+            assert cp is not None
 
-        shown = subprocess.run(
-            ["git", "-C", str(wt), "show", "--name-only", "--format=", "HEAD"],
-            check=True,
-            capture_output=True,
-            text=True,
-        ).stdout
-        assert "src/real.py" in shown
-        assert ".cache/" not in shown
-        assert "bootstrap_state.json" not in shown
+            shown = subprocess.run(
+                ["git", "-C", str(wt), "show", "--name-only", "--format=", "HEAD"],
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout
+            assert "src/real.py" in shown
+            assert ".cache/" not in shown
+            assert "bootstrap_state.json" not in shown
 
     def test_checkpoint_survives_repo_gitignoring_the_same_junk(
         self, tmp_path
@@ -282,26 +322,27 @@ class TestCheckpointJunkExclusion:
             ["git", "-C", str(wt), "commit", "-q", "-m", "seed w/ belt"],
             check=True,
         )
-        (wt / "src").mkdir()
-        (wt / "src" / "real.py").write_text("x = 1\n")
-        (wt / ".cache" / "pip").mkdir(parents=True)
-        (wt / ".cache" / "pip" / "blob").write_text("junk")
-        (wt / ".guardkit").mkdir()
-        (wt / ".guardkit" / "bootstrap_state.json").write_text("{}")
+        with _checkpoint_scope(wt, "TASK-JUNK-2", ()) as scope:
+            (wt / "src").mkdir()
+            (wt / "src" / "real.py").write_text("x = 1\n")
+            (wt / ".cache" / "pip").mkdir(parents=True)
+            (wt / ".cache" / "pip" / "blob").write_text("junk")
+            (wt / ".guardkit").mkdir(exist_ok=True)
+            (wt / ".guardkit" / "bootstrap_state.json").write_text("{}")
 
-        mgr = WorktreeCheckpointManager(worktree_path=wt, task_id="TASK-JUNK-2")
-        cp = mgr.create_checkpoint(turn=1, tests_passed=True, test_count=0)
-        assert cp is not None, "checkpoint must survive the repo's own gitignore belt"
+            mgr = WorktreeCheckpointManager(worktree_path=wt, task_id="TASK-JUNK-2", task_work_scope=scope)
+            cp = mgr.create_checkpoint(turn=1, tests_passed=True, test_count=0)
+            assert cp is not None, "checkpoint must survive the repo's own gitignore belt"
 
-        shown = subprocess.run(
-            ["git", "-C", str(wt), "show", "--name-only", "--format=", "HEAD"],
-            check=True,
-            capture_output=True,
-            text=True,
-        ).stdout
-        assert "src/real.py" in shown
-        assert ".cache/" not in shown
-        assert "bootstrap_state.json" not in shown
+            shown = subprocess.run(
+                ["git", "-C", str(wt), "show", "--name-only", "--format=", "HEAD"],
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout
+            assert "src/real.py" in shown
+            assert ".cache/" not in shown
+            assert "bootstrap_state.json" not in shown
 
 
 # =========================================================================
@@ -417,13 +458,14 @@ class TestCheckpointExcludesTypeScriptJunk:
         """
         wt = tmp_path / "wt"
         _init_bare_worktree(wt, gitignore=None)
-        _write_ts_junk_and_work(wt)
+        with _checkpoint_scope(wt, "TASK-TS-1", ()) as scope:
+            _write_ts_junk_and_work(wt)
 
-        mgr = WorktreeCheckpointManager(worktree_path=wt, task_id="TASK-TS-1")
-        cp = mgr.create_checkpoint(turn=1, tests_passed=True, test_count=0)
-        assert cp is not None
+            mgr = WorktreeCheckpointManager(worktree_path=wt, task_id="TASK-TS-1", task_work_scope=scope)
+            cp = mgr.create_checkpoint(turn=1, tests_passed=True, test_count=0)
+            assert cp is not None
 
-        _assert_ts_junk_absent(_committed_paths(wt))
+            _assert_ts_junk_absent(_committed_paths(wt))
 
     def test_worktree_checkpoint_survives_repo_gitignoring_ts_junk(
         self, tmp_path
@@ -437,15 +479,16 @@ class TestCheckpointExcludesTypeScriptJunk:
         """
         wt = tmp_path / "wt"
         _init_bare_worktree(wt, gitignore=_TS_GITIGNORE)
-        _write_ts_junk_and_work(wt)
+        with _checkpoint_scope(wt, "TASK-TS-2", ()) as scope:
+            _write_ts_junk_and_work(wt)
 
-        mgr = WorktreeCheckpointManager(worktree_path=wt, task_id="TASK-TS-2")
-        cp = mgr.create_checkpoint(turn=1, tests_passed=True, test_count=0)
-        assert cp is not None, (
-            "checkpoint must survive the target repo's own gitignore belt"
-        )
+            mgr = WorktreeCheckpointManager(worktree_path=wt, task_id="TASK-TS-2", task_work_scope=scope)
+            cp = mgr.create_checkpoint(turn=1, tests_passed=True, test_count=0)
+            assert cp is not None, (
+                "checkpoint must survive the target repo's own gitignore belt"
+            )
 
-        _assert_ts_junk_absent(_committed_paths(wt))
+            _assert_ts_junk_absent(_committed_paths(wt))
 
     def test_dist_output_is_deliberately_still_committed(self, tmp_path) -> None:
         """Design §B.6, explicitly: ``dist/`` is NOT on the exclude list.
@@ -458,12 +501,13 @@ class TestCheckpointExcludesTypeScriptJunk:
         """
         wt = tmp_path / "wt"
         _init_bare_worktree(wt, gitignore=None)
-        _write_ts_junk_and_work(wt)
+        with _checkpoint_scope(wt, "TASK-TS-3", ()) as scope:
+            _write_ts_junk_and_work(wt)
 
-        mgr = WorktreeCheckpointManager(worktree_path=wt, task_id="TASK-TS-3")
-        mgr.create_checkpoint(turn=1, tests_passed=True, test_count=0)
+            mgr = WorktreeCheckpointManager(worktree_path=wt, task_id="TASK-TS-3", task_work_scope=scope)
+            mgr.create_checkpoint(turn=1, tests_passed=True, test_count=0)
 
-        assert "dist/server.js" in _committed_paths(wt)
+            assert "dist/server.js" in _committed_paths(wt)
 
     def test_evidence_repo_checkpoint_excludes_ts_junk(self, tmp_path) -> None:
         """The SECOND add site (``:600-611``) carries the same law.
@@ -476,16 +520,18 @@ class TestCheckpointExcludesTypeScriptJunk:
         _init_repo(worktree)
         sibling = tmp_path / "ts-sibling"
         _init_bare_worktree(sibling, gitignore=None)
-        _write_ts_junk_and_work(sibling)
-
         repo = EvidenceRepo(name="ts-sibling", root=sibling)
-        mgr = WorktreeCheckpointManager(
-            worktree_path=worktree, task_id="TASK-TS-4", evidence_repos=[repo]
-        )
-        cp = mgr.create_checkpoint(turn=1, tests_passed=True, test_count=0)
+        with _checkpoint_scope(worktree, "TASK-TS-4", [repo]) as scope:
+            _write_ts_junk_and_work(sibling)
 
-        assert "ts-sibling" in cp.evidence_commits
-        _assert_ts_junk_absent(_committed_paths(sibling))
+            mgr = WorktreeCheckpointManager(
+                task_work_scope=scope,
+                worktree_path=worktree, task_id="TASK-TS-4", evidence_repos=[repo]
+            )
+            cp = mgr.create_checkpoint(turn=1, tests_passed=True, test_count=0)
+
+            assert "ts-sibling" in cp.evidence_commits
+            _assert_ts_junk_absent(_committed_paths(sibling))
 
     def test_both_add_sites_use_the_identical_exclude_list(self) -> None:
         """The two sites drifting apart is the failure mode this pins.
@@ -662,13 +708,14 @@ class TestCheckpointExcludesNpmCacheJunk:
         """
         wt = tmp_path / "wt"
         _init_bare_worktree(wt, gitignore=None)
-        _write_npm_cache_junk_and_work(wt)
+        with _checkpoint_scope(wt, "TASK-JX-1", ()) as scope:
+            _write_npm_cache_junk_and_work(wt)
 
-        mgr = WorktreeCheckpointManager(worktree_path=wt, task_id="TASK-JX-1")
-        cp = mgr.create_checkpoint(turn=1, tests_passed=True, test_count=0)
-        assert cp is not None
+            mgr = WorktreeCheckpointManager(worktree_path=wt, task_id="TASK-JX-1", task_work_scope=scope)
+            cp = mgr.create_checkpoint(turn=1, tests_passed=True, test_count=0)
+            assert cp is not None
 
-        _assert_npm_cache_junk_absent(_committed_paths(wt))
+            _assert_npm_cache_junk_absent(_committed_paths(wt))
 
     def test_worktree_checkpoint_survives_repo_gitignoring_npm_cache_junk(
         self, tmp_path
@@ -682,15 +729,16 @@ class TestCheckpointExcludesNpmCacheJunk:
         """
         wt = tmp_path / "wt"
         _init_bare_worktree(wt, gitignore=_NPM_CACHE_GITIGNORE)
-        _write_npm_cache_junk_and_work(wt)
+        with _checkpoint_scope(wt, "TASK-JX-2", ()) as scope:
+            _write_npm_cache_junk_and_work(wt)
 
-        mgr = WorktreeCheckpointManager(worktree_path=wt, task_id="TASK-JX-2")
-        cp = mgr.create_checkpoint(turn=1, tests_passed=True, test_count=0)
-        assert cp is not None, (
-            "checkpoint must survive the repo's own gitignore belt (706589f7)"
-        )
+            mgr = WorktreeCheckpointManager(worktree_path=wt, task_id="TASK-JX-2", task_work_scope=scope)
+            cp = mgr.create_checkpoint(turn=1, tests_passed=True, test_count=0)
+            assert cp is not None, (
+                "checkpoint must survive the repo's own gitignore belt (706589f7)"
+            )
 
-        _assert_npm_cache_junk_absent(_committed_paths(wt))
+            _assert_npm_cache_junk_absent(_committed_paths(wt))
 
     def test_evidence_repo_checkpoint_excludes_npm_cache_junk(
         self, tmp_path
@@ -700,16 +748,18 @@ class TestCheckpointExcludesNpmCacheJunk:
         _init_repo(worktree)
         sibling = tmp_path / "npm-sibling"
         _init_bare_worktree(sibling, gitignore=None)
-        _write_npm_cache_junk_and_work(sibling)
-
         repo = EvidenceRepo(name="npm-sibling", root=sibling)
-        mgr = WorktreeCheckpointManager(
-            worktree_path=worktree, task_id="TASK-JX-3", evidence_repos=[repo]
-        )
-        cp = mgr.create_checkpoint(turn=1, tests_passed=True, test_count=0)
+        with _checkpoint_scope(worktree, "TASK-JX-3", [repo]) as scope:
+            _write_npm_cache_junk_and_work(sibling)
 
-        assert "npm-sibling" in cp.evidence_commits
-        _assert_npm_cache_junk_absent(_committed_paths(sibling))
+            mgr = WorktreeCheckpointManager(
+                task_work_scope=scope,
+                worktree_path=worktree, task_id="TASK-JX-3", evidence_repos=[repo]
+            )
+            cp = mgr.create_checkpoint(turn=1, tests_passed=True, test_count=0)
+
+            assert "npm-sibling" in cp.evidence_commits
+            _assert_npm_cache_junk_absent(_committed_paths(sibling))
 
     def test_tracked_claude_work_still_checkpoints_when_modified(
         self, tmp_path
@@ -733,13 +783,14 @@ class TestCheckpointExcludesNpmCacheJunk:
             check=True,
         )
 
-        # The Player edits the tracked rule as its deliverable.
-        (wt / ".claude" / "rules" / "autobuild.md").write_text("# v2 (player)\n")
+        with _checkpoint_scope(wt, "TASK-JX-4", ()) as scope:
+            # The Player edits the tracked rule as its deliverable.
+            (wt / ".claude" / "rules" / "autobuild.md").write_text("# v2 (player)\n")
 
-        mgr = WorktreeCheckpointManager(worktree_path=wt, task_id="TASK-JX-4")
-        cp = mgr.create_checkpoint(turn=1, tests_passed=True, test_count=0)
-        assert cp is not None
+            mgr = WorktreeCheckpointManager(worktree_path=wt, task_id="TASK-JX-4", task_work_scope=scope)
+            cp = mgr.create_checkpoint(turn=1, tests_passed=True, test_count=0)
+            assert cp is not None
 
-        assert ".claude/rules/autobuild.md" in _committed_paths(wt), (
-            "a tracked .claude/ deliverable must still be checkpointed"
-        )
+            assert ".claude/rules/autobuild.md" in _committed_paths(wt), (
+                "a tracked .claude/ deliverable must still be checkpointed"
+            )
