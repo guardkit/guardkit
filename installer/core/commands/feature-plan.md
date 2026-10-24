@@ -1442,7 +1442,7 @@ The `task_type` field is **REQUIRED** for AutoBuild integration. Without it, Coa
 | "Update docs", "Add README", "Documentation..." | `documentation` |
 | "Refactor...", "Migrate...", "Upgrade..." | `refactor` |
 | "Pydantic model", "DTO", "Settings class", "constants", "enums", "app init", "data model", "type definitions", "schema" | `declarative` |
-| Live infrastructure / human-in-the-loop / wall-clock observation patterns (see Detection Rules below) | `operator_handoff` |
+| Actual human/manual act, or executable proof missing declared authority/capability (see Detection Rules below) | `operator_handoff` |
 | All other implementation tasks | `feature` |
 
 **Seam Test Checklist**:
@@ -1466,7 +1466,7 @@ This is a soft gate - Coach will note missing seam tests but won't block approva
 - "Update API documentation" → `task_type: documentation`
 - "Add Pydantic models for user schema" → `task_type: declarative`
 - "Create Settings class and constants" → `task_type: declarative`
-- "Run seed script against live FalkorDB" → `task_type: operator_handoff`
+- "Run seed script against live FalkorDB with the declared executable test tool" → `task_type: feature`
 - "Conduct live MCP tutor session from Claude Desktop" → `task_type: operator_handoff`
 
 ### Detection Rules — when to mark a task `operator_handoff`
@@ -1478,19 +1478,20 @@ This is a soft gate - Coach will note missing seam tests but won't block approva
 > mismatch), the strong/weak signal taxonomy below, and how the
 > `operator_handoff` escape hatch surfaces in `/feature-complete`.
 
-Some acceptance criteria specify behaviour that is `observed_at_runtime(real_world)`
-rather than `present_in_codebase(artifact)`. AutoBuild's Player ↔ Coach loop
-cannot satisfy these by construction — Coach is a deterministic file-existence
-and test-passing checker. The only safe outcomes are (1) don't generate the
-task in autobuild-shaped form, or (2) tag it so AutoBuild declines to attempt
-it. We do both: detect at plan time (cheap), and let `task_type: operator_handoff`
-short-circuit the orchestrator (safety net).
+Classify capability, not vocabulary. An explicitly required executable check
+stays build-owned when the declared tools, environment and existing authority
+can run it; `live`, `wall-clock`, or a hostname does not make it manual. Use
+`operator_handoff` only for an actual human/manual act or when a named authority
+or capability is unavailable, and record that concrete reason. This never grants
+new authority for an external action. A missing `task_type` defaults to
+`feature`; do not infer another type from keywords.
 
 When generating tasks, scan each acceptance criterion against the rules below.
-If a strong signal fires, **interactively prompt the operator** before emitting
-the task (see "Interactive prompt step" below).
+Signals below are review clues only. Confirm the task's declared tools,
+environment and authority before classifying it; they never decide the type by
+themselves.
 
-**Strong signals (any one triggers the prompt):**
+**Review signals (never sufficient on their own):**
 
 | Category | Verbatim phrases / patterns |
 |---|---|
@@ -1499,7 +1500,7 @@ the task (see "Interactive prompt step" below).
 | Wall-clock language | "p50", "p95", "wall-clock", "latency over a N-minute run", "30 minutes of operation", "soak", "burn-in", "Expected ~30 min" |
 | Author self-disclosure | Test Requirements (or equivalent) section contains "There is no automated test harness for ...", "manual verification required", "operator runs the script and pastes the result", "cannot be satisfied by autobuild" |
 
-**Weak signals (require pairing with at least one strong signal):**
+**Additional context signals:**
 
 - "verify", "ensure", "check" — often autobuild-suitable on their own
 - "running" something — could be unit test or live run
@@ -1508,13 +1509,11 @@ the task (see "Interactive prompt step" below).
 
 **False-positive guard:**
 
-A weak signal alone does NOT trigger. Strong signals always trigger. Mixed
-(1 strong + N weak) trigger. The detector flags; the human is the final
-arbiter via the interactive prompt below. Bias toward false positives —
-they cost one operator confirmation; false negatives cost a full
-turn-budget burn (~50–75 minutes per missed task in the FEAT-FD32 baseline).
+A signal alone does NOT trigger handoff. Tag only when the acceptance criterion
+actually requires a human/manual act or names proof the factory cannot execute
+with its declared authority/capability. Otherwise keep the task build-owned.
 
-**Examples that should trigger:**
+**Examples that require capability review:**
 
 - *"`python scripts/seed_student_model.py` runs successfully against live
   FalkorDB at whitestocks:6379 ..."* — live infrastructure + wall-clock.
@@ -1531,9 +1530,8 @@ turn-budget burn (~50–75 minutes per missed task in the FEAT-FD32 baseline).
 
 ### Interactive prompt step
 
-When a strong signal fires for any acceptance criterion of a task being
-generated, pause task emission and run this prompt verbatim against the
-operator:
+When the capability review proves a human/manual act or missing authority,
+pause task emission and show the concrete reason in this prompt:
 
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1545,7 +1543,7 @@ predicate that AutoBuild's Player ↔ Coach loop cannot satisfy:
 
   AC-{id}: "{verbatim AC text}"
 
-Strong signals matched: {list of matched categories}
+Concrete human requirement or missing authority/capability: {reason}
 
 Mark this task as `task_type: operator_handoff` and skip autobuild? [Y/n]:
 ```
@@ -1572,10 +1570,10 @@ Mark this task as `task_type: operator_handoff` and skip autobuild? [Y/n]:
 
 **On `n`:**
 
-1. Emit the task with whatever default `task_type` the rules table assigns
-   (typically `feature`).
-2. Continue plan generation. The operator has accepted that AutoBuild will
-   attempt the task — if Coach later fails it, that is expected.
+1. Do not silently emit the task as build-owned. Revisit its declared tool,
+   environment or authority, or remove the unsupported criterion.
+2. Continue only when the revised task is executable by the factory; otherwise
+   leave it deferred as `operator_handoff` with the concrete reason.
 
 **Multiple flagged ACs in one task:** ask once per task, not once per AC.
 Show all matched ACs in a single prompt; the operator's `Y` covers all of

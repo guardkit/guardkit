@@ -66,16 +66,13 @@ def test_strong_signal_marker_present(prompt_text: str, marker: str) -> None:
     )
 
 
-def test_false_positive_guard_present(prompt_text: str) -> None:
-    """The false-positive guard ('weak signal alone does NOT trigger') must
-    appear verbatim so the agent knows weak-only matches must not fire the
-    operator-handoff prompt.
-    """
-    assert "weak signal alone does NOT trigger" in prompt_text, (
-        "Missing false-positive guard string from feature-plan.md. The agent "
-        "must not flag tasks on weak signals alone — see "
-        ".claude/reviews/TASK-REV-AUTM-review-report.md §AC-AUTM-02."
-    )
+def test_signals_do_not_override_available_execution(prompt_text: str) -> None:
+    """Vocabulary cannot defer an authorised, executable proof task."""
+    text = " ".join(prompt_text.split())
+    assert "Signals below are review clues only" in text
+    assert "stays build-owned" in text
+    assert "declared tools, environment and existing authority" in text
+    assert "missing `task_type` defaults to `feature`" in text
 
 
 def test_detection_rules_section_heading_present(prompt_text: str) -> None:
@@ -99,10 +96,7 @@ def test_operator_handoff_row_in_assignment_table(prompt_text: str) -> None:
     wall-clock observation) to ``operator_handoff``. Pinned as a single
     substring so reordering columns doesn't silently break the rule.
     """
-    expected_row_fragment = (
-        "Live infrastructure / human-in-the-loop / wall-clock observation "
-        "patterns"
-    )
+    expected_row_fragment = "Actual human/manual act, or executable proof missing declared authority/capability"
     assert expected_row_fragment in prompt_text, (
         "Task Type Assignment Rules table is missing the operator_handoff "
         "pattern row. AC-FPTC-001-02 requires this row so the rules table "

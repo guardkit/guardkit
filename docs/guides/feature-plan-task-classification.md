@@ -13,16 +13,15 @@ the per-class subfolder links below.
 ## Philosophy: plan-time prevention beats runtime detection
 
 The cheapest place to reject a bad feature plan is the prompt
-round-trip with the operator — one yes/no question, ~5 seconds,
+round-trip with the operator — a short capability decision,
 zero SDK turns burned. The most expensive place is the turn-budget
 burn that wastes minutes producing artefacts the gate will never
 accept (~50–75 minutes per missed task in the FEAT-FD32 baseline).
 
 Every defence in this folder is anchored at plan time, with a
-runtime safety net for cases the planner misses. **Both layers must
-miss for a defect to ship.** We bias toward false positives at the
-plan-time layer — they cost one operator confirmation; false
-negatives cost a full turn-budget burn.
+runtime safety net for cases the planner misses. Classification must not
+defer executable proof merely because its wording mentions live systems or
+elapsed time.
 
 ## The four classes
 
@@ -133,11 +132,10 @@ across two days.
 ### Class C signal taxonomy
 
 The detector at TASK-FPTC-001 (in `feature-plan.md`'s "Detection
-Rules — when to mark a task `operator_handoff`" section) classifies
-acceptance criteria by signal strength. **Strong signals fire on
-their own; weak signals require pairing with a strong signal.**
+Rules — when to mark a task `operator_handoff`" section) surfaces clues for a
+capability decision. Signals never classify a task on their own.
 
-**Strong signals** (any one triggers the operator prompt):
+**Review signals** (never sufficient on their own):
 
 | Category | Verbatim phrases / patterns |
 |---|---|
@@ -146,22 +144,23 @@ their own; weak signals require pairing with a strong signal.**
 | **Wall-clock language** | "p50", "p95", "wall-clock", "latency over a N-minute run", "30 minutes of operation", "soak", "burn-in", "Expected ~30 min" |
 | **Author self-disclosure** | Test Requirements section contains "There is no automated test harness for ...", "manual verification required", "operator runs the script and pastes the result", "cannot be satisfied by autobuild" |
 
-**Weak signals** (require a strong signal to trigger):
+**Additional context signals**:
 
 - "verify", "ensure", "check" — often autobuild-suitable on their own
 - "running" something — could be unit test or live run
 - specific user names ("Lilymay", "test-user-123")
 - specific dataset names that may or may not exist on disk
 
-**False-positive guard.** A weak signal alone does NOT trigger.
-Strong signals always trigger. Mixed (1 strong + N weak) trigger.
-The detector flags; the human is the final arbiter via the
-interactive prompt. We bias toward false positives — they cost one
-operator confirmation; false negatives cost a full turn-budget burn.
+**False-positive guard.** A task stays build-owned when an explicitly required
+executable check can run with declared tools, environment and existing
+authority, including live or wall-clock checks. Use `operator_handoff` only for
+an actual human/manual act or a concrete missing authority/capability, and say
+which. Never expand external-action authority. Missing type defaults to
+`feature`, without keyword inference.
 
 ### Examples
 
-**Triggers** (`operator_handoff`):
+**Needs capability review** (not automatic `operator_handoff`):
 
 - *"`python scripts/seed_student_model.py` runs successfully against
   live FalkorDB at whitestocks:6379 ..."* — live infrastructure +
@@ -170,7 +169,7 @@ operator confirmation; false negatives cost a full turn-budget burn.
   the user as the human-in-the-loop ..."* — live infrastructure +
   human verbs + author self-disclosure.
 
-**Does NOT trigger**:
+**Stays build-owned**:
 
 - *"All unit tests pass with `pytest tests/ -v`."* — verb `pass` is
   weak; no strong signals.
@@ -184,12 +183,12 @@ under "Detection Rules — when to mark a task `operator_handoff`".
 
 ## The `operator_handoff` escape hatch
 
-When the detector fires (or the operator chooses it via the
-interactive prompt), the task is emitted with `task_type:
-operator_handoff` rather than the default. The full machinery:
+When capability review establishes an actual human/manual act or a concrete
+missing authority/capability, the task is emitted with `task_type:
+operator_handoff` rather than the `feature` default. The full machinery:
 
-1. **Plan time** (TASK-FPTC-001): detector flags the AC, prompt
-   verbatim asks the operator to confirm. On `Y` (default), the task
+1. **Plan time** (TASK-FPTC-001): capability review establishes the gap and
+   the prompt states its concrete reason. On `Y` (default), the task
    is emitted with `task_type: operator_handoff` and a
    `## Required operator follow-up` block listing the runtime ACs.
 2. **Taxonomy** (TASK-FPTC-002): `OPERATOR_HANDOFF` registered as a

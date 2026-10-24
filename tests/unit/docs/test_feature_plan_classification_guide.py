@@ -33,3 +33,11 @@ def test_classification_guide_mentions_required_terms(needle: str):
     assert needle in content, (
         f"Classification guide is missing required term: {needle!r}"
     )
+
+
+def test_guide_keeps_authorised_executable_proof_build_owned() -> None:
+    content = " ".join(GUIDE_PATH.read_text(encoding="utf-8").split())
+    assert "stays build-owned" in content
+    assert "declared tools, environment and existing authority" in content
+    assert "actual human/manual act or a concrete missing authority/capability" in content
+    assert "Missing type defaults to" in content
