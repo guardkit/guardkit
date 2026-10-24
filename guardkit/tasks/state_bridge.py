@@ -202,7 +202,10 @@ class TaskStateBridge:
 
         # TASK-FIX-1B4C (Layer 3'): persist the move so AgentInvoker's
         # post-turn git-diff enrichment can subtract the now-ghost source
-        # path before it reaches the Player report (and Coach honesty).
+        # path before it reaches the Player report (and Coach honesty). A
+        # move that failed (step 1: kept at its real path) moved nothing.
+        if new_path == task_path:
+            return new_path
         try:
             self._persist_state_transition(
                 task_id=self.task_id,
@@ -646,10 +649,8 @@ The detailed specifications are in the task markdown file.
         updates : Dict[str, Any]
             Dictionary of frontmatter fields to update
 
-        Raises
-        ------
-        TaskStateError
-            If file read/write fails
+        Step 1 (24 October 2026): bookkeeping, best effort. A failed read or
+        write is logged and the task goes on.
         """
         try:
             # Read existing file
@@ -666,11 +667,11 @@ The detailed specifications are in the task markdown file.
 
             self.logger.debug(f"Updated frontmatter for {task_path}: {updates}")
 
-        except Exception as e:
-            raise TaskStateError(
-                f"Failed to update frontmatter for {self.task_id}: {e}",
-                task_id=self.task_id,
-            ) from e
+        except Exception as e:  # noqa: BLE001 — bookkeeping, never fatal
+            self.logger.warning(
+                f"Could not update frontmatter for {self.task_id} "
+                f"({task_path}): {e}; the task goes on"
+            )
 
     def _move_task_to_state(self, current_path: Path, new_state: str) -> Path:
         """
@@ -686,23 +687,21 @@ The detailed specifications are in the task markdown file.
         Returns
         -------
         Path
-            New task file location
+            New task file location, or ``current_path`` (where the file really
+            is) when the move failed.
 
-        Raises
-        ------
-        TaskStateError
-            If move operation fails
+        Step 1 (24 October 2026): bookkeeping, best effort. A failed move is
+        logged and the real path is kept; it never ends the task.
         """
         # Determine new directory
         new_state_dir = self.repo_root / "tasks" / new_state
-
-        # Create state directory if it doesn't exist
-        new_state_dir.mkdir(parents=True, exist_ok=True)
 
         # Determine new path (preserve filename)
         new_path = new_state_dir / current_path.name
 
         try:
+            # Create state directory if it doesn't exist
+            new_state_dir.mkdir(parents=True, exist_ok=True)
             # Move file (shutil.move handles cross-filesystem moves)
             shutil.move(str(current_path), str(new_path))
             self.logger.info(
@@ -710,12 +709,12 @@ The detailed specifications are in the task markdown file.
             )
             return new_path
 
-        except Exception as e:
-            raise TaskStateError(
-                f"Failed to move task {self.task_id} to {new_state}: {e}",
-                task_id=self.task_id,
-                expected_state=new_state,
-            ) from e
+        except Exception as e:  # noqa: BLE001 — bookkeeping, never fatal
+            self.logger.warning(
+                f"Could not move task {self.task_id} to {new_state}: {e}; "
+                f"it stays at {current_path} and the task goes on"
+            )
+            return current_path
 
 
 # ============================================================================

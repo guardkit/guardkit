@@ -8881,13 +8881,42 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
 
         original_decision = decision["decision"]
         summary = (getattr(independent, "test_output_summary", "") or "").strip()
+        test_command = getattr(independent, "test_command", None)
+
+        # GKT-078, step 1 (24 October 2026): the declared test command ran and
+        # exited 0, and only the test names were not recognised in its output.
+        # Nothing failed, so the verdict is not overridden; the gap is advice.
+        if getattr(independent, "exit_code", None) == 0:
+            advice = (
+                "Advice: the declared test command "
+                f"({test_command or 'unknown'}) exited 0, but no test count was "
+                "recognised in its output, so the tests could not be counted "
+                "independently. "
+                f"Independent-test oracle output: {summary or '<empty>'}"
+            )
+            logger.warning(
+                "GKT-078: %s turn %s — %s (verdict %r left unchanged)",
+                task_id, turn, advice, original_decision,
+            )
+            if decision_value == "approve":
+                decision.setdefault("issues", []).append({
+                    "severity": "should_fix",
+                    "category": "test_count_unrecognised",
+                    "description": advice,
+                    "details": {"signal_absent": True, "exit_code": 0,
+                                "test_command": test_command},
+                })
+                self._persist_coach_decision(
+                    decision, coach_output_path, tag="GKT-078"
+                )
+            return
+
         # TASK-AB-ZEROTESTLOUD01 (AC-001/AC-002): name the interpreter and
         # command so the honest framing (and the machine-readable marker) can
         # say exactly WHAT could not run. Both come from the Coach's own
         # IndependentTestResult (resolved_interpreter threaded by
         # TASK-AB-RESUMEVENV01 AC-003).
         resolved_interpreter = getattr(independent, "resolved_interpreter", None)
-        test_command = getattr(independent, "test_command", None)
 
         # AC-2: name the cause and quote test_output_summary verbatim so the
         # operator can see whether the oracle timed out or errored. The leading
@@ -8895,32 +8924,17 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         # TASK-AB-ZEROTESTLOUD01 (AC-002): follow with the honest
         # infrastructure framing — an absent signal can never mean "Player
         # code is bad", so tell the Player not to rewrite the implementation.
-        if getattr(independent, "exit_code", None) == 0:
-            # The command ran and exited 0, but no test count was recognised
-            # in its output (23 October 2026). Nothing is broken in the
-            # environment, so say what the builder can do about it instead.
-            rationale = (
-                "Independent test verification did not complete (signal "
-                "absent) — cannot independently confirm the Player's reported "
-                f"tests. The declared check (command: {test_command or 'unknown'}) "
-                "ran and exited 0, but its output showed no test running, so "
-                "no test count was recognised. If this task's tests are meant "
-                "to run, make sure that command runs them and prints their "
-                "results; this alone does not mean your code is wrong. "
-                f"Independent-test oracle output: {summary or '<empty>'}"
-            )
-        else:
-            rationale = (
-                "Independent test verification did not complete (signal absent) — "
-                "cannot independently confirm the Player's reported tests. "
-                "Verification infrastructure could not collect/run any tests "
-                f"(interpreter: {resolved_interpreter or 'unknown'}, "
-                f"command: {test_command or 'unknown'}) — this is NOT a signal "
-                "about your code; do not rewrite the implementation in response. "
-                "Check the worktree venv / re-run environment bootstrap so the "
-                "verifier can produce a verdict. "
-                f"Independent-test oracle output: {summary or '<empty>'}"
-            )
+        rationale = (
+            "Independent test verification did not complete (signal absent) — "
+            "cannot independently confirm the Player's reported tests. "
+            "Verification infrastructure could not collect/run any tests "
+            f"(interpreter: {resolved_interpreter or 'unknown'}, "
+            f"command: {test_command or 'unknown'}) — this is NOT a signal "
+            "about your code; do not rewrite the implementation in response. "
+            "Check the worktree venv / re-run environment bootstrap so the "
+            "verifier can produce a verdict. "
+            f"Independent-test oracle output: {summary or '<empty>'}"
+        )
 
         override_issue = {
             "severity": "must_fix",
@@ -13415,7 +13429,6 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
             task_id: Task identifier (e.g., "TASK-001")
 
         Raises:
-            TaskStateError: If state transition fails
             PlanNotFoundError: If implementation plan is missing
         """
         from guardkit.tasks.state_bridge import TaskStateBridge
@@ -13438,8 +13451,12 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
             raise
 
         except TaskStateError as e:
-            logger.error(f"Failed to ensure design_approved state for {task_id}: {e}")
-            raise
+            # Step 1 (24 October 2026): task-state bookkeeping never ends the
+            # task; the failure is logged and the work goes on.
+            logger.warning(
+                f"Could not ensure design_approved state for {task_id}: {e}; "
+                f"the task goes on"
+            )
 
     # =========================================================================
     # Task-Work Results Writer Methods

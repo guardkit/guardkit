@@ -11,9 +11,12 @@ from dataclasses import dataclass, asdict
 import fcntl
 import hashlib
 import json
+import logging
 from pathlib import Path
 import threading
 import uuid
+
+logger = logging.getLogger(__name__)
 
 
 class ScopeUnavailable(RuntimeError):
@@ -79,6 +82,9 @@ _history = {}
 _fresh = {}
 _bindings = {}
 _selected = {}
+# Step 1 (24 October 2026): the last approved commit of each checkout in this
+# run, kept when a task's approval completes. A later failure never erases it.
+_approved_heads = {}
 _local = threading.local()
 
 
@@ -97,6 +103,7 @@ def register_fresh_checkout(root, source_commit, *, source_root=None):
             raise ScopeUnavailable(
                 "Cannot register an old or unsettled checkout as fresh"
             )
+        _approved_heads.pop(str(git_dir), None)
         _fresh[str(git_dir)] = {
             "commit": source,
             "source_root": str(Path(source_root or root).resolve()),
@@ -263,6 +270,9 @@ class CheckoutLease:
         self.owner = threading.get_ident()
         self.failure = None
         self.continuation_snapshot = None
+        # GKT-150, step 1 (24 October 2026): a branch or HEAD that moved
+        # outside the task's own checkpoints is noted here, never a failure.
+        self.notes = []
 
     def verify(self, scope=None):
         if current_lease() is not self or threading.get_ident() != self.owner:
@@ -284,15 +294,25 @@ class CheckoutLease:
         for _, root, git_dir in self.repositories:
             if identity(root) != (root, git_dir):
                 raise ScopeUnavailable("Checkout identity changed; work preserved")
-            if (
-                _git(root, "symbolic-ref", "--short", "HEAD")
-                != self.branches[str(root)]
-            ):
-                raise ScopeUnavailable("Checkout branch changed; work preserved")
-            if _git(root, "rev-parse", "HEAD") != self.expected[str(root)]:
-                raise ScopeUnavailable(
-                    "Unowned HEAD/checkpoint movement; work preserved"
+            branch = _git(root, "symbolic-ref", "--short", "HEAD")
+            if branch != self.branches[str(root)]:
+                self._note_moved(
+                    root, f"branch changed from {self.branches[str(root)]} to {branch}"
                 )
+                self.branches[str(root)] = branch
+            head = _git(root, "rev-parse", "HEAD")
+            if head != self.expected[str(root)]:
+                self._note_moved(
+                    root,
+                    f"HEAD moved from {self.expected[str(root)]} to {head} "
+                    "outside the task's own checkpoints",
+                )
+                self.expected[str(root)] = head
+
+    def _note_moved(self, root, what):
+        note = f"Checkout {root}: {what}; recorded, the task goes on"
+        self.notes.append(note)
+        logger.warning(note)
 
     def checkpoint_completed(self):
         # Only the checkpoint writer calls this after validating the old HEAD.
@@ -349,11 +369,20 @@ class CheckoutLease:
         )
         from guardkit.orchestrator.paths import TaskArtifactPaths
 
-        artifact = TaskArtifactPaths.private_artifact_path(
-            task_id, f"scope-{self.scope.scope_id}.json", self.repositories[0][1]
-        )
-        artifact.parent.mkdir(parents=True, exist_ok=True)
-        artifact.write_text(json.dumps(asdict(self.scope), indent=2))
+        # Step 1 (24 October 2026): the scope record is bookkeeping. The
+        # in-memory scope above is what the task runs on; a failed write is
+        # logged and never ends the task.
+        try:
+            artifact = TaskArtifactPaths.private_artifact_path(
+                task_id, f"scope-{self.scope.scope_id}.json", self.repositories[0][1]
+            )
+            artifact.parent.mkdir(parents=True, exist_ok=True)
+            artifact.write_text(json.dumps(asdict(self.scope), indent=2))
+        except OSError as exc:
+            logger.warning(
+                "Scope record for %s could not be written (%s); the task goes on",
+                task_id, exc,
+            )
         self.continuation_snapshot = boundary_snapshot(self)
         return self.scope
 
@@ -489,6 +518,7 @@ def checkout_lease(root, evidence_repos=(), cancelled=None):
                     )
                     if lease.scope:
                         approved.add(lease.scope.task_id)
+                        _approved_heads[str(git_dir)] = lease.expected[str(root)]
                     _history[str(git_dir)] = {
                         "head": lease.expected[str(root)],
                         "approved_tasks": sorted(approved),
@@ -517,6 +547,16 @@ def checkout_lease(root, evidence_repos=(), cancelled=None):
                             pass
             finally:
                 _local.lease = None
+
+
+def approved_head(root):
+    """The last commit an approved task left in this checkout during this run,
+    or ``None`` when no task has been approved here yet."""
+    try:
+        _, git_dir = identity(root)
+    except Exception:  # noqa: BLE001 — absence, never a failure
+        return None
+    return _approved_heads.get(str(git_dir))
 
 
 def bootstrap_admitted_checkout(scope):

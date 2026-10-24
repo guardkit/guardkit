@@ -191,7 +191,7 @@ class TestValidateFeaturePreflight:
         assert not result.has_warnings
 
     def test_missing_required_field_complexity(self, tmp_path):
-        """Missing 'complexity' field produces an error."""
+        """Missing 'complexity' field is advice with its default (step 1)."""
         _create_task_file(
             tmp_path,
             "tasks/backlog/TASK-001.md",
@@ -202,14 +202,14 @@ class TestValidateFeaturePreflight:
 
         result = validate_feature_preflight(feature, tmp_path)
 
-        assert not result.is_valid
+        assert result.is_valid
         assert any(
-            issue.field == "complexity" and "Missing required field" in issue.message
-            for issue in result.errors
+            issue.field == "complexity" and "using the default" in issue.message
+            for issue in result.warnings
         )
 
     def test_missing_required_field_title(self, tmp_path):
-        """Missing 'title' field produces an error."""
+        """Missing 'title' field is advice (step 1)."""
         _create_task_file(
             tmp_path,
             "tasks/backlog/TASK-001.md",
@@ -220,13 +220,13 @@ class TestValidateFeaturePreflight:
 
         result = validate_feature_preflight(feature, tmp_path)
 
-        assert not result.is_valid
+        assert result.is_valid
         assert any(
-            issue.field == "title" for issue in result.errors
+            issue.field == "title" for issue in result.warnings
         )
 
     def test_missing_required_field_task_type(self, tmp_path):
-        """Missing 'task_type' field produces an error."""
+        """Missing 'task_type' field is advice (step 1)."""
         _create_task_file(
             tmp_path,
             "tasks/backlog/TASK-001.md",
@@ -237,13 +237,13 @@ class TestValidateFeaturePreflight:
 
         result = validate_feature_preflight(feature, tmp_path)
 
-        assert not result.is_valid
+        assert result.is_valid
         assert any(
-            issue.field == "task_type" for issue in result.errors
+            issue.field == "task_type" for issue in result.warnings
         )
 
     def test_missing_required_field_id(self, tmp_path):
-        """Missing 'id' field produces an error."""
+        """Missing 'id' field is advice (step 1)."""
         _create_task_file(
             tmp_path,
             "tasks/backlog/TASK-001.md",
@@ -254,9 +254,9 @@ class TestValidateFeaturePreflight:
 
         result = validate_feature_preflight(feature, tmp_path)
 
-        assert not result.is_valid
+        assert result.is_valid
         assert any(
-            issue.field == "id" for issue in result.errors
+            issue.field == "id" for issue in result.warnings
         )
 
     def test_multiple_errors_reported_at_once(self, tmp_path):
@@ -279,8 +279,9 @@ class TestValidateFeaturePreflight:
 
         assert not result.is_valid
         task_ids_with_errors = {issue.task_id for issue in result.errors}
-        assert "TASK-001" in task_ids_with_errors  # invalid task_type
-        assert "TASK-002" in task_ids_with_errors  # missing complexity
+        assert task_ids_with_errors == {"TASK-001"}  # invalid task_type
+        # Missing complexity is advice since step 1 (24 October 2026).
+        assert "TASK-002" in {issue.task_id for issue in result.warnings}
 
     def test_missing_file_skipped(self, tmp_path):
         """Task whose file does not exist is skipped (structural validator handles it)."""
@@ -375,7 +376,7 @@ class TestFormatPreflightReport:
         report = format_preflight_report(result)
 
         assert "PRE-FLIGHT VALIDATION WARNINGS" in report
-        assert "1 task(s) use legacy aliases" in report
+        assert "1 task(s) have advice" in report
         assert "TASK-002" in report
         assert "enhancement" in report
         assert "Suggestion: Change to 'feature'" in report

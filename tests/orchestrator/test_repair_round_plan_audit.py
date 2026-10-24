@@ -309,6 +309,24 @@ def _gate_passes(root: Path, plan_audit: Dict[str, Any]) -> bool:
     return bool(gates.plan_audit_passed)
 
 
+def _audit_advice(root: Path, plan_audit: Dict[str, Any]) -> bool:
+    """Step 1 (24 October 2026, GKT-141): the gate passes and the audit's
+    findings come back as advice."""
+    validator = CoachValidator(str(root), task_id=TASK_ID)
+    gates = validator.verify_quality_gates(
+        {
+            "task_id": TASK_ID,
+            "quality_gates": {"all_passed": True, "tests_failed": 0, "coverage_met": True},
+            "code_review": {"score": 95},
+            "plan_audit": plan_audit,
+        },
+        profile=get_profile(TaskType.FEATURE),
+    )
+    return bool(gates.plan_audit_passed) and any(
+        a["category"] == "plan_audit" for a in gates.advisories
+    )
+
+
 NEAR_THE_FAILURE = {
     "tests/e2e/shelf.spec.ts": "test('only my books', () => {});\n",
     "tests/e2e/sign-in.ts": "export const signIn = 1;\n",
@@ -374,7 +392,7 @@ class TestTheAuditInARepairRound:
         assert verdict["severity"] == "high"
         assert verdict["extra_files_for_the_reviewer"] == []
         assert "repair_round" not in verdict
-        assert not _gate_passes(repo, verdict)
+        assert _audit_advice(repo, verdict)
 
     def test_a_protected_file_the_round_made_is_refused(self, repo: Path) -> None:
         _approve_round_one(repo)
@@ -388,7 +406,7 @@ class TestTheAuditInARepairRound:
         assert verdict["severity"] == "high"
         assert verdict["extra_files_for_the_reviewer"] == ["tests/e2e/sign-in.ts"]
         assert "db/migrations/0003_seed.sql" in verdict["extra_files"]
-        assert not _gate_passes(repo, verdict)
+        assert _audit_advice(repo, verdict)
 
     def test_files_an_earlier_round_made_are_the_admitted_baseline(self, repo: Path) -> None:
         # Round 1 was approved with two extra files, one protected (medium).
@@ -410,7 +428,12 @@ class TestTheAuditInARepairRound:
         assert verdict["extra_files_for_the_reviewer"] == ["api/src/a.ts"]
         assert _gate_passes(repo, verdict)
 
-    def test_a_round_whose_start_was_rolled_back_is_audited_as_ordinary(self, repo: Path) -> None:
+    def test_a_round_whose_start_was_rolled_back_is_noted_and_still_audited(
+        self, repo: Path
+    ) -> None:
+        """Step 1 (24 October 2026): a HEAD moved outside the task's own
+        checkpoints is noted, never fatal (GKT-150), and the plan audit is
+        advice, never a failed gate (GKT-141)."""
         first = _approve_round_one(repo)
         _write(repo, "web/src/ShelfCard.tsx", "export const ShelfCard = () => 1;\n")
         second = _commit(repo, "turn 2 checkpoint")
@@ -422,10 +445,10 @@ class TestTheAuditInARepairRound:
 
         verdict = _verdict(repo, round_)
 
-        assert verdict["severity"] == "high"
-        assert "repair_round" not in verdict
-        with pytest.raises(ScopeUnavailable, match="Unowned HEAD"):
-            _rounds.pop(repo).close()
+        assert _gate_passes(repo, verdict)
+        admitted = _rounds.pop(repo)
+        assert any("HEAD moved" in note for note in admitted.lease.notes)
+        admitted.close()
 
     def test_a_round_from_before_the_task_is_audited_as_ordinary(self, repo: Path) -> None:
         round_ = begin_repair_round(repo, 2, GATE_OUTPUT)
@@ -525,7 +548,7 @@ class TestTheAuditInARepairRound:
         assert verdict["status"] == "violation"
         assert verdict["severity"] == "high"
         assert "db/migrations/0003_seed.sql" in verdict["extra_files"]
-        assert not _gate_passes(repo, verdict)
+        assert _audit_advice(repo, verdict)
         # The ordinary audit has no create declaration. It reports only that
         # this repair scope did not repeat the original planned modification.
         ordinary = _verdict(repo)
@@ -545,7 +568,7 @@ class TestTheAuditInARepairRound:
 
         assert verdict["severity"] == "high"
         assert "deploy/Dockerfile" in verdict["extra_files"]
-        assert not _gate_passes(repo, verdict)
+        assert _audit_advice(repo, verdict)
         # The ordinary audit reports this edit and the original modification
         # that was not repeated in the admitted repair scope.
         ordinary = _verdict(repo)
@@ -601,7 +624,7 @@ class TestTheAuditInARepairRound:
         assert "deploy/Dockerfile" in verdict["extra_files"]
         assert "deploy/Dockerfile" in verdict["repair_round"]["files_changed_this_round"]
         assert "scripts/image-build" in verdict["repair_round"]["files_made_this_round"]
-        assert not _gate_passes(repo, verdict)
+        assert _audit_advice(repo, verdict)
 
     def test_other_callers_keep_gits_rename_detection(self, repo: Path) -> None:
         """files_changed_since is unchanged unless the caller asks."""
@@ -644,15 +667,8 @@ class TestTheAuditInARepairRound:
 
 
 def _feedback_issue(plan_audit: Dict[str, Any]) -> Dict[str, Any]:
-    validator = CoachValidator("/nonexistent", task_id=TASK_ID)
-    gates = QualityGateStatus(
-        tests_passed=True,
-        coverage_met=True,
-        arch_review_passed=True,
-        plan_audit_passed=False,
-    )
-    result = validator._feedback_from_gates(TASK_ID, 1, gates, {"plan_audit": plan_audit})
-    return next(i for i in result.issues if i["category"] == "plan_audit")
+    # Step 1 (24 October 2026, GKT-141): the audit's findings are advice.
+    return CoachValidator._plan_audit_advice(plan_audit)
 
 
 class TestTheCoachMessage:
@@ -667,7 +683,7 @@ class TestTheCoachMessage:
             "repair_round": {"round_number": 2, "start_commit": "abc"},
         })
         text = issue["description"]
-        assert issue["severity"] == "must_fix"
+        assert issue["severity"] == "should_fix"
         assert "1 extra file(s): db/migrations/0003_seed.sql" in text
         assert "sign-in.ts" not in text
         assert "this is a repair round" in text

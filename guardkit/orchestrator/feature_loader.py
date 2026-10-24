@@ -2184,16 +2184,28 @@ class FeatureLoader:
         repo_root : Optional[Path]
             Repository root (default: current directory)
 
-        Raises
-        ------
-        FeatureValidationError
-            If feature data fails validation before writing
-
         Notes
         -----
         Uses feature.file_path if available, otherwise constructs path
         from feature.id.
+
+        Step 1 (24 October 2026): saving the feature record is bookkeeping and
+        never ends a build. A record that fails validation is logged and not
+        written (writing it would leave an unreadable file); a failed write
+        is retried once, then logged. Nothing here raises.
         """
+        for attempt in (1, 2):
+            try:
+                FeatureLoader._write_feature(feature, repo_root)
+                return
+            except Exception as exc:  # noqa: BLE001 — bookkeeping, never fatal
+                logger.warning(
+                    "Could not save feature %s (attempt %d of 2): %s",
+                    feature.id, attempt, exc,
+                )
+
+    @staticmethod
+    def _write_feature(feature: Feature, repo_root: Optional[Path]) -> None:
         repo_root = repo_root or Path.cwd()
 
         if feature.file_path:
@@ -2204,18 +2216,15 @@ class FeatureLoader:
         # Convert to dictionary
         data = FeatureLoader._feature_to_dict(feature)
 
-        # Validate before writing
         validation_errors = FeatureLoader.validate_yaml(data)
         if validation_errors:
-            # Log warnings for each error
             for error in validation_errors:
                 logger.warning(f"Validation error in feature {feature.id}: {error}")
-
-            # Raise exception to block write
-            error_summary = "\n  - ".join(validation_errors)
-            raise FeatureValidationError(
-                f"Feature validation failed for {feature.id}:\n  - {error_summary}"
+            logger.warning(
+                "Feature %s record not written: it does not validate; the "
+                "build goes on", feature.id,
             )
+            return
 
         # Ensure directory exists
         file_path.parent.mkdir(parents=True, exist_ok=True)

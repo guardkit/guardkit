@@ -774,11 +774,13 @@ def test_a_pass_recorded_against_different_code_does_not_count(tmp_path: Path) -
         repo_root=repo_root, worktree_root=worktree, feature=feature
     )
 
-    assert verdict.blocks is True
+    # Step 1 (24 October 2026, GKT-163): a stale pass is advice, not a block.
+    assert verdict.blocks is False
     assert "different code" in verdict.reason
 
 
-def test_a_declared_check_with_no_receipt_cannot_be_completed(tmp_path: Path) -> None:
+def test_a_declared_check_with_no_receipt_is_advice(tmp_path: Path) -> None:
+    """Step 1 (24 October 2026, GKT-163): a missing receipt is advice."""
     repo_root, worktree = _make_project(
         tmp_path, declaration=_declaration("sh qa/feature-check.sh")
     )
@@ -788,7 +790,7 @@ def test_a_declared_check_with_no_receipt_cannot_be_completed(tmp_path: Path) ->
         repo_root=repo_root, worktree_root=worktree, feature=feature
     )
 
-    assert verdict.blocks is True
+    assert verdict.blocks is False
     assert "no receipt" in verdict.reason
 
 
@@ -1318,8 +1320,9 @@ def test_a_failed_attempt_publishes_neither_its_command_nor_its_output(
         )
         if record_write_fails:
             # The record cannot be written, so the completion rule finds no
-            # record and says why: that reason reaches the log, the console
-            # and the build's error too.
+            # record and says why: that reason reaches the log and the
+            # console. Since step 1 (24 October 2026, GKT-163) a missing
+            # record is advice and no longer fails the build.
             stack.enter_context(
                 patch(
                     "guardkit.orchestrator.feature_orchestrator."
@@ -1332,7 +1335,7 @@ def test_a_failed_attempt_publishes_neither_its_command_nor_its_output(
             orchestrator_kwargs={"emitter": emitter, "quiet": False},
         )
 
-    completes = check_passes and not record_write_fails
+    completes = check_passes
     assert result.status == ("completed" if completes else "failed")
     published = _assert_nothing_secret_published(
         caplog, recording, result, wave_results, emitter
@@ -1350,9 +1353,9 @@ def test_a_resumed_build_with_no_record_does_not_publish_the_command(
 ) -> None:
     """Every wave already done, the check never ran here, and no record.
 
-    The finaliser's completion rule refuses the feature because nothing proved
-    it, and says so in the log, on the console and in the build's error,
-    naming the check by its fixed label.
+    Since step 1 (24 October 2026, GKT-163) a missing record is advice: the
+    feature completes, and the finaliser says why nothing proved it in the log
+    and on the console, naming the check by its fixed label only.
     """
     repo_root, worktree = _make_project(tmp_path, declaration=_declaration(command))
     feature = _make_feature(worktree)
@@ -1374,9 +1377,11 @@ def test_a_resumed_build_with_no_record_does_not_publish_the_command(
         )
 
     assert not (worktree / RECEIPT_RELATIVE_PATH).exists()
-    assert result.status == "failed"
-    assert FIXED_LABEL in (result.error or ""), result.error
-    _assert_nothing_secret_published(caplog, recording, result, waves, emitter)
+    assert result.status == "completed"
+    published = _assert_nothing_secret_published(
+        caplog, recording, result, waves, emitter
+    )
+    assert any(FIXED_LABEL in text for text in published)
 
 
 def test_the_record_is_not_written_before_the_repair_round(tmp_path: Path) -> None:

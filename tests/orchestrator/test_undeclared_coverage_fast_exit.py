@@ -803,7 +803,9 @@ class TestNoSourceFilesInTheCoach:
         )
         assert gates.coverage_relaxed_by is None
         assert gates.coverage_met is None
-        assert gates.all_gates_passed is False
+        # Step 1 (24 October 2026, GKT-130/139): unmeasured coverage is
+        # advice, not a failed gate.
+        assert gates.all_gates_passed is True
 
     def test_a_source_file_a_shell_command_wrote_keeps_coverage_unknown(
         self, tmp_path: Path
@@ -822,7 +824,9 @@ class TestNoSourceFilesInTheCoach:
         )
         assert gates.coverage_relaxed_by is None
         assert gates.coverage_met is None
-        assert gates.all_gates_passed is False
+        # Step 1 (24 October 2026, GKT-130/139): unmeasured coverage is
+        # advice, not a failed gate.
+        assert gates.all_gates_passed is True
 
     def test_a_source_file_only_another_wave_task_changed_is_set_aside(
         self, tmp_path: Path

@@ -516,12 +516,19 @@ COACH_OUTPUT_LIMIT = 4000
 COACH_REQUEST_WORDS_LIMIT = 2000
 
 
-def stopped_because_line(feature_id: str, sentence: str) -> str:
-    """The one machine-readable stdout line for an early stop."""
-    payload = json.dumps(
-        {"feature_id": str(feature_id), "sentence": str(sentence)},
-        ensure_ascii=True,
-    )
+def stopped_because_line(
+    feature_id: str, sentence: str, approved_head: Optional[str] = None
+) -> str:
+    """The one machine-readable stdout line for an early stop.
+
+    Step 1 (24 October 2026): ``approved_head``, when given, is the last
+    approved commit of a feature that did not finish (see the finaliser);
+    Forge offers exactly that commit. Absent means no approved part.
+    """
+    data = {"feature_id": str(feature_id), "sentence": str(sentence)}
+    if approved_head:
+        data["approved_head"] = str(approved_head)
+    payload = json.dumps(data, ensure_ascii=True)
     return f"{STOPPED_BECAUSE_MARKER} {payload}"
 
 
@@ -1442,31 +1449,17 @@ def completion_verdict(
     was not looked at rather than the build being refused over it. Everything
     else blocks exactly as before: no record, a record that did not pass, a
     pass about different code.
+
+    Step 1 (24 October 2026, GKT-163): only a check that ran and FAILED
+    blocks. A missing receipt, a receipt in an unknown state, and a pass
+    about different code are advice: every example goes on the not-checked
+    list with the reason, and the build is not refused over the record.
     """
     declaration = load_feature_check_declaration(repo_root)
     if declaration is None:
         return CompletionVerdict(blocks=False)
 
-    receipt = read_feature_check_receipt(worktree_root)
-    if receipt is None:
-        return CompletionVerdict(
-            blocks=True,
-            # Named by the fixed label, never the command (13 October 2026):
-            # this reason reaches the log, the console and the build's error.
-            reason=(
-                "this project declares a whole-feature check "
-                f"({PUBLIC_LABEL}) and no receipt of it was written, "
-                "so nothing proved the finished feature"
-            ),
-        )
-    status = receipt.get("status")
-    if status == OUTCOME_COULD_NOT_RUN:
-        reason = receipt.get("could_not_run_reason")
-        reason = (
-            reason.strip()
-            if isinstance(reason, str) and reason.strip()
-            else COULD_NOT_RUN_WITHOUT_REASON
-        )
+    def not_checked(reason: str, summary: str) -> CompletionVerdict:
         every_example = list(scenario_titles(feature))
         for name in claimed_machine_criteria(
             worktree_root,
@@ -1476,12 +1469,31 @@ def completion_verdict(
                 every_example.append(name)
         return CompletionVerdict(
             blocks=False,
-            reason=f"the project's check could not run: {reason}",
+            reason=summary,
             not_checked=[
                 {"name": name, "reason": reason} for name in every_example
             ],
         )
-    if status != OUTCOME_PASSED:
+
+    receipt = read_feature_check_receipt(worktree_root)
+    if receipt is None:
+        # Named by the fixed label, never the command (13 October 2026):
+        # this reason reaches the log, the console and the build's record.
+        reason = (
+            "this project declares a whole-feature check "
+            f"({PUBLIC_LABEL}) and no receipt of it was written"
+        )
+        return not_checked(reason, reason)
+    status = receipt.get("status")
+    if status == OUTCOME_COULD_NOT_RUN:
+        reason = receipt.get("could_not_run_reason")
+        reason = (
+            reason.strip()
+            if isinstance(reason, str) and reason.strip()
+            else COULD_NOT_RUN_WITHOUT_REASON
+        )
+        return not_checked(reason, f"the project's check could not run: {reason}")
+    if status == OUTCOME_FAILED:
         return CompletionVerdict(
             blocks=True,
             reason=(
@@ -1489,6 +1501,12 @@ def completion_verdict(
                 f"(receipt status: {status!r})"
             ),
         )
+    if status != OUTCOME_PASSED:
+        reason = (
+            "the whole-feature check's receipt does not say passed or failed "
+            f"(receipt status: {status!r})"
+        )
+        return not_checked(reason, reason)
 
     attempts = receipt.get("attempts")
     recorded_sha = None
@@ -1504,14 +1522,12 @@ def completion_verdict(
         and current_sha not in ("", "unknown")
         and recorded_sha != current_sha
     ):
-        return CompletionVerdict(
-            blocks=True,
-            reason=(
-                "the whole-feature check passed on "
-                f"{recorded_sha[:12]} but the candidate is now "
-                f"{current_sha[:12]}, so the pass is about different code"
-            ),
+        reason = (
+            "the whole-feature check passed on "
+            f"{recorded_sha[:12]} but the candidate is now "
+            f"{current_sha[:12]}, so the pass is about different code"
         )
+        return not_checked(reason, reason)
 
     claimed = claimed_machine_criteria(
         worktree_root, [getattr(t, "id", "") for t in getattr(feature, "tasks", []) or []]

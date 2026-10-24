@@ -983,12 +983,9 @@ class QualityGateStatus:
     # let the OTHER gates approve despite absent tests — a gate-level
     # false-green. See ``.claude/rules/absence-must-survive-every-reconciliation-layer.md``.
     tests_passed: Optional[bool]
-    # B9 Lane C: ``coverage_met`` is tri-state for exactly the reason
-    # ``tests_passed`` is. ``None`` is UNKNOWN (no measurement anywhere), it is
-    # APPENDED to ``required_gates`` when coverage is required, so
-    # ``all([None, ...])`` is falsy and an unmeasured coverage cannot approve.
-    # Before this it was coerced to ``True`` — "we did not measure" read as
-    # "the threshold was met".
+    # B9 Lane C: ``coverage_met`` is tri-state. ``None`` is UNKNOWN (no
+    # measurement anywhere). Step 1 (24 October 2026): UNKNOWN is advice, not
+    # a failed gate; only a measured ``False`` holds the coverage gate shut.
     coverage_met: Optional[bool]
     arch_review_passed: bool
     plan_audit_passed: bool
@@ -1006,6 +1003,9 @@ class QualityGateStatus:
     # when the Coach ran it: {command, exit_code, duration_seconds,
     # output_tail, timed_out}. ``None`` when nothing was declared or run.
     coverage_receipt: Optional[Dict[str, Any]] = None
+    # Step 1 (24 October 2026): findings that used to fail a gate and are now
+    # advice (the plan audit). Shown with the verdict; they never fail it.
+    advisories: List[Dict[str, Any]] = field(default_factory=list)
     all_gates_passed: bool = field(init=False)
 
     def __post_init__(self):
@@ -1015,7 +1015,7 @@ class QualityGateStatus:
         if self.tests_required:
             required_gates.append(self.tests_passed)
         if self.coverage_required:
-            required_gates.append(self.coverage_met)
+            required_gates.append(self.coverage_met is not False)
         if self.arch_review_required:
             required_gates.append(self.arch_review_passed)
         if self.plan_audit_required:
@@ -2738,6 +2738,7 @@ class CoachValidator:
             task_work_results, profile=profile, skip_arch_review=skip_arch_review,
             declared_files=task.get("declared_files"),
         )
+        advisory_issues.extend(gates_status.advisories)
 
         # Validate requirements ahead of the gate-fail short-circuit so
         # gate-failure results carry criteria_met (TASK-GK-CR-001). This
@@ -2832,6 +2833,8 @@ class CoachValidator:
                     requirements=requirements,
                     task_type=task_type.value,
                 )
+
+        advisory_issues.extend(self._unmeasured_coverage_advice(gates_status))
 
         conditional_approval = False
         environment_conditional_approval = False
@@ -3561,6 +3564,8 @@ class CoachValidator:
                 profile_name=profile_name,
             )
 
+        advisory_issues.extend(gates.advisories)
+
         # Build the evidence dict slices the LLM Coach reads.
         quality_gates_raw = task_work_results.get("quality_gates")
         if not isinstance(quality_gates_raw, dict):
@@ -3813,6 +3818,8 @@ class CoachValidator:
                 task_type=task_type.value,
                 profile_name=profile_name,
             )
+
+        advisory_issues.extend(self._unmeasured_coverage_advice(gates))
 
         # ------------------------------------------------------------------
         # 4c. Corroboration (B9 Lane C). Promise-backed criteria are recorded
@@ -5944,6 +5951,7 @@ class CoachValidator:
 
         # Plan audit - separate field
         # If plan audit not required by profile, default to True (skip gate)
+        plan_audit_advice: List[Dict[str, Any]] = []
         if not profile.plan_audit_required:
             plan_audit_passed = True
             logger.debug("Plan audit not required per task type profile, skipping")
@@ -5969,19 +5977,18 @@ class CoachValidator:
                     f"Plan audit status={plan_audit_status} — treated as pass "
                     f"(non-blocking informational status)"
                 )
-            elif severity == "high":
-                plan_audit_passed = False
-                logger.debug(
-                    f"Plan audit rejected: severity=high "
-                    f"(violations={violations}, status={plan_audit_status})"
-                )
             else:
-                plan_audit_passed = violations == 0
-                logger.debug(
-                    f"Extracted plan_audit_passed={plan_audit_passed} "
-                    f"(violations={violations}, severity={severity}, "
-                    f"status={plan_audit_status})"
-                )
+                # GKT-141, step 1 (24 October 2026): a plan audit that finds
+                # files outside the plan is advice for the reviewer, never a
+                # failed gate.
+                plan_audit_passed = True
+                if severity == "high" or violations:
+                    plan_audit_advice.append(self._plan_audit_advice(plan_audit))
+                    logger.info(
+                        "Plan audit found discrepancies (severity=%s, "
+                        "violations=%s): recorded as advice, not a failed gate.",
+                        severity, violations,
+                    )
 
         # Determine effective arch_review_required (False if skip_arch_review=True)
         effective_arch_review_required = profile.arch_review_required and not skip_arch_review
@@ -5996,6 +6003,7 @@ class CoachValidator:
             arch_review_required=effective_arch_review_required,
             plan_audit_required=profile.plan_audit_required,
             coverage_relaxed_by=coverage_relaxed_by,
+            advisories=plan_audit_advice,
         )
 
         # Log final decision at INFO level for visibility
@@ -7354,6 +7362,31 @@ class CoachValidator:
         if gates is None or gates.tests_passed is None:
             return gates
         return dataclass_replace(gates, tests_passed=None)
+
+    @staticmethod
+    def _unmeasured_coverage_advice(
+        gates: Optional[QualityGateStatus],
+    ) -> List[Dict[str, Any]]:
+        """GKT-130/139, step 1 (24 October 2026): a required coverage that
+        nothing measured is advice shown with the verdict, not a failed gate.
+        A measured ``False`` still fails the coverage gate."""
+        if gates is None or not gates.coverage_required:
+            return []
+        if gates.coverage_met is not None:
+            return []
+        return [{
+            "severity": "should_fix",
+            "category": "coverage_unknown",
+            "description": (
+                "Advice: coverage was not measured this turn (neither the "
+                "Player's report nor a declared coverage command gave a "
+                "measurement), so it was not checked."
+            ),
+            "details": {
+                "coverage_met": None,
+                "coverage_receipt": gates.coverage_receipt,
+            },
+        }]
 
     def _coverage_resolution_pending(
         self, gates: Optional[QualityGateStatus]
@@ -12607,6 +12640,107 @@ class CoachValidator:
             "details": details,
         }
 
+    @staticmethod
+    def _plan_audit_advice(plan_audit: Dict[str, Any]) -> Dict[str, Any]:
+        """The plan audit's findings as advice (GKT-141, step 1, 24 October
+        2026). The wording names the deterministic auditor's findings so the
+        builder and reviewer can see them; it never fails the turn."""
+        # TASK-FIX-RWOP1.3.2: name the deterministic auditor's findings so
+        # the Player's next turn can see them.
+        severity = plan_audit.get("severity")
+        extra_files = plan_audit.get("extra_files") or []
+        missing_files = plan_audit.get("missing_files") or []
+        extra_modifications = plan_audit.get("extra_modifications") or []
+        missing_modifications = plan_audit.get("missing_modifications") or []
+        extra_deps = plan_audit.get("extra_dependencies") or []
+        parts: List[str] = ["Plan audit detected"]
+        if severity:
+            parts.append(f"{severity}-severity")
+        parts.append("discrepancies")
+        # A planned file's own tests and stylesheets are recorded as low by
+        # the auditor; name the counted ones first so the Player is not
+        # sent after its own tests and stylesheets.
+        beside = set(plan_audit.get("extra_files_beside_the_plan") or [])
+        # A repair round (20 October 2026): the non-protected files the
+        # round made are left to the reviewer's judgement, and those an
+        # earlier approved repair round made are not counted again.
+        for_reviewer = set(plan_audit.get("extra_files_for_the_reviewer") or []) | set(
+            plan_audit.get("extra_files_approved_by_a_repair") or []
+        )
+        counted_extra = [
+            f for f in extra_files if f not in beside and f not in for_reviewer
+        ]
+        if counted_extra:
+            preview = ", ".join(counted_extra[:3])
+            if len(counted_extra) > 3:
+                preview += f", ... (+{len(counted_extra) - 3} more)"
+            parts.append(f"— {len(counted_extra)} extra file(s): {preview}")
+        if plan_audit.get("repair_round"):
+            parts.append(
+                "— this is a repair round after a gate failed: the other "
+                "files it made are for the reviewer to judge, but a "
+                "protected file the task document does not name is never "
+                "made in a repair round"
+            )
+        if beside and len(beside) < len(extra_files):
+            parts.append(
+                f"— and {len(beside)} planned file(s)' own test or "
+                f"stylesheet (recorded, low)"
+            )
+        elif beside:
+            preview = ", ".join(extra_files[:3])
+            if len(extra_files) > 3:
+                preview += f", ... (+{len(extra_files) - 3} more)"
+            parts.append(
+                f"— {len(extra_files)} extra file(s), each a planned "
+                f"file's own test or stylesheet (recorded, low): {preview}"
+            )
+        if missing_files:
+            preview = ", ".join(missing_files[:3])
+            if len(missing_files) > 3:
+                preview += f", ... (+{len(missing_files) - 3} more)"
+            parts.append(f"— {len(missing_files)} missing file(s): {preview}")
+        if extra_modifications:
+            preview = ", ".join(extra_modifications[:3])
+            if len(extra_modifications) > 3:
+                preview += f", ... (+{len(extra_modifications) - 3} more)"
+            parts.append(
+                f"— {len(extra_modifications)} unplanned modification(s): {preview}"
+            )
+        if missing_modifications:
+            preview = ", ".join(missing_modifications[:3])
+            if len(missing_modifications) > 3:
+                preview += f", ... (+{len(missing_modifications) - 3} more)"
+            parts.append(
+                f"— {len(missing_modifications)} unmodified planned file(s): {preview}"
+            )
+        if extra_deps:
+            preview = ", ".join(extra_deps[:3])
+            parts.append(f"— extra dep(s): {preview}")
+
+        return {
+            "severity": "should_fix",
+            "category": "plan_audit",
+            "description": " ".join(parts),
+            "details": {
+                "status": plan_audit.get("status"),
+                "severity": severity,
+                "violations": plan_audit.get("violations", 0),
+                "extra_files": extra_files,
+                "missing_files": missing_files,
+                "extra_modifications": extra_modifications,
+                "missing_modifications": missing_modifications,
+                "extra_dependencies": extra_deps,
+                "missing_dependencies": plan_audit.get(
+                    "missing_dependencies"
+                ) or [],
+                "loc_variance_pct": plan_audit.get("loc_variance_pct"),
+                "discrepancies_count": plan_audit.get(
+                    "discrepancies_count", 0
+                ),
+            },
+        }
+
     def _feedback_from_gates(
         self,
         task_id: str,
@@ -12781,7 +12915,7 @@ class CoachValidator:
                 )
                 provenance = "unmeasured"
             issues.append({
-                "severity": "must_fix",
+                "severity": "should_fix",
                 "category": "coverage_unknown",
                 "description": description,
                 "details": {
@@ -12844,109 +12978,6 @@ class CoachValidator:
                 "details": {
                     "score": code_review.get("score", 0),
                     "threshold": code_review.get("score", 0) >= 60 and 60 or code_review.get("score", 0),
-                },
-            })
-
-        if gates.plan_audit_required and not gates.plan_audit_passed:
-            plan_audit = task_work_results.get("plan_audit", {})
-            # TASK-FIX-RWOP1.3.2: name the deterministic auditor's findings
-            # in feedback so the Player's next turn can correct course.
-            # Description is escalated to must_fix when severity == "high"
-            # (the producer-side block signal); lower severities keep the
-            # historical should_fix so legacy violations-only paths behave
-            # unchanged.
-            severity = plan_audit.get("severity")
-            extra_files = plan_audit.get("extra_files") or []
-            missing_files = plan_audit.get("missing_files") or []
-            extra_modifications = plan_audit.get("extra_modifications") or []
-            missing_modifications = plan_audit.get("missing_modifications") or []
-            extra_deps = plan_audit.get("extra_dependencies") or []
-            issue_severity = "must_fix" if severity == "high" else "should_fix"
-            parts: List[str] = ["Plan audit detected"]
-            if severity:
-                parts.append(f"{severity}-severity")
-            parts.append("discrepancies")
-            # A planned file's own tests and stylesheets are recorded as low by
-            # the auditor; name the counted ones first so the Player is not
-            # sent after its own tests and stylesheets.
-            beside = set(plan_audit.get("extra_files_beside_the_plan") or [])
-            # A repair round (20 October 2026): the non-protected files the
-            # round made are left to the reviewer's judgement, and those an
-            # earlier approved repair round made are not counted again.
-            for_reviewer = set(plan_audit.get("extra_files_for_the_reviewer") or []) | set(
-                plan_audit.get("extra_files_approved_by_a_repair") or []
-            )
-            counted_extra = [
-                f for f in extra_files if f not in beside and f not in for_reviewer
-            ]
-            if counted_extra:
-                preview = ", ".join(counted_extra[:3])
-                if len(counted_extra) > 3:
-                    preview += f", ... (+{len(counted_extra) - 3} more)"
-                parts.append(f"— {len(counted_extra)} extra file(s): {preview}")
-            if plan_audit.get("repair_round"):
-                parts.append(
-                    "— this is a repair round after a gate failed: the other "
-                    "files it made are for the reviewer to judge, but a "
-                    "protected file the task document does not name is never "
-                    "made in a repair round"
-                )
-            if beside and len(beside) < len(extra_files):
-                parts.append(
-                    f"— and {len(beside)} planned file(s)' own test or "
-                    f"stylesheet (recorded, low)"
-                )
-            elif beside:
-                preview = ", ".join(extra_files[:3])
-                if len(extra_files) > 3:
-                    preview += f", ... (+{len(extra_files) - 3} more)"
-                parts.append(
-                    f"— {len(extra_files)} extra file(s), each a planned "
-                    f"file's own test or stylesheet (recorded, low): {preview}"
-                )
-            if missing_files:
-                preview = ", ".join(missing_files[:3])
-                if len(missing_files) > 3:
-                    preview += f", ... (+{len(missing_files) - 3} more)"
-                parts.append(f"— {len(missing_files)} missing file(s): {preview}")
-            if extra_modifications:
-                preview = ", ".join(extra_modifications[:3])
-                if len(extra_modifications) > 3:
-                    preview += f", ... (+{len(extra_modifications) - 3} more)"
-                parts.append(
-                    f"— {len(extra_modifications)} unplanned modification(s): {preview}"
-                )
-            if missing_modifications:
-                preview = ", ".join(missing_modifications[:3])
-                if len(missing_modifications) > 3:
-                    preview += f", ... (+{len(missing_modifications) - 3} more)"
-                parts.append(
-                    f"— {len(missing_modifications)} unmodified planned file(s): {preview}"
-                )
-            if extra_deps:
-                preview = ", ".join(extra_deps[:3])
-                parts.append(f"— extra dep(s): {preview}")
-
-            issues.append({
-                "severity": issue_severity,
-                "category": "plan_audit",
-                "description": " ".join(parts),
-                "details": {
-                    "status": plan_audit.get("status"),
-                    "severity": severity,
-                    "violations": plan_audit.get("violations", 0),
-                    "extra_files": extra_files,
-                    "missing_files": missing_files,
-                    "extra_modifications": extra_modifications,
-                    "missing_modifications": missing_modifications,
-                    "extra_dependencies": extra_deps,
-                    "missing_dependencies": plan_audit.get(
-                        "missing_dependencies"
-                    ) or [],
-                    "loc_variance_pct": plan_audit.get("loc_variance_pct"),
-                    "discrepancies_count": plan_audit.get(
-                        "discrepancies_count", 0
-                    ),
                 },
             })
 

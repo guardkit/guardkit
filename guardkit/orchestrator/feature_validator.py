@@ -28,6 +28,15 @@ logger = logging.getLogger(__name__)
 # Required frontmatter fields for pre-flight validation
 REQUIRED_FRONTMATTER_FIELDS = ("id", "title", "task_type", "complexity")
 
+# GKT-057, step 1 (24 October 2026): a missing field is advice, not a refusal.
+# The build runs on the default the runtime already uses for that field.
+MISSING_FIELD_DEFAULTS = {
+    "id": "the task id from the feature file",
+    "title": "the task id",
+    "task_type": "feature",
+    "complexity": "5",
+}
+
 
 @dataclass
 class ValidationIssue:
@@ -159,15 +168,18 @@ def validate_feature_preflight(
             # No parseable frontmatter - skip gracefully
             continue
 
-        # Validate required fields
+        # Missing fields take their defaults, with advice (GKT-057).
         for field_name in REQUIRED_FRONTMATTER_FIELDS:
             if field_name not in frontmatter or frontmatter[field_name] is None:
-                result.errors.append(
+                result.warnings.append(
                     ValidationIssue(
                         task_id=task.id,
                         field=field_name,
-                        severity="error",
-                        message=f"Missing required field '{field_name}'",
+                        severity="warning",
+                        message=(
+                            f"Missing field '{field_name}'; using the default "
+                            f"({MISSING_FIELD_DEFAULTS[field_name]})"
+                        ),
                     )
                 )
 
@@ -301,17 +313,17 @@ def format_preflight_report(result: PreFlightValidationResult) -> str:
         lines.append("")
 
         warning_task_ids = {issue.task_id for issue in result.warnings}
-        lines.append(f"{len(warning_task_ids)} task(s) use legacy aliases:")
+        lines.append(f"{len(warning_task_ids)} task(s) have advice:")
         lines.append("")
 
         for issue in result.warnings:
             lines.append(f"  {issue.task_id}: {issue.message}")
             if issue.suggestion:
                 lines.append(f"    Suggestion: {issue.suggestion}")
-            lines.append(
-                "    Note: Alias will work at runtime, "
-                "but canonical values are preferred"
-            )
+                lines.append(
+                    "    Note: Alias will work at runtime, "
+                    "but canonical values are preferred"
+                )
             lines.append("")
 
         lines.append(separator)

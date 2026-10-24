@@ -481,6 +481,31 @@ class TaskExecutionResult:
     # project's check. None on every other outcome.
     stopped_because: Optional[str] = None
     error_type: Optional[str] = None
+    # Step 1 (24 October 2026): the task's last Coach verdict carried a test
+    # run that really ran and failed (the Coach's own result, never rerun or
+    # guessed). A failed task with this set withholds the approved part.
+    real_check_failed: bool = False
+
+
+def terminal_real_check_failed(turn_history: Any) -> bool:
+    """Whether the last Coach verdict in ``turn_history`` carried a test run
+    that ran and failed: the independent run's failure receipt, or the
+    quality gate's measured ``tests_passed is False``. An absent signal, a
+    check that could not run, and an earlier red turn later fixed do not
+    count."""
+    from guardkit.orchestrator.failing_test_feedback import SUITE_RECEIPT_KEY
+
+    for record in reversed(list(turn_history or [])):
+        coach = getattr(record, "coach_result", None)
+        report = getattr(coach, "report", None)
+        if not isinstance(report, dict):
+            continue
+        if isinstance(report.get(SUITE_RECEIPT_KEY), dict):
+            return True
+        validation = report.get("validation_results") or {}
+        gates = validation.get("quality_gates") if isinstance(validation, dict) else None
+        return isinstance(gates, dict) and gates.get("tests_passed") is False
+    return False
 
 
 @dataclass
@@ -6214,6 +6239,37 @@ The detailed specifications are in the task markdown file.
             if admitted:
                 admitted()
 
+    def _approved_head_for_offer(
+        self,
+        worktree,
+        wave_results,
+        *,
+        tasks_completed: int,
+        smoke_gate_failed: bool,
+        feature_check_error: Optional[str],
+    ) -> Optional[str]:
+        """The last approved commit of a feature that did not finish, when
+        Forge may offer it (step 1, 24 October 2026).
+
+        Present only when at least one task completed and no real check is
+        still failed: the smoke check, the whole-feature verdict, or a task
+        whose last Coach verdict carried a test run that ran and failed. A
+        missing measurement is not a failure. Nothing is rerun or read from
+        disk: the head is the one kept in memory when the last task approval
+        completed.
+        """
+        if tasks_completed < 1 or smoke_gate_failed or feature_check_error:
+            return None
+        latest: Dict[str, TaskExecutionResult] = {}
+        for wave in wave_results:
+            for result in wave.results:
+                latest[result.task_id] = result
+        if any(getattr(r, "real_check_failed", False) for r in latest.values()):
+            return None
+        from guardkit.orchestrator.task_work_scope import approved_head
+
+        return approved_head(worktree.path)
+
     def _checked_writer(self, worktree, callback, *args, **kwargs):
         from guardkit.orchestrator.task_work_scope import checkout_lease, boundary_snapshot, ScopeUnavailable, _dirty
         with checkout_lease(worktree.path, self._evidence_repos_resolved) as lease:
@@ -6450,6 +6506,10 @@ The detailed specifications are in the task markdown file.
                     result.stopped_because
                     if isinstance(getattr(result, "stopped_because", None), str)
                     else None
+                ),
+                real_check_failed=(
+                    not result.success
+                    and terminal_real_check_failed(result.turn_history)
                 ),
             )
 
@@ -6905,7 +6965,7 @@ The detailed specifications are in the task markdown file.
                         f"[red]✗ Not completed: {verdict.reason}[/red]",
                         markup=True,
                     )
-            elif verdict is not None and verdict.not_checked:
+            elif verdict is not None and (verdict.not_checked or verdict.reason):
                 # The rule did not block, and it learned something the record
                 # does not say yet: names nothing looked at. They go on the
                 # not-checked list and never on the covered list.
@@ -6967,6 +7027,9 @@ The detailed specifications are in the task markdown file.
                     )
                     break
 
+        # The whole-feature check's own verdict, before the writer-boundary
+        # note below can take its place (read by the approved part).
+        feature_check_verdict_error = feature_check_error
         if getattr(self, "_writer_boundary_failure", None):
             final_status, success = "failed", False
             feature_check_error = self._writer_boundary_failure
@@ -6988,6 +7051,17 @@ The detailed specifications are in the task markdown file.
         # environment, 23 October 2026) gives the feature its reason, when no
         # feature-level reason above already did. The same one stdout line as
         # the whole-feature check's early stop carries it to Forge.
+        approved_head = (
+            None
+            if success
+            else self._approved_head_for_offer(
+                worktree,
+                wave_results,
+                tasks_completed=tasks_completed,
+                smoke_gate_failed=smoke_gate_failed,
+                feature_check_error=feature_check_verdict_error,
+            )
+        )
         task_stopped_because: Optional[str] = None
         if (
             not success
@@ -7012,7 +7086,9 @@ The detailed specifications are in the task markdown file.
                 )
                 try:
                     print(
-                        stopped_because_line(feature.id, task_stopped_because),
+                        stopped_because_line(
+                            feature.id, task_stopped_because, approved_head
+                        ),
                         flush=True,
                     )
                 except Exception as exc:  # noqa: BLE001 — a line never fails a build
@@ -7058,6 +7134,26 @@ The detailed specifications are in the task markdown file.
                 )
             ),
         )
+
+        # Step 1 (24 October 2026): the approved part of a feature that did
+        # not finish goes to Forge on stdout, which survives a failed record
+        # write. Printed once; the line above already carried it when a task
+        # gave the stop its sentence.
+        if approved_head and not task_stopped_because:
+            try:
+                print(
+                    stopped_because_line(
+                        feature.id,
+                        orchestration_result.error or "the feature did not finish",
+                        approved_head,
+                    ),
+                    flush=True,
+                )
+            except Exception as exc:  # noqa: BLE001 — a line never fails a build
+                logger.warning(
+                    "The approved part's stdout line could not be written: %s",
+                    type(exc).__name__,
+                )
 
         # TASK-ABE-003: Generate structured review summary
         try:
@@ -7278,6 +7374,7 @@ The detailed specifications are in the task markdown file.
                 "final_decision": result.final_decision,
                 "error": result.error,
                 "deferred_reason": result.deferred_reason,
+                "real_check_failed": result.real_check_failed,
             }
 
         # Update execution counters
