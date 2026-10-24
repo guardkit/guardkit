@@ -300,22 +300,22 @@ class TestCoachValidator:
             for issue in result.issues
         )
 
-    def test_validate_feedback_when_plan_audit_violations(
+    def test_validate_reports_plan_audit_violations_as_advice(
         self,
         tmp_worktree,
         task_work_results_dir,
     ):
-        """Test feedback decision when plan audit has violations."""
+        """Step 1 (24 October 2026, GKT-141): plan audit violations are
+        advice carried with the verdict, never a failed gate."""
         results = make_task_work_results(violations=3)
         write_task_work_results(task_work_results_dir, results)
 
         validator = CoachValidator(str(tmp_worktree))
         result = validator.validate("TASK-001", 1, make_task())
 
-        assert result.decision == "feedback"
-        assert result.quality_gates.plan_audit_passed is False
+        assert result.quality_gates.plan_audit_passed is True
         assert any(
-            issue["category"] == "plan_audit"
+            issue["category"] == "plan_audit" and issue["severity"] == "should_fix"
             for issue in result.issues
         )
 
@@ -625,19 +625,20 @@ class TestQualityGateVerification:
 
         assert status.arch_review_passed is expected
 
-    @pytest.mark.parametrize("violations,expected", [
-        (0, True),   # No violations - passes
-        (1, False),  # One violation - fails
-        (5, False),  # Multiple violations - fails
+    @pytest.mark.parametrize("violations,advised", [
+        (0, False),  # No violations - passes, no advice
+        (1, True),   # One violation - passes with advice (step 1, GKT-141)
+        (5, True),   # Multiple violations - passes with advice
     ])
-    def test_verify_plan_audit_violations(self, tmp_worktree, violations, expected):
-        """Test plan audit violation detection."""
+    def test_verify_plan_audit_violations(self, tmp_worktree, violations, advised):
+        """Plan audit violations are advice, never a failed gate."""
         validator = CoachValidator(str(tmp_worktree))
         results = make_task_work_results(violations=violations)
 
         status = validator.verify_quality_gates(results)
 
-        assert status.plan_audit_passed is expected
+        assert status.plan_audit_passed is True
+        assert bool(status.advisories) is advised
 
     def test_verify_handles_missing_fields(self, tmp_worktree):
         """Test graceful handling of missing fields in results."""
@@ -670,7 +671,7 @@ class TestQualityGateVerification:
         assert status.coverage_met is None
         assert status.arch_review_passed is True  # Has code_review.score = 82
 
-    def test_verify_coverage_none_is_unknown_and_cannot_approve(self, tmp_worktree):
+    def test_verify_coverage_none_is_unknown_and_advice(self, tmp_worktree):
         """coverage_met=null means NOTHING measured coverage.
 
         TASK-FIX-COVNULL originally turned that into a pass so a build would
@@ -679,6 +680,9 @@ class TestQualityGateVerification:
         measured nothing must not approve. The way to pass this gate is to
         report a measurement, or to declare the project's own coverage command
         (``toolchain.coverage``), which the Coach then runs itself.
+
+        Step 1 (24 October 2026, GKT-130/139): UNKNOWN stays UNKNOWN (never a
+        pass) but is advice, not a failed gate.
         """
         validator = CoachValidator(str(tmp_worktree))
         results = {
@@ -694,7 +698,8 @@ class TestQualityGateVerification:
         status = validator.verify_quality_gates(results)
 
         assert status.coverage_met is None
-        assert status.all_gates_passed is False
+        assert status.all_gates_passed is True
+        assert validator._unmeasured_coverage_advice(status)
 
     def test_verify_coverage_false_still_fails(self, tmp_worktree):
         """Test that coverage_met=False still correctly fails the gate.

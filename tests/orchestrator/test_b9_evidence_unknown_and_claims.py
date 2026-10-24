@@ -114,18 +114,21 @@ def _absent_run() -> IndependentTestResult:
 
 
 class TestCoverageUnknown:
-    def test_required_coverage_with_no_measurement_is_unknown_and_cannot_approve(
+    def test_required_coverage_with_no_measurement_is_unknown_and_advice(
         self, tmp_path
     ):
-        """NEGATIVE CONTROL — the B9 false green itself."""
+        """Unmeasured coverage stays UNKNOWN (never read as met); since step 1
+        (24 October 2026, GKT-130/139) it is advice, not a failed gate."""
         v = _validator(tmp_path)
         gates = v.verify_quality_gates(
             _results(), profile=get_profile(TaskType.FEATURE)
         )
         assert gates.coverage_required is True
         assert gates.coverage_met is None, "unmeasured coverage must stay UNKNOWN"
-        assert gates.all_gates_passed is False
+        assert gates.all_gates_passed is True
         assert gates.coverage_relaxed_by is None
+        advice = v._unmeasured_coverage_advice(gates)
+        assert [a["category"] for a in advice] == ["coverage_unknown"]
 
     def test_measured_coverage_true_still_passes(self, tmp_path):
         """POSITIVE CONTROL — a real measurement is untouched."""
@@ -154,10 +157,14 @@ class TestCoverageUnknown:
         assert gates.coverage_met is True
 
     def test_unknown_coverage_feedback_names_the_two_missing_sources(self, tmp_path):
+        from dataclasses import replace
+
         v = _validator(tmp_path)
         gates = v.verify_quality_gates(
             _results(), profile=get_profile(TaskType.FEATURE)
         )
+        # Another gate fails, so there is feedback to carry the advice.
+        gates = replace(gates, arch_review_passed=False)
         result = v._feedback_from_gates(
             "TASK-B9C", 1, gates, _results(), task_type="feature"
         )
@@ -170,23 +177,24 @@ class TestCoverageUnknown:
         assert "coverage_met" in text  # the Player report
         assert "toolchain.coverage" in text  # the project declaration
         assert issue["details"]["coverage_met"] is None
+        assert issue["severity"] == "should_fix"  # advice since step 1
 
     def test_declared_but_not_run_says_so_and_names_the_failed_gate(
         self, tmp_path
     ):
         """Build FEAT-86FD (18 October 2026): the project declared a coverage
-        command, the plan audit failed first so it never ran, and the feedback
-        said the project declared nothing. It must say what happened."""
+        command, another gate failed first so it never ran, and the feedback
+        said the project declared nothing. It must say what happened. (The
+        plan audit is advice since step 1, so the architectural review is the
+        gate that fails first here.)"""
         worktree = _make_shell_project(tmp_path, exit_code=0)
         v = _validator(worktree)
-        results = _results(
-            plan_audit={"status": "violation", "severity": "high", "violations": 1}
-        )
+        results = _results(code_review={"score": 10})
         gates = v.verify_quality_gates(
             results, profile=get_profile(TaskType.FEATURE)
         )
         assert gates.coverage_met is None
-        assert gates.plan_audit_passed is False
+        assert gates.arch_review_passed is False
         assert v._coverage_resolution_pending(gates) is False
 
         result = v._feedback_from_gates(
@@ -200,13 +208,13 @@ class TestCoverageUnknown:
         assert "declares a coverage command" in text
         assert "./coverage.sh" in text
         assert "not run this turn" in text
-        assert "plan audit" in text
+        assert "architectural review" in text
         assert "neither the Player's report" not in text
         assert issue["details"]["provenance"] == (
             "declared_coverage_command_not_run"
         )
         assert issue["details"]["declared_coverage_command"] == "./coverage.sh"
-        assert issue["details"]["waiting_on_gates"] == ["plan audit"]
+        assert issue["details"]["waiting_on_gates"] == ["architectural review"]
         # The verdict is unchanged: still feedback, coverage still UNKNOWN.
         assert result.decision == "feedback"
 
@@ -245,7 +253,8 @@ class TestDirectModeRelaxation:
         )
         assert gates.coverage_relaxed_by is None
         assert gates.coverage_met is None
-        assert gates.all_gates_passed is False
+        # UNKNOWN is advice since step 1 (24 October 2026), not a failed gate.
+        assert gates.all_gates_passed is True
 
     def test_direct_mode_writer_emits_null_not_true(self):
         """The writer half: direct mode measures nothing, so it says nothing."""
@@ -372,7 +381,7 @@ class TestDeclaredCoverageCommand:
         else:
             assert resolved.coverage_met is None
             assert resolved.coverage_receipt is None
-            assert resolved.all_gates_passed is False
+            assert resolved.all_gates_passed is True  # advice since step 1
 
     def test_a_measured_value_is_never_overwritten_by_the_command(self, tmp_path):
         worktree = _make_shell_project(tmp_path, exit_code=1)
@@ -397,7 +406,8 @@ class TestDeclaredCoverageCommand:
 
     def test_a_command_that_cannot_launch_is_unknown_not_a_pass(self, tmp_path):
         """NEGATIVE CONTROL (B9 repair pass) — a declared command that never
-        ran measured nothing, so the gate stays UNKNOWN and cannot approve."""
+        ran measured nothing, so the gate stays UNKNOWN (never a pass); since
+        step 1 (24 October 2026) UNKNOWN is advice, not a failed gate."""
         worktree = tmp_path / "broken"
         worktree.mkdir()
         _write_config(worktree, {"coverage": "./no-such-command-here"})
@@ -409,7 +419,7 @@ class TestDeclaredCoverageCommand:
         )
         resolved = v.apply_declared_coverage(gates)
         assert resolved.coverage_met is not True
-        assert resolved.all_gates_passed is False
+        assert v._unmeasured_coverage_advice(resolved)
 
     def test_the_command_runs_in_the_worktree_with_the_project_environment(
         self, tmp_path

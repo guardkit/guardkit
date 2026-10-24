@@ -205,7 +205,7 @@ class TestScopeCreepStillHigh:
         assert verdict["extra_files_beside_the_plan"] == [
             "apps/web/src/pages/ShelfPage.test.tsx"
         ]
-        assert not _gate_passes(repo, verdict)
+        assert _gate_passes(repo, verdict)  # advice since step 1 (GKT-141)
 
     def test_a_test_of_something_nobody_planned_still_counts(
         self, repo: Path
@@ -219,7 +219,7 @@ class TestScopeCreepStillHigh:
 
         assert verdict["severity"] == "high", verdict
         assert verdict["extra_files_beside_the_plan"] == []
-        assert not _gate_passes(repo, verdict)
+        assert _gate_passes(repo, verdict)  # advice since step 1 (GKT-141)
 
     def test_unrelated_test_helper_and_asset_in_a_planned_folder_count(
         self, repo: Path
@@ -233,7 +233,7 @@ class TestScopeCreepStillHigh:
 
         assert verdict["severity"] == "high", verdict
         assert verdict["extra_files_beside_the_plan"] == []
-        assert not _gate_passes(repo, verdict)
+        assert _gate_passes(repo, verdict)  # advice since step 1 (GKT-141)
 
     def test_protected_files_named_after_a_planned_file_still_count(
         self, repo: Path
@@ -251,7 +251,7 @@ class TestScopeCreepStillHigh:
         assert verdict["extra_files_beside_the_plan"] == [
             "apps/web/src/pages/ShelfPage.test.tsx"
         ]
-        assert not _gate_passes(repo, verdict)
+        assert _gate_passes(repo, verdict)  # advice since step 1 (GKT-141)
 
     def test_same_name_production_files_and_a_test_elsewhere_count(
         self, repo: Path
@@ -265,7 +265,7 @@ class TestScopeCreepStillHigh:
 
         assert verdict["severity"] == "high", verdict
         assert verdict["extra_files_beside_the_plan"] == []
-        assert not _gate_passes(repo, verdict)
+        assert _gate_passes(repo, verdict)  # advice since step 1 (GKT-141)
 
     def test_changed_dockerfile_compose_and_readme_are_named(
         self, repo: Path
@@ -311,12 +311,10 @@ class TestTheCoachFeedbackWording:
         gates = validator.verify_quality_gates(
             results, profile=get_profile(TaskType.FEATURE)
         )
-        result = validator._feedback_from_gates(
-            TASK_ID, 1, gates, results, task_type="feature"
-        )
-        issue = next(i for i in result.issues if i["category"] == "plan_audit")
+        # Step 1 (24 October 2026, GKT-141): the findings are advice.
+        issue = next(i for i in gates.advisories if i["category"] == "plan_audit")
 
-        assert issue["severity"] == "must_fix"
+        assert issue["severity"] == "should_fix"
         text = issue["description"]
         assert "high-severity" in text
         assert (

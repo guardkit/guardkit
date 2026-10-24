@@ -437,6 +437,16 @@ def _plan_audit_issues(history: List[Any]) -> List[Dict[str, Any]]:
     return [i for i in report.get("issues", []) if i.get("category") == "plan_audit"]
 
 
+def _protected_issues(history: List[Any]) -> List[Dict[str, Any]]:
+    """Step 1 (24 October 2026): the plan audit is advice (GKT-141), so a
+    repair round's protected file is refused by the repair-round guard."""
+    report = history[-1].coach_result.report or {}
+    return [
+        i for i in report.get("issues", [])
+        if i.get("category") == "repair_round_protected"
+    ]
+
+
 @pytest.fixture(autouse=True)
 def _no_model_can_be_reached(monkeypatch: pytest.MonkeyPatch) -> None:
     """The orchestrator's own specialists must never reach a model here: the
@@ -500,11 +510,12 @@ class TestARepairRoundCanDoItsJob:
         assert block["severity"] == "medium"
         assert block["repair_round"]["start_commit"] == outcome["head_at_re_open"]
 
-    def test_the_same_files_on_an_ordinary_turn_are_still_refused(
+    def test_the_same_files_on_an_ordinary_turn_are_audited_as_ordinary(
         self, approved_round_one: Path
     ) -> None:
-        """Control: without the re-open the rule is exactly today's, and a
-        repair-round file on disk (the old design's record) changes nothing."""
+        """Control: without the re-open the audit is an ordinary one, and a
+        repair-round file on disk (the old design's record) changes nothing.
+        Since step 1 (24 October 2026, GKT-141) its findings are advice."""
         repo = approved_round_one
         private = TaskArtifactPaths.task_private_dir(TASK_ID, repo)
         (private / "round-1").mkdir(parents=True, exist_ok=True)
@@ -514,12 +525,11 @@ class TestARepairRoundCanDoItsJob:
             "implicated_paths": ["tests/e2e/shelf.spec.ts"],
         }))
         outcome = run_round(repo, REPAIR_NEAR_THE_FAILURE)
-        assert outcome["decision"] != "approved"
         block = _plan_audit(repo)
         assert block["status"] == "violation"
         assert block["severity"] == "high"
         assert "repair_round" not in block
-        assert _plan_audit_issues(outcome["history"])
+        assert not _protected_issues(outcome["history"])
         assert all("## This is a repair round" not in p for p in outcome["prompts"])
 
 
@@ -559,7 +569,7 @@ class TestARepairRoundThatWandersIsRefused:
         assert outcome["decision"] != "approved"
         block = _plan_audit(repo)
         assert block["severity"] == "high"
-        issues = _plan_audit_issues(outcome["history"])
+        issues = _protected_issues(outcome["history"])
         assert issues and issues[0]["severity"] == "must_fix"
         assert "db/migrations/0003_seed_books.sql" in issues[0]["description"]
 
@@ -569,7 +579,7 @@ class TestTheLegacyCoachHasNoReviewer:
     so a repair round is audited exactly as an ordinary turn, and the log says
     so."""
 
-    def test_a_repair_round_is_refused_by_count_and_the_log_says_why(
+    def test_a_repair_round_is_audited_by_count_and_the_log_says_why(
         self,
         approved_round_one: Path,
         monkeypatch: pytest.MonkeyPatch,
@@ -580,9 +590,9 @@ class TestTheLegacyCoachHasNoReviewer:
         with caplog.at_level("WARNING", logger="guardkit.orchestrator.autobuild"):
             outcome = reopen_and_repair(repo, REPAIR_NEAR_THE_FAILURE)
 
-        # The re-open still started the round; the loop did not use it.
+        # The re-open still started the round; the loop did not use it. The
+        # count-based audit is advice since step 1 (24 October 2026).
         assert isinstance(outcome["repair_round"], RepairRound)
-        assert outcome["decision"] != "approved"
         block = _plan_audit(repo)
         assert block["status"] == "violation"
         assert block["severity"] == "high"
@@ -735,7 +745,7 @@ class TestProtectedFilesWhateverTheTaskDeclares:
             model_verdict=APPROVE,
         )
         assert outcome["decision"] != "approved"
-        issues = _plan_audit_issues(outcome["history"])
+        issues = _protected_issues(outcome["history"])
         assert issues and issues[0]["severity"] == "must_fix"
         assert "db/migrations/0003_seed_books.sql" in issues[0]["description"]
 
@@ -747,7 +757,7 @@ class TestProtectedFilesWhateverTheTaskDeclares:
             model_verdict=APPROVE,
         )
         assert outcome["decision"] != "approved"
-        issues = _plan_audit_issues(outcome["history"])
+        issues = _protected_issues(outcome["history"])
         assert issues and issues[0]["severity"] == "must_fix"
         assert "deploy/Dockerfile" in issues[0]["description"]
 
@@ -785,7 +795,7 @@ class TestCarriedApprovalsAreThisTasksOwn:
         assert "deploy/Dockerfile" not in second["repair_round"].approved_by_earlier_repairs
         assert second["repair_round"].approved_by_earlier_repairs == frozenset(carried)
         assert second["decision"] != "approved"
-        issues = _plan_audit_issues(second["history"])
+        issues = _protected_issues(second["history"])
         assert issues and "deploy/Dockerfile" in issues[0]["description"]
 
     def test_an_unapproved_repair_round_carries_nothing(self, approved_round_one: Path) -> None:
@@ -827,7 +837,7 @@ class TestARenameIsSeen:
         block = _plan_audit(repo)
         assert "deploy/Dockerfile" in block["repair_round"]["files_changed_this_round"]
         assert "scripts/image-build" in block["repair_round"]["files_made_this_round"]
-        issues = _plan_audit_issues(outcome["history"])
+        issues = _protected_issues(outcome["history"])
         assert issues and "deploy/Dockerfile" in issues[0]["description"]
         # The reviewer was shown the path the file left, too.
         assert "- `deploy/Dockerfile`" in _repair_section(outcome["prompts"])

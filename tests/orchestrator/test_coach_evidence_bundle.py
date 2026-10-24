@@ -583,9 +583,11 @@ class TestPartialGateFeedbackBundle:
         assert issue["category"] == category
         assert issue["details"] == details
 
-    def test_actual_required_plan_audit_failure_is_reported(
+    def test_actual_required_plan_audit_failure_is_reported_as_advice(
         self, tmp_path: Path
     ) -> None:
+        """Step 1 (24 October 2026, GKT-141): the plan audit's findings are
+        advice carried with the bundle; they never abort the gate."""
         bundle = _gather_gate_abort(
             tmp_path,
             quality_gates={
@@ -602,9 +604,11 @@ class TestPartialGateFeedbackBundle:
             },
         )
 
-        assert bundle.gate_feedback is not None
+        assert bundle.gathering_status != "partial_gate_abort"
         assert [
-            issue["category"] for issue in bundle.gate_feedback["issues"]
+            issue["category"]
+            for issue in bundle.advisory_issues
+            if issue["category"] == "plan_audit"
         ] == ["plan_audit"]
 
 

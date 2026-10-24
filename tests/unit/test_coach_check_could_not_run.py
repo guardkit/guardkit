@@ -990,8 +990,9 @@ class TestACheckThatExitedZeroCouldRun:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """On the live path the turn is ordinary feedback: the reviewer's
-        findings reach the builder, the note says the check exited 0 with no
-        test count, and the turn is not a configuration error."""
+        findings reach the builder and the turn is not a configuration error.
+        Since step 1 (24 October 2026, GKT-078) a check that exited 0 with no
+        recognisable test names adds nothing to a feedback verdict."""
         monkeypatch.delenv("GUARDKIT_COACH_SYNTHESIS", raising=False)
         monkeypatch.delenv("GUARDKIT_COACH_GATHER", raising=False)
         invoker = _invoker(tmp_path)
@@ -1029,10 +1030,7 @@ class TestACheckThatExitedZeroCouldRun:
             for issue in result.report["issues"]
             if (issue.get("details") or {}).get("signal_absent") is True
         ]
-        assert notes, result.report["issues"]
-        assert "exited 0" in notes[-1]
-        assert "no test count was recognised" in notes[-1]
-        assert "venv" not in notes[-1]
+        assert notes == [], result.report["issues"]
 
 
 class TestANonZeroNoTestsResultIsNoWorseInAWaveOfTwo:

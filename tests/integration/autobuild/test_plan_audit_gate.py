@@ -810,13 +810,12 @@ class TestCoachRejectsOnPlanAuditViolation:
         )
         return results_path
 
-    def test_coach_rejects_high_severity_and_names_extras(
+    def test_coach_reports_high_severity_as_advice_and_names_extras(
         self, worktree: Path
     ):
-        # The scenario called out in the task AC: saved plan exists and
-        # the actual implementation adds extra files → Coach must reject
-        # with feedback citing the extras so the Player's next turn can
-        # correct course.
+        # Saved plan exists and the implementation adds extra files. Since
+        # step 1 (24 October 2026, GKT-141) the plan audit is advice: the
+        # Coach names the extras but the audit never fails the gate.
         violation_block = {
             "status": "violation",
             "severity": "high",
@@ -842,16 +841,16 @@ class TestCoachRejectsOnPlanAuditViolation:
             task={"id": TASK_ID, "acceptance_criteria": ["trivial AC"]},
         )
 
-        assert result.decision == "feedback"
-        assert result.issues, "feedback decision must carry issues"
+        assert result.quality_gates.plan_audit_passed is True
+        assert result.issues, "the advice must be carried with the verdict"
 
         plan_audit_issues = [
             i for i in result.issues if i.get("category") == "plan_audit"
         ]
-        assert plan_audit_issues, "plan_audit must appear in feedback issues"
+        assert plan_audit_issues, "plan_audit must appear as advice"
 
-        # High severity → must_fix (escalated from legacy should_fix).
-        assert plan_audit_issues[0]["severity"] == "must_fix"
+        # Advice, never a reason to refuse the turn.
+        assert plan_audit_issues[0]["severity"] == "should_fix"
 
         # Feedback description must name the extras so the Player has
         # actionable information for the next turn.

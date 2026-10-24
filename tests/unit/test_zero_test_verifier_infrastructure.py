@@ -1021,9 +1021,11 @@ class TestTheMarkerCarriesTheExitCode:
     status, so the stall message can tell "ran and exited 0 with no test
     count" from a verifier that could not run."""
 
-    def test_an_exit_0_run_is_recorded_on_the_marker(
+    def test_an_exit_0_run_carries_no_marker(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        """Step 1 (24 October 2026, GKT-078): a test command that exited 0 is
+        not overridden or marked; only missing test names, which is advice."""
         monkeypatch.delenv("GUARDKIT_COACH_SYNTHESIS", raising=False)
         monkeypatch.delenv("GUARDKIT_COACH_GATHER", raising=False)
         invoker = _make_invoker(tmp_path)
@@ -1042,10 +1044,7 @@ class TestTheMarkerCarriesTheExitCode:
             invoker, task_id="TASK-ZTL", turn=1, bundle=_bundle(ran_nothing),
         )
 
-        markers = _marker_issues(result.report)
-        assert markers
-        assert markers[0]["details"]["exit_code"] == 0
-        assert "exited 0" in markers[0]["description"]
+        assert _marker_issues(result.report) == []
 
     def test_an_absent_run_without_an_exit_code_records_none(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

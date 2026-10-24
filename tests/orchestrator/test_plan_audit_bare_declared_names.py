@@ -317,7 +317,7 @@ class TestAmbiguousNamesNeverPass:
         }
         assert "index.ts is a bare file name that matches 2 files" in verdict["message"]
         assert "must give the full path" in verdict["message"]
-        assert not _gate_passes(repo, verdict)
+        assert _gate_passes(repo, verdict)  # advice since step 1 (GKT-141)
 
     def test_a_name_that_matches_nothing_is_still_missing(
         self, tmp_path: Path
@@ -330,7 +330,7 @@ class TestAmbiguousNamesNeverPass:
         assert verdict["status"] == "violation", verdict
         assert verdict["missing_files"] == ["Nowhere.tsx"]
         assert verdict["bare_names_resolved"] == {}
-        assert not _gate_passes(repo, verdict)
+        assert _gate_passes(repo, verdict)  # advice since step 1 (GKT-141)
 
 
 class TestCreatedFiles:
