@@ -3452,6 +3452,8 @@ class AutoBuildOrchestrator:
                 self._agent_invoker.task_work_scope = self.task_work_scope
                 self._agent_invoker._baseline_commit = self.task_work_scope.baseline_commit
             result = self._orchestrate_owned(task_id, requirements, acceptance_criteria, base_branch, **kwargs)
+            if lease.failure and result.final_decision == "approved":
+                raise ScopeUnavailable(lease.failure)
             if result.final_decision != "approved":
                 lease.poison(f"Task {task_id} was not approved; predecessor work preserved")
             return result

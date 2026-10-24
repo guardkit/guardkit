@@ -93,6 +93,7 @@ the biggest single process, so the whole build was lost. Three changes:
 from __future__ import annotations
 
 import errno
+from functools import wraps
 import logging
 import os
 import select
@@ -1580,6 +1581,34 @@ def _run_without_waitid(
         raise
 
 
+def preserve_cleanup_failure(exc: BaseException) -> None:
+    """Keep uncertain child termination authoritative despite advisory catches."""
+    if isinstance(exc, CleanupUnavailableError):
+        from guardkit.orchestrator.task_work_scope import current_lease
+
+        lease = current_lease()
+        if lease is not None:
+            lease.poison(f"{type(exc).__name__}: {exc}")
+
+
+def _retain_checkout_on_cleanup_failure(run):
+    @wraps(run)
+    def owned_run(*args, **kwargs):
+        from guardkit.orchestrator.task_work_scope import current_lease, ScopeUnavailable
+
+        lease = current_lease()
+        if lease is not None and lease.failure:
+            raise ScopeUnavailable(lease.failure)
+        try:
+            return run(*args, **kwargs)
+        except CleanupUnavailableError as exc:
+            preserve_cleanup_failure(exc)
+            raise
+
+    return owned_run
+
+
+@_retain_checkout_on_cleanup_failure
 def run_in_own_group(
     args: Union[str, Sequence[str]],
     *,
@@ -1621,6 +1650,7 @@ def run_in_own_group(
     return GroupRun(proc.returncode, stdout or "", stderr or "")
 
 
+@_retain_checkout_on_cleanup_failure
 def run_project_command(
     args: Union[str, Sequence[str]],
     *,

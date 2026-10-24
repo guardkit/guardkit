@@ -485,6 +485,13 @@ class CoachVerifier:
 
         return discrepancies
 
+    @staticmethod
+    def _claimed_files(report: Dict[str, Any], key: str) -> list:
+        """Read Player claims, separately from observed scoped ownership."""
+        if key in {"files_created", "files_modified"}:
+            return report.get("claimed_" + key, report.get(key, [])) or []
+        return report.get(key, []) or []
+
     def _verify_files_exist(self, report: Dict[str, Any]) -> List[Discrepancy]:
         """Verify claimed files actually exist.
 
@@ -513,7 +520,7 @@ class CoachVerifier:
         canonical_resolved: bool = False
 
         for file_list_key in ["files_created", "files_modified", "tests_written"]:
-            claimed_files = report.get(file_list_key, [])
+            claimed_files = self._claimed_files(report, file_list_key)
 
             for file_path in claimed_files:
                 # TASK-AB-XREPOEV01: repo-qualified claim (``<repo>:<path>``).
@@ -702,7 +709,7 @@ class CoachVerifier:
         run_claims: set[str] = set()
         modified_claims: set[str] = set()
         for key in ("files_created", "files_modified", "tests_written"):
-            for entry in report.get(key) or []:
+            for entry in self._claimed_files(report, key):
                 if entry:
                     normalized = self._normalize_claimed_path(str(entry))
                     authored_claims.add(normalized)
@@ -1340,7 +1347,7 @@ class CoachVerifier:
         """
         paths: set[str] = set()
         for key in ("files_created", "tests_written"):
-            for entry in report.get(key) or []:
+            for entry in self._claimed_files(report, key):
                 if entry:
                     paths.add(self._normalize_claimed_path(str(entry)))
         for promise in report.get("completion_promises") or []:
@@ -1715,6 +1722,9 @@ class CoachVerifier:
                 test_count=self._parse_pytest_count(result.stdout),
                 output=result.stdout,
             )
+        except process_group.CleanupUnavailableError as exc:
+            process_group.preserve_cleanup_failure(exc)
+            raise
         except FileNotFoundError:
             logger.warning("pytest not found, trying python -m pytest")
             test_result = None
@@ -1744,6 +1754,9 @@ class CoachVerifier:
                         output=result.stdout,
                     )
                     break
+                except process_group.CleanupUnavailableError as exc:
+                    process_group.preserve_cleanup_failure(exc)
+                    raise
                 except FileNotFoundError:
                     continue
             if test_result is None:
@@ -1806,8 +1819,8 @@ class CoachVerifier:
         count = 0
         if report.get("tests_run"):
             count += 2  # tests_passed + test_count
-        count += len(report.get("files_created", []))
-        count += len(report.get("files_modified", []))
+        count += len(self._claimed_files(report, "files_created"))
+        count += len(self._claimed_files(report, "files_modified"))
         count += len(report.get("tests_written", []))
         # TASK-AB-FIX-INVAB1 AC-001: count complete-promise files so the
         # honesty score arithmetic stays accurate when the new check fires.

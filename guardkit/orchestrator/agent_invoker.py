@@ -644,7 +644,7 @@ def _strip_orchestrator_managed_paths(
     """
     stripped: Set[str] = set()
 
-    for key in ("files_modified", "files_created", "tests_written"):
+    for key in ("files_modified", "files_created", "tests_written", "claimed_files_modified", "claimed_files_created"):
         original = report.get(key) or []
         if not original:
             continue
@@ -7115,8 +7115,8 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                 )
 
                 # Map task-work fields to Player report fields
-                report["files_modified"] = task_work_data.get("files_modified", [])
-                report["files_created"] = task_work_data.get("files_created", [])
+                report["files_modified"] = self._file_claims(task_work_data, "modified")
+                report["files_created"] = self._file_claims(task_work_data, "created")
                 # TASK-FIX-CC-COND: propagate files_authored (Player's
                 # explicit Write/Edit set). Never union with git diff
                 # downstream — that contamination is exactly what this
@@ -7233,10 +7233,10 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
             # Merge with output data if present (union with git-enriched)
             if "files_modified" in output:
                 existing = set(report.get("files_modified", []))
-                report["claimed_files_modified"] = sorted(list(set(report.get("claimed_files_modified", [])) | set(output["files_modified"])))
+                report["claimed_files_modified"] = sorted(list(set(report.get("claimed_files_modified", [])) | set(self._file_claims(output, "modified"))))
             if "files_created" in output:
                 existing = set(report.get("files_created", []))
-                report["claimed_files_created"] = sorted(list(set(report.get("claimed_files_created", [])) | set(output["files_created"])))
+                report["claimed_files_created"] = sorted(list(set(report.get("claimed_files_created", [])) | set(self._file_claims(output, "created"))))
             if "tests_passed" in output:
                 tests_passed_value = output["tests_passed"]
                 # Convert count to boolean for PLAYER_REPORT_SCHEMA compliance
@@ -7447,6 +7447,10 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
 
                 updated = False
 
+                # Carry the filtered claims as well as the observed inventory
+                # through the report -> Coach results rewrite.
+                for key in ("claimed_files_created", "claimed_files_modified"):
+                    task_work_data[key] = list(report.get(key, []))
                 self._apply_scope_inventory(task_work_data)
                 updated = True
 
@@ -7468,7 +7472,7 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                     task_work_data["files_written_then_removed"] = written_then_removed
                     updated = True
                 if removed_set:
-                    for key in ("files_created", "files_modified", "tests_written"):
+                    for key in ("files_created", "files_modified", "tests_written", "claimed_files_created", "claimed_files_modified"):
                         before = list(task_work_data.get(key) or [])
                         after = [
                             entry
@@ -7620,6 +7624,31 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         self._baseline_commit = scope.baseline_commit
         self._evidence_baselines = {repo.root: repo.baseline for repo in scope.repositories[1:]}
 
+    def _file_claims(self, report, kind):
+        """Retain claims across rewrites without trusting a supplied split.
+
+        A raw report can supply claimed_* itself. Only an actual match to
+        this lease's observed inventory lets files_* be treated as the
+        previously written observation rather than another asserted list.
+        """
+        import subprocess
+        from guardkit.orchestrator.task_work_scope import ScopeUnavailable
+
+        key = "files_" + kind
+        raw = list(report.get(key, []) or [])
+        claimed_key = "claimed_" + key
+        if claimed_key not in report:
+            return raw
+        claimed = list(report.get(claimed_key, []) or [])
+        try:
+            observed = self._detect_git_changes()
+            if (report.get("scope_id") == observed["scope_id"]
+                    and set(raw) == set(observed[kind])):
+                return claimed
+        except (ScopeUnavailable, OSError, subprocess.SubprocessError):
+            pass
+        return sorted(set(raw) | set(claimed))
+
     def _apply_scope_inventory(self, report):
         """Separate Player claims from the one authoritative observed inventory."""
         import subprocess
@@ -7753,7 +7782,7 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         if not removed:
             return []
         removed_set = set(removed)
-        for key in ("files_created", "files_modified", "tests_written"):
+        for key in ("files_created", "files_modified", "tests_written", "claimed_files_created", "claimed_files_modified"):
             entries = report.get(key)
             if isinstance(entries, list):
                 report[key] = [e for e in entries if norm(e) not in removed_set]
@@ -11822,8 +11851,8 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                 "quality_gates_relaxed": True,  # Signal to Coach
                 "all_passed": success,
             },
-            "files_modified": sorted(list(set(player_report.get("files_modified", [])))),
-            "files_created": sorted(list(set(player_report.get("files_created", [])))),
+            "files_modified": sorted(list(set(self._file_claims(player_report, "modified")))),
+            "files_created": sorted(list(set(self._file_claims(player_report, "created")))),
             "tests_written": sorted(list(set(tests_written))),
             "requirements_addressed": player_report.get("requirements_addressed", []),
             "requirements_met": player_report.get("requirements_met",
@@ -11900,8 +11929,8 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         report: Dict[str, Any] = {
             "task_id": task_id,
             "turn": turn,
-            "files_modified": player_report.get("files_modified", []),
-            "files_created": player_report.get("files_created", []),
+            "files_modified": self._file_claims(player_report, "modified"),
+            "files_created": self._file_claims(player_report, "created"),
             "tests_written": player_report.get("tests_written", []),
             "tests_run": player_report.get("tests_run", False),
             "tests_passed": player_report.get("tests_passed", False),

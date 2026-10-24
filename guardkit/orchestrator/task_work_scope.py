@@ -365,7 +365,7 @@ class CheckoutLease:
             )
 
     def poison(self, reason):
-        self.failure = str(reason)
+        self.failure = self.failure or str(reason) or "Writer did not settle; work preserved"
         for _, _, git_dir in self.repositories:
             _history[str(git_dir)] = {"failed": self.failure}
 
@@ -469,20 +469,21 @@ def checkout_lease(root, evidence_repos=(), cancelled=None):
             + [(r.root, identity(r.root)) for r in evidence_repos],
         )
         _local.lease = lease
-        for _, _, git_dir in repos:
-            (git_dir / "guardkit-writer-unsettled").write_text(
-                "Writer in progress; never a resume credential\n"
-            )
         try:
+            # Initialization is part of ownership too: a failed marker write
+            # must never leave an unlocked, reusable thread-local owner.
+            for _, _, git_dir in repos:
+                (git_dir / "guardkit-writer-unsettled").write_text(
+                    "Writer in progress; never a resume credential\n"
+                )
             yield lease
             if not lease.failure:
                 lease.verify()
-        except BaseException as exc:
-            lease.poison(str(exc))
-            raise
-        finally:
-            for _, root, git_dir in repos:
-                if not lease.failure:
+                # Remove every marker before publishing any approved history.
+                # A partial removal failure poisons the complete footprint.
+                for _, _, git_dir in repos:
+                    (git_dir / "guardkit-writer-unsettled").unlink(missing_ok=True)
+                for _, root, git_dir in repos:
                     approved = set(
                         _history.get(str(git_dir), {}).get("approved_tasks", ())
                     )
@@ -497,8 +498,25 @@ def checkout_lease(root, evidence_repos=(), cancelled=None):
                             else "selected input boundary"
                         ),
                     }
-                    (git_dir / "guardkit-writer-unsettled").unlink(missing_ok=True)
-            _local.lease = None
+        except BaseException as exc:
+            lease.poison(str(exc))
+            raise
+        finally:
+            try:
+                if lease.failure:
+                    # Best effort persistent denial, including members whose
+                    # marker was already removed. In-memory denial is retained
+                    # even if the filesystem cannot record it; never mask the
+                    # original failure with another marker I/O error.
+                    for _, _, git_dir in repos:
+                        try:
+                            (git_dir / "guardkit-writer-unsettled").write_text(
+                                "Writer unsettled; automatic resume refused\n"
+                            )
+                        except OSError:
+                            pass
+            finally:
+                _local.lease = None
 
 
 def bootstrap_admitted_checkout(scope):

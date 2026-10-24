@@ -6196,6 +6196,8 @@ The detailed specifications are in the task markdown file.
                 if admitted:
                     admitted()
                 result = self._execute_task_owned(task, feature, worktree, **kwargs)
+                if lease.failure and result.success:
+                    raise ScopeUnavailable(lease.failure)
                 stopped = any(event is not None and event.is_set() for event in
                               (kwargs.get("timeout_event"), kwargs.get("cancellation_event")))
                 if stopped and result.success:

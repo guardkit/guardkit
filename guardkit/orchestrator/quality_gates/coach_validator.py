@@ -4225,6 +4225,7 @@ class CoachValidator:
                 output_tail=_combined_output_tail(timeout_stdout, timeout_stderr),
             )
         except Exception as exc:  # noqa: BLE001 — runner errors are ABSENT, not fail
+            process_group.preserve_cleanup_failure(exc)
             logger.warning(
                 "Runtime-parity check runner error for %s: %s", command, exc,
             )
@@ -7904,6 +7905,9 @@ class CoachValidator:
         )
         try:
             return process_group.run_project_command(args, **kwargs)
+        except process_group.CleanupUnavailableError as exc:
+            process_group.preserve_cleanup_failure(exc)
+            raise
         finally:
             if record_into is None:
                 self._keep_run_evidence(record)
@@ -9109,15 +9113,23 @@ class CoachValidator:
         # keys would map to a promise, so promises that already use the
         # natural label directly are unaffected.
         promise_map: Dict[str, Dict[str, Any]] = {}
-        # Maps fallback-key -> the promise's original ``criterion_id`` (used
-        # only for the diagnostic log emitted at lookup time).
         fallback_origins: Dict[str, str] = {}
+        # Resolve each explicit identity first, including numeric spellings.
+        # All of its text aliases must use that same noncompletion-dominant
+        # row, even when the later partial row omits criterion_text entirely.
+        canonical_promises = {}
+        aliases = []
+
+        def prefer_noncompletion(previous, row):
+            if previous is None or STATUS_ALIASES.get(
+                previous.get("status"), previous.get("status")
+            ) == "complete":
+                return row
+            return previous
+
         for p in completion_promises:
             cid = p.get("criterion_id") or p.get("ac_id", "")
-            if cid:
-                previous = promise_map.get(cid)
-                if previous is None or STATUS_ALIASES.get(previous.get("status"), previous.get("status")) == "complete":
-                    promise_map[cid] = p
+            canonical = self._normalize_numeric_ac_id(cid) or cid
             text_id: Optional[str] = None
             criterion_text_field = p.get("criterion_text")
             if criterion_text_field:
@@ -9148,31 +9160,32 @@ class CoachValidator:
                     normalized_text
                 )
                 _, text_id = self._extract_ac_id(normalized_text)
-            if text_id and text_id != cid and text_id not in promise_map:
-                promise_map[text_id] = p
+            # A text-only promise still has a usable identity.
+            canonical = canonical or text_id
+            if not canonical:
+                continue
+            canonical_promises[canonical] = prefer_noncompletion(
+                canonical_promises.get(canonical), p
+            )
+            aliases.append((cid, canonical, text_id))
+
+        # Explicit IDs retain priority over another criterion's text fallback.
+        for cid, canonical, _ in aliases:
+            if cid:
+                promise_map[cid] = canonical_promises[canonical]
+                promise_map[canonical] = canonical_promises[canonical]
+        explicit_keys = set(promise_map)
+        for cid, canonical, text_id in aliases:
+            row = canonical_promises[canonical]
+            text_key = self._normalize_numeric_ac_id(text_id) or text_id
+            if text_key and text_key not in explicit_keys:
+                promise_map[text_key] = prefer_noncompletion(promise_map.get(text_key), row)
+                fallback_origins[text_key] = cid
+        for cid, _, text_id in aliases:
+            if text_id and text_id not in explicit_keys:
+                text_key = self._normalize_numeric_ac_id(text_id) or text_id
+                promise_map[text_id] = promise_map[text_key]
                 fallback_origins[text_id] = cid
-
-        # Zero-padding tolerance (2026-09-05). A SECOND pass, after every
-        # explicit key is registered, so a padded alias can never shadow
-        # another promise's exact ID: ``AC-1`` also answers to ``AC-001``.
-        # See :meth:`_normalize_numeric_ac_id` for the receipt this comes from.
-        for p in completion_promises:
-            cid = p.get("criterion_id") or p.get("ac_id", "")
-            padded = self._normalize_numeric_ac_id(cid)
-            if padded and padded != cid and padded not in promise_map:
-                promise_map[padded] = p
-                fallback_origins[padded] = cid
-
-        # Numeric spelling aliases name the same criterion. A conflicting
-        # complete row cannot erase explicit current-turn noncompletion.
-        canonical_promises = {}
-        for key, row in promise_map.items():
-            canonical = self._normalize_numeric_ac_id(key) or key
-            prior = canonical_promises.get(canonical)
-            if prior is None or STATUS_ALIASES.get(prior.get("status"), prior.get("status")) == "complete":
-                canonical_promises[canonical] = row
-        for key in promise_map:
-            promise_map[key] = canonical_promises[self._normalize_numeric_ac_id(key) or key]
 
         criteria_results: List[CriterionResult] = []
         missing: List[str] = []
