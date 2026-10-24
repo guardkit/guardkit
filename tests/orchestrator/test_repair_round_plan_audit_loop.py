@@ -43,7 +43,9 @@ from guardkit.orchestrator.feature_orchestrator import (
 )
 from guardkit.orchestrator.paths import TaskArtifactPaths
 from guardkit.orchestrator.repair_round import RepairRound
+from guardkit.orchestrator.task_work_scope import checkout_lease, current_lease
 from guardkit.worktrees import Worktree
+from tests.task_scope_fixtures import register_clean_fresh_checkout
 
 TASK_ID = "TASK-RPR-001"
 FEATURE_ID = "FEAT-RPR"
@@ -83,6 +85,7 @@ def make_project(
     declare_modify: bool = True,
     declare_create: bool = True,
     direct_mode: bool = False,
+    register: bool = True,
 ) -> Path:
     """A small invented web project on its feature branch."""
     repo = tmp_path / "main" / ".guardkit" / "worktrees" / FEATURE_ID
@@ -131,6 +134,8 @@ def make_project(
     _git(repo, "config", "commit.gpgsign", "false")
     _git(repo, "add", "-A")
     _git(repo, "commit", "-q", "-m", "base")
+    if register:
+        register_clean_fresh_checkout(repo)
     return repo
 
 
@@ -191,6 +196,11 @@ def make_orchestrator(
         seed_feedback=seed_feedback,
         repair_round=repair_round,
     )
+    retained = current_lease(repo)
+    assert retained is not None and retained.scope is not None
+    orch.task_work_scope = retained.scope
+    invoker.task_work_scope = retained.scope
+    invoker._baseline_commit = retained.scope.baseline_commit
     orch._progress_display = MagicMock()
     return orch
 
@@ -284,7 +294,21 @@ def run_round(
     model_verdict: Optional[Dict[str, Any]] = None,
     requirements: str = "Show the reader's books on a shelf page.",
     shell_step: Optional[Callable[[Path], None]] = None,
+    _retained: bool = False,
 ) -> Dict[str, Any]:
+    if not _retained:
+        with checkout_lease(repo) as lease:
+            lease.admit(TASK_ID, FEATURE_ID)
+            return run_round(
+                repo,
+                files,
+                seed_feedback=seed_feedback,
+                repair_round=repair_round,
+                model_verdict=model_verdict,
+                requirements=requirements,
+                shell_step=shell_step,
+                _retained=True,
+            )
     prompts: List[str] = []
     orch = make_orchestrator(repo, seed_feedback, repair_round, prompts)
     seen: List[Optional[str]] = []
@@ -386,7 +410,7 @@ def reopen_and_repair(
             final_decision=outcome["decision"],
         )
 
-    with patch.object(fo, "_execute_task", side_effect=_execute_task), \
+    with patch.object(fo, "_execute_task_owned", side_effect=_execute_task), \
             patch("guardkit.orchestrator.feature_orchestrator.FeatureLoader.find_task",
                   side_effect=lambda f, tid: f.tasks[0]), \
             patch("guardkit.orchestrator.feature_orchestrator.FeatureLoader.save_feature"), \
@@ -469,7 +493,11 @@ class TestARepairRoundCanDoItsJob:
         assert outcome["decision"] == "approved", outcome["history"][-1].coach_result.report
         block = _plan_audit(repo)
         assert block["status"] == "passed", block
-        assert block["severity"] == "low"
+        # The accepted repair-scope policy does not recount round-one work as
+        # this repair's changes.  The still-declared App modification is now
+        # retained as a medium advisory rather than being silently satisfied
+        # by the earlier scope; it does not override the reviewer's approval.
+        assert block["severity"] == "medium"
         assert block["repair_round"]["start_commit"] == outcome["head_at_re_open"]
 
     def test_the_same_files_on_an_ordinary_turn_are_still_refused(
@@ -622,7 +650,10 @@ class TestSequentialReEntries:
         assert second["decision"] == "approved", second["history"][-1].coach_result.report
         block = _plan_audit(repo)
         assert block["status"] == "passed"
-        assert "apps/web/src/test-render.tsx" in block["extra_files_approved_by_a_repair"]
+        # Earlier repair approval remains in the new round's retained input
+        # above, but the current audit is scoped to this new admission and
+        # must not recount the earlier repair's raw diff as current work.
+        assert block["extra_files_approved_by_a_repair"] == []
 
 
 class TestTheReviewSectionMustReachTheModel:
@@ -734,10 +765,14 @@ class TestCarriedApprovalsAreThisTasksOwn:
         carried = fo._repair_approvals[TASK_ID]
         assert "apps/web/src/test-render.tsx" in carried
 
-        # Task B's planned change lands on the shared branch.
-        _write(repo, "deploy/Dockerfile", "FROM scratch\nEXPOSE 8080\n")
-        _git(repo, "add", "-A")
-        _git(repo, "commit", "-q", "-m", "task B: planned Dockerfile change")
+        # Task B's planned change lands through its own real admitted scope;
+        # an out-of-band clean commit is intentionally not resumable.
+        with checkout_lease(repo) as lease:
+            lease.admit("TASK-B", FEATURE_ID)
+            _write(repo, "deploy/Dockerfile", "FROM scratch\nEXPOSE 8080\n")
+            _git(repo, "add", "-A")
+            _git(repo, "commit", "-q", "-m", "task B: planned Dockerfile change")
+            lease.checkpoint_completed()
 
         second = reopen_and_repair(
             repo,
@@ -812,7 +847,10 @@ class TestEveryAuditPathGetsTheReview:
         # path in the acceptance criteria: the plan audit has nothing to
         # compare and is skipped (or, in direct mode, not run at all).
         repo = make_project(
-            tmp_path, declare_create=False, declare_modify=False, direct_mode=direct_mode
+            tmp_path,
+            declare_create=False,
+            declare_modify=False,
+            direct_mode=direct_mode,
         )
         first = run_round(repo, {"apps/web/src/App.tsx": "export const App = () => 1;\n"})
         assert first["decision"] == "approved", first["history"][-1].coach_result.report
@@ -857,9 +895,12 @@ class TestEveryAuditPathGetsTheReview:
 
 
 class TestAnUnreadableRecordIsNeverApproved:
-    """In a repair round the audit leaves extra files to the reviewer, so a
-    turn whose record of what changed cannot be read is refused, whatever the
-    reviewer says. Ordinary turns are unchanged."""
+    """Live scope is authority; an unreadable live audit still fails closed.
+
+    ``checkpoints.json`` is now diagnostic only. Deleting or corrupting it
+    cannot erase the retained in-memory checkpoints or create resume
+    authority. A failure reading the scope-aware audit itself still refuses.
+    """
 
     REFUSAL = (
         "The repair round's record of what changed could not be read, so this "
@@ -904,7 +945,13 @@ class TestAnUnreadableRecordIsNeverApproved:
             model_verdict=APPROVE,
             shell_step=lambda root: self._checkpoints(root).unlink(),
         )
-        self._assert_refused(repo, outcome)
+        # The deleted diagnostic file cannot hide the protected migration.
+        assert outcome["decision"] != "approved"
+        issues = outcome["history"][-1].coach_result.report.get("issues", [])
+        protected = [i for i in issues if i.get("category") == "repair_round_protected"]
+        assert protected and "db/migrations/0003_seed_books.sql" in protected[0]["description"]
+        assert not any(i.get("category") == "repair_round_unreadable" for i in issues)
+        assert outcome["fo"]._repair_approvals.get(TASK_ID) is None
 
     @pytest.mark.parametrize("direct_mode", [False, True], ids=["no-declarations", "direct-mode"])
     def test_a_malformed_checkpoint_record_refuses_the_turn(
@@ -917,7 +964,12 @@ class TestAnUnreadableRecordIsNeverApproved:
             model_verdict=APPROVE,
             shell_step=lambda root: self._checkpoints(root).write_text("{not json"),
         )
-        self._assert_refused(repo, outcome)
+        # A Player-writable diagnostic file is not a credential and does not
+        # override the retained scope/checkpoint lineage.
+        assert outcome["decision"] == "approved"
+        assert outcome["fo"]._repair_approvals[TASK_ID] == {"tests/e2e/sign-in.ts"}
+        issues = outcome["history"][-1].coach_result.report.get("issues", [])
+        assert not any(i.get("category") == "repair_round_unreadable" for i in issues)
 
     @pytest.mark.parametrize("direct_mode", [False, True], ids=["no-declarations", "direct-mode"])
     def test_a_read_that_raises_refuses_the_turn(
@@ -1211,7 +1263,10 @@ class TestASymlinkedProtectedFile:
 
     def _round_one(self, tmp_path: Path, direct_mode: bool) -> Path:
         repo = make_project(
-            tmp_path, declare_create=False, declare_modify=False, direct_mode=direct_mode
+            tmp_path,
+            declare_create=False,
+            declare_modify=False,
+            direct_mode=direct_mode,
         )
         _write(repo, "build/out.txt", "A=1\n")  # ignored, not protected
         (repo / ".env").symlink_to("build/out.txt")  # ignored, protected
@@ -1289,13 +1344,18 @@ class TestATrackedProtectedSymlink:
 
     def _round_one(self, tmp_path: Path, direct_mode: bool) -> Path:
         repo = make_project(
-            tmp_path, declare_create=False, declare_modify=False, direct_mode=direct_mode
+            tmp_path,
+            declare_create=False,
+            declare_modify=False,
+            direct_mode=direct_mode,
+            register=False,
         )
         _write(repo, "build/out.txt", "FROM scratch\n")  # ignored, not protected
         (repo / "deploy" / "Dockerfile").unlink()
         (repo / "deploy" / "Dockerfile").symlink_to("../build/out.txt")
         _git(repo, "add", "-A")
         _git(repo, "commit", "-q", "-m", "the container file is a link to the build output")
+        register_clean_fresh_checkout(repo)
         first = run_round(repo, {"apps/web/src/App.tsx": "export const App = () => 1;\n"})
         assert first["decision"] == "approved", first["history"][-1].coach_result.report
         return repo

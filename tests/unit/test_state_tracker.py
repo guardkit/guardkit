@@ -476,13 +476,13 @@ class TestCaptureState:
 
     @patch("guardkit.orchestrator.state_tracker.detect_git_changes")
     @patch("guardkit.orchestrator.state_tracker.detect_test_results")
-    def test_player_report_takes_priority(
+    def test_unbound_player_report_does_not_override_scoped_detection(
         self,
         mock_test_results: MagicMock,
         mock_git_changes: MagicMock,
         tmp_path: Path,
     ):
-        """Test that Player report takes priority over detection."""
+        """An old file on disk has no current task/turn/scope authority."""
         # Create Player report
         tracker = MultiLayeredStateTracker(
             task_id="TASK-001",
@@ -514,11 +514,11 @@ class TestCaptureState:
         result = tracker.capture_state(turn=1)
 
         assert result is not None
-        assert result.detection_method == "player_report"
-        # Player report data used for files
-        assert "player_file.py" in result.files_modified
-        assert "player_new.py" in result.files_created
-        # But test results still used for verification
+        assert result.detection_method == "git_test_detection"
+        assert result.files_modified == ["git_file.py"]
+        assert result.files_created == []
+        assert result.player_report_loaded is False
+        assert result.player_report is None
         assert result.test_count == 5
 
     @patch("guardkit.orchestrator.state_tracker.detect_git_changes")
@@ -660,13 +660,13 @@ class TestStateTrackerIntegration:
 
     @patch("guardkit.orchestrator.state_tracker.detect_git_changes")
     @patch("guardkit.orchestrator.state_tracker.detect_test_results")
-    def test_player_report_with_verification(
+    def test_unbound_player_report_is_diagnostic_beside_verification(
         self,
         mock_test_results: MagicMock,
         mock_git_changes: MagicMock,
         tmp_path: Path,
     ):
-        """Test Player report with independent git/test verification."""
+        """Scoped Git/test observations win over an unbound report file."""
         # Create Player report
         tracker = MultiLayeredStateTracker(
             task_id="TASK-001",
@@ -699,23 +699,22 @@ class TestStateTrackerIntegration:
 
         state = tracker.capture_state(turn=1)
 
-        # Uses Player report detection method
-        assert state.detection_method == "player_report"
-        # File info from Player report
-        assert "src/main.py" in state.files_modified
-        # But test status from independent verification
+        assert state.detection_method == "git_test_detection"
+        assert state.files_modified == ["src/main.py"]
+        assert state.player_report_loaded is False
+        assert state.player_report is None
         assert state.tests_passed is False  # Independent verification wins
         assert state.test_count == 5
 
     @patch("guardkit.orchestrator.state_tracker.detect_git_changes")
     @patch("guardkit.orchestrator.state_tracker.detect_test_results")
-    def test_tests_not_run_fallback(
+    def test_tests_not_run_does_not_trust_unbound_report_fallback(
         self,
         mock_test_results: MagicMock,
         mock_git_changes: MagicMock,
         tmp_path: Path,
     ):
-        """Test fallback when tests don't run (uses Player report values)."""
+        """A failed test probe cannot be laundered by an old report file."""
         # Create Player report with test data
         tracker = MultiLayeredStateTracker(
             task_id="TASK-001",
@@ -743,9 +742,10 @@ class TestStateTrackerIntegration:
 
         state = tracker.capture_state(turn=1)
 
-        # Falls back to Player report values when tests don't run
-        assert state.tests_passed is True  # From Player report
-        assert state.test_count == 66  # From Player report (was bug: returned 0)
+        assert state.detection_method == "git_test_detection"
+        assert state.tests_passed is False
+        assert state.test_count == 0
+        assert state.player_report_loaded is False
 
     @patch("guardkit.orchestrator.state_tracker.detect_git_changes")
     @patch("guardkit.orchestrator.state_tracker.detect_test_results")
@@ -956,13 +956,13 @@ class TestPlayerReportLoadedIntegration:
 
     @patch("guardkit.orchestrator.state_tracker.detect_git_changes")
     @patch("guardkit.orchestrator.state_tracker.detect_test_results")
-    def test_capture_state_sets_player_report_loaded_true(
+    def test_unbound_empty_player_report_does_not_create_state(
         self,
         mock_test_results: MagicMock,
         mock_git_changes: MagicMock,
         tmp_path: Path,
     ):
-        """Test that capture_state sets player_report_loaded=True when loading Player report."""
+        """An empty unbound report is diagnostic, not evidence of work."""
         # Create Player report with empty file arrays
         tracker = MultiLayeredStateTracker(
             task_id="TASK-001",
@@ -987,20 +987,18 @@ class TestPlayerReportLoadedIntegration:
 
         state = tracker.capture_state(turn=1)
 
-        # Verify player_report_loaded is set
-        assert state is not None
-        assert state.player_report_loaded is True
+        assert state is None
+        assert report_path.exists(), "the diagnostic file is preserved"
 
     @patch("guardkit.orchestrator.state_tracker.detect_git_changes")
     @patch("guardkit.orchestrator.state_tracker.detect_test_results")
-    def test_has_work_true_with_empty_player_report(
+    def test_unbound_empty_player_report_does_not_claim_work(
         self,
         mock_test_results: MagicMock,
         mock_git_changes: MagicMock,
         tmp_path: Path,
     ):
-        """Test that has_work=True when Player report loaded, even with empty files."""
-        # This is the key fix for TASK-DMRF-002
+        """An existing filename alone cannot imply current scoped work."""
         tracker = MultiLayeredStateTracker(
             task_id="TASK-001",
             worktree_path=tmp_path,
@@ -1024,10 +1022,8 @@ class TestPlayerReportLoadedIntegration:
 
         state = tracker.capture_state(turn=1)
 
-        # Verify has_work=True because player_report_loaded=True
-        assert state is not None
-        assert state.player_report_loaded is True
-        assert state.has_work is True  # Key assertion from TASK-DMRF-002
+        assert state is None
+        assert report_path.exists(), "the diagnostic file is preserved"
 
     @patch("guardkit.orchestrator.state_tracker.detect_git_changes")
     @patch("guardkit.orchestrator.state_tracker.detect_test_results")
@@ -1055,13 +1051,13 @@ class TestPlayerReportLoadedIntegration:
 
     @patch("guardkit.orchestrator.state_tracker.detect_git_changes")
     @patch("guardkit.orchestrator.state_tracker.detect_test_results")
-    def test_save_and_load_preserves_player_report_loaded_state(
+    def test_unbound_player_report_does_not_create_serializable_state(
         self,
         mock_test_results: MagicMock,
         mock_git_changes: MagicMock,
         tmp_path: Path,
     ):
-        """Test that player_report_loaded state survives serialization/deserialization."""
+        """No recovery state is invented solely from a disk report."""
         # Create Player report
         tracker = MultiLayeredStateTracker(
             task_id="TASK-001",
@@ -1080,17 +1076,7 @@ class TestPlayerReportLoadedIntegration:
         mock_git_changes.return_value = None
         mock_test_results.return_value = None
 
-        # Capture state
         state = tracker.capture_state(turn=1)
-        assert state is not None
-        assert state.player_report_loaded is True
-
-        # Save state
-        saved_path = tracker.save_state(state)
-        assert saved_path.exists()
-
-        # Load saved state
-        saved_data = json.loads(saved_path.read_text())
-        # Note: player_report_loaded is not in the serialized dict (by design, like player_report)
-        # But we can verify the flag was set before serialization
-        assert state.player_report_loaded is True
+        assert state is None
+        assert report_path.exists(), "the diagnostic file is preserved"
+        assert not (report_dir / "work_state_turn_1.json").exists()

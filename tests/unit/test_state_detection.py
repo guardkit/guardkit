@@ -7,6 +7,7 @@ Test Count: 25+ tests
 """
 
 import subprocess
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -24,6 +25,23 @@ from guardkit.orchestrator.state_detection import (
     GIT_COMMAND_TIMEOUT_SECONDS,
     DIFF_COMMAND_TIMEOUT_SECONDS,
 )
+from guardkit.orchestrator.task_work_scope import ScopeUnavailable
+from tests.task_scope_fixtures import admitted_task, git
+
+
+@contextmanager
+def _admitted_repo(tmp_path: Path):
+    root = tmp_path / "repo"
+    root.mkdir()
+    git(root, "init", "-q", "-b", "main")
+    git(root, "config", "user.email", "state@example.invalid")
+    git(root, "config", "user.name", "State Fixture")
+    (root / "src").mkdir()
+    (root / "src" / "main.py").write_text("value = 1\n")
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "fixture source")
+    with admitted_task(root, "TASK-STATE", register=True) as (_, scope):
+        yield root, scope
 
 
 # ============================================================================
@@ -263,85 +281,53 @@ class TestDetectGitChanges:
     """Tests for detect_git_changes function."""
 
     def test_nonexistent_path(self, tmp_path: Path):
-        """Test with non-existent worktree path."""
-        result = detect_git_changes(tmp_path / "nonexistent")
-        assert result is None
+        """Unscoped paths refuse attribution instead of looking clean."""
+        with pytest.raises(ScopeUnavailable, match="No trusted admitted task scope"):
+            detect_git_changes(tmp_path / "nonexistent")
 
-    @patch("subprocess.run")
-    def test_no_changes_detected(self, mock_run: MagicMock, tmp_path: Path):
-        """Test when no changes in worktree."""
-        mock_run.return_value = MagicMock(
-            returncode=0,
-            stdout="",  # Empty status output
-            stderr="",
-        )
-
-        result = detect_git_changes(tmp_path)
-        assert result is None
-
-    @patch("subprocess.run")
-    def test_modified_files_detected(self, mock_run: MagicMock, tmp_path: Path):
-        """Test detecting modified files."""
-        mock_run.side_effect = [
-            # git status
-            MagicMock(returncode=0, stdout=" M src/main.py\n M src/utils.py", stderr=""),
-            # git diff --stat
-            MagicMock(returncode=0, stdout="2 files changed, 50 insertions(+), 20 deletions(-)", stderr=""),
-        ]
-
-        result = detect_git_changes(tmp_path)
-
+    def test_no_changes_detected(self, tmp_path: Path):
+        with _admitted_repo(tmp_path) as (root, scope):
+            result = detect_git_changes(root, scope)
         assert result is not None
-        assert "src/main.py" in result.files_modified
-        assert "src/utils.py" in result.files_modified
-        assert result.insertions == 50
-        assert result.deletions == 20
+        assert result.has_changes is False
 
-    @patch("subprocess.run")
-    def test_new_files_detected(self, mock_run: MagicMock, tmp_path: Path):
-        """Test detecting new/untracked files."""
-        mock_run.side_effect = [
-            # git status
-            MagicMock(returncode=0, stdout="?? src/new_file.py\n?? tests/test_new.py", stderr=""),
-            # git diff --stat
-            MagicMock(returncode=0, stdout="0 files changed", stderr=""),
-        ]
+    def test_modified_files_detected(self, tmp_path: Path):
+        with _admitted_repo(tmp_path) as (root, scope):
+            (root / "src" / "main.py").write_text("value = 2\n")
+            (root / "src" / "utils.py").write_text("helper = 1\n")
+            result = detect_git_changes(root, scope)
+        assert result.files_modified == ["src/main.py"]
+        assert result.files_added == ["src/utils.py"]
 
-        result = detect_git_changes(tmp_path)
+    def test_new_files_detected(self, tmp_path: Path):
+        with _admitted_repo(tmp_path) as (root, scope):
+            (root / "tests").mkdir()
+            (root / "src" / "new_file.py").write_text("new = 1\n")
+            (root / "tests" / "test_new.py").write_text("def test_new(): pass\n")
+            result = detect_git_changes(root, scope)
+        assert result.files_added == ["src/new_file.py", "tests/test_new.py"]
 
-        assert result is not None
-        assert "src/new_file.py" in result.files_added
-        assert "tests/test_new.py" in result.files_added
+    @pytest.mark.parametrize(
+        "error",
+        [
+            RuntimeError("fatal: not a git repository"),
+            subprocess.TimeoutExpired(cmd="git", timeout=GIT_COMMAND_TIMEOUT_SECONDS),
+            FileNotFoundError("git"),
+        ],
+        ids=["git-status-fails", "git-status-timeout", "git-not-found"],
+    )
+    def test_git_inventory_failure_is_not_an_empty_diff(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, error: Exception
+    ):
+        with _admitted_repo(tmp_path) as (root, scope):
+            from guardkit.orchestrator import task_work_scope
 
-    @patch("subprocess.run")
-    def test_git_status_fails(self, mock_run: MagicMock, tmp_path: Path):
-        """Test when git status command fails."""
-        mock_run.return_value = MagicMock(
-            returncode=128,
-            stdout="",
-            stderr="fatal: not a git repository",
-        )
-
-        result = detect_git_changes(tmp_path)
-        assert result is None
-
-    @patch("subprocess.run")
-    def test_git_status_timeout(self, mock_run: MagicMock, tmp_path: Path):
-        """Test handling git status timeout."""
-        mock_run.side_effect = subprocess.TimeoutExpired(
-            cmd="git status", timeout=GIT_COMMAND_TIMEOUT_SECONDS
-        )
-
-        result = detect_git_changes(tmp_path)
-        assert result is None
-
-    @patch("subprocess.run")
-    def test_git_not_found(self, mock_run: MagicMock, tmp_path: Path):
-        """Test when git command is not found."""
-        mock_run.side_effect = FileNotFoundError("git")
-
-        result = detect_git_changes(tmp_path)
-        assert result is None
+            with monkeypatch.context() as scoped_patch:
+                scoped_patch.setattr(
+                    task_work_scope, "_git", MagicMock(side_effect=error)
+                )
+                with pytest.raises(type(error)):
+                    detect_git_changes(root, scope)
 
 
 # ============================================================================
@@ -459,31 +445,13 @@ class TestDetectTestResults:
 class TestStateDetectionIntegration:
     """Integration tests for state detection."""
 
-    @patch("subprocess.run")
     @patch("guardkit.orchestrator.coach_verification.CoachVerifier")
     def test_full_detection_workflow(
         self,
         mock_verifier_class: MagicMock,
-        mock_run: MagicMock,
         tmp_path: Path,
     ):
         """Test complete detection workflow with git and tests."""
-        # Setup git mocks
-        mock_run.side_effect = [
-            # git status
-            MagicMock(
-                returncode=0,
-                stdout=" M src/main.py\n?? tests/test_main.py",
-                stderr="",
-            ),
-            # git diff --stat
-            MagicMock(
-                returncode=0,
-                stdout="2 files changed, 100 insertions(+), 10 deletions(-)",
-                stderr="",
-            ),
-        ]
-
         # Setup test mock
         mock_verifier = MagicMock()
         mock_verifier._run_tests.return_value = MagicMock(
@@ -493,15 +461,18 @@ class TestStateDetectionIntegration:
         )
         mock_verifier_class.return_value = mock_verifier
 
-        # Run git detection
-        git_changes = detect_git_changes(tmp_path)
+        with _admitted_repo(tmp_path) as (root, scope):
+            (root / "src" / "main.py").write_text("value = 2\n")
+            (root / "tests").mkdir()
+            (root / "tests" / "test_main.py").write_text("def test_main(): pass\n")
+            git_changes = detect_git_changes(root, scope)
         assert git_changes is not None
         assert git_changes.has_changes is True
         assert len(git_changes.files_modified) == 1
         assert len(git_changes.files_added) == 1
 
         # Run test detection
-        test_results = detect_test_results(tmp_path)
+        test_results = detect_test_results(root)
         assert test_results is not None
         assert test_results.tests_passed is True
         assert test_results.test_count == 5

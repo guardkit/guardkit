@@ -26,6 +26,11 @@ from guardkit.orchestrator.worktree_checkpoints import (
     SubprocessGitExecutor,
     WorktreeCheckpointManager,
 )
+from tests.task_scope_fixtures import (
+    RetainedTaskAdmission,
+    git,
+    register_clean_fresh_checkout,
+)
 
 
 # ============================================================================
@@ -64,6 +69,42 @@ def mock_git_executor():
     return executor
 
 
+def _init_repo(root: Path) -> None:
+    """Create the genuine fresh Git boundary required by writer admission."""
+    root.mkdir(parents=True, exist_ok=True)
+    git(root, "init", "-q")
+    git(root, "config", "user.email", "checkpoint-tests@example.invalid")
+    git(root, "config", "user.name", "Checkpoint Tests")
+    (root / "fixture.txt").write_text("fresh fixture\n", encoding="utf-8")
+    git(root, "add", "fixture.txt")
+    git(root, "commit", "-q", "-m", "fresh fixture")
+
+
+def _admit(root: Path, task_id: str) -> RetainedTaskAdmission:
+    """Explicitly retain one admitted task writer for a local test repo."""
+    if not (root / ".git").exists():
+        _init_repo(root)
+    admission = RetainedTaskAdmission(root, task_id, register=True)
+    _admissions[root.resolve()] = admission
+    return admission
+
+
+def _scope(root: Path):
+    return _admissions[root.resolve()].scope
+
+
+_admissions: Dict[Path, RetainedTaskAdmission] = {}
+
+
+@pytest.fixture(autouse=True)
+def _close_task_admissions():
+    """Close only admissions explicitly opened by the fixture/test itself."""
+    yield
+    while _admissions:
+        _, admission = _admissions.popitem()
+        admission.close()
+
+
 @pytest.fixture
 def temp_worktree(tmp_path):
     """Create temporary worktree directory structure."""
@@ -73,6 +114,8 @@ def temp_worktree(tmp_path):
     # Create .guardkit directory structure
     autobuild_dir = worktree_path / ".guardkit" / "autobuild" / "TASK-001"
     autobuild_dir.mkdir(parents=True)
+
+    _admit(worktree_path, "TASK-001")
 
     return worktree_path
 
@@ -84,6 +127,7 @@ def checkpoint_manager(temp_worktree, mock_git_executor):
         worktree_path=temp_worktree,
         task_id="TASK-001",
         git_executor=mock_git_executor,
+        task_work_scope=_scope(temp_worktree),
     )
 
 
@@ -247,17 +291,21 @@ def test_create_checkpoint_git_failure(checkpoint_manager, mock_git_executor):
 
 def test_rollback_to_existing_checkpoint(checkpoint_manager, mock_git_executor):
     """Test rollback to an existing checkpoint."""
+    # The admitted lease records real owned HEAD boundaries.  The executor is
+    # mocked to isolate command sequencing, so its rev-parse replies must name
+    # that genuine fixture boundary rather than invented commit strings.
+    head = git(checkpoint_manager.worktree_path, "rev-parse", "HEAD")
     # Setup: Create checkpoints
     mock_git_executor.execute.side_effect = [
         Mock(returncode=0, stdout="", stderr=""),  # add
         Mock(returncode=0, stdout="", stderr=""),  # commit
-        Mock(returncode=0, stdout="commit1\n", stderr=""),  # rev-parse
+        Mock(returncode=0, stdout=f"{head}\n", stderr=""),  # rev-parse
         Mock(returncode=0, stdout="", stderr=""),  # add
         Mock(returncode=0, stdout="", stderr=""),  # commit
-        Mock(returncode=0, stdout="commit2\n", stderr=""),  # rev-parse
+        Mock(returncode=0, stdout=f"{head}\n", stderr=""),  # rev-parse
         Mock(returncode=0, stdout="", stderr=""),  # add
         Mock(returncode=0, stdout="", stderr=""),  # commit
-        Mock(returncode=0, stdout="commit3\n", stderr=""),  # rev-parse
+        Mock(returncode=0, stdout=f"{head}\n", stderr=""),  # rev-parse
         Mock(returncode=0, stdout="", stderr=""),  # git reset --hard
     ]
 
@@ -273,7 +321,7 @@ def test_rollback_to_existing_checkpoint(checkpoint_manager, mock_git_executor):
 
     # Verify git reset command
     reset_call = mock_git_executor.execute.call_args_list[-1]
-    assert reset_call[0][0] == ["git", "reset", "--hard", "commit1"]
+    assert reset_call[0][0] == ["git", "reset", "--hard", head]
 
     # Verify checkpoints after turn 1 were removed
     assert len(checkpoint_manager.checkpoints) == 1
@@ -291,11 +339,12 @@ def test_rollback_to_nonexistent_checkpoint(checkpoint_manager):
 
 def test_rollback_git_failure(checkpoint_manager, mock_git_executor):
     """Test rollback when git reset fails."""
+    head = git(checkpoint_manager.worktree_path, "rev-parse", "HEAD")
     # Setup: Create checkpoint, then fail on reset
     mock_git_executor.execute.side_effect = [
         Mock(returncode=0, stdout="", stderr=""),  # add
         Mock(returncode=0, stdout="", stderr=""),  # commit
-        Mock(returncode=0, stdout="commit1\n", stderr=""),  # rev-parse
+        Mock(returncode=0, stdout=f"{head}\n", stderr=""),  # rev-parse
         subprocess.CalledProcessError(1, "git reset", stderr="error"),  # reset fails
     ]
 
@@ -549,6 +598,7 @@ def test_load_checkpoints_tags_loaded_entries_as_prior_run(temp_worktree, mock_g
         worktree_path=temp_worktree,
         task_id="TASK-001",
         git_executor=mock_git_executor,
+        task_work_scope=_scope(temp_worktree),
     )
 
     assert len(manager.checkpoints) == 1
@@ -567,6 +617,7 @@ def test_checkpoint_persistence(temp_worktree, mock_git_executor):
         worktree_path=temp_worktree,
         task_id="TASK-001",
         git_executor=mock_git_executor,
+        task_work_scope=_scope(temp_worktree),
     )
 
     mock_git_executor.execute.side_effect = [
@@ -635,6 +686,7 @@ def test_checkpoint_loading(temp_worktree, mock_git_executor):
         worktree_path=temp_worktree,
         task_id="TASK-001",
         git_executor=mock_git_executor,
+        task_work_scope=_scope(temp_worktree),
     )
 
     # Assert
@@ -833,6 +885,8 @@ def test_concurrent_checkpoints_same_worktree(tmp_path):
     worktree_path.mkdir()
     (worktree_path / ".guardkit" / "autobuild" / "TASK-001").mkdir(parents=True)
     (worktree_path / ".guardkit" / "autobuild" / "TASK-002").mkdir(parents=True)
+    _init_repo(worktree_path)
+    register_clean_fresh_checkout(worktree_path)
 
     # Track the order in which git commands execute
     call_log: List[tuple] = []  # (task_id, command_type, timestamp)
@@ -880,7 +934,14 @@ def test_concurrent_checkpoints_same_worktree(tmp_path):
 
     def create_cp(manager, turn):
         try:
-            manager.create_checkpoint(turn=turn, tests_passed=True, test_count=5)
+            # Ownership is intentionally thread-local: each worker acquires
+            # and retains its own admitted writer boundary.
+            admission = RetainedTaskAdmission(worktree_path, manager.task_id)
+            try:
+                manager.task_work_scope = admission.scope
+                manager.create_checkpoint(turn, True, 5)
+            finally:
+                admission.close()
         except Exception as e:
             errors.append(e)
 
@@ -931,6 +992,9 @@ def test_concurrent_checkpoints_different_worktrees(tmp_path):
     wt_b.mkdir()
     (wt_a / ".guardkit" / "autobuild" / "TASK-A").mkdir(parents=True)
     (wt_b / ".guardkit" / "autobuild" / "TASK-B").mkdir(parents=True)
+    for worktree in (wt_a, wt_b):
+        _init_repo(worktree)
+        register_clean_fresh_checkout(worktree)
 
     execution_times: Dict[str, list] = {"A": [], "B": []}
     times_lock = threading.Lock()
@@ -958,7 +1022,12 @@ def test_concurrent_checkpoints_different_worktrees(tmp_path):
 
     def create_cp(mgr, turn):
         try:
-            mgr.create_checkpoint(turn=turn, tests_passed=True, test_count=3)
+            admission = RetainedTaskAdmission(mgr.worktree_path, mgr.task_id)
+            try:
+                mgr.task_work_scope = admission.scope
+                mgr.create_checkpoint(turn, True, 3)
+            finally:
+                admission.close()
         except Exception as e:
             errors.append(e)
 
@@ -984,6 +1053,7 @@ def test_lock_file_created_in_worktree(tmp_path):
     worktree_path = tmp_path / "worktree"
     worktree_path.mkdir()
     (worktree_path / ".guardkit" / "autobuild" / "TASK-001").mkdir(parents=True)
+    admission = _admit(worktree_path, "TASK-001")
 
     executor = Mock(spec=GitCommandExecutor)
     executor.execute.return_value = Mock(
@@ -994,6 +1064,7 @@ def test_lock_file_created_in_worktree(tmp_path):
         worktree_path=worktree_path,
         task_id="TASK-001",
         git_executor=executor,
+        task_work_scope=admission.scope,
     )
 
     manager.create_checkpoint(turn=1, tests_passed=True, test_count=5)
@@ -1103,6 +1174,8 @@ def test_rollback_preserves_audit_trail(tmp_path, mock_git_executor):
     worktree_path = tmp_path / "worktree"
     autobuild_dir = worktree_path / ".guardkit" / "autobuild" / "TASK-RBSS"
     autobuild_dir.mkdir(parents=True)
+    admission = _admit(worktree_path, "TASK-RBSS")
+    head = git(worktree_path, "rev-parse", "HEAD")
 
     # Seed per-turn audit JSONs as the orchestrator would have written them.
     for turn in (1, 2, 3):
@@ -1117,23 +1190,23 @@ def test_rollback_preserves_audit_trail(tmp_path, mock_git_executor):
         )
     # An unrelated file in the same directory must not be archived.
     (autobuild_dir / "checkpoints.json").write_text(json.dumps({"checkpoints": []}))
-
     manager = WorktreeCheckpointManager(
         worktree_path=worktree_path,
         task_id="TASK-RBSS",
         git_executor=mock_git_executor,
+        task_work_scope=admission.scope,
     )
-    # Three checkpoints; rev-parse returns distinct hashes for each.
+    # The mocked executor names the real lease-owned HEAD boundary.
     mock_git_executor.execute.side_effect = [
         Mock(returncode=0, stdout="", stderr=""),  # add
         Mock(returncode=0, stdout="", stderr=""),  # commit
-        Mock(returncode=0, stdout="commit1\n", stderr=""),  # rev-parse
+        Mock(returncode=0, stdout=f"{head}\n", stderr=""),  # rev-parse
         Mock(returncode=0, stdout="", stderr=""),
         Mock(returncode=0, stdout="", stderr=""),
-        Mock(returncode=0, stdout="commit2\n", stderr=""),
+        Mock(returncode=0, stdout=f"{head}\n", stderr=""),
         Mock(returncode=0, stdout="", stderr=""),
         Mock(returncode=0, stdout="", stderr=""),
-        Mock(returncode=0, stdout="commit3\n", stderr=""),
+        Mock(returncode=0, stdout=f"{head}\n", stderr=""),
         Mock(returncode=0, stdout="", stderr=""),  # reset --hard
     ]
     manager.create_checkpoint(turn=1, tests_passed=True, test_count=10)
@@ -1146,7 +1219,7 @@ def test_rollback_preserves_audit_trail(tmp_path, mock_git_executor):
 
     # The reset call must still have been issued — archive must not block it.
     reset_call = mock_git_executor.execute.call_args_list[-1]
-    assert reset_call[0][0] == ["git", "reset", "--hard", "commit1"]
+    assert reset_call[0][0] == ["git", "reset", "--hard", head]
 
     # Find the snapshot dir; its name carries the target turn + a timestamp.
     archive_root = autobuild_dir / "_rollback_archive"
@@ -1185,16 +1258,19 @@ def test_rollback_with_no_audit_files_is_noop(tmp_path, mock_git_executor):
     worktree_path = tmp_path / "worktree"
     autobuild_dir = worktree_path / ".guardkit" / "autobuild" / "TASK-RBSS"
     autobuild_dir.mkdir(parents=True)
+    admission = _admit(worktree_path, "TASK-RBSS")
+    head = git(worktree_path, "rev-parse", "HEAD")
 
     manager = WorktreeCheckpointManager(
         worktree_path=worktree_path,
         task_id="TASK-RBSS",
         git_executor=mock_git_executor,
+        task_work_scope=admission.scope,
     )
     mock_git_executor.execute.side_effect = [
         Mock(returncode=0, stdout="", stderr=""),
         Mock(returncode=0, stdout="", stderr=""),
-        Mock(returncode=0, stdout="commit1\n", stderr=""),
+        Mock(returncode=0, stdout=f"{head}\n", stderr=""),
         Mock(returncode=0, stdout="", stderr=""),  # reset
     ]
     manager.create_checkpoint(turn=1, tests_passed=True, test_count=10)

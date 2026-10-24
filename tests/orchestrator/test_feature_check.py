@@ -63,6 +63,7 @@ from guardkit.orchestrator.feature_orchestrator import (
 )
 from guardkit.orchestrator.instrumentation.emitter import NullEmitter
 from guardkit.orchestrator.smoke_gates import SmokeGateResult
+from guardkit.orchestrator.task_work_scope import register_fresh_checkout
 from guardkit.orchestrator.toolchain_declaration import parse_toolchain_block
 from guardkit.worktrees import Worktree
 
@@ -213,6 +214,14 @@ def _succeeding_wave(wave_number: int, task_ids: List[str]) -> WaveExecutionResu
     )
 
 
+def _complete_feature_tasks(feature, task_ids: List[str]) -> None:
+    """Mirror the real task executor's persisted terminal dispositions."""
+    selected = set(task_ids)
+    for task in feature.tasks:
+        if task.id in selected:
+            task.status = "completed"
+
+
 def _pass_the_wiring_gate(wave_number, task_ids, feature, worktree, wave_result):
     return MagicMock(final_wave_result=wave_result, terminate=False)
 
@@ -262,8 +271,31 @@ class _WaveRecorder:
         attempt=0,
     ) -> WaveExecutionResult:
         self.feedback.append(seed_feedback)
+        _complete_feature_tasks(feature, list(task_ids))
         if seed_feedback is not None and self.on_reentry is not None:
-            self.on_reentry(len(self.feedback) - 1)
+            from guardkit.orchestrator.task_work_scope import checkout_lease
+
+            # The real repair callback re-enters the task executor, which
+            # owns and checkpoints the checkout. Model that explicit boundary
+            # rather than leaving a dirty repair for the next check to adopt.
+            with checkout_lease(self.worktree) as lease:
+                lease.admit(str(next(iter(task_ids))))
+                self.on_reentry(len(self.feedback) - 1)
+                if subprocess.run(
+                    ["git", "status", "--porcelain"],
+                    cwd=self.worktree,
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                ).stdout.strip():
+                    _git(self.worktree, "add", "-A")
+                    _git(
+                        self.worktree,
+                        "commit",
+                        "-m",
+                        "approved feature-check repair",
+                    )
+                    lease.checkpoint_completed()
         return _succeeding_wave(wave_number, list(task_ids))
 
 
@@ -277,6 +309,19 @@ def _run_build(
     orchestrator_kwargs: Optional[dict] = None,
 ):
     """Run the wave phase (and the finaliser) with no model in the loop."""
+    # Everything written above is immutable fixture/source input. Register
+    # this exact clean commit once, immediately before the normal feature
+    # check path acquires its writer lease.
+    if subprocess.run(
+        ["git", "status", "--porcelain"],
+        cwd=worktree_path,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip():
+        _git(worktree_path, "add", "-A")
+        _git(worktree_path, "commit", "-m", "feature-check fixture input")
+    register_fresh_checkout(worktree_path, "HEAD")
     orchestrator = _make_orchestrator(repo_root, **(orchestrator_kwargs or {}))
     worktree = _make_worktree(worktree_path)
     with ExitStack() as stack:
@@ -427,10 +472,12 @@ def test_timeout_during_feature_check_repair_stops_without_another_attempt(
 
     def _wave(wave_number, task_ids, feature_, worktree_, seed_feedback=None, **kwargs):
         feedback.append(seed_feedback)
+        _complete_feature_tasks(feature_, list(task_ids))
         if seed_feedback is not None:
             orchestrator._set_timeout_fence()
         return _succeeding_wave(wave_number, list(task_ids))
 
+    register_fresh_checkout(worktree, "HEAD")
     with ExitStack() as stack:
         for _cm in _common_patches(orchestrator):
             stack.enter_context(_cm)
@@ -1313,6 +1360,7 @@ def test_a_resumed_build_with_no_record_does_not_publish_the_command(
     recording = Console(record=True, file=io.StringIO(), width=400)
     caplog.set_level(logging.DEBUG)
     waves = [_succeeding_wave(1, ["TASK-001"])]
+    _complete_feature_tasks(feature, ["TASK-001"])
     orchestrator = _make_orchestrator(repo_root, emitter=emitter, quiet=False)
     with ExitStack() as stack:
         for _cm in _common_patches(orchestrator):

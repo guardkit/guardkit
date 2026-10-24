@@ -34,6 +34,7 @@ from guardkit.orchestrator.feature_orchestrator import (
     TaskExecutionResult,
     WaveExecutionResult,
 )
+from guardkit.orchestrator.task_work_scope import register_fresh_checkout
 from guardkit.worktrees import Worktree
 
 
@@ -42,14 +43,9 @@ TITLE = "Seeing the daily count of new users"
 STDERR_MARKER = "COACH-CONTROL-404: /users/created-per-day answered 404"
 
 COUNTING_SCRIPT = f"""#!/bin/sh
-C="$GUARDKIT_WORKTREE/.coach-check-count"
-N=0
-if [ -f "$C" ]; then N=$(cat "$C"); fi
-N=$((N+1))
-echo "$N" > "$C"
-echo "coach control run number $N on sha $GUARDKIT_CANDIDATE_SHA"
+echo "coach control on sha $GUARDKIT_CANDIDATE_SHA"
 echo "feature=$GUARDKIT_FEATURE_ID record=$GUARDKIT_FEATURE_RECORD"
-if [ "$N" -ge 2 ]; then
+if [ -f "$GUARDKIT_WORKTREE/THE_FEATURE_IS_FIXED" ]; then
   echo '{{"guardkit_feature_check": {{"scenarios_covered": ["{TITLE}"]}}}}'
   exit 0
 fi
@@ -134,13 +130,30 @@ def _feature(wt: Path):
 
 
 class _Waves:
-    def __init__(self) -> None:
+    def __init__(self, worktree: Path) -> None:
+        self.worktree = worktree
         self.feedback: List[Optional[str]] = []
 
     def __call__(
         self, wave_number, task_ids, feature, worktree, seed_feedback=None, attempt=0
     ):
         self.feedback.append(seed_feedback)
+        selected = set(task_ids)
+        for task in feature.tasks:
+            if task.id in selected:
+                task.status = "completed"
+        if seed_feedback is not None:
+            # Simulate the approved repair task's real checkpoint. A dirty
+            # file written by the feature check itself must still be refused;
+            # only the retained task owner may advance this boundary.
+            from guardkit.orchestrator.task_work_scope import checkout_lease
+
+            with checkout_lease(self.worktree) as lease:
+                lease.admit(str(next(iter(selected))))
+                _write(self.worktree, "THE_FEATURE_IS_FIXED", "fixed\n")
+                _git(self.worktree, "add", "-A")
+                _git(self.worktree, "commit", "-m", "approved check repair")
+                lease.checkpoint_completed()
         return WaveExecutionResult(
             wave_number=wave_number,
             task_ids=list(task_ids),
@@ -155,6 +168,10 @@ class _Waves:
 
 
 def _drive(main: Path, wt: Path, feature, waves: _Waves):
+    if _git(wt, "status", "--porcelain"):
+        _git(wt, "add", "-A")
+        _git(wt, "commit", "-m", "feature-check fixture input")
+    register_fresh_checkout(wt, "HEAD")
     orch = FeatureOrchestrator(
         repo_root=main, max_turns=1, worktree_manager=MagicMock(), quiet=True
     )
@@ -211,7 +228,7 @@ def _receipt(wt: Path) -> dict:
 def test_one_reentry_repairs_the_feature_and_it_completes(tmp_path: Path):
     main, wt, head = _project(tmp_path, COUNTING_SCRIPT, "sh qa/feature-check.sh")
     feature = _feature(wt)
-    waves = _Waves()
+    waves = _Waves(wt)
 
     _orch, _wave_results, result = _drive(main, wt, feature, waves)
 
@@ -236,10 +253,14 @@ def test_one_reentry_repairs_the_feature_and_it_completes(tmp_path: Path):
     assert [a["attempt"] for a in receipt["attempts"]] == [1, 2]
     assert [a["passed"] for a in receipt["attempts"]] == [False, True]
     assert [a["exit_code"] for a in receipt["attempts"]] == [1, 0]
-    assert {a["candidate_sha"] for a in receipt["attempts"]} == {head}
+    attempt_shas = [a["candidate_sha"] for a in receipt["attempts"]]
+    assert attempt_shas[0] == head
+    assert attempt_shas[1] == _git(wt, "rev-parse", "HEAD")
+    assert attempt_shas[1] != head, "the approved repair advances the candidate"
     assert receipt["scenarios_covered"] == [TITLE]
-    # the script really ran twice
-    assert (wt / ".coach-check-count").read_text().strip() == "2"
+    # The repair was genuine committed task work, not a side effect written
+    # by the check command itself.
+    assert (wt / "THE_FEATURE_IS_FIXED").read_text().strip() == "fixed"
 
 
 # =====================================================================
@@ -253,7 +274,7 @@ def test_zero_retry_budget_fails_the_feature_and_unmarks_the_wave(
     monkeypatch.setenv("GUARDKIT_FEATURE_CHECK_MAX_RETRIES", "0")
     main, wt, head = _project(tmp_path, ALWAYS_FAILS, "sh qa/feature-check.sh")
     feature = _feature(wt)
-    waves = _Waves()
+    waves = _Waves(wt)
 
     _orch, wave_results, result = _drive(main, wt, feature, waves)
 
@@ -300,7 +321,7 @@ def test_the_build_cannot_rewrite_its_own_check(tmp_path: Path):
         'toolchain:\n  test: "make test"\n  feature_check: "true"\n',
     )
     feature = _feature(wt)
-    waves = _Waves()
+    waves = _Waves(wt)
 
     _orch, wave_results, result = _drive(main, wt, feature, waves)
 

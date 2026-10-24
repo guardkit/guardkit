@@ -32,9 +32,19 @@ import pytest
 from guardkit.models.task_types import TaskType, get_profile
 from guardkit.orchestrator.agent_invoker import AgentInvoker
 from guardkit.orchestrator.quality_gates.coach_validator import CoachValidator
+from tests.task_scope_fixtures import RetainedTaskAdmission
 
 
 TASK_ID = "TASK-PAGE-001"
+_admissions: Dict[Path, RetainedTaskAdmission] = {}
+
+
+@pytest.fixture(autouse=True)
+def _close_admitted_plan_audits():
+    yield
+    while _admissions:
+        _, admission = _admissions.popitem()
+        admission.close()
 
 PLANNED_CREATE = [
     "apps/web/src/pages/ShelfPage.tsx",
@@ -105,6 +115,7 @@ def repo(tmp_path: Path) -> Path:
     )
     _git(root, "add", "-A")
     _git(root, "commit", "-q", "-m", "base")
+    _admissions[root] = RetainedTaskAdmission(root, TASK_ID, register=True)
     return root
 
 
@@ -115,9 +126,12 @@ def _build_the_planned_work(root: Path) -> None:
 
 
 def _verdict(root: Path) -> Dict:
+    scope = _admissions[root].scope
     invoker = AgentInvoker(
         worktree_path=root, max_turns_per_agent=1, sdk_timeout_seconds=10
     )
+    invoker.task_work_scope = scope
+    invoker._baseline_commit = scope.baseline_commit
     return invoker._compute_plan_audit_verdict(TASK_ID)
 
 

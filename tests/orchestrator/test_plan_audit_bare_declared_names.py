@@ -30,9 +30,19 @@ from guardkit.models.task_types import TaskType, get_profile
 from guardkit.orchestrator.agent_invoker import AgentInvoker
 from guardkit.orchestrator.declared_paths import resolve_bare_names
 from guardkit.orchestrator.quality_gates.coach_validator import CoachValidator
+from tests.task_scope_fixtures import RetainedTaskAdmission
 
 
 TASK_ID = "TASK-LINT-002"
+_admissions: Dict[Path, RetainedTaskAdmission] = {}
+
+
+@pytest.fixture(autouse=True)
+def _close_admitted_plan_audits():
+    yield
+    while _admissions:
+        _, admission = _admissions.popitem()
+        admission.close()
 
 
 def _git(root: Path, *args: str) -> None:
@@ -80,13 +90,17 @@ def _repo(tmp_path: Path, create: List[str], modify: List[str]) -> Path:
     _write(root, f"tasks/in_progress/{TASK_ID}.md", _task_document(create, modify))
     _git(root, "add", "-A")
     _git(root, "commit", "-q", "-m", "base")
+    _admissions[root] = RetainedTaskAdmission(root, TASK_ID, register=True)
     return root
 
 
 def _verdict(root: Path) -> Dict:
+    scope = _admissions[root].scope
     invoker = AgentInvoker(
         worktree_path=root, max_turns_per_agent=1, sdk_timeout_seconds=10
     )
+    invoker.task_work_scope = scope
+    invoker._baseline_commit = scope.baseline_commit
     return invoker._compute_plan_audit_verdict(TASK_ID)
 
 
@@ -290,8 +304,6 @@ class TestAmbiguousNamesNeverPass:
         repo = _repo(tmp_path, [], ["apps/shelf/src/Shelf.tsx", "index.ts"])
         _write(repo, "apps/shelf/src/index.ts", "export {};\n")
         _write(repo, "apps/api/src/index.ts", "export {};\n")
-        _git(repo, "add", "-A")
-        _git(repo, "commit", "-q", "-m", "two files with one name")
         _write(repo, "apps/shelf/src/Shelf.tsx", "export const Shelf = () => 1;\n")
         _write(repo, "apps/shelf/src/index.ts", "export const x = 1;\n")
 
