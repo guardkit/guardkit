@@ -3547,6 +3547,11 @@ class AutoBuildOrchestrator:
         # be measured (no coverage command declared, or one that does
         # nothing). Advice shown with the next Coach verdict, never a stop.
         self._coverage_declaration_advice: Optional[str] = None
+        # Step 1 (24 October 2026): each real check's last measured state for
+        # this task, carried from the Coach's own evidence as it arrives.
+        # True means its last measurement failed; only a later measured pass
+        # clears it, never an absent result.
+        self._measured_check_failed: Dict[str, bool] = {}
         # Set when a task that needs coverage, in a project that declares
         # none, said it would change .guardkit/config.yaml: it is given its
         # turn, and the coverage command is read from the worktree before the
@@ -4642,6 +4647,70 @@ class AutoBuildOrchestrator:
                 when,
             )
         return added, None
+
+    @property
+    def real_check_failed(self) -> bool:
+        """Whether a real test or conformance command (such as lint) is still
+        red for this task: its last measurement failed and no later
+        measurement passed (step 1, 24 October 2026)."""
+        return any(getattr(self, "_measured_check_failed", {}).values())
+
+    def _carry_measured_checks(
+        self,
+        independent: Optional["IndependentTestResult"],
+        conformance: Optional[Dict[str, Any]],
+        *,
+        test_phase: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Carry this turn's measured test and conformance-command results, as
+        the Coach's evidence produced them (step 1, 24 October 2026).
+
+        Tests fail on the independent run's own failure receipt, or, when no
+        independent run measured them this turn, on the task's test phase
+        reporting failed tests; they clear only on a later independent run
+        that ran and passed. Conformance commands
+        (``assert_command`` rules, where a project declares lint) fail on a
+        failed command and clear when the rule leg ran with none failed. An
+        absent result changes nothing.
+        """
+        try:
+            self._carry_measured_checks_now(
+                independent,
+                conformance,
+                test_phase_failed=bool((test_phase or {}).get("tests_failed")),
+            )
+        except Exception as exc:  # noqa: BLE001 — carrying a result never ends a turn
+            logger.warning("Could not carry this turn's check results: %s", exc)
+
+    def _carry_measured_checks_now(
+        self,
+        independent: Optional["IndependentTestResult"],
+        conformance: Optional[Dict[str, Any]],
+        *,
+        test_phase_failed: bool,
+    ) -> None:
+        state = self.__dict__.setdefault("_measured_check_failed", {})
+        if independent is not None and independent.failure_receipt() is not None:
+            state["tests"] = True
+        elif (
+            independent is not None
+            and independent.tests_passed is True
+            and not independent.signal_absent
+            and not independent.check_could_not_run
+            and independent.test_command != "skipped"
+        ):
+            # The independent run decides over the test phase's own count,
+            # which can include failures the base branch already had.
+            state["tests"] = False
+        elif test_phase_failed:
+            state["tests"] = True
+        if isinstance(conformance, dict) and conformance.get("status") in (
+            "passed", "failed",
+        ):
+            state["commands"] = any(
+                isinstance(failure, dict) and failure.get("kind") == "assert_command"
+                for failure in conformance.get("failures") or []
+            )
 
     def _pin_coverage_after_task_turn(
         self,
@@ -11233,6 +11302,7 @@ class AutoBuildOrchestrator:
                 enforce_on_validation_result,
             )
 
+            self._carry_measured_checks(validation_result.independent_tests, None)
             validation_result = enforce_on_validation_result(
                 validation_result,
                 task_type=task_type,
@@ -11540,6 +11610,11 @@ class AutoBuildOrchestrator:
         # below so ``coach_evidence_turn_N.json`` records it too.
         evidence_bundle.spec_conformance = self._produce_spec_conformance_leg(
             task_id, turn, worktree
+        )
+        self._carry_measured_checks(
+            evidence_bundle.independent_tests,
+            evidence_bundle.spec_conformance,
+            test_phase=getattr(evidence_bundle, "tests", None),
         )
 
         # Whole-feature repair round (18 October 2026): the bundle carries the

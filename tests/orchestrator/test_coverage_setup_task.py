@@ -123,10 +123,17 @@ def _shared_worktree(root: Path, where: Path) -> Path:
 
 
 def _earlier_wave_commits(worktree: Path, config: str) -> None:
-    """What an earlier task of the same build left in the shared worktree."""
-    (worktree / ".guardkit" / "config.yaml").write_text(config, encoding="utf-8")
-    _git(worktree, "add", "-A")
-    _git(worktree, "commit", "-q", "-m", "[guardkit-checkpoint] Turn 1 complete")
+    """What an earlier task of the same build left in the shared worktree,
+    committed by that task as its own writer (as a real build does)."""
+    from guardkit.orchestrator.task_work_scope import checkout_lease
+
+    _register_worktree(worktree, worktree)
+    with checkout_lease(worktree) as lease:
+        lease.admit("TASK-EARLIER-WAVE")
+        (worktree / ".guardkit" / "config.yaml").write_text(config, encoding="utf-8")
+        _git(worktree, "add", "-A")
+        _git(worktree, "commit", "-q", "-m", "[guardkit-checkpoint] Turn 1 complete")
+        lease.checkpoint_completed()
 
 
 def _orchestrator(
@@ -215,8 +222,50 @@ class _Turns:
         return _approve(kwargs["turn"], kwargs["task_id"])
 
 
+def _register_worktree(worktree: Path, source_root: Path) -> None:
+    """Register the worktree as a fresh checkout at its current HEAD, as real
+    worktree creation does (the manager here is a stand-in). A no-op once
+    an earlier writer in this test has used it."""
+    from guardkit.orchestrator.task_work_scope import (
+        ScopeUnavailable,
+        register_fresh_checkout,
+    )
+
+    head = subprocess.run(
+        ["git", "-C", str(worktree), "rev-parse", "HEAD"],
+        check=True, capture_output=True, text=True,
+    ).stdout.strip()
+    try:
+        register_fresh_checkout(worktree, head, source_root=source_root)
+    except ScopeUnavailable:
+        pass
+
+
+def _register_fresh(orch: AutoBuildOrchestrator) -> None:
+    worktree = orch._existing_worktree or orch._worktree_manager.create.return_value
+    _register_worktree(Path(worktree.path), orch.repo_root)
+
+
+def _coverage_advice(result) -> List[str]:
+    """The coverage-declaration advice the Coach verdicts carried (step 1,
+    24 October 2026: the reason is advice, never a stop)."""
+    return [
+        issue["description"]
+        for record in result.turn_history
+        for issue in (getattr(record.coach_result, "report", None) or {}).get("issues", [])
+        if issue.get("category") == UNDECLARED_COVERAGE_CAUSE
+        and issue.get("severity") == "should_fix"
+    ]
+
+
 def _run_real_loop(orch: AutoBuildOrchestrator, turns: _Turns, task_id: str = TASK):
-    with patch.object(
+    from guardkit.orchestrator.task_work_scope import checkout_lease
+
+    _register_fresh(orch)
+    worktree = orch._existing_worktree or orch._worktree_manager.create.return_value
+    # The feature orchestrator holds the checkout around each task it runs;
+    # the task runner then admits the task inside that ownership.
+    with checkout_lease(worktree.path) as lease, patch.object(
         AutoBuildOrchestrator, "_invoke_player_safely",
         autospec=True, side_effect=lambda self, *a, **k: turns.player(*a, **k),
     ), patch.object(
@@ -233,10 +282,18 @@ def _run_real_loop(orch: AutoBuildOrchestrator, turns: _Turns, task_id: str = TA
         "guardkit.orchestrator.specialist_invocations.invoke_test_orchestrator",
         new=AsyncMock(return_value=SimpleNamespace(status="skipped")),
     ):
-        return orch.orchestrate(
+        result = orch.orchestrate(
             task_id=task_id, requirements="Declare the coverage command",
             acceptance_criteria=["AC-001: coverage is declared"],
         )
+        if result.final_decision == "approved":
+            # The approved task's work is committed by its own writer, as
+            # the checkpoints this fixture switches off would have done.
+            _git(Path(worktree.path), "add", "-A")
+            _git(Path(worktree.path), "commit", "-q", "--allow-empty", "-m",
+                 f"[guardkit-checkpoint] {task_id} approved")
+            lease.checkpoint_completed()
+        return result
 
 
 # ---------------------------------------------------------------------------
@@ -276,10 +333,10 @@ class TestATaskThatDeclaresTheCommand:
         assert pinned.coverage == COVERAGE_COMMAND
         assert pinned.coverage_timeout == 120
         assert pinned.test == "make test"
-        assert orch._coverage_declaration_refusal is None
+        assert orch._coverage_declaration_advice is None
         assert orch._coverage_due_from_task is None
 
-    def test_declaring_the_file_but_no_command_stops_after_the_turn(
+    def test_declaring_the_file_but_no_command_is_advice_after_the_turn(
         self, tmp_path: Path
     ) -> None:
         root = tmp_path / "proj"
@@ -290,25 +347,20 @@ class TestATaskThatDeclaresTheCommand:
         turns = _Turns(worktree, NO_COVERAGE + '  build: "make"\n')
         result = _run_real_loop(orch, turns)
 
-        assert turns.player_turns == 1  # one turn, then stopped
-        assert turns.coach_receipts == []  # the Coach never judged it
-        assert result.final_decision == "configuration_error"
-        assert result.success is False
+        # Step 1 (24 October 2026, GKT-027): the turn goes on to the Coach,
+        # which judges it; the missing command is advice with the verdict.
+        assert turns.player_turns == 1
+        assert turns.coach_receipts == [None]  # judged; nothing to measure with
+        assert result.final_decision == "approved", result.error
         assert result.total_turns == 1
-        assert "declares no coverage command" in result.error
-        assert "after that turn the file still declares none" in result.error
-        assert "stopped before any work was done" not in result.error
-        assert result.error.startswith("Stopped after the task's turn")
-        assert "Fix the task_type" not in result.error
         coach = result.turn_history[0].coach_result.report
-        assert coach["is_configuration_error"] is True
-        assert coach["issues"][-1]["category"] == UNDECLARED_COVERAGE_CAUSE
-        summary = orch._build_summary_details(result.turn_history, "configuration_error")
-        assert summary.startswith("Stopped after the task's turn")
-        assert "task_type" not in summary
+        assert coach.get("is_configuration_error", False) is False
+        advice = _coverage_advice(result)
+        assert advice and "declares no coverage command" in advice[0]
+        assert "after that turn the file still declares none" in advice[0]
         assert load_toolchain_snapshot(TASK, worktree).coverage is None
 
-    def test_a_task_not_touching_the_file_still_stops_before_any_work(
+    def test_a_task_not_touching_the_file_runs_with_advice(
         self, tmp_path: Path
     ) -> None:
         root = tmp_path / "proj"
@@ -318,10 +370,12 @@ class TestATaskThatDeclaresTheCommand:
         turns = _Turns(worktree, WITH_COVERAGE)
         result = _run_real_loop(orch, turns)
 
-        assert turns.player_turns == 0
-        assert result.final_decision == "configuration_error"
-        assert result.total_turns == 0
-        assert "it was stopped before any work was done" in result.error
+        # Step 1 (24 October 2026, GKT-027): no stop before work; the reason
+        # rides with the first Coach verdict as advice.
+        assert turns.player_turns == 1
+        assert result.final_decision == "approved", result.error
+        advice = _coverage_advice(result)
+        assert advice and "declares no coverage command" in advice[0]
         assert orch._coverage_due_from_task is None
 
     def test_files_listed_in_frontmatter_count_too(self, tmp_path: Path) -> None:
@@ -370,11 +424,11 @@ class TestAConfigurationOnlySetupTask:
         assert turns.player_turns == 1
         assert result.final_decision == "approved", result.error
         assert turns.coach_receipts == [None]  # nothing declared, nothing run
-        assert orch._coverage_declaration_refusal is None
+        assert orch._coverage_declaration_advice is None
         # Still watched: a later turn's coverage command would be read.
         assert orch._coverage_due_from_task is not None
 
-    def test_a_command_that_does_nothing_still_stops_it(
+    def test_a_command_that_does_nothing_is_advice(
         self, tmp_path: Path
     ) -> None:
         root = tmp_path / "proj"
@@ -384,9 +438,10 @@ class TestAConfigurationOnlySetupTask:
         turns = _Turns(worktree, NO_COVERAGE + '  coverage: "true"\n')
         result = _run_real_loop(orch, turns)
         assert turns.player_turns == 1
-        assert result.final_decision == "configuration_error"
-        assert "The coverage command `true`" in result.error
-        assert result.error.startswith("Stopped after the task's turn")
+        # Step 1 (24 October 2026, GKT-027): advice with the verdict.
+        assert result.final_decision == "approved", result.error
+        advice = _coverage_advice(result)
+        assert advice and "The coverage command `true`" in advice[0]
 
     def test_a_command_declared_on_a_later_turn_is_measured_on_that_turn(
         self, tmp_path: Path
@@ -407,7 +462,7 @@ class TestAConfigurationOnlySetupTask:
         assert load_toolchain_snapshot(TASK, worktree).coverage == COVERAGE_COMMAND
         assert orch._coverage_due_from_task is None
 
-    def test_a_command_that_does_nothing_on_a_later_turn_stops_it(
+    def test_a_command_that_does_nothing_on_a_later_turn_is_advice(
         self, tmp_path: Path
     ) -> None:
         root = tmp_path / "proj"
@@ -420,9 +475,12 @@ class TestAConfigurationOnlySetupTask:
         )
         result = _run_real_loop(orch, turns)
         assert turns.player_turns == 2
-        assert turns.coach_receipts == [None]  # turn 2 never reached the Coach
-        assert result.final_decision == "configuration_error"
-        assert "The coverage command `true`" in result.error
+        # Step 1 (24 October 2026): turn 2 reaches the Coach; the command
+        # that does nothing is advice and is never pinned.
+        assert turns.coach_receipts == [None, None]
+        assert result.final_decision == "approved", result.error
+        advice = _coverage_advice(result)
+        assert advice and "The coverage command `true`" in advice[-1]
         assert load_toolchain_snapshot(TASK, worktree).coverage is None
 
 
@@ -490,7 +548,7 @@ class TestAProjectWithNoToolchainBlock:
         assert load_toolchain_snapshot(TASK, worktree) is None
         assert load_coverage_only_pin(TASK, worktree) == (COVERAGE_COMMAND, 120)
 
-    def test_still_absent_after_the_turn_stops_there(self, tmp_path: Path) -> None:
+    def test_still_absent_after_the_turn_is_advice(self, tmp_path: Path) -> None:
         root = tmp_path / "proj"
         _project(root, body=DECLARES_CONFIG, config=NO_TOOLCHAIN)
         worktree = _shared_worktree(root, tmp_path / "shared")
@@ -499,10 +557,11 @@ class TestAProjectWithNoToolchainBlock:
         result = _run_real_loop(orch, turns)
 
         assert turns.player_turns == 1
-        assert turns.coach_receipts == []
-        assert result.final_decision == "configuration_error"
-        assert result.error.startswith("Stopped after the task's turn")
-        assert "after that turn the file still declares none" in result.error
+        # Step 1 (24 October 2026, GKT-027): judged by the Coach; advice.
+        assert turns.coach_receipts == [None]
+        assert result.final_decision == "approved", result.error
+        advice = _coverage_advice(result)
+        assert advice and "after that turn the file still declares none" in advice[0]
         assert load_coverage_only_pin(TASK, worktree) is None
 
     def test_an_earlier_wave_adding_the_first_declaration_is_seen(
@@ -522,15 +581,17 @@ class TestAProjectWithNoToolchainBlock:
         assert turns.coach_had_declaration == [False]
         assert turns.coach_test_commands == [None]
 
-    def test_without_the_file_it_still_stops_before_work(self, tmp_path: Path) -> None:
+    def test_without_the_file_it_runs_with_advice(self, tmp_path: Path) -> None:
         root = tmp_path / "proj"
         _project(root, body=DECLARES_OTHER, config=NO_TOOLCHAIN)
         worktree = _shared_worktree(root, tmp_path / "shared")
         orch = _orchestrator(tmp_path, root, worktree)
         turns = _Turns(worktree, NO_TOOLCHAIN + WITH_COVERAGE)
         result = _run_real_loop(orch, turns)
-        assert turns.player_turns == 0
-        assert "stopped before any work was done" in result.error
+        # Step 1 (24 October 2026, GKT-027): no stop before work.
+        assert turns.player_turns == 1
+        assert result.final_decision == "approved", result.error
+        assert _coverage_advice(result)
 
     def test_a_component_task_with_nothing_pinned_is_not_offered_a_turn(
         self, tmp_path: Path
@@ -893,8 +954,11 @@ class TestALaterTaskCannotWeakenCoverage:
         result = _run_real_loop(
             _orchestrator(tmp_path, root, worktree), _Turns(worktree, None)
         )
-        assert result.final_decision == "configuration_error"
-        assert "declares no coverage command" in result.error
+        # Step 1 (24 October 2026, GKT-027): the stale record is not reused;
+        # the missing command is advice, never a stop.
+        assert result.final_decision == "approved", result.error
+        advice = _coverage_advice(result)
+        assert advice and "declares no coverage command" in advice[0]
 
 
 class TestDoNothingCoverageCommands:
@@ -922,7 +986,7 @@ class TestDoNothingCoverageCommands:
     def test_accepted(self, command) -> None:
         assert does_nothing_command(command) is False
 
-    def test_the_declaring_task_writing_true_stops_after_its_turn(
+    def test_the_declaring_task_writing_true_is_advice_after_its_turn(
         self, tmp_path: Path
     ) -> None:
         root = tmp_path / "proj"
@@ -932,14 +996,16 @@ class TestDoNothingCoverageCommands:
         turns = _Turns(worktree, NO_COVERAGE + '  coverage: "true"\n')
         result = _run_real_loop(orch, turns)
         assert turns.player_turns == 1
-        assert turns.coach_receipts == []
-        assert result.final_decision == "configuration_error"
-        assert "The coverage command `true`" in result.error
-        assert "does nothing" in result.error
-        assert result.error.startswith("Stopped after the task's turn")
+        # Step 1 (24 October 2026, GKT-027): judged by the Coach; the
+        # command that does nothing is advice and is never pinned.
+        assert turns.coach_receipts == [None]
+        assert result.final_decision == "approved", result.error
+        advice = _coverage_advice(result)
+        assert advice and "The coverage command `true`" in advice[0]
+        assert "does nothing" in advice[0]
         assert load_toolchain_snapshot(TASK, worktree).coverage is None
 
-    def test_an_earlier_wave_writing_true_stops_the_next_task_before_work(
+    def test_an_earlier_wave_writing_true_is_advice_for_the_next_task(
         self, tmp_path: Path
     ) -> None:
         root = tmp_path / "proj"
@@ -949,31 +1015,34 @@ class TestDoNothingCoverageCommands:
         orch = _orchestrator(tmp_path, root, worktree)
         turns = _Turns(worktree, None)
         result = _run_real_loop(orch, turns)
-        assert turns.player_turns == 0
-        assert result.final_decision == "configuration_error"
-        assert "The coverage command `:`" in result.error
-        assert "does nothing" in result.error
+        # Step 1 (24 October 2026, GKT-027): no stop before work.
+        assert turns.player_turns == 1
+        assert result.final_decision == "approved", result.error
+        advice = _coverage_advice(result)
+        assert advice and "The coverage command `:`" in advice[0]
+        assert "does nothing" in advice[0]
         assert AutoBuildOrchestrator._read_build_coverage(worktree, None) is None
 
 
 class TestTheConsoleLine:
-    """Coach review 1, surviving mutation B: the operator's console line for a
-    coverage stop after the turn names the coverage reason, never the
-    task_type advice."""
+    """Coach review 1, surviving mutation B: the missing coverage command is
+    never reported as task_type advice. Since step 1 (24 October 2026) it is
+    advice with the verdict, not a stop line."""
 
-    def test_after_turn_stop_prints_the_coverage_reason(self, tmp_path: Path) -> None:
+    def test_after_turn_advice_names_the_coverage_reason(self, tmp_path: Path) -> None:
         root = tmp_path / "proj"
         _project(root, body=DECLARES_CONFIG)
         worktree = _shared_worktree(root, tmp_path / "shared")
         orch = _orchestrator(tmp_path, root, worktree)
         result = _run_real_loop(orch, _Turns(worktree, NO_COVERAGE))
-        assert result.final_decision == "configuration_error"
+        assert result.final_decision == "approved", result.error
+        advice = _coverage_advice(result)
+        assert advice and "declares no coverage command" in advice[0]
         printed = " ".join(
             str(arg)
             for call in orch._progress_display.console.print.call_args_list
             for arg in call.args
         )
-        assert "declares no coverage command" in printed
         assert "Fix the task_type" not in printed
         assert "task file configuration issue" not in printed
 
@@ -1092,6 +1161,9 @@ class TestASecondBuildOfTheSameTask:
 
     def _rebuild(self, root: Path, where: Path, branch: str) -> Path:
         _git(root, "worktree", "remove", "--force", str(where))
+        # A new build is a new, freshly registered checkout (its own git
+        # directory), as a real rebuild is.
+        where = where.with_name(branch.rsplit("/", 1)[-1])
         _git(root, "worktree", "add", "-q", "-b", branch, str(where))
         # What the feature orchestrator does when it makes a feature worktree.
         AutoBuildOrchestrator.discard_coach_documents_snapshot(where)
@@ -1129,9 +1201,12 @@ class TestASecondBuildOfTheSameTask:
         second = _run_real_loop(
             _orchestrator(tmp_path, root, worktree, feature=True), turns
         )
-        assert turns.player_turns == 0
-        assert second.final_decision == "configuration_error"
-        assert "declares no coverage command" in second.error
+        # Step 1 (24 October 2026, GKT-027): the old command is not reused;
+        # the missing one is advice, never a stop.
+        assert turns.player_turns == 1
+        assert second.final_decision == "approved", second.error
+        advice = _coverage_advice(second)
+        assert advice and "declares no coverage command" in advice[0]
         assert load_coverage_only_pin(TASK, worktree) is None
 
     def test_a_changed_declaration_is_used_not_the_old_one(

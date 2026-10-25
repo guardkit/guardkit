@@ -481,31 +481,11 @@ class TaskExecutionResult:
     # project's check. None on every other outcome.
     stopped_because: Optional[str] = None
     error_type: Optional[str] = None
-    # Step 1 (24 October 2026): the task's last Coach verdict carried a test
-    # run that really ran and failed (the Coach's own result, never rerun or
-    # guessed). A failed task with this set withholds the approved part.
+    # Step 1 (24 October 2026): a real test or conformance command (such as
+    # lint) is still red for this task, carried from the task runner, which
+    # records each check's measured result from the Coach's own evidence.
+    # A failed task with this set withholds the approved part.
     real_check_failed: bool = False
-
-
-def terminal_real_check_failed(turn_history: Any) -> bool:
-    """Whether the last Coach verdict in ``turn_history`` carried a test run
-    that ran and failed: the independent run's failure receipt, or the
-    quality gate's measured ``tests_passed is False``. An absent signal, a
-    check that could not run, and an earlier red turn later fixed do not
-    count."""
-    from guardkit.orchestrator.failing_test_feedback import SUITE_RECEIPT_KEY
-
-    for record in reversed(list(turn_history or [])):
-        coach = getattr(record, "coach_result", None)
-        report = getattr(coach, "report", None)
-        if not isinstance(report, dict):
-            continue
-        if isinstance(report.get(SUITE_RECEIPT_KEY), dict):
-            return True
-        validation = report.get("validation_results") or {}
-        gates = validation.get("quality_gates") if isinstance(validation, dict) else None
-        return isinstance(gates, dict) and gates.get("tests_passed") is False
-    return False
 
 
 @dataclass
@@ -6346,6 +6326,9 @@ The detailed specifications are in the task markdown file.
             interval=self.task_log_interval,
         )
         task_start_time = time.time()
+        # Set once the task runner exists, so an exception ending still
+        # carries what it measured (step 1, 24 October 2026).
+        task_orchestrator: Optional[AutoBuildOrchestrator] = None
 
         try:
             # Load task data from markdown file
@@ -6508,8 +6491,7 @@ The detailed specifications are in the task markdown file.
                     else None
                 ),
                 real_check_failed=(
-                    not result.success
-                    and terminal_real_check_failed(result.turn_history)
+                    not result.success and task_orchestrator.real_check_failed
                 ),
             )
 
@@ -6527,6 +6509,10 @@ The detailed specifications are in the task markdown file.
                 total_turns=0,
                 final_decision=decision,
                 error=str(e),
+                real_check_failed=bool(
+                    task_orchestrator is not None
+                    and task_orchestrator.real_check_failed
+                ),
             )
         finally:
             progress_logger.close()

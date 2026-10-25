@@ -886,11 +886,17 @@ def test_the_request_words_come_from_the_task_document_too(tmp_path: Path) -> No
 
 
 # ---------------------------------------------------------------------------
-# 7. The other end of the rail: Forge refuses the card for a failed build
+# 7. The other end of the rail: what Forge offers for a build that did not
+#    finish (step 1, 24 October 2026). GuardKit names the approved part on its
+#    stdout line; Forge offers exactly that, and nothing when it is absent.
 # ---------------------------------------------------------------------------
 
 try:  # pragma: no cover - import availability is the thing under test
-    from forge.pipeline.merge_offer import MergeOfferService
+    from forge.pipeline.merge_offer import MergeOfferService, approved_branch_of
+    from forge.subagents.autobuild_runner import (
+        _parse_approved_head_line,
+        approved_branch_for,
+    )
     from nats_core.events import BuildCompletePayload
 
     _FORGE_IMPORT_ERROR: Optional[str] = None
@@ -931,21 +937,116 @@ def _merge_offer_service(offers: List[dict]):
     return service
 
 
+def _guardkit_stop_lines(tmp_path: Path, *, approve_a: bool, b_red: bool) -> tuple:
+    """GuardKit's real finaliser for A approved (or not) and B failed: the
+    ``GUARDKIT_STOPPED_BECAUSE`` lines it prints, and A's commit."""
+    from guardkit.orchestrator.feature_check import STOPPED_BECAUSE_MARKER
+    from guardkit.orchestrator.feature_loader import FeatureLoader
+    from guardkit.orchestrator.task_work_scope import checkout_lease
+
+    repo = tmp_path / "candidate"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    _git(repo, "config", "user.email", "test@example.com")
+    _git(repo, "config", "user.name", "Test")
+    _write(repo, "README.md", "start\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "start")
+    def head() -> str:
+        return subprocess.run(
+            ["git", "-C", str(repo), "rev-parse", "HEAD"],
+            check=True, capture_output=True, text=True,
+        ).stdout.strip()
+
+    register_fresh_checkout(repo, head())
+    head_a = None
+    if approve_a:
+        with checkout_lease(repo) as lease:
+            lease.admit("TASK-A", "FEAT-TEST")
+            _write(repo, "a.txt", "a\n")
+            _git(repo, "add", "-A")
+            _git(repo, "commit", "-q", "-m", "task A")
+            lease.checkpoint_completed()
+        head_a = head()
+
+    feature = MagicMock()
+    feature.id = "FEAT-TEST"
+    feature.scenarios = {}
+    feature.tasks = [
+        SimpleNamespace(id="TASK-A", status="completed" if approve_a else "failed"),
+        SimpleNamespace(id="TASK-B", status="failed"),
+    ]
+    waves = [
+        WaveExecutionResult(
+            wave_number=1,
+            task_ids=["TASK-A", "TASK-B"],
+            results=[
+                TaskExecutionResult("TASK-A", approve_a, 1, "approved"),
+                TaskExecutionResult(
+                    "TASK-B", False, 2, "max_turns_exceeded",
+                    error="not approved", real_check_failed=b_red,
+                ),
+            ],
+            all_succeeded=False,
+        )
+    ]
+    out = io.StringIO()
+    orchestrator = _make_orchestrator(tmp_path / "main")
+    (tmp_path / "main").mkdir(exist_ok=True)
+    with patch.object(FeatureLoader, "_write_feature"), patch(
+        "sys.stdout", out
+    ):
+        orchestrator._finalize_phase(feature, waves, _make_worktree(repo))
+    lines = [
+        line for line in out.getvalue().splitlines()
+        if line.startswith(STOPPED_BECAUSE_MARKER + " ")
+    ]
+    return lines, head_a
+
+
+def _offers_for(event) -> List[dict]:
+    offers: List[dict] = []
+    asyncio.run(_merge_offer_service(offers)._maybe_offer(event))
+    return offers
+
+
 @pytest.mark.skipif(
     _FORGE_IMPORT_ERROR is not None,
-    reason=f"forge/nats_core not importable here ({_FORGE_IMPORT_ERROR})",
+    reason=f"forge (step 1) / nats_core not importable here ({_FORGE_IMPORT_ERROR})",
 )
-def test_forge_refuses_the_merge_card_for_a_failed_build() -> None:
-    """The real ``MergeOfferService._maybe_offer``, no broker anywhere near it."""
-    offers: List[dict] = []
-    service = _merge_offer_service(offers)
+@pytest.mark.parametrize(
+    "approve_a, b_red", [(False, False), (True, True)],
+    ids=["no-approved-task", "approved-task-but-b-still-red"],
+)
+def test_no_approved_head_gives_forge_nothing_to_offer(
+    tmp_path: Path, approve_a: bool, b_red: bool
+) -> None:
+    """No approved head on GuardKit's line: Forge's real parser reads none, so
+    the exit-2 build keeps today's failed ending and no completion (and so no
+    card) is produced for it."""
+    lines, _ = _guardkit_stop_lines(tmp_path, approve_a=approve_a, b_red=b_red)
+    assert all(_parse_approved_head_line(line, "FEAT-TEST") is None for line in lines)
 
-    asyncio.run(service._maybe_offer(_build_complete(tasks_failed=1)))
-    assert offers == [], "a build that is not clean is never offered a merge card"
 
-    asyncio.run(service._maybe_offer(_build_complete(tasks_failed=0)))
+@pytest.mark.skipif(
+    _FORGE_IMPORT_ERROR is not None,
+    reason=f"forge (step 1) / nats_core not importable here ({_FORGE_IMPORT_ERROR})",
+)
+def test_a_valid_approved_head_selects_only_the_approved_work(tmp_path: Path) -> None:
+    """GuardKit names A's commit; Forge's real parser takes exactly that, and
+    the real offer service offers the approved branch, never the feature's
+    own branch with B's unapproved work on it."""
+    lines, head_a = _guardkit_stop_lines(tmp_path, approve_a=True, b_red=False)
+    heads = [_parse_approved_head_line(line, "FEAT-TEST") for line in lines]
+    assert heads == [head_a]
+
+    approved = approved_branch_for("FEAT-TEST")
+    event = _build_complete(tasks_failed=1)
+    object.__setattr__(event, "merge_branch", approved)
+    assert approved_branch_of(event) == approved
+    offers = _offers_for(event)
     assert len(offers) == 1
-    assert offers[0]["feature_id"] == "FEAT-TEST"
+    assert offers[0]["merge_branch"] == approved
 
 
 # ---------------------------------------------------------------------------

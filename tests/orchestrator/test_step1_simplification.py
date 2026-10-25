@@ -18,7 +18,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from guardkit.orchestrator import task_work_scope
-from guardkit.orchestrator.failing_test_feedback import SUITE_RECEIPT_KEY
 from guardkit.orchestrator.feature_check import (
     STOPPED_BECAUSE_MARKER,
     completion_verdict,
@@ -28,10 +27,11 @@ from guardkit.orchestrator.feature_orchestrator import (
     FeatureOrchestrator,
     TaskExecutionResult,
     WaveExecutionResult,
-    terminal_real_check_failed,
 )
+from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
 from guardkit.orchestrator.quality_gates.coach_validator import (
     CoachValidator,
+    IndependentTestResult,
     QualityGateStatus,
 )
 from guardkit.orchestrator.task_work_scope import (
@@ -248,44 +248,103 @@ def test_failed_whole_feature_check_still_blocks(tmp_path: Path) -> None:
 
 
 # ============================================================================
-# 3. The task's terminal real test outcome
+# 3. The task's real test and lint state, carried from the Coach's evidence
 # ============================================================================
 
 
-def _turn(report):
-    return SimpleNamespace(coach_result=SimpleNamespace(report=report))
+def _runner() -> AutoBuildOrchestrator:
+    """A task runner with only the carried check state (no build set up)."""
+    return AutoBuildOrchestrator.__new__(AutoBuildOrchestrator)
 
 
-def test_last_turn_with_a_failed_test_run_counts() -> None:
-    history = [_turn({SUITE_RECEIPT_KEY: {"command": "make test", "exit_code": 1}})]
-    assert terminal_real_check_failed(history) is True
+def _failed_run() -> IndependentTestResult:
+    return IndependentTestResult.from_run(
+        tests_passed=False, test_command="make test",
+        test_output_summary="1 failed", duration_seconds=0.1,
+        output="FAILED test_x\n1 failed\n", resolved_interpreter=None,
+        exit_code=1,
+    )
 
 
-def test_red_test_fixed_on_the_last_turn_does_not_count() -> None:
-    history = [
-        _turn({SUITE_RECEIPT_KEY: {"command": "make test", "exit_code": 1}}),
-        _turn({"validation_results": {"quality_gates": {"tests_passed": True}}}),
-    ]
-    assert terminal_real_check_failed(history) is False
+def _passed_run() -> IndependentTestResult:
+    return IndependentTestResult.from_run(
+        tests_passed=True, test_command="make test",
+        test_output_summary="3 passed", duration_seconds=0.1,
+        output="3 passed\n", resolved_interpreter=None, exit_code=0,
+    )
 
 
-def test_absent_test_signal_does_not_count() -> None:
-    history = [
-        _turn(
-            {
-                "validation_results": {
-                    "independent_tests": {"signal_absent": True},
-                    "quality_gates": {"tests_passed": None},
-                }
-            }
-        )
-    ]
-    assert terminal_real_check_failed(history) is False
+def _absent_run() -> IndependentTestResult:
+    return IndependentTestResult.absent(
+        test_command="make test", test_output_summary="timed out",
+        duration_seconds=0.1, resolved_interpreter=None,
+    )
 
 
-def test_measured_failing_test_phase_counts() -> None:
-    history = [_turn({"validation_results": {"quality_gates": {"tests_passed": False}}})]
-    assert terminal_real_check_failed(history) is True
+LINT_RED = {
+    "status": "failed",
+    "failures": [{"rule_id": "lint", "kind": "assert_command", "detail": "exit 1"}],
+}
+LINT_GREEN = {"status": "passed", "failures": []}
+
+
+def test_a_failed_lint_command_is_carried() -> None:
+    runner = _runner()
+    runner._carry_measured_checks(_passed_run(), LINT_RED)
+    assert runner.real_check_failed is True
+
+
+def test_lint_clears_only_when_measured_again() -> None:
+    runner = _runner()
+    runner._carry_measured_checks(None, LINT_RED)
+    runner._carry_measured_checks(None, None)  # leg absent: nothing measured
+    assert runner.real_check_failed is True
+    runner._carry_measured_checks(None, LINT_GREEN)
+    assert runner.real_check_failed is False
+
+
+def test_a_red_test_then_no_result_stays_red() -> None:
+    runner = _runner()
+    runner._carry_measured_checks(_failed_run(), None)
+    runner._carry_measured_checks(_absent_run(), None)
+    runner._carry_measured_checks(None, None)
+    assert runner.real_check_failed is True
+
+
+def test_a_red_test_then_a_measured_pass_clears() -> None:
+    runner = _runner()
+    runner._carry_measured_checks(_failed_run(), None)
+    runner._carry_measured_checks(_passed_run(), None)
+    assert runner.real_check_failed is False
+
+
+def test_a_failed_test_phase_counts_when_no_independent_run_measured() -> None:
+    runner = _runner()
+    runner._carry_measured_checks(None, None, test_phase={"tests_failed": 2})
+    assert runner.real_check_failed is True
+
+
+def test_an_exception_ending_keeps_what_was_measured(tmp_path: Path) -> None:
+    measured = SimpleNamespace(real_check_failed=True)
+
+    def build(*_args, **_kwargs):
+        measured.orchestrate = MagicMock(side_effect=RuntimeError("worker died"))
+        return measured
+
+    orchestrator = _orchestrator(tmp_path)
+    task = SimpleNamespace(id="TASK-B", file_path="tasks/TASK-B.md")
+    feature = MagicMock()
+    feature.id = "FEAT-S1"
+    with patch(
+        "guardkit.orchestrator.feature_orchestrator.TaskLoader.load_task",
+        return_value={"frontmatter": {}},
+    ), patch(
+        "guardkit.orchestrator.feature_orchestrator.AutoBuildOrchestrator",
+        side_effect=build,
+    ):
+        result = orchestrator._execute_task_owned(task, feature, MagicMock())
+    assert result.success is False
+    assert result.real_check_failed is True
 
 
 # ============================================================================
@@ -392,10 +451,35 @@ def test_failing_record_writes_still_give_a_result(tmp_path, repo, capsys) -> No
     assert [line["approved_head"] for line in lines] == [head_a]
 
 
-def test_b_red_task_test_withholds_approved_head(tmp_path, repo, capsys) -> None:
+def _b_state(*turns) -> bool:
+    """Task B's carried state after the given (tests, lint) turns."""
+    runner = _runner()
+    for independent, conformance in turns:
+        runner._carry_measured_checks(independent, conformance)
+    return runner.real_check_failed
+
+
+def test_b_red_lint_withholds_approved_head(tmp_path, repo, capsys) -> None:
     _approve_task_a(repo)
-    _, lines = _finalize(tmp_path, repo, _waves(b_real_check_failed=True), capsys)
+    red = _b_state((_passed_run(), LINT_RED))
+    _, lines = _finalize(tmp_path, repo, _waves(b_real_check_failed=red), capsys)
     assert lines == []
+
+
+def test_b_red_test_then_no_result_withholds_approved_head(
+    tmp_path, repo, capsys
+) -> None:
+    _approve_task_a(repo)
+    red = _b_state((_failed_run(), None), (_absent_run(), None))
+    _, lines = _finalize(tmp_path, repo, _waves(b_real_check_failed=red), capsys)
+    assert lines == []
+
+
+def test_b_red_test_then_pass_gives_approved_head(tmp_path, repo, capsys) -> None:
+    head_a = _approve_task_a(repo)
+    red = _b_state((_failed_run(), None), (_passed_run(), None))
+    _, lines = _finalize(tmp_path, repo, _waves(b_real_check_failed=red), capsys)
+    assert [line["approved_head"] for line in lines] == [head_a]
 
 
 def test_red_smoke_check_withholds_approved_head(tmp_path, repo, capsys) -> None:
