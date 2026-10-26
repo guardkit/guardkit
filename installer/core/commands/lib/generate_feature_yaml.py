@@ -412,8 +412,8 @@ def validate_smoke_gates_paths(
     Returns:
         ``0`` on success — including when there is nothing to validate
         (no ``smoke_gates`` block, no ``command``, or non-pytest command).
-        Non-zero on failure (missing YAML, malformed YAML, or any
-        non-existent path inside ``smoke_gates.command``).
+        Non-zero only when the YAML is missing or malformed; a path that
+        does not exist is printed as advice (step 2) and still returns 0.
     """
     yaml_path = base_path / ".guardkit" / "features" / f"{feature_id}.yaml"
 
@@ -488,12 +488,14 @@ def validate_smoke_gates_paths(
             print("✓ smoke_gates.command paths OK")
         return 0
 
+    # Step 2 (26 October 2026, GKT-040): advice, never a refusal; the
+    # smoke command itself says at run time whether its paths work.
     available_roots = discover_test_roots(base_path)
     print(
-        format_smoke_gate_path_error(missing, base_path, available_roots),
+        "Advice: " + format_smoke_gate_path_error(missing, base_path, available_roots),
         file=sys.stderr,
     )
-    return 1
+    return 0
 
 
 def write_yaml(feature: FeatureFile, output_path: Path) -> None:

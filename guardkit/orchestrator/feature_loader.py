@@ -815,20 +815,6 @@ class SchemaValidationError(FeatureParseError):
     pass
 
 
-class SmokeGatePathError(SchemaValidationError):
-    """Raised when ``smoke_gates.command`` references a non-existent path.
-
-    Subclass of ``SchemaValidationError`` (and therefore
-    ``FeatureParseError``) so existing handlers in the orchestrator
-    pre-flight chain continue to work, but distinguishable for tests
-    and post-mortem triage that want to tell a path-existence miss
-    apart from a Pydantic schema violation. See TASK-FPSG-005 (L4 —
-    defense-in-depth) and the parent review TASK-REV-DEA8.
-    """
-
-    pass
-
-
 # ============================================================================
 # FeatureLoader
 # ============================================================================
@@ -880,13 +866,8 @@ class FeatureLoader:
         features_dir : Optional[Path]
             Override features directory (for testing)
         validate_paths : bool
-            When True (default), the L4 pre-flight check raises
-            :class:`SmokeGatePathError` if ``smoke_gates.command``
-            references a non-existent path. When False, the pre-flight
-            is skipped so callers (e.g. ``cli/feature.py validate``)
-            can let :func:`validate_feature` aggregate path errors with
-            other structural errors instead of failing fast at parse
-            time. See TASK-FPSG-004 (L3d).
+            Kept for callers; no effect since step 2 (26 October 2026),
+            when the load-time smoke-path check was deleted (GKT-040).
         normalize_stamps : Optional[bool]
             THE STAMP NORMALIZER hook. ``None`` (default) defers to the
             class flag ``FeatureLoader.normalize_stamps_on_load`` (OFF).
@@ -1070,13 +1051,7 @@ class FeatureLoader:
             skipped — used only by callers that have no repo context (e.g.
             in-memory parsing for tests).
         validate_paths : bool
-            When True (default), runs the L4 pre-flight which raises
-            :class:`SmokeGatePathError` for stale ``smoke_gates.command``
-            paths. When False, the pre-flight is skipped so a downstream
-            :func:`validate_feature` call can aggregate path errors with
-            other structural errors. Used by ``cli/feature.py validate``
-            (TASK-FPSG-004 L3d) so the user sees every structural issue
-            in one report instead of bouncing off a fail-fast raise.
+            Kept for callers; no effect since step 2 (26 October 2026).
 
         Returns
         -------
@@ -1143,18 +1118,9 @@ class FeatureLoader:
                 raise SchemaValidationError(
                     f"Invalid smoke_gates configuration:\n{e}"
                 ) from e
-            # TASK-FPSG-005 (L4 — defense-in-depth): path-existence
-            # pre-flight. Catches stale `tests/cli`-style paths at load
-            # time, before the orchestrator bootstraps the worktree and
-            # blows ~17 minutes on Wave 1 only to fail on the smoke gate.
-            # Skipped when repo_root is unavailable (in-memory parses)
-            # or when ``validate_paths`` is False (TASK-FPSG-004 L3d:
-            # ``cli/feature.py validate`` aggregates path errors with
-            # other structural errors instead of raising).
-            if repo_root is not None and validate_paths:
-                FeatureLoader._validate_smoke_gates_paths(
-                    smoke_gates, repo_root
-                )
+            # Step 2 (26 October 2026, GKT-040): the smoke command's paths
+            # are checked once, as advice, by the planning step
+            # (``generate-feature-yaml --validate-smoke-gates``).
 
         # Parse optional behavioural_oracle (TS-lane D.1a). Same shape and
         # same discipline as smoke_gates directly above: key absent -> None
@@ -1257,74 +1223,6 @@ class FeatureLoader:
             ) from e
 
     @staticmethod
-    def _validate_smoke_gates_paths(
-        smoke_gates: SmokeGates,
-        repo_root: Path,
-    ) -> None:
-        """Pre-flight: assert ``smoke_gates.command`` paths exist under ``repo_root``.
-
-        L4 of the four-layer smoke-gate validation chain (TASK-FPSG-005).
-        L3a–L3d catch the YAML at authoring time (``feature-plan`` Step 8.5,
-        ``--validate-smoke-gates``, ``feature validate``); this layer is the
-        runtime safety net that fires when a YAML is hand-edited after
-        ``/feature-plan`` finishes and slipped past every authoring check.
-
-        Without this check, a stale ``tests/cli`` path is only discovered
-        once ``run_smoke_gate`` runs after Wave 1 — typically ~17 minutes
-        of wasted compute on the worktree bootstrap and Wave 1 tasks.
-
-        Path resolution uses ``repo_root`` to match the ``cwd`` that
-        ``run_smoke_gate`` will use at execution time
-        (see ``feature_orchestrator.py``: ``cwd=Path(worktree.path)`` —
-        the worktree shares the same git tree as ``repo_root``, so paths
-        that exist in one exist in the other).
-
-        Non-pytest commands (e.g. ``python3 .guardkit/smoke/foo.py``)
-        are a no-op: the shared parser returns ``[]`` and nothing is
-        validated. This matches TASK-FPSG-002's ``--validate-smoke-gates``
-        behaviour — only pytest paths are checked.
-
-        Parameters
-        ----------
-        smoke_gates : SmokeGates
-            Already-validated Pydantic model (Pydantic guarantees
-            ``command`` is a non-empty string).
-        repo_root : Path
-            Repository root the paths are resolved against.
-
-        Raises
-        ------
-        SmokeGatePathError
-            When at least one positional pytest path does not exist
-            under ``repo_root``. Message includes every missing path,
-            the repo root, and the available test roots so the agent
-            has enough context to fix the YAML in one edit.
-        """
-        # Imports kept local so the lib/ helper stays decoupled from
-        # the orchestrator import graph (avoids a circular import if
-        # the helper ever needs to reference ``SmokeGates``).
-        from guardkit.lib.pytest_argv import (
-            format_smoke_gate_path_error,
-            parse_positional_paths,
-        )
-        from installer.core.commands.lib.smoke_gates_nudge import (
-            discover_test_roots,
-        )
-
-        paths = parse_positional_paths(smoke_gates.command)
-        if not paths:
-            return
-
-        missing = [p for p in paths if not (repo_root / p).exists()]
-        if not missing:
-            return
-
-        available_roots = discover_test_roots(repo_root)
-        raise SmokeGatePathError(
-            format_smoke_gate_path_error(missing, repo_root, available_roots)
-        )
-
-    @staticmethod
     def _enforce_routing_law(feature: Feature, repo_root: Path) -> None:
         """ROUTING LAW (card Q8/A.2): reject unstamped scenarios at plan load.
 
@@ -1347,10 +1245,8 @@ class FeatureLoader:
         * A stamp naming a scenario absent from every declared file is a
           WARNING (stale stamp), never a rejection.
 
-        Raises
-        ------
-        FeatureValidationError
-            On any enforcement violation, or a malformed per-repo flag.
+        Step 2 (26 October 2026, GKT-041): every finding above is advice,
+        logged in the same words; the plan loads and the build goes on.
         """
         if feature.routing_law is not None:
             effective = feature.routing_law
@@ -1358,7 +1254,8 @@ class FeatureLoader:
             try:
                 effective = load_repo_routing_law(repo_root)
             except ValueError as exc:
-                raise FeatureValidationError(str(exc)) from exc
+                logger.warning("Advice: %s; the routing law is not applied", exc)
+                return
 
         if effective != "enforced":
             return
@@ -1366,7 +1263,8 @@ class FeatureLoader:
         vocabulary = ", ".join(VERIFIER_HOMES)
 
         if not feature.feature_files:
-            raise FeatureValidationError(
+            logger.warning(
+                "Advice: %s",
                 f"Feature {feature.id} is under `routing_law: enforced` but "
                 "declares no `feature_files:` — the routing law needs the "
                 "approved-scenario universe to be enumerable (explicit, "
@@ -1375,37 +1273,41 @@ class FeatureLoader:
                 "scenario in `scenarios:`, or set `routing_law: off` on "
                 "this feature."
             )
+            return
 
         titles: List[str] = []
         for rel in feature.feature_files:
             path = Path(repo_root) / rel
             if not path.exists():
-                raise FeatureValidationError(
+                logger.warning(
+                    "Advice: %s",
                     f"Feature {feature.id} is under `routing_law: enforced` "
                     f"and declares feature file {rel!r}, which does not "
                     f"exist under {repo_root}. An enforced law over a "
                     "missing scenario universe is a silent gap — fix the "
                     "path or the file."
                 )
+                continue
             try:
                 text = path.read_text(encoding="utf-8", errors="replace")
             except OSError as exc:
-                raise FeatureValidationError(
-                    f"Feature {feature.id}: declared feature file {rel!r} "
-                    f"is unreadable ({exc}) under `routing_law: enforced`."
-                ) from exc
+                logger.warning(
+                    "Advice: Feature %s: declared feature file %r is "
+                    "unreadable (%s) under `routing_law: enforced`.",
+                    feature.id, rel, exc,
+                )
+                continue
             titles.extend(extract_scenario_titles(text))
 
         unstamped = [t for t in dict.fromkeys(titles) if t not in feature.scenarios]
         if unstamped:
             listed = "\n".join(f"  - {t}" for t in unstamped)
-            raise FeatureValidationError(
+            logger.warning(
+                "Advice: %s",
                 f"ROUTING LAW: feature {feature.id} has "
                 f"{len(unstamped)} UNSTAMPED scenario(s) under "
-                f"`routing_law: enforced` — the plan load is rejected "
-                f"(card Q8/A.2: an unstamped scenario is a silent "
-                f"verification gap, and the machinery refuses to proceed "
-                f"over one).\nUnstamped:\n{listed}\n"
+                f"`routing_law: enforced`; the plan loads, and each one is "
+                f"a verification gap to fill.\nUnstamped:\n{listed}\n"
                 f"FIX: add each title to this feature's `scenarios:` map "
                 f"with a `verifier:` from the closed list ({vocabulary}), "
                 f"or set `routing_law: off` on this feature."
@@ -1639,8 +1541,10 @@ class FeatureLoader:
         errors.extend(wave_errors)
 
         # A task file that names another task of this feature needs an order
-        # between the two (FEAT-FFEC, 3 October 2026).
-        errors.extend(FeatureLoader.validate_task_references(feature, repo_root))
+        # between the two (FEAT-FFEC, 3 October 2026). Step 2 (26 October
+        # 2026): advice; the planner adds the missing order itself.
+        for advice in FeatureLoader.validate_task_references(feature, repo_root):
+            logger.warning("Advice: %s", advice)
 
         # Validate task_type in task file frontmatter (fail-fast on invalid values)
         for task in feature.tasks:
@@ -1652,76 +1556,7 @@ class FeatureLoader:
                 if task_type_error:
                     errors.append(task_type_error)
 
-        # TASK-FPSG-004 (L3d): smoke-gate command path validation. Same
-        # rules as TASK-FPSG-002's --validate-smoke-gates and L4
-        # pre-flight; the message is produced via the shared
-        # ``format_smoke_gate_path_error`` formatter so the error wording
-        # is byte-identical regardless of which defense layer surfaces
-        # it. This collects-without-raising path lets callers (e.g.
-        # ``cli/feature.py validate``) aggregate path errors alongside
-        # orchestration / dependency / task_type errors in one report.
-        smoke_gate_path_error = FeatureLoader._validate_smoke_gate_paths_for_validate(
-            feature, repo_root
-        )
-        if smoke_gate_path_error:
-            errors.append(smoke_gate_path_error)
-
         return errors
-
-    @staticmethod
-    def _validate_smoke_gate_paths_for_validate(
-        feature: Feature,
-        repo_root: Path,
-    ) -> Optional[str]:
-        """Collect-without-raising smoke-gate path check for ``validate_feature``.
-
-        Mirrors :meth:`_validate_smoke_gates_paths` (which raises) but
-        returns the formatted error message instead, so it can be added
-        to the :func:`validate_feature` errors list. Output is generated
-        by the shared ``format_smoke_gate_path_error`` formatter, so the
-        message body is byte-identical to L3b (``--validate-smoke-gates``)
-        and L4 (``_parse_feature`` pre-flight). See TASK-FPSG-004 (L3d).
-
-        Parameters
-        ----------
-        feature : Feature
-            Already-parsed feature.
-        repo_root : Path
-            Repo root the command paths are resolved against.
-
-        Returns
-        -------
-        Optional[str]
-            Formatted error message when at least one path is missing,
-            ``None`` when there is nothing to validate (no smoke_gates
-            block, no command, non-pytest command, or all paths exist).
-        """
-        if feature.smoke_gates is None:
-            return None
-
-        # Lazy imports — match the pattern used in
-        # ``_validate_smoke_gates_paths`` (avoids circular imports if the
-        # helper ever needs to reference ``SmokeGates``).
-        from guardkit.lib.pytest_argv import (
-            format_smoke_gate_path_error,
-            parse_positional_paths,
-        )
-        from installer.core.commands.lib.smoke_gates_nudge import (
-            discover_test_roots,
-        )
-
-        paths = parse_positional_paths(feature.smoke_gates.command)
-        if not paths:
-            return None
-
-        missing = [p for p in paths if not (repo_root / p).exists()]
-        if not missing:
-            return None
-
-        available_roots = discover_test_roots(repo_root)
-        return format_smoke_gate_path_error(
-            missing, repo_root, available_roots
-        )
 
     @staticmethod
     def _detect_circular_dependencies(feature: Feature) -> Optional[List[str]]:

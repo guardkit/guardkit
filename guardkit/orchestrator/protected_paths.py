@@ -7,6 +7,11 @@ Coach run (and so before the turn's checkpoint commit, which follows the
 Coach) each declared path in the worktree is compared with the commit the
 build started from, and put back exactly when anything differs.
 
+Only files that existed at that commit are protected (step 2, 26 October
+2026): a new file the builder creates inside a protected folder is its own
+work, and stays. The same file list is what the builder's file tools refuse
+to change (:func:`protected_files_at_start`), so both copies agree.
+
 The declaration is read from that commit too, not from the worktree the
 Player can edit. Git is asked only for committed objects (``ls-tree`` and
 ``cat-file`` by object id, with replacement objects switched off); nothing
@@ -34,6 +39,7 @@ turn's other work; the branch's net change under them is then nil.
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 import posixpath
 import shutil
@@ -47,6 +53,12 @@ from guardkit.lib.project_git import run_git
 
 _NO_REPLACE = ("-c", "core.useReplaceRefs=false")
 _MAX_LISTED = 10
+
+logger = logging.getLogger(__name__)
+
+# The protected files of each worktree as they were at its build's start
+# commit, recorded when the reference is loaded (step 2, 26 October 2026).
+_started_with: dict[str, tuple[str, ...]] = {}
 
 
 def _run(repo: Path, *args: str, data: bytes | None = None, index: str | None = None) -> bytes:
@@ -114,19 +126,40 @@ def load_protected_reference(
         config_path=f".guardkit/config.yaml at {commit[:12]}",
         has_file=lambda _rel: False,
     )
-    paths = tuple(posixpath.normpath(p) for p in inputs["protected_paths"])
-    for path in paths:
-        if not _committed(repo, commit, path):
-            raise ProtectedPathsError(
-                f"The project declares the protected path {path!r}, but it is not in "
-                f"the commit this build started from ({commit[:12]}); commit it first."
+    declared = tuple(posixpath.normpath(p) for p in inputs["protected_paths"])
+    # Step 2 (26 October 2026): only what exists is protected. A declared path
+    # that is not in the start commit protects nothing; noted, never a stop.
+    paths, files = [], []
+    for path in declared:
+        entries = _committed(repo, commit, path)
+        if not entries:
+            logger.warning(
+                "The project declares the protected path %r, but it is not in the "
+                "commit this build started from (%s); it protects nothing.",
+                path, commit[:12],
             )
+            continue
+        paths.append(path)
+        files.extend(entries)
+    paths = tuple(paths)
+    _started_with[str(Path(repo).resolve())] = tuple(sorted(set(files)))
     if paths and not branch:
         raise ProtectedPathsError(
             "The project declares protected paths, but no build branch is known "
             "to keep them on; the task was not started."
         )
     return ProtectedReference(commit, paths, f"refs/heads/{branch}") if paths else None
+
+
+def protected_files_at_start(repo: Path, declared) -> tuple[str, ...]:
+    """The protected files the builder's file tools refuse to change.
+
+    The files under the declared paths at the build's start commit, once
+    :func:`load_protected_reference` has read them for this worktree; until
+    then, the declared paths themselves.
+    """
+    files = _started_with.get(str(Path(repo).resolve()))
+    return tuple(declared) if files is None else files
 
 
 def _real_folders(repo: Path, rel: str) -> bool:
@@ -180,15 +213,8 @@ def _differences(repo: Path, root: str, entries: dict) -> list[tuple[str, str]]:
             changes.append((rel, "deleted"))
         except OSError:
             changes.append((rel, "unreadable"))
-    if root not in entries:  # a folder: anything else under it was added
-        def unreadable(error: OSError) -> None:
-            changes.append((Path(error.filename).relative_to(repo).as_posix(), "unreadable"))
-
-        for folder, names, files in os.walk(repo / root, onerror=unreadable):
-            for name in files + [n for n in names if os.path.islink(os.path.join(folder, n))]:
-                rel = Path(folder, name).relative_to(repo).as_posix()
-                if rel not in entries:
-                    changes.append((rel, "added"))
+    # A file added under a protected folder is the builder's own new work,
+    # never a change to a protected file (step 2, 26 October 2026).
     return changes
 
 
@@ -205,19 +231,30 @@ def _remove(path: Path) -> None:
     shutil.rmtree(path)
 
 
-def _put_back(repo: Path, root: str, entries: dict) -> None:
+def _real_parents(repo: Path, rel: str) -> None:
+    """Make every folder above ``rel`` a real folder."""
     current = repo
-    for part in root.split("/")[:-1]:  # every folder above it must be a real one
+    for part in rel.split("/")[:-1]:
         current = current / part
         if os.path.lexists(current) and not stat.S_ISDIR(os.lstat(current).st_mode):
             os.unlink(current)
         if not os.path.lexists(current):
             current.mkdir()
-    if os.path.lexists(repo / root):
-        _remove(repo / root)
+
+
+def _put_back(repo: Path, root: str, entries: dict) -> None:
+    """Put back each file that existed at the start commit; leave new files."""
+    if root in entries or (
+        os.path.lexists(repo / root) and not stat.S_ISDIR(os.lstat(repo / root).st_mode)
+    ):
+        _real_parents(repo, root)
+        if os.path.lexists(repo / root):
+            _remove(repo / root)
     for rel, (mode, oid, _size) in sorted(entries.items()):
         path = repo / rel
-        path.parent.mkdir(parents=True, exist_ok=True)
+        _real_parents(repo, rel)
+        if os.path.lexists(path):
+            _remove(path)
         data = _object(repo, oid)
         if mode == "120000":
             os.symlink(os.fsdecode(data), path)
@@ -226,17 +263,6 @@ def _put_back(repo: Path, root: str, entries: dict) -> None:
         with os.fdopen(os.open(path, flags, 0o600), "wb") as handle:
             handle.write(data)
         os.chmod(path, 0o755 if mode == "100755" else 0o644)
-
-
-def _ignored(repo: Path, paths: list[str]) -> set[str]:
-    """Which added paths git ignores; used only for the note's wording."""
-    if not paths:
-        return set()
-    out = run_git(
-        ["-C", str(repo), "check-ignore", "--no-index", "-z", "--stdin"],
-        input="\0".join(paths).encode("utf-8"), text=False, timeout=60,
-    )
-    return set(out.stdout.decode("utf-8").split("\0")) - {""} if out.returncode == 0 else set()
 
 
 def _index(repo: Path, root: str) -> list[tuple[str, str, str, str, str]]:
@@ -269,9 +295,11 @@ def _correct_branch(repo: Path, commit: str, roots: list[str], ref: str) -> None
         index = os.path.join(folder, "index")
         _run(repo, "read-tree", old, index=index)
         for root in roots:
-            remove = set(_committed(repo, old, root))
+            start = _committed(repo, commit, root)
+            # Only files that existed at the start; new files stay committed.
+            remove = set(_committed(repo, old, root)) & set(start)
             _run(repo, "update-index", "-z", "--index-info", index=index,
-                 data=_index_info(remove, _committed(repo, commit, root), zero))
+                 data=_index_info(remove, start, zero))
         tree = _run(repo, "write-tree", index=index).decode().strip()
     message = "[guardkit] put protected paths back as committed: " + ", ".join(roots)
     new = _run(repo, "commit-tree", tree, "-p", old, "-m", message).decode().strip()
@@ -286,18 +314,27 @@ def _hold_index(repo: Path, root: str, entries: dict) -> bool:
     attributes file): every entry is dropped and the commit's own blob ids
     and modes go back in, filter-free. Raises when they still differ.
     """
-    index = _index(repo, root)
+    def existing():
+        # A new file staged under a protected folder is the builder's own.
+        return [e for e in _index(repo, root) if e[0] in entries]
+
+    index = existing()
     if index == _wanted_index(entries):
         return False
     zero = "0" * len(next(iter(entries.values()))[1])
     _run(repo, "update-index", "-z", "--index-info",
          data=_index_info({e[0] for e in index}, entries, zero))
-    if _index(repo, root) != _wanted_index(entries):
+    if existing() != _wanted_index(entries):
         raise ProtectedPathsError(
             f"Protected path {root} is still different in the git index after "
             "putting it back."
         )
     return True
+
+
+def _existing(found: dict, start: dict) -> dict:
+    """The part of ``found`` that names files existing at the start commit."""
+    return {path: value for path, value in found.items() if path in start}
 
 
 def hold_protected_index(repo: Path, reference: ProtectedReference) -> list[str]:
@@ -338,15 +375,18 @@ def restore_protected_paths(repo: Path, reference: ProtectedReference) -> str | 
                 f"Protected path {root} is still different after putting it back: "
                 + ", ".join(f"{p} ({w})" for p, w in still[:_MAX_LISTED])
             )
-        if _committed(repo, reference.ref, root) != entries:
+        if _existing(_committed(repo, reference.ref, root), entries) != entries:
             committed_roots.append(root)
             found += [(root, "committed on the branch")]
         changes.extend(found)
     if committed_roots:
         # The build branch itself, whatever HEAD points at now.
         _correct_branch(repo, reference.commit, committed_roots, reference.ref)
-        if any(_committed(repo, reference.ref, r) != _committed(repo, reference.commit, r)
-               for r in committed_roots):
+        if any(
+            _existing(_committed(repo, reference.ref, r), start) != start
+            for r in committed_roots
+            for start in [_committed(repo, reference.commit, r)]
+        ):
             raise ProtectedPathsError(
                 "Protected paths committed on the branch are still different after "
                 "a corrective commit: " + ", ".join(committed_roots)
@@ -361,12 +401,9 @@ def restore_protected_paths(repo: Path, reference: ProtectedReference) -> str | 
         )
     if not changes:
         return None
-    ignored = _ignored(repo, [p for p, w in changes if w == "added"])
-    shown = [f"{p} ({w})" for p, w in changes if p not in ignored]
+    shown = [f"{p} ({w})" for p, w in changes]
     listed = shown[:_MAX_LISTED]
     if len(shown) > _MAX_LISTED:
         listed.append(f"{len(shown) - _MAX_LISTED} more")
-    if ignored:
-        listed.append(f"{len(ignored)} generated file{'s' if len(ignored) != 1 else ''} that git ignores")
     text = listed[0] if len(listed) == 1 else f"{', '.join(listed[:-1])} and {listed[-1]}"
     return f"Protected paths are read-only; these were found changed: {text}; they were put back."

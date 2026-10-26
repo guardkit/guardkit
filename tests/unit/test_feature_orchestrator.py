@@ -227,14 +227,12 @@ def test_orchestrator_initialization(temp_repo, mock_worktree_manager):
     orchestrator = FeatureOrchestrator(
         repo_root=temp_repo,
         max_turns=10,
-        stop_on_failure=True,
         resume=False,
         verbose=True,
         worktree_manager=mock_worktree_manager,
     )
 
     assert orchestrator.max_turns == 10
-    assert orchestrator.stop_on_failure is True
     assert orchestrator.resume is False
     assert orchestrator.verbose is True
 
@@ -247,7 +245,6 @@ def test_orchestrator_default_values(temp_repo, mock_worktree_manager):
     )
 
     assert orchestrator.max_turns == 5
-    assert orchestrator.stop_on_failure is True
     assert orchestrator.resume is False
     assert orchestrator.verbose is False
 
@@ -373,26 +370,22 @@ def _declare_ffec_002_needs_003(repo: Path) -> None:
     path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
 
 
-def test_setup_phase_refuses_the_committed_ffec_plan_before_any_worktree(
-    tmp_path, mock_worktree_manager
+def test_setup_phase_gives_the_committed_ffec_plan_as_advice(
+    tmp_path, mock_worktree, mock_worktree_manager, caplog
 ):
-    """The build-start validation (``_setup_phase``) runs the same validator as
-    the plan check, so the FEAT-FFEC plan as committed never starts a build."""
+    """Step 2 (26 October 2026): the unordered reference is advice; the build
+    starts."""
     repo = _ffec_repo(tmp_path)
     orchestrator = FeatureOrchestrator(repo_root=repo, worktree_manager=mock_worktree_manager)
 
-    with pytest.raises(FeatureValidationError) as exc_info:
+    with caplog.at_level("WARNING"):
         orchestrator._setup_phase("FEAT-FFEC", "main")
 
-    assert (
-        "TASK-FFEC-002's task file refers to TASK-FFEC-003, but neither depends on "
-        "the other" in str(exc_info.value)
-    )
-    mock_worktree_manager.create.assert_not_called()
+    assert "TASK-FFEC-002's task file refers to TASK-FFEC-003" in caplog.text
 
 
-def test_setup_phase_refuses_when_the_task_file_has_moved_along_the_lifecycle(
-    tmp_path, mock_worktree_manager
+def test_setup_phase_reads_a_task_file_that_has_moved_along_the_lifecycle(
+    tmp_path, mock_worktree, mock_worktree_manager, caplog
 ):
     """A resumed build finds its task files moved out of ``tasks/backlog/``
     while the feature YAML still points there; the check reads them where they
@@ -405,11 +398,10 @@ def test_setup_phase_refuses_when_the_task_file_has_moved_along_the_lifecycle(
     (repo / "tasks" / "backlog" / slug / name).rename(moved)
     orchestrator = FeatureOrchestrator(repo_root=repo, worktree_manager=mock_worktree_manager)
 
-    with pytest.raises(FeatureValidationError) as exc_info:
+    with caplog.at_level("WARNING"):
         orchestrator._setup_phase("FEAT-FFEC", "main")
 
-    assert "TASK-FFEC-002's task file refers to TASK-FFEC-003" in str(exc_info.value)
-    mock_worktree_manager.create.assert_not_called()
+    assert "TASK-FFEC-002's task file refers to TASK-FFEC-003" in caplog.text
 
 
 def test_setup_phase_accepts_the_corrected_ffec_plan(
@@ -750,7 +742,7 @@ def test_cli_feature_command_help():
     assert result.exit_code == 0
     assert "Execute AutoBuild for all tasks in a feature" in result.output
     assert "--max-turns" in result.output
-    assert "--stop-on-failure" in result.output
+    assert "--stop-on-failure" not in result.output  # deleted in step 2
     assert "--resume" in result.output
     assert "--task" in result.output
 
@@ -1757,29 +1749,8 @@ async def test_execute_wave_parallel_says_whether_tasks_share_the_working_copy(
     }
 
 
-def test_timeout_fence_defaults_clear_and_public_invocation_resets_reused_object(
-    temp_repo, mock_worktree_manager
-):
-    bare = FeatureOrchestrator.__new__(FeatureOrchestrator)
-    assert bare._timeout_fence_is_set() is False
-
-    orchestrator = FeatureOrchestrator(
-        repo_root=temp_repo,
-        worktree_manager=mock_worktree_manager,
-    )
-    orchestrator._set_timeout_fence()
-    with patch.object(
-        orchestrator,
-        "_setup_phase",
-        side_effect=FeatureNotFoundError("missing"),
-    ), pytest.raises(FeatureNotFoundError):
-        orchestrator.orchestrate("FEATURE-MISSING")
-
-    assert orchestrator._timeout_fence_is_set() is False
-
-
 @pytest.mark.asyncio
-async def test_bare_object_direct_wave_dispatch_defaults_to_clear_fence(
+async def test_bare_object_direct_wave_dispatch_runs_every_task(
     temp_repo, parallel_feature, mock_worktree, mock_worktree_manager
 ):
     configured = FeatureOrchestrator(
@@ -1789,7 +1760,6 @@ async def test_bare_object_direct_wave_dispatch_defaults_to_clear_fence(
     )
     bare = FeatureOrchestrator.__new__(FeatureOrchestrator)
     bare.__dict__.update(configured.__dict__)
-    bare.__dict__.pop("_feature_timeout_fence", None)
 
     with patch.object(
         bare,
@@ -1817,7 +1787,6 @@ async def test_bare_object_direct_wave_dispatch_defaults_to_clear_fence(
 
     assert [result.final_decision for result in results] == ["approved", "approved"]
     assert execute_task.call_count == 2
-    assert bare._timeout_fence_is_set() is False
 
 
 @pytest.mark.asyncio
@@ -1910,12 +1879,11 @@ def test_create_error_result_produces_correct_result(temp_repo, mock_worktree_ma
     assert result.error == "Test error message"
 
 
-def test_stop_on_failure_waits_for_wave_completion(temp_repo, sample_feature, mock_worktree, mock_worktree_manager):
-    """Test that stop_on_failure flag is checked AFTER wave completes (not mid-wave)."""
+def test_a_failed_task_does_not_stop_its_wave(temp_repo, sample_feature, mock_worktree, mock_worktree_manager):
+    """A failed task never stops the rest of its wave (step 2, 26 October 2026)."""
     orchestrator = FeatureOrchestrator(
         repo_root=temp_repo,
         worktree_manager=mock_worktree_manager,
-        stop_on_failure=True,
     )
 
     # Mock _execute_wave to simulate wave with one failure
@@ -1950,12 +1918,11 @@ def test_stop_on_failure_waits_for_wave_completion(temp_repo, sample_feature, mo
         assert len(results[1].results) == 2  # Both tasks completed
 
 
-def test_stop_on_failure_false_continues_to_next_wave(temp_repo, sample_feature, mock_worktree, mock_worktree_manager):
-    """Test that stop_on_failure=False continues to next wave even if wave failed."""
+def test_a_failed_wave_does_not_stop_the_next_wave(temp_repo, sample_feature, mock_worktree, mock_worktree_manager):
+    """A failed wave never stops the next wave (step 2, 26 October 2026)."""
     orchestrator = FeatureOrchestrator(
         repo_root=temp_repo,
         worktree_manager=mock_worktree_manager,
-        stop_on_failure=False,  # Continue on failure
     )
 
     # Mock _execute_wave to simulate wave with failure

@@ -301,7 +301,7 @@ def autobuild():
     "sdk_timeout",
     default=None,
     type=int,
-    help="SDK timeout in seconds (60-3600). Defaults to task frontmatter autobuild.sdk_timeout or 1200",
+    help="SDK timeout in seconds (at least 60). Defaults to task frontmatter autobuild.sdk_timeout or 1200",
 )
 @click.option(
     "--no-pre-loop",
@@ -488,9 +488,11 @@ def task(
     logger.info(f"Development mode: {effective_mode}")
 
     # Validate and resolve SDK timeout: CLI flag > task frontmatter > default (900)
-    if sdk_timeout is not None and not (60 <= sdk_timeout <= 3600):
+    # Step 2 (26 October 2026): no upper limit; an hour was a guide, and a
+    # slow local model may need longer for one call.
+    if sdk_timeout is not None and sdk_timeout < 60:
         raise click.BadParameter(
-            "SDK timeout must be between 60 and 3600 seconds",
+            "SDK timeout must be at least 60 seconds",
             param_hint="'--sdk-timeout'",
         )
     effective_sdk_timeout = sdk_timeout
@@ -761,11 +763,6 @@ def status(ctx, task_id: str, verbose: bool):
     ),
 )
 @click.option(
-    "--stop-on-failure/--no-stop-on-failure",
-    default=True,
-    help="Stop feature execution on first task failure",
-)
-@click.option(
     "--resume",
     is_flag=True,
     help="Resume from last saved state",
@@ -815,7 +812,7 @@ def status(ctx, task_id: str, verbose: bool):
     "sdk_timeout",
     default=None,
     type=int,
-    help="SDK timeout in seconds (60-3600). Defaults to feature YAML autobuild.sdk_timeout or 1200",
+    help="SDK timeout in seconds (at least 60). Defaults to feature YAML autobuild.sdk_timeout or 1200",
 )
 @click.option(
     "--enable-pre-loop/--no-pre-loop",
@@ -943,7 +940,6 @@ def feature(
     max_turns: int,
     model: str,
     coach_model: Optional[str],
-    stop_on_failure: bool,
     resume: bool,
     fresh: bool,
     refresh: bool,
@@ -974,7 +970,6 @@ def feature(
     Examples:
         guardkit autobuild feature FEAT-A1B2
         guardkit autobuild feature FEAT-A1B2 --max-turns 10
-        guardkit autobuild feature FEAT-A1B2 --no-stop-on-failure
         guardkit autobuild feature FEAT-A1B2 --task TASK-AUTH-002
         guardkit autobuild feature FEAT-A1B2 --resume
         guardkit autobuild feature FEAT-A1B2 --refresh
@@ -1047,9 +1042,11 @@ def feature(
         sys.exit(3)
 
     # Validate SDK timeout if provided
-    if sdk_timeout is not None and not (60 <= sdk_timeout <= 3600):
+    # Step 2 (26 October 2026): no upper limit; an hour was a guide, and a
+    # slow local model may need longer for one call.
+    if sdk_timeout is not None and sdk_timeout < 60:
         raise click.BadParameter(
-            "SDK timeout must be between 60 and 3600 seconds",
+            "SDK timeout must be at least 60 seconds",
             param_hint="'--sdk-timeout'",
         )
 
@@ -1114,7 +1111,7 @@ def feature(
 
     logger.info(
         f"Starting feature orchestration: {feature_id} "
-        f"(max_turns={max_turns}, stop_on_failure={stop_on_failure}, "
+        f"(max_turns={max_turns}, "
         f"resume={resume}, fresh={fresh}, refresh={refresh}, "
         f"sdk_timeout={sdk_timeout}, enable_pre_loop={enable_pre_loop}, "
         f"timeout_multiplier={timeout_multiplier}, max_parallel={max_parallel}, "
@@ -1131,7 +1128,6 @@ def feature(
         orchestrator = FeatureOrchestrator(
             repo_root=Path.cwd(),
             max_turns=max_turns,
-            stop_on_failure=stop_on_failure,
             resume=resume,
             fresh=fresh,
             refresh=refresh,

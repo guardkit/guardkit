@@ -30,7 +30,6 @@ Supports two modes:
 | `--verbose` | Show detailed turn-by-turn output | false |
 | `--model MODEL` | Claude model to use | claude-opus-5-5 |
 | `--parallel N` | Max parallel tasks (feature mode only) | 1 |
-| `--stop-on-failure` | Stop feature execution on first task failure | true |
 | `--task TASK-ID` | Run specific task within feature (feature mode) | - |
 | `--enable-pre-loop` | Enable pre-loop design phases (feature mode) | false |
 | `--no-pre-loop` | Disable pre-loop design phases (task mode) | false |
@@ -996,13 +995,12 @@ tasks:
     status: pending  # waiting for dependencies
 ```
 
-#### Step 5: Handle Stop on Failure
+#### Step 5: Handle a Failed Task
 
-If `--stop-on-failure` (default: true) and a task fails:
-1. Update feature status to `failed`
-2. Display error with failed task details
-3. Preserve worktree for debugging
-4. Exit without executing remaining tasks
+A failed task does not stop the feature: later waves and independent tasks
+still run, and tasks that depend on the failed one are skipped. At the end the
+feature is `failed`, the worktree is kept, and the work approved before the
+first failed task is offered for merge.
 
 #### Example Feature Execution Flow
 
@@ -1038,7 +1036,6 @@ FEATURE RESULT: SUCCESS
 # Logical flow (for reference only - actual execution via CLI)
 feature_id = args[0]  # e.g., "FEAT-A1B2"
 max_turns = options.get("max-turns", 5)
-stop_on_failure = options.get("stop-on-failure", True)
 
 # Load feature file (use Read tool)
 feature = read_yaml(f".guardkit/features/{feature_id}.yaml")
@@ -1058,10 +1055,7 @@ for wave_idx, wave in enumerate(feature["orchestration"]["parallel_groups"]):
         # Update task status in feature YAML (use Edit tool)
         # Change task.status from "pending" to "completed" or "failed"
 
-        if result == "failed" and stop_on_failure:
-            # Update feature status to "failed"
-            error(f"Task {task_id} failed. Feature execution stopped.")
-            return
+        # A failed task never stops the loop; its dependents are skipped.
 
 # Update feature status to "completed"
 # Display final summary

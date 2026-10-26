@@ -81,7 +81,9 @@ def test_checkpoint_cumulative_inventory_and_audit_have_one_baseline(tmp_path):
         assert collect_changes(successor)["created"] == []
 
 
-def test_unapproved_clean_checkpoint_cannot_be_adopted(tmp_path):
+def test_unapproved_checkpoint_is_kept_and_the_next_writer_is_admitted(tmp_path):
+    """Step 2 (26 October 2026): an unapproved writer's work stays for the
+    next writer, which is admitted."""
     root = repository(tmp_path / "checkout")
     with checkout_lease(root) as lease:
         scope = lease.admit("TASK-A")
@@ -91,21 +93,19 @@ def test_unapproved_clean_checkpoint_cannot_be_adopted(tmp_path):
         ).create_checkpoint(1, False)
         lease.poison("Original execution failure")
     assert not git(root, "status", "--porcelain", "--untracked-files=no")
-    with pytest.raises(ScopeUnavailable, match="Prior writer"):
-        with checkout_lease(root):
-            pass
+    with checkout_lease(root) as lease:
+        lease.admit("TASK-B")
     assert (root / "partial").read_text() == "preserve me"
 
 
-def test_no_registration_cannot_resume_even_if_clean(tmp_path):
+def test_an_unregistered_checkout_is_admitted(tmp_path):
     root = repository(tmp_path / "checkout")
     from guardkit.orchestrator import task_work_scope as m
 
     _, gd = m.identity(root)
     m._fresh.pop(str(gd))
-    with pytest.raises(ScopeUnavailable, match="No retained"):
-        with checkout_lease(root):
-            pass
+    with checkout_lease(root) as lease:
+        assert lease.admit("TASK-A").baseline_commit == git(root, "rev-parse", "HEAD")
 
 
 def test_distinct_checkouts_overlap_and_sibling_serializes(tmp_path):
@@ -150,7 +150,7 @@ def test_distinct_checkouts_overlap_and_sibling_serializes(tmp_path):
     assert order == ["start-A", "end-A", "start-B", "end-B"]
 
 
-def test_feature_check_reentry_and_mutation_refusal(tmp_path):
+def test_feature_check_reentry_and_a_mutation_does_not_refuse(tmp_path):
     root = repository(tmp_path / "checkout")
     feature = FeatureOrchestrator.__new__(FeatureOrchestrator)
     feature._evidence_repos_resolved = []
@@ -167,12 +167,11 @@ def test_feature_check_reentry_and_mutation_refusal(tmp_path):
         git(root, "add", "new")
         git(root, "commit", "-m", "unexpected gate commit")
 
-    with pytest.raises(ScopeUnavailable, match="HEAD"):
-        feature._checked_writer(worktree, mutation)
+    # Step 2 (26 October 2026): logged and left, never a refusal.
+    feature._checked_writer(worktree, mutation)
     assert (root / "new").read_text() == "gate wrote this"
-    with pytest.raises(ScopeUnavailable):
-        with checkout_lease(root):
-            pass
+    with checkout_lease(root) as lease:
+        lease.admit("TASK-B")
 
 
 def test_real_feature_task_entry_serializes_aliases(tmp_path):
@@ -181,7 +180,6 @@ def test_real_feature_task_entry_serializes_aliases(tmp_path):
     alias.symlink_to(root, target_is_directory=True)
     feature = FeatureOrchestrator.__new__(FeatureOrchestrator)
     feature._evidence_repos_resolved = []
-    feature._timeout_fence_is_set = lambda: False
     feature._update_task_started = lambda feature, task_id: None
     order = []
 
@@ -436,6 +434,11 @@ def test_real_wave_timeout_keeps_child_and_worker_footprint_owned(
 
     def player_boundary(self, task, feature, worktree, **kwargs):
         entered.append(task.id)
+        if len(entered) > 1:
+            # The next task, admitted once the timed-out worker let go.
+            return TaskExecutionResult(
+                task_id=task.id, success=True, total_turns=1, final_decision="approved"
+            )
         proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
         child.append(proc)
         child_started.set()
@@ -453,18 +456,21 @@ def test_real_wave_timeout_keeps_child_and_worker_footprint_owned(
     runner._execute_task_owned = MethodType(player_boundary, runner)
 
     async def run():
-        results = await runner._execute_wave_parallel(
+        wave = asyncio.ensure_future(runner._execute_wave_parallel(
             1, [t.id for t in tasks], feature, physical
-        )
-        assert child_started.is_set() and child[0].poll() is None
+        ))
+        while not child_started.is_set():
+            await asyncio.sleep(0.01)
+        await asyncio.sleep(0.5)  # well past the first task's time limit
+        assert child[0].poll() is None
+        # Step 2 (26 October 2026): no fence refuses the next task; it waits
+        # for the writer lock the timed-out worker still holds.
         assert len(entered) == 1
         _, gd = scope_module.identity(physical.path)
         assert scope_module._locks[str(gd)].locked()
-        assert (gd / "guardkit-writer-unsettled").exists()
-        assert any(r.final_decision == "timeout" for r in results)
         release.set()
-        while not finished.is_set():
-            await asyncio.sleep(0.01)
+        results = await wave
+        assert finished.is_set()
         return results
 
     try:
@@ -476,10 +482,12 @@ def test_real_wave_timeout_keeps_child_and_worker_footprint_owned(
                 proc.kill()
                 proc.wait(timeout=5)
     assert (physical.path / "after-timeout").read_text() == "late actual worker change"
-    assert len(entered) == 1
-    with pytest.raises(ScopeUnavailable):
-        with checkout_lease(physical.path):
-            pass
+    assert len(entered) == 2
+    decisions = {r.task_id: r.final_decision for r in results}
+    assert decisions["TASK-TIMEOUT-0"] == "timeout"
+    assert decisions["TASK-TIMEOUT-1"] == "approved"
+    with checkout_lease(physical.path) as lease:
+        lease.admit("TASK-NEXT")
 
 
 def fresh_with_sibling(source, sibling, name, declared=None):
@@ -636,25 +644,9 @@ def test_standalone_producer_reads_original_task_blob_and_scopes_reports(tmp_pat
     assert (sibling / "sibling-extensionless").exists()
 
 
-@pytest.mark.parametrize(
-    "bad",
-    [
-        "missing",
-        "malformed",
-        "dirty",
-        "failed",
-        "changed_declaration",
-        "missing_source",
-    ],
-)
-def test_sibling_initial_selection_refuses_entire_invalid_footprint(tmp_path, bad):
+def _sibling_case(tmp_path, bad):
     import yaml
     from guardkit.worktrees import WorktreeManager
-    from guardkit.orchestrator.task_work_scope import (
-        bind_fresh_footprint,
-        identity,
-        _selected,
-    )
 
     sibling = repository(tmp_path / "sibling")
     source = repository(tmp_path / "source")
@@ -676,6 +668,36 @@ def test_sibling_initial_selection_refuses_entire_invalid_footprint(tmp_path, ba
         with checkout_lease(sibling) as lease:
             lease.poison("known failed predecessor")
     expected = raw + ["../different"] if bad == "changed_declaration" else raw
+    return sibling, source, record, wt, expected
+
+
+@pytest.mark.parametrize("bad", ["dirty", "failed", "changed_declaration", "missing_source"])
+def test_sibling_selection_admits_what_earlier_work_or_bookkeeping_left(tmp_path, bad):
+    """Step 2 (26 October 2026): a sibling with earlier or failed work, a
+    loaded declaration that differs from the committed one, or a declaration
+    that is not committed yet, no longer refuses the writer."""
+    from guardkit.orchestrator.task_work_scope import bind_fresh_footprint
+
+    sibling, source, record, wt, expected = _sibling_case(tmp_path, bad)
+    repos = bind_fresh_footprint(
+        wt.path, source, record, kind="feature", expected=expected
+    )
+    assert [Path(r.root).resolve() for r in repos] == [sibling.resolve()]
+    with checkout_lease(wt.path, repos) as lease:
+        lease.admit("TASK-A")
+    if bad == "dirty":
+        assert (sibling / "preserved").read_text() == "unapproved input"
+
+
+@pytest.mark.parametrize("bad", ["missing", "malformed"])
+def test_sibling_initial_selection_refuses_entire_invalid_footprint(tmp_path, bad):
+    from guardkit.orchestrator.task_work_scope import (
+        bind_fresh_footprint,
+        identity,
+        _selected,
+    )
+
+    sibling, source, record, wt, expected = _sibling_case(tmp_path, bad)
     with pytest.raises(ScopeUnavailable):
         repos = bind_fresh_footprint(
             wt.path, source, record, kind="feature", expected=expected
@@ -683,39 +705,36 @@ def test_sibling_initial_selection_refuses_entire_invalid_footprint(tmp_path, ba
         with checkout_lease(wt.path, repos):
             pass
     assert str(identity(wt.path)[1]) not in _selected
-    if bad == "dirty":
-        assert (sibling / "preserved").read_text() == "unapproved input"
 
 
-def test_selected_sibling_footprint_cannot_expand_or_restart(tmp_path):
-    from guardkit.orchestrator.task_work_scope import (
-        bind_fresh_footprint,
-        identity,
-        _history,
-    )
+def test_selected_sibling_footprint_cannot_be_dropped_and_a_restart_is_admitted(tmp_path):
+    from guardkit.orchestrator import task_work_scope as m
 
     sibling = repository(tmp_path / "sibling")
     root, repos = fresh_with_sibling(tmp_path / "source", sibling, "BOUND")
     with checkout_lease(root, repos) as lease:
         lease.admit("TASK-A")
+    # The lock covers the declared siblings: a writer without them is refused.
     with pytest.raises(ScopeUnavailable, match="footprint differs"):
         with checkout_lease(root):
             pass
-    with pytest.raises(ScopeUnavailable, match="unconsumed"):
-        bind_fresh_footprint(root, tmp_path / "source", None, kind="task")
-    # Simulated process restart has no fresh capability/history, even if the
-    # deny-only marker is absent and the checkout remains clean.
-    _history.pop(str(identity(root)[1]))
-    with pytest.raises(ScopeUnavailable, match="No retained"):
-        with checkout_lease(root, repos):
-            pass
+    # A simulated process restart (no in-memory state) is admitted (step 2).
+    gd = str(m.identity(root)[1])
+    for registry in (m._fresh, m._selected, m._bindings):
+        registry.pop(gd, None)
+    again = m.bind_fresh_footprint(
+        root, tmp_path / "source", tmp_path / "source/.guardkit/features/FEAT-BOUND.yaml",
+        kind="feature",
+    )
+    assert again == repos
+    with checkout_lease(root, again) as lease:
+        lease.admit("TASK-B")
 
 
 def test_original_failed_task_result_survives_ownership_teardown(tmp_path):
     root = repository(tmp_path / "checkout")
     runner = FeatureOrchestrator.__new__(FeatureOrchestrator)
     runner._evidence_repos_resolved = []
-    runner._timeout_fence_is_set = lambda: False
     runner._update_task_started = lambda *args: None
     original = TaskExecutionResult(
         task_id="TASK-FAIL",
@@ -732,26 +751,17 @@ def test_original_failed_task_result_survives_ownership_teardown(tmp_path):
     )
     assert result is original
     assert result.error == "RequiredReadError: missing declared prerequisite"
-    with pytest.raises(ScopeUnavailable, match="Prior writer"):
-        with checkout_lease(root):
-            pass
+    with checkout_lease(root) as lease:  # the next writer is admitted (step 2)
+        lease.admit("TASK-NEXT")
 
 
-def test_retained_resume_checks_inventory_and_scope_before_any_read(tmp_path):
-    from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
-
+def test_checkpoint_rollback_and_history_stay_in_the_admitted_scope(tmp_path):
     root = repository(tmp_path / "checkout")
-    runner = AutoBuildOrchestrator.__new__(AutoBuildOrchestrator)
     with checkout_lease(root) as lease:
         scope = lease.admit("TASK-A")
-        runner.task_work_scope = scope
-        lease.verify_continuation(scope)
-        (root / "base").write_text("unexpected continuation edits")
-        with pytest.raises(ScopeUnavailable, match="Tracked/index/untracked"):
-            runner._resume_from_state("TASK-A", tmp_path / "must-not-read")
+        (root / "base").write_text("continuation edits")
         checkpoint = WorktreeCheckpointManager(root, "TASK-A", task_work_scope=scope)
         checkpoint.create_checkpoint(1, True)
-        lease.verify_continuation(scope)
         (root / "later").write_text("later checkpoint")
         second = checkpoint.create_checkpoint(2, False)
         assert checkpoint.rollback_to(1)
@@ -766,9 +776,6 @@ def test_retained_resume_checks_inventory_and_scope_before_any_read(tmp_path):
         history = json.loads(histories[0].read_text())
         assert history["scope_id"] == scope.scope_id
         assert history["checkpoints"][-1]["commit_hash"] == second.commit_hash
-
-    with pytest.raises(ScopeUnavailable, match="retained admitted"):
-        runner._resume_from_state("TASK-A", tmp_path / "must-not-read")
 
 
 def test_feature_check_and_task_share_the_complete_sibling_lease(tmp_path):
@@ -826,10 +833,10 @@ def test_uncertain_gate_child_preserves_unavailable_footprint(tmp_path):
         with pytest.raises(CleanupUnavailableError):
             runner._checked_writer(SimpleNamespace(path=root), gate)
         assert child[0].poll() is None
-        with pytest.raises(ScopeUnavailable, match="Prior writer"):
-            with checkout_lease(root):
-                pass
-        assert runner._writer_boundary_failure
+        # Step 2 (26 October 2026): the gate's own failure is raised to its
+        # caller; it never refuses the next writer.
+        with checkout_lease(root) as lease:
+            lease.admit("TASK-NEXT")
     finally:
         for proc in child:
             if proc.poll() is None:
@@ -895,7 +902,6 @@ def test_bootstrap_runs_once_per_wave_under_contention_before_player(tmp_path):
     root = repository(tmp_path / "checkout")
     runner = FeatureOrchestrator.__new__(FeatureOrchestrator)
     runner._evidence_repos_resolved = []
-    runner._timeout_fence_is_set = lambda: False
     runner._update_task_started = lambda *args: None
     runner._bootstrap_pending = True
     runner._baseline_probe_pending = True
@@ -961,7 +967,6 @@ def test_bootstrap_exception_preserves_original_type_and_partial_work(tmp_path):
     root = repository(tmp_path / "checkout")
     runner = FeatureOrchestrator.__new__(FeatureOrchestrator)
     runner._evidence_repos_resolved = []
-    runner._timeout_fence_is_set = lambda: False
     runner._bootstrap_pending = True
 
     def failed(worktree, **kwargs):
@@ -979,9 +984,8 @@ def test_bootstrap_exception_preserves_original_type_and_partial_work(tmp_path):
     assert result.error_type == "BootstrapPrerequisiteError"
     assert result.error == "declared installer unavailable"
     assert (root / "partial-bootstrap.lock").read_text() == "preserve generated input"
-    with pytest.raises(ScopeUnavailable, match="Prior writer"):
-        with checkout_lease(root):
-            pass
+    with checkout_lease(root) as lease:  # the next writer starts from it (step 2)
+        lease.admit("TASK-NEXT")
 
 
 def test_same_owner_resume_keeps_live_history_and_ignores_saved_authority(tmp_path):
@@ -1012,7 +1016,6 @@ def test_cancelled_waiter_cannot_start_after_the_owner_exits(tmp_path):
     root = repository(tmp_path / "checkout")
     runner = FeatureOrchestrator.__new__(FeatureOrchestrator)
     runner._evidence_repos_resolved = []
-    runner._timeout_fence_is_set = lambda: False
     runner._execute_task_owned = lambda *args, **kwargs: pytest.fail(
         "Cancelled queued Player started"
     )

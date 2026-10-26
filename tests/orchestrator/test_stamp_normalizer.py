@@ -51,7 +51,6 @@ from click.testing import CliRunner
 
 from guardkit.orchestrator.feature_loader import (
     FeatureLoader,
-    FeatureValidationError,
 )
 from guardkit.orchestrator.stamp_normalizer import (
     Home,
@@ -2047,12 +2046,13 @@ def test_dry_run_writes_nothing(tmp_path: Path):
 # ---------------------------------------------------------------------------
 
 
-def test_loader_default_is_unchanged_unstamped_feature_still_rejects_under_enforcement(tmp_path: Path):
+def test_loader_default_is_unchanged_unstamped_feature_is_advice_under_enforcement(tmp_path: Path, caplog):
     repo = _repo(tmp_path, BASE_YAML)
     (repo / ".guardkit" / "config.yaml").write_text("routing_law: enforced\n")
     assert FeatureLoader.normalize_stamps_on_load is False
-    with pytest.raises(FeatureValidationError, match="UNSTAMPED"):
+    with caplog.at_level("WARNING"):
         FeatureLoader.load_feature("FEAT-TIME", repo_root=repo, validate_paths=False)
+    assert "UNSTAMPED" in caplog.text  # step 2: advice, the plan loads
     # …and nothing was written by the default path.
     assert "scenarios:" not in (repo / ".guardkit" / "features" / "FEAT-TIME.yaml").read_text()
 

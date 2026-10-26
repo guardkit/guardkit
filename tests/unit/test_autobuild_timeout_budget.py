@@ -834,7 +834,6 @@ class TestFeatureOrchestratorBudgetPropagation:
         fo.enable_context = True
         fo.sdk_timeout = None
         fo.timeout_multiplier = 1.0
-        fo.stop_on_failure = False
         fo.task_log_interval = 60
         fo._emitter = Mock()
         fo._wave_display = None

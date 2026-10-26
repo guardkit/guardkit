@@ -407,22 +407,25 @@ class FeatureCompleteOrchestrator:
                     f"Feature {feature_id} is already completed. Use --force to re-complete."
                 )
 
-        # Check if all tasks are completed (unless --force)
-        if not self.force:
-            incomplete_tasks = [
-                task for task in feature.tasks if task.status != "completed"
-            ]
-            if incomplete_tasks:
-                console.print(
-                    f"[yellow]⚠[/yellow] {len(incomplete_tasks)} task(s) not completed:"
-                )
-                for task in incomplete_tasks:
-                    console.print(f"  - {task.id}: {task.status}")
-                if not self.dry_run:
-                    raise FeatureCompleteError(
-                        f"Cannot complete feature {feature_id}: {len(incomplete_tasks)} task(s) incomplete. "
-                        "Use --force to override."
-                    )
+        # Tasks not completed are listed as advice, never a refusal (step 2,
+        # 26 October 2026): the build's own result already decided what was
+        # approved and offered. Deferred tasks count as done, as in the build.
+        from guardkit.orchestrator.feature_orchestrator import TERMINAL_SATISFIED
+
+        incomplete_tasks = [
+            task for task in feature.tasks if task.status not in TERMINAL_SATISFIED
+        ]
+        if incomplete_tasks:
+            console.print(
+                f"[yellow]⚠[/yellow] {len(incomplete_tasks)} task(s) not completed:"
+            )
+            for task in incomplete_tasks:
+                console.print(f"  - {task.id}: {task.status}")
+            logger.warning(
+                "Feature %s completes with %d task(s) not completed: %s",
+                feature_id, len(incomplete_tasks),
+                ", ".join(f"{t.id} ({t.status})" for t in incomplete_tasks),
+            )
 
         # Find worktree if it exists
         worktree = None

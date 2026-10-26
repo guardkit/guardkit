@@ -61,6 +61,7 @@ from guardkit.lib.pytest_summary import parse_pytest_summary
 from guardkit.orchestrator.coach_verification import (
     CoachVerifier,
     HonestyVerification,
+    InterpreterResolutionError,
     _resolve_venv_python,
 )
 from guardkit.orchestrator import evidence_repos as evidence_repos_lib
@@ -2069,11 +2070,22 @@ class CoachValidator:
         # heuristic. See coach_verification._resolve_venv_python.
         self._in_autobuild_context = in_autobuild_context
         self._configured_venv_python: Optional[str] = venv_python
-        self._venv_python: Optional[Path] = _resolve_venv_python(
-            self.worktree_path,
-            venv_python,
-            in_autobuild_context=in_autobuild_context,
-        )
+        # Step 2 (26 October 2026, GKT-120): a Python worktree with no
+        # interpreter is no longer a hard abort. The independent test run
+        # reports "could not run" with the remediation as its sentence, which
+        # reaches the reviewer as advice; nothing runs under the wrong
+        # interpreter.
+        self._interpreter_problem: Optional[str] = None
+        try:
+            self._venv_python: Optional[Path] = _resolve_venv_python(
+                self.worktree_path,
+                venv_python,
+                in_autobuild_context=in_autobuild_context,
+            )
+        except InterpreterResolutionError as exc:
+            self._interpreter_problem = str(exc)
+            self._venv_python = None
+            logger.warning("Advice, not a stop: %s", exc)
         if venv_python and (
             self._venv_python is None
             or str(self._venv_python) != str(Path(venv_python))
@@ -3754,21 +3766,28 @@ class CoachValidator:
 
         # THE CHECK COULD NOT RUN. The gate may not go on saying the tests
         # passed when nothing was measured: the test gate becomes UNKNOWN on
-        # the bundle the Coach reads and on the receipt, and the estate fault
-        # is named in the operator's log. Nothing is added to
-        # ``advisory_issues`` — the builder is told nothing to fix, because
-        # there is nothing here it could fix.
+        # the bundle the Coach reads and on the receipt. Step 2 (26 October
+        # 2026, GKT-079): one plain line goes to ``advisory_issues`` so the
+        # reviewer decides with it in front of it; it is advice, never a stop.
         if test_result.check_could_not_run:
-            logger.error(
-                "ESTATE FAULT for %s turn %s — nothing was verified, so the "
+            detail = (
+                test_result.check_could_not_run_detail
+                or test_result.test_output_summary
+            )
+            logger.warning(
+                "%s turn %s: the project's tests could not be run, so the "
                 "test gate is UNKNOWN, not passed: %s",
                 task_id,
                 turn,
-                test_result.check_could_not_run_detail
-                or test_result.test_output_summary,
+                detail,
             )
             gates = self._gates_with_unknown_tests(gates)
             tests_dict["tests_passed"] = None
+            advisory_issues.append({
+                "severity": "should_fix",
+                "category": "tests_could_not_run",
+                "description": f"The project's tests could not be run: {detail}",
+            })
 
         # ------------------------------------------------------------------
         # 4b. The project's own coverage measurement (B9 Lane C). Runs AFTER
@@ -7844,6 +7863,14 @@ class CoachValidator:
         ``run_evidence`` (one per command: an isolated attempt and its
         worktree fallback are two) and touches nothing else.
         """
+        problem = getattr(self, "_interpreter_problem", None)
+        if problem:
+            return IndependentTestResult.could_not_run(
+                test_command="the project's test command",
+                detail=problem,
+                duration_seconds=0.0,
+                allow_worktree_fallback=False,
+            )
         self._run_evidence_log = []
         self._run_evidence_turn = turn
         try:
@@ -12262,7 +12289,10 @@ class CoachValidator:
                 # autobuild (in practice the validator __init__ already
                 # resolved the interpreter, so this only differs on a venv
                 # that disappeared mid-turn).
-                in_autobuild_context=self._in_autobuild_context,
+                in_autobuild_context=(
+                    self._in_autobuild_context
+                    and not getattr(self, "_interpreter_problem", None)
+                ),
             )
             discrepancies = []
             discrepancies.extend(verifier._verify_files_exist(task_work_results))

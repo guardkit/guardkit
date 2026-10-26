@@ -183,7 +183,7 @@ def _leader_state(proc: subprocess.Popen) -> str:
         # the command cannot be watched safely. Never read as "running",
         # which could wait for ever.
         raise _cleanup_failure(
-            _refused("waitid", True, exc), before_launch=False
+            _refused("waitid", True, exc)
         ) from exc
     return _RUNNING if info is None else _EXITED
 
@@ -301,7 +301,6 @@ def _stat_fields(pid: int) -> Optional[Tuple[str, int, int, int]]:
         if _is_factory_launch():
             raise _cleanup_failure(
                 f"a process record in /proc could not be read ({exc.strerror or exc})",
-                before_launch=False,
             ) from exc
         return None
 
@@ -332,7 +331,6 @@ def _carries_marker(pid: int, entry: bytes) -> bool:
             raise _cleanup_failure(
                 f"a process's environment in /proc could not be read "
                 f"({exc.strerror or exc})",
-                before_launch=False,
             ) from exc
         return False
     return entry in b"\0" + environ
@@ -370,7 +368,7 @@ def _metadata_unreadable(exc: OSError) -> None:
     run it is said."""
     reason = f"a process's /proc metadata could not be read ({exc.strerror or exc})"
     if _is_factory_launch():
-        raise _cleanup_failure(reason, before_launch=False) from exc
+        raise _cleanup_failure(reason) from exc
     logger.warning(
         "%s, so whether it is a project command's own could not be told.", reason.capitalize()
     )
@@ -547,7 +545,7 @@ def _look(
         # launch it ends the command; on a person's own run it is said.
         if _is_factory_launch():
             raise _cleanup_failure(
-                f"/proc could not be listed ({exc.strerror or exc})", before_launch=False
+                f"/proc could not be listed ({exc.strerror or exc})"
             ) from exc
         logger.warning(
             "/proc could not be listed (%s), so what a project command left "
@@ -681,7 +679,7 @@ def _refusal_mid_run(reason: str, cause: OSError) -> None:
     """On a factory launch a refused pidfd call ends the command; on a
     person's own run the process is reported as not stopped."""
     if _is_factory_launch():
-        raise _cleanup_failure(reason, before_launch=False) from cause
+        raise _cleanup_failure(reason) from cause
 
 
 def _signal_group(pgid: int, sig: int) -> None:
@@ -1039,10 +1037,13 @@ def _end_without_proc(proc: subprocess.Popen) -> None:
 
 
 def _is_factory_launch() -> bool:
-    """GuardKit's one factory-launch predicate: any value of
+    """Whether the full clean-up applies: a factory launch (any value of
     ``GUARDKIT_FACTORY_LAUNCH`` at all, whitespace included; only unset or
-    exactly empty is a person's own run."""
-    return is_factory_launch()
+    exactly empty is a person's own run) whose clean-up self-test has not
+    failed. Step 2 (26 October 2026): after a failed self-test the commands
+    run with a person's run's reduced clean-up, with one warning, as in
+    guardkitfactory (one rule, one place)."""
+    return is_factory_launch() and not _SELF_TEST_FAILED
 
 
 def _proc_available() -> bool:
@@ -1069,17 +1070,11 @@ _ADVICE = (
 )
 
 
-def _cleanup_failure(reason: str, *, before_launch: bool) -> CleanupUnavailableError:
-    if before_launch:
-        text = (
-            f"The factory does not run project commands here: {reason}, so what a "
-            f"command leaves running could not all be stopped safely. {_ADVICE}"
-        )
-    else:
-        text = (
-            f"A project command was ended because {reason}, so what it left "
-            f"running could not all be stopped safely. {_ADVICE}"
-        )
+def _cleanup_failure(reason: str) -> CleanupUnavailableError:
+    text = (
+        f"A project command was ended because {reason}, so what it left "
+        f"running could not all be stopped safely. {_ADVICE}"
+    )
     error = CleanupUnavailableError(errno.ENOSYS, text)
     error.reason = reason
     return error
@@ -1134,6 +1129,8 @@ _WARNED: List[bool] = []
 #: The self-test's success, once per process (a later failure mid-run ends
 #: that command, so a stale success is safe).
 _SELF_TEST_PASSED: List[bool] = []
+#: Why the self-test failed, once per process (step 2, 26 October 2026).
+_SELF_TEST_FAILED: List[str] = []
 _SELF_TEST_LOCK = threading.Lock()
 _IN_SELF_TEST = threading.local()
 
@@ -1359,12 +1356,12 @@ def _self_test() -> Optional[str]:
 
 
 def _check_capability() -> None:
-    """Before a command starts. On a factory launch the real clean-up must
-    have passed its end-to-end self-test in this process (run once, cached
-    on success only), else :class:`CleanupUnavailableError`; any failure
-    later, mid-run, ends that command (``before_launch=False``). On a
-    person's own run, what is missing is worked out once and warned about
-    once, and the reduced clean-up goes on."""
+    """Before a command starts. On a factory launch the real clean-up runs
+    its end-to-end self-test once in this process; when it passes, any
+    failure later, mid-run, ends that command.
+    When it fails, or on a person's own run, what is missing is warned about
+    once and the reduced clean-up goes on (step 2, 26 October 2026: advice,
+    never a refusal before the command starts)."""
     if getattr(_IN_SELF_TEST, "active", False):
         return
     if _is_factory_launch():
@@ -1377,7 +1374,9 @@ def _check_capability() -> None:
             if reason is None:
                 _SELF_TEST_PASSED.append(True)
                 return
-        raise _cleanup_failure(reason, before_launch=True)
+            _SELF_TEST_FAILED.append(reason)
+            if not _CAPABILITY:
+                _CAPABILITY.append(reason)
     if not _CAPABILITY:
         _CAPABILITY.append(_missing_capability())
     missing = _CAPABILITY[0]
@@ -1461,7 +1460,7 @@ def _run(
             # except path below runs (the group by its pinned number). The
             # reduced no-/proc clean-up is for a person's own run only.
             raise _cleanup_failure(
-                "/proc became unavailable while the command ran", before_launch=False
+                "/proc became unavailable while the command ran"
             )
         if timed_out:
             ended = _end_group(proc, grace, entry, since)
@@ -1481,7 +1480,6 @@ def _run(
             if _is_factory_launch():
                 raise _cleanup_failure(
                     "/proc became unavailable while the command ran",
-                    before_launch=False,
                 )
             _end_without_proc(proc)
         elif _anything_left(proc, entry, since):

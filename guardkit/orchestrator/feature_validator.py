@@ -16,11 +16,7 @@ from typing import Dict, List, Optional
 
 import yaml
 
-from guardkit.models.task_types import (
-    TaskType,
-    TASK_TYPE_ALIASES,
-    VALID_TASK_TYPES,
-)
+from guardkit.models.task_types import TASK_TYPE_ALIASES
 from guardkit.orchestrator.feature_loader import Feature
 
 logger = logging.getLogger(__name__)
@@ -200,22 +196,9 @@ def validate_feature_preflight(
                         ),
                     )
                 )
-            elif task_type_str not in VALID_TASK_TYPES:
-                # Truly invalid value
-                valid_values = ", ".join(t.value for t in TaskType)
-                valid_aliases = ", ".join(sorted(TASK_TYPE_ALIASES.keys()))
-                result.errors.append(
-                    ValidationIssue(
-                        task_id=task.id,
-                        field="task_type",
-                        severity="error",
-                        message=f"Invalid task_type '{task_type_str}'",
-                        suggestion=(
-                            f"Valid values: {valid_values}\n"
-                            f"    Valid aliases: {valid_aliases}"
-                        ),
-                    )
-                )
+            # Step 2 (26 October 2026): an invalid value is refused once, by
+            # FeatureLoader.validate_feature (the plan check, also run at
+            # build start); this copy is gone.
 
     return result
 

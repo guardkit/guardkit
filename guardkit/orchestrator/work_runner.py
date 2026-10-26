@@ -1161,24 +1161,14 @@ def run_work_leg(
 
     # --- Part N. The interpreter, before the orchestrator exists. -----------
     # Resolved the way the Coach verifier resolves it; bootstrapped when the
-    # worktree is a Python project with no interpreter (rule 58). A failure
-    # here is the leg's own failure sentence, exit 2 like every other refusal
-    # (rule 59), and the orchestrator is never constructed.
+    # worktree is a Python project with no interpreter (rule 58). Step 2 (26
+    # October 2026, GKT-152): a failure here is advice, not a stop. The leg
+    # runs; the Coach reports that the project's tests could not be run.
     provision = provision_interpreter(repo_root, explicit=venv_python)
     if provision.error:
-        return _outcome(
-            "failed",
-            2,
-            branch=branch,
-            worktree_path=str(repo_root),
-            error=provision.error,
-            findings=residual_findings(
-                approved=False,
-                final_decision=None,
-                turn_history=(),
-                error=provision.error,
-            ),
-            requirements_source=provenance,
+        logger.warning(
+            "work leg: advice, not a stop: the project's tests could not be run: %s",
+            provision.error,
         )
     if provision.path:
         logger.info(

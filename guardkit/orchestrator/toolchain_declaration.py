@@ -1038,14 +1038,14 @@ def undeclared_coverage_refusal(
     after_turn: bool = False,
     declared_paths: Optional[Iterable[Any]] = None,
 ) -> Optional[str]:
-    """Say why a task can never pass because no coverage command is declared.
+    """Advice for a task whose coverage cannot be measured because no
+    coverage command is declared.
 
-    Since 19 September 2026 a task whose type requires coverage passes only
-    on a MEASURED coverage, and the only thing that measures it is the
-    project's own declared ``coverage`` command (the Coach runs it). So a task
-    of such a type in a project that declares none cannot pass, however good
-    the code is. This finds that out before any turn is spent and returns the
-    plain reason; it returns ``None`` whenever the task can still pass.
+    Only the project's own declared ``coverage`` command measures coverage
+    (the Coach runs it). Since step 1 (24 October 2026) an unmeasured
+    coverage is advice to the builder and reviewer, never a stop; this
+    returns that advice in plain words, or ``None`` when coverage can be
+    measured or is not needed.
 
     The rule itself is unchanged: which types require coverage comes from the
     task-type profiles, and nothing here counts an undeclared coverage as met.
@@ -1120,22 +1120,22 @@ def undeclared_coverage_refusal(
         where = "(`toolchain.coverage`)"
         place = "under `toolchain:`"
     if after_turn:
-        stopped = (
-            "this task said it would change .guardkit/config.yaml, so it was "
-            "given a turn to declare one, but after that turn the file still "
-            "declares none, and it was stopped there."
+        turn_words = (
+            " This task said it would change .guardkit/config.yaml to declare "
+            "one, but after its turn the file still declares none."
         )
     else:
-        stopped = "it was stopped before any work was done."
+        turn_words = ""
+    # Step 2 (26 October 2026): plain advice. Since step 1 an unmeasured
+    # coverage never stops or fails a task, so this text says what is
+    # missing, not that the task was stopped.
     return (
         f"This project declares no coverage command {where} in "
-        f".guardkit/config.yaml, and a {type_words} needs measured coverage "
-        f"to pass. Nothing else measures coverage, so this task cannot pass "
-        f"however good the code is; {stopped} "
-        f"To fix it, add "
+        f".guardkit/config.yaml, so coverage could not be measured for a "
+        f"{type_words}.{turn_words} To measure it, add "
         f'`coverage: "<command that exits 0 when the coverage threshold is '
-        f'met>"` {place} in .guardkit/config.yaml, then run the task again. '
-        f"Only {needing_words} tasks need this; other task types are "
+        f'met>"` {place} in .guardkit/config.yaml. '
+        f"Only {needing_words} tasks use it; other task types are "
         f"unaffected, and so are tasks that change only configuration, "
         f"deployment, documentation or data files."
     )

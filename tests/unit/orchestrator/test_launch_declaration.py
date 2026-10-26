@@ -103,9 +103,9 @@ class TestParse:
         assert parse_launch_block({}).is_empty
         assert parse_launch_block({"settings": None, "scratch": None}).is_empty
 
-    def test_a_block_that_is_not_a_mapping_is_refused(self):
-        with pytest.raises(ValueError, match="must be a mapping"):
-            parse_launch_block(["GOCACHE"])
+    def test_a_block_that_is_not_a_mapping_declares_nothing(self):
+        # Step 2 (26 October 2026): advice, never a refusal.
+        assert parse_launch_block(["GOCACHE"]).is_empty
 
     @pytest.mark.parametrize(
         "name, why",
@@ -121,15 +121,18 @@ class TestParse:
             ("ANTHROPIC_X", "keeps for itself"),
             ("REGISTRY_TOKEN", "credential-shaped"),
             ("db_password", "credential-shaped"),
-            ("1CACHE", "not the shape"),
-            ("BAD-NAME", "not the shape"),
-            ("", "empty"),
         ],
     )
-    def test_reserved_and_malformed_names_are_refused(self, name, why):
+    def test_reserved_and_credential_shaped_names_are_refused(self, name, why):
         for key in ("settings", "scratch"):
             with pytest.raises(ValueError, match=why):
                 parse_launch_block({key: [name]})
+
+    @pytest.mark.parametrize("name", ["1CACHE", "BAD-NAME", "", 7])
+    def test_a_malformed_name_is_left_out(self, name):
+        for key in ("settings", "scratch"):
+            block = parse_launch_block({key: [name, "GOOD_CACHE"]})
+            assert getattr(block, key) == ("GOOD_CACHE",)
 
     def test_a_trailing_newline_is_folded_like_forge(self):
         # Forge strips names before checking; the pattern itself is matched
@@ -146,18 +149,16 @@ class TestParse:
         assert block.settings == ("B", "A")
         assert block.scratch == ("TOOL_CACHE",)
 
-    def test_a_name_in_both_lists_is_refused(self):
-        with pytest.raises(ValueError, match="cannot be both"):
-            parse_launch_block({"settings": ["X_CACHE"], "scratch": ["X_CACHE"]})
+    def test_a_name_in_both_lists_is_a_scratch_folder(self):
+        block = parse_launch_block({"settings": ["X_CACHE"], "scratch": ["X_CACHE"]})
+        assert block.settings == () and block.scratch == ("X_CACHE",)
 
-    def test_too_many_names_are_refused(self):
+    def test_more_names_than_the_guide_are_kept(self):
         names = [f"NAME_{i}" for i in range(33)]
-        with pytest.raises(ValueError, match="at most 32"):
-            parse_launch_block({"scratch": names})
+        assert len(parse_launch_block({"scratch": names}).scratch) == 33
 
-    def test_a_string_is_not_a_list(self):
-        with pytest.raises(ValueError, match="list of names"):
-            parse_launch_block({"scratch": "TOOL_CACHE"})
+    def test_a_string_is_not_a_list_and_is_ignored(self):
+        assert parse_launch_block({"scratch": "TOOL_CACHE"}).is_empty
 
 
 class TestLoad:
@@ -217,17 +218,12 @@ class TestLoad:
                 "TMPDIR",
             ),
             (
-                "launch:\n  settings: [PLAYWRIGHT_BROWSERS_PATH]\n  scratch: GOCACHE\n",
-                "list of names",
+                "launch:\n  settings: [GITHUB_TOKEN]\n",
+                "credential-shaped",
             ),
-            (
-                "launch:\n  scratch: [" + ", ".join(f"N{i}" for i in range(33)) + "]\n",
-                "at most 32",
-            ),
-            ("launch: [GOCACHE]\n", "must be a mapping"),
         ],
     )
-    def test_malformed_cases_refuse_the_task(self, tmp_path, text, reason):
+    def test_fenced_names_refuse_the_task(self, tmp_path, text, reason):
         (tmp_path / ".guardkit").mkdir()
         (tmp_path / ".guardkit" / "config.yaml").write_text(text)
         with pytest.raises(LaunchDeclarationError, match=reason):
@@ -563,14 +559,14 @@ class TestFeatureCheck:
         from guardkit.orchestrator.feature_check import run_feature_check_command
 
         root, worktree = repo
-        _write_config(root, {"scratch": "TOOL_CACHE"})
+        _write_config(root, {"scratch": ["PATH"]})
         run = run_feature_check_command(
             "true", cwd=worktree, timeout=30, launch_root=root
         )
 
         assert run["exit_code"] is None
         assert "could not start" in run["stderr"]
-        assert "list of names" in run["stderr"]
+        assert "PATH" in run["stderr"]
 
     def test_the_orchestrator_passes_the_main_checkout(self):
         from guardkit.orchestrator import feature_orchestrator

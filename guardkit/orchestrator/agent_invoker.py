@@ -2847,7 +2847,16 @@ class AgentInvoker:
         # a non-ignored target. Skipped when no plan or frontmatter list
         # is available (identical to the no-plan branch in plan-audit).
         if turn == 1:
-            self._run_preflight_ignore_gate(task_id)
+            # Step 2 (26 October 2026, GKT-129): advice, never a stop. The
+            # one line goes to the builder (this turn's feedback) and to the
+            # reviewer (the Player report's concerns, in invoke_coach).
+            ignore_advice = self._run_preflight_ignore_gate(task_id)
+            self._preflight_ignore_advice = ignore_advice
+            if ignore_advice:
+                if not feedback:
+                    feedback = ignore_advice
+                elif isinstance(feedback, str):
+                    feedback = f"{ignore_advice}\n\n{feedback}"
 
         # TASK-FIX-VL06: Record baseline commit before SDK invocation
         # to prevent cross-task file attribution in parallel waves
@@ -3145,6 +3154,18 @@ class AgentInvoker:
             SDKTimeoutError: If invocation exceeds timeout
         """
         start_time = time.time()
+
+        # Step 2 (26 October 2026, GKT-129): the git-ignore advice reaches the
+        # reviewer once, as one of the Player report's concerns.
+        ignore_advice = getattr(self, "_preflight_ignore_advice", None)
+        if ignore_advice and isinstance(player_report, dict):
+            concerns = player_report.get("concerns")
+            if not isinstance(concerns, list):
+                concerns = []
+                player_report["concerns"] = concerns
+            if ignore_advice not in concerns:
+                concerns.append(ignore_advice)
+            self._preflight_ignore_advice = None
 
         # TASK-ABFIX-004: Cap SDK timeout at remaining budget (mirrors invoke_player pattern)
         effective_timeout = self._calculate_sdk_timeout(task_id, remaining_budget=remaining_budget)
@@ -6080,13 +6101,13 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
 
             return verification
 
-        except InterpreterResolutionError:
-            # WS3-S1 Q1 SPLIT: an interpreter-resolution hard-abort must NOT be
-            # softened to a default "assume honest" verification — that is the
-            # exact soft-fail (verify against a poisoned interpreter, then wave
-            # it through) the hard-abort exists to close. Propagate so the run
-            # fails loud with the named remediation.
-            raise
+        except InterpreterResolutionError as exc:
+            # Step 2 (26 October 2026, GKT-120): advice, not a stop. Nothing is
+            # run under the wrong interpreter; the claims cannot be checked
+            # here, and the Coach's own test run says the project's tests
+            # could not be run, which the reviewer reads.
+            logger.warning("Advice, not a stop: Player claims not verified: %s", exc)
+            return HonestyVerification(verified=True, discrepancies=[], honesty_score=1.0)
         except Exception as e:
             logger.warning(f"Failed to verify Player claims: {e}")
             # Return default verification (assume honest) to not block workflow
@@ -7547,15 +7568,15 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
             except (json.JSONDecodeError, IOError) as e:
                 logger.warning(f"Failed to update task_work_results.json: {e}")
 
-    def _run_preflight_ignore_gate(self, task_id: str) -> None:
+    def _run_preflight_ignore_gate(self, task_id: str) -> Optional[str]:
         """Run the pre-turn-1 ``git check-ignore`` fail-fast gate
         (TASK-FIX-CAUD-PREFLIGHT-C3B0).
 
         Closes deferred AC-005 of TASK-FIX-CAUD-J6F1. Walks the task's
         planned target list through ``git check-ignore -v --no-index``
-        in the worktree. If any planned target IS git-ignored, raises
-        ``AgentInvocationError`` with the matched rule so the Player
-        does not burn SDK turns creating a file that cannot be tracked.
+        in the worktree. Step 2 (26 October 2026): a planned target that
+        IS git-ignored is advice; one plain line naming it and its rule is
+        returned (``None`` otherwise), and the task goes on.
 
         Skipped silently when no implementation plan and no frontmatter
         ``files_to_create`` / ``files_to_modify`` list is available —
@@ -7566,7 +7587,6 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
             STATUS_BLOCKED,
             STATUS_PASSED,
             STATUS_SKIPPED,
-            format_blocked_message,
             run_preflight_ignore_gate,
         )
 
@@ -7583,35 +7603,36 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                 task_id,
                 exc,
             )
-            return
+            return None
 
         if result.status == STATUS_PASSED:
             logger.info(
                 "[%s] preflight_ignore_gate: passed (no planned targets are git-ignored)",
                 task_id,
             )
-            return
+            return None
         if result.status == STATUS_SKIPPED:
             logger.info(
                 "[%s] preflight_ignore_gate: skipped (%s)",
                 task_id,
                 result.skip_reason or "no source available",
             )
-            return
+            return None
         if result.status == STATUS_BLOCKED:
-            message = format_blocked_message(task_id, result)
-            logger.error(
-                "[%s] preflight_ignore_gate: BLOCKED — fail-fast before turn 1.\n%s",
-                task_id,
-                message,
+            named = "; ".join(f"{m.path} (rule {m.rule})" for m in result.matches)
+            advice = (
+                f"Advice: these planned files are ignored by git and will not "
+                f"be committed: {named}."
             )
-            raise AgentInvocationError(message)
+            logger.warning("[%s] preflight_ignore_gate: %s", task_id, advice)
+            return advice
         # Defensive: unknown status. Log and continue rather than block.
         logger.warning(
             "[%s] preflight_ignore_gate: unknown status %r; continuing.",
             task_id,
             result.status,
         )
+        return None
 
     def _record_baseline(self) -> None:
         """Use the admission baseline, never recapture a later HEAD."""
@@ -8850,7 +8871,7 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         if independent is None or not getattr(independent, "signal_absent", False):
             return
 
-        # THE CHECK COULD NOT RUN — AND THAT IS NEVER THE BUILDER'S TO FIX.
+        # THE CHECK COULD NOT RUN (step 2, 26 October 2026: advice, below).
         #
         # 2026-09-11: the Coach's parallel-wave copy of the worktree could
         # not start the repository's declared test command, so nothing about
@@ -8862,13 +8883,10 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         # "The check ran and the result is bad" and "the check could not run"
         # are different outcomes and must not share this code path. The Coach
         # marks the second one on its own result
-        # (``IndependentTestResult.check_could_not_run``), and here is where
-        # the live path must honour it: the verdict becomes feedback, NO issue
-        # is written for the builder, and the turn is marked as one the
-        # builder cannot fix so the loop stops instead of spending more turns
-        # on something outside the repository. The operator keeps the whole
-        # story — the plain sentence naming the command, the directory and
-        # what was missing goes to the rationale, the log and the receipt.
+        # (``IndependentTestResult.check_could_not_run``). Since step 2 it is
+        # advice: the reviewer's decision stands, and the plain sentence
+        # naming the command, the directory and what was missing is added as
+        # one line for the reviewer, the builder and the card.
         if getattr(independent, "check_could_not_run", False):
             self._end_turn_as_estate_fault(
                 decision=decision,
@@ -9034,59 +9052,34 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         turn: int,
         coach_output_path: Path,
     ) -> None:
-        """End a turn whose check could not run, blaming nobody.
+        """The project's tests could not be run: advice, never a stop.
 
-        Called only when the Coach's own result says the declared test
-        command never started. Three things happen, and they mirror exactly
-        what the rule-based Coach does on the same outcome:
-
-        * the verdict becomes ``feedback`` — nothing was verified, so nothing
-          may be approved;
-        * the builder's channel is emptied. The issue list is cleared and
-          nothing is appended. An estate fault that is merely de-emphasised
-          in the feedback still teaches the builder to chase it, and the
-          prompt separately asks the Coach to quote the failed check, so its
-          own findings on a turn where NOTHING RAN are set aside here — named
-          in the operator's log first, so nothing disappears quietly;
-        * ``is_configuration_error`` marks the turn as one the builder cannot
-          fix, so the loop stops rather than burning the remaining turns.
-
-        The operator's rationale is the Coach's plain sentence: the command,
-        the directory it tried to run in, and what was missing.
+        Step 2 (26 October 2026, GKT-079): tests that could not start are
+        not tests that ran and failed. The reviewer's own decision and
+        findings stand; one plain line, the Coach's sentence naming the
+        command, the directory and what was missing, is added for the
+        reviewer, the builder and the card. The turn is not marked as a
+        configuration error, so the loop goes on.
         """
         detail = (
             getattr(independent, "check_could_not_run_detail", None)
             or getattr(independent, "test_output_summary", None)
-            or "The check could not run, and nothing about the work was measured."
+            or "the check could not start, so nothing about the work was measured"
         )
-        set_aside = [
-            str(issue.get("description", ""))
-            for issue in decision.get("issues", []) or []
-            if isinstance(issue, dict)
-        ]
-        if set_aside:
-            logger.warning(
-                "The check could not run for %s turn %s, so nothing was "
-                "verified; the reviewer's own findings for this turn are set "
-                "aside rather than sent to the builder: %s",
-                task_id,
-                turn,
-                " | ".join(set_aside),
-            )
-        logger.error(
-            "ESTATE FAULT for %s turn %s — the check could not run, so "
-            "nothing was verified and the builder is told nothing to fix: %s",
-            task_id,
-            turn,
-            detail,
-        )
-        decision["decision"] = "feedback"
-        decision["rationale"] = detail
-        decision["issues"] = []
-        decision["is_configuration_error"] = True
+        advice = f"The project's tests could not be run: {detail}"
+        logger.warning("%s turn %s: advice, not a stop: %s", task_id, turn, advice)
+        issues = decision.get("issues")
+        if not isinstance(issues, list):
+            issues = []
+            decision["issues"] = issues
+        issues.append({
+            "severity": "should_fix",
+            "category": "tests_could_not_run",
+            "description": advice,
+        })
         self._persist_coach_decision(
-            decision, coach_output_path, tag="check-could-not-run",
-            kind="estate fault",
+            decision, coach_output_path, tag="tests-could-not-run",
+            kind="advice",
         )
 
     # TASK-FIX-COACHMISREAD01: the two halves of "this finding claims the

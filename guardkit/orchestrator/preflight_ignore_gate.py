@@ -16,7 +16,8 @@ The gate fires before turn 1 of any autobuild task. It:
    in the worktree.
 3. If any target IS ignored, returns a ``BLOCKED`` result naming each
    matched rule in the canonical ``<source>:<line>:<pattern>`` format.
-   The caller fail-fasts before the SDK is invoked.
+   Since step 2 (26 October 2026) the caller gives that as one line of
+   advice to the builder and the reviewer, and the task goes on.
 4. If no plan / file list is available, returns ``SKIPPED`` (does NOT
    fail-open with a warning — the no-source path is intentionally a
    no-op, identical to the no-plan path in plan-audit).
@@ -441,49 +442,6 @@ def is_project_root_gitignore(rule: str) -> bool:
     return source == ".gitignore"
 
 
-def format_blocked_message(task_id: str, result: PreflightResult) -> str:
-    """Render a ``BLOCKED`` result as a human-readable, fail-fast message.
-
-    Used by the caller (AgentInvoker) when raising ``AgentInvocationError``
-    before turn 1 begins. The format is deliberately verbose so the
-    operator sees both the matched rule and (when applicable) the
-    rebase hint without further digging.
-    """
-    if result.status != STATUS_BLOCKED:
-        raise ValueError(
-            f"format_blocked_message called with non-blocked result: "
-            f"{result.status!r}"
-        )
-
-    count = len(result.matches)
-    plural = "target is" if count == 1 else "targets are"
-    lines = [
-        f"pre-flight ignore gate: {count} planned {plural} git-ignored "
-        f"in the worktree. The Player would burn SDK turns creating "
-        f"files that cannot subsequently be tracked or verified.",
-        "",
-        f"Task: {task_id}",
-        "",
-        "Matched rules:",
-    ]
-    for match in result.matches:
-        lines.append(f"  - {match.path}: {match.rule}")
-
-    if result.rebase_hint:
-        lines.extend(
-            [
-                "",
-                "Hint: at least one rule is from the project-root .gitignore. "
-                "If the worktree was branched before .gitignore was updated, "
-                "rebasing on the latest main may resolve the conflict. "
-                "Otherwise, either pick a non-ignored target path or "
-                "update the ignore rules to permit this path.",
-            ]
-        )
-
-    return "\n".join(lines)
-
-
 __all__ = [
     "IgnoreMatch",
     "PreflightResult",
@@ -494,5 +452,4 @@ __all__ = [
     "load_planned_targets",
     "check_ignore_one",
     "is_project_root_gitignore",
-    "format_blocked_message",
 ]

@@ -250,36 +250,38 @@ class TestInterpreterResolutionSplitPosture:
         # Default construction (interactive) still succeeds.
         assert CoachVerifier(tmp_path)._venv_python is None
 
-    def test_coach_validator_autobuild_context_propagates_raise(
+    def test_coach_validator_autobuild_context_reports_could_not_run(
         self, tmp_path: Path
     ) -> None:
-        """CoachValidator(in_autobuild_context=True) hard-aborts in __init__;
-        the default construction is unchanged."""
+        """Step 2 (26 October 2026, GKT-120): advice, not a hard abort. The
+        Coach's own test run says the project's tests could not be run, with
+        the remediation, and nothing runs under the wrong interpreter."""
         (tmp_path / "pyproject.toml").write_text("[project]\nname = 'x'\n")
-        with pytest.raises(InterpreterResolutionError):
-            CoachValidator(str(tmp_path), in_autobuild_context=True)
+        validator = CoachValidator(str(tmp_path), in_autobuild_context=True)
+        result = validator.run_independent_tests()
+        assert result.check_could_not_run is True
+        assert "re-run environment bootstrap" in result.check_could_not_run_detail
         # Default (interactive) construction still succeeds.
         CoachValidator(str(tmp_path))
 
-    def test_deterministic_phase4_reraises_hard_abort(
+    def test_deterministic_phase4_does_not_run_under_the_wrong_interpreter(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """The deterministic Phase-4 runner must PROPAGATE the hard-abort, not
-        degrade to the LLM specialist (which would run under the broken
-        interpreter and re-open the DD4F soft-fail)."""
+        """The deterministic Phase-4 runner neither raises nor degrades to the
+        LLM specialist: it reports the run that could not happen."""
         (tmp_path / "pyproject.toml").write_text("[project]\nname = 'x'\n")
         monkeypatch.setenv("GUARDKIT_PHASE4_TEST_EXECUTION", "subprocess")
         agent_invoker = MagicMock()
         agent_invoker._venv_python = None
-        with pytest.raises(InterpreterResolutionError):
-            si._run_deterministic_phase_4(
-                worktree_path=tmp_path,
-                task_id="TASK-TEST-0001",
-                agent_invoker=agent_invoker,
-                sdk_timeout=300,
-                turn=1,
-                wave_size=1,
-            )
+        result = si._run_deterministic_phase_4(
+            worktree_path=tmp_path,
+            task_id="TASK-TEST-0001",
+            agent_invoker=agent_invoker,
+            sdk_timeout=300,
+            turn=1,
+            wave_size=1,
+        )
+        assert result is not None
 
 
 # ---------------------------------------------------------------------------

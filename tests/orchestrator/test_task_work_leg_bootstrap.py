@@ -430,75 +430,51 @@ class TestNonPythonWorktree:
 
 
 class TestBootstrapFailure:
-    def test_a_failed_install_fails_the_leg_naming_the_command(
-        self, complete_python_repo, factory, install_spy
+    """Step 2 (26 October 2026, GKT-152): a bootstrap that leaves no usable
+    interpreter is advice, not a stop. The leg runs; the sentence is logged
+    and the Coach's own test run says the project's tests could not be run."""
+
+    def test_a_failed_install_is_advice_naming_the_command(
+        self, complete_python_repo, factory, install_spy, caplog
     ):
         install_spy.install_ok = False
         install_spy.install_stderr = APPROVED_STDERR
 
-        outcome = _run_leg(complete_python_repo)
+        with caplog.at_level("WARNING"):
+            outcome = _run_leg(complete_python_repo)
 
         expected = shlex.join(
             [str(_venv_python(complete_python_repo)), "-m", "pip", "install", "-e", "."]
         )
-        assert outcome.status == "failed"
-        assert outcome.exit_code == 2
-        assert factory.calls == [], "the orchestrator must never be built without an interpreter"
-        assert expected in outcome.error
-        assert str(complete_python_repo) in outcome.error
-        assert APPROVED_STDERR in outcome.error
-        assert "no worktree venv interpreter resolved" not in outcome.error
-        assert "interpreter-resolution FAILED" not in outcome.error
+        assert factory.calls, "the leg runs; the failed install is advice"
+        assert "the project's tests could not be run" in caplog.text
+        assert expected in caplog.text
+        assert APPROVED_STDERR in caplog.text
         # The venv creation half ran for real before the install failed.
         assert _venv_python(complete_python_repo).exists()
         assert install_spy.venv_creations == 1
-        assert outcome.interpreter is None
         assert outcome.bootstrap["success"] is False
         assert outcome.bootstrap["installs_failed"] == 1
-        assert outcome.bootstrap["failures"][0]["commands"] == [expected]
-        assert outcome.bootstrap["failures"][0]["stderr_excerpt"] == APPROVED_STDERR
-        # The residual channel carries the sentence, anchored like every residual.
-        assert outcome.findings and outcome.findings[0]["severity"] == "must_fix"
-        assert expected in outcome.findings[0]["detail"]
-        receipt = _receipt(complete_python_repo, outcome)
-        assert receipt["exit_code"] == 2
-        assert receipt["interpreter"] is None
-        assert expected in receipt["error"]
 
-    def test_a_failed_bootstrap_inside_its_cooldown_still_fails_the_next_leg(
-        self, complete_python_repo, factory, install_spy
+    def test_a_failed_bootstrap_inside_its_cooldown_is_still_named(
+        self, complete_python_repo, factory, install_spy, caplog
     ):
-        """After a failed install the bootstrap leaves ``.venv`` behind and
-        its record says it failed. The next leg must not take that venv on
-        trust (the Coach would approve "with environment flag" on it): it runs
-        the bootstrap again, which is inside its own retry cooldown and skips,
-        and the leg says so and stops."""
         install_spy.install_ok = False
         install_spy.install_stderr = APPROVED_STDERR
-        first = _run_leg(complete_python_repo)
-        assert first.status == "failed"
-        assert _venv_python(complete_python_repo).exists()
+        _run_leg(complete_python_repo)
         state = json.loads(_state_file(complete_python_repo).read_text(encoding="utf-8"))
         assert state["success"] is False
 
         install_spy.install_ok = True  # a retry WOULD succeed — but the cooldown holds
-        second = _run_leg(complete_python_repo)
+        with caplog.at_level("WARNING"):
+            second = _run_leg(complete_python_repo)
 
-        expected = shlex.join(
-            [str(_venv_python(complete_python_repo)), "-m", "pip", "install", "-e", "."]
-        )
-        assert second.status == "failed"
-        assert second.exit_code == 2
-        assert factory.calls == []
-        assert "last attempt" in second.error
-        assert state["timestamp"] in second.error
-        assert "retry cooldown" in second.error
-        assert expected in second.error
+        assert len(factory.calls) == 2
+        assert "retry cooldown" in caplog.text
         assert second.bootstrap["skipped"] is True
-        assert install_spy.installs == [expected], "the cooldown skip ran no install"
 
-    def test_a_bootstrap_that_raises_names_the_failure(
-        self, complete_python_repo, factory, monkeypatch
+    def test_a_bootstrap_that_raises_is_named(
+        self, complete_python_repo, factory, monkeypatch, caplog
     ):
         message = (
             f"{complete_python_repo / 'pyproject.toml'} declares [tool.uv.sources] "
@@ -510,37 +486,28 @@ class TestBootstrapFailure:
 
         monkeypatch.setattr(EnvironmentBootstrapper, "bootstrap", raising)
 
-        outcome = _run_leg(complete_python_repo)
+        with caplog.at_level("WARNING"):
+            _run_leg(complete_python_repo)
 
-        assert outcome.status == "failed" and outcome.exit_code == 2
-        assert factory.calls == []
-        assert message in outcome.error
-        assert "the environment bootstrap failed" in outcome.error
-        assert "pip install -e ." in outcome.error
-        assert "no worktree venv interpreter resolved" not in outcome.error
+        assert factory.calls
+        assert message in caplog.text
+        assert "the environment bootstrap failed" in caplog.text
 
     def test_a_python_marker_the_bootstrap_cannot_install_from_is_named(
-        self, tmp_path, factory, install_spy
+        self, tmp_path, factory, install_spy, caplog
     ):
-        """``setup.py`` makes the Coach call this a Python project, but the
-        bootstrap reads only pyproject.toml, poetry.lock and requirements.txt.
-        Proceeding would burn a Player turn and then hit the Coach's abort;
-        the leg says what is missing instead."""
         repo = _seed_repo(tmp_path / "worktree", {"setup.py": "from setuptools import setup\nsetup(name='old')\n"})
 
-        outcome = _run_leg(repo)
+        with caplog.at_level("WARNING"):
+            _run_leg(repo)
 
-        assert outcome.status == "failed" and outcome.exit_code == 2
-        assert factory.calls == []
-        assert "setup.py" in outcome.error
-        assert "found no manifest it can install from" in outcome.error
+        assert factory.calls
+        assert "found no manifest it can install from" in caplog.text
         assert install_spy.venv_creations == 0
 
     def test_a_bootstrap_that_leaves_no_interpreter_is_named(
-        self, python_repo, factory, monkeypatch
+        self, python_repo, factory, monkeypatch, caplog
     ):
-        """Success without an interpreter is not success: the sentence names
-        the two locations the leg looked in."""
         from guardkit.orchestrator.environment_bootstrap import BootstrapResult
 
         def hollow(self, manifests, relevant_stacks=None):
@@ -554,13 +521,11 @@ class TestBootstrapFailure:
 
         monkeypatch.setattr(EnvironmentBootstrapper, "bootstrap", hollow)
 
-        outcome = _run_leg(python_repo)
+        with caplog.at_level("WARNING"):
+            _run_leg(python_repo)
 
-        assert outcome.status == "failed" and outcome.exit_code == 2
-        assert factory.calls == []
-        assert "left no interpreter at" in outcome.error
-        assert str(_venv_python(python_repo)) in outcome.error
-        assert str(python_repo / ".guardkit" / "venv" / "bin" / "python") in outcome.error
+        assert factory.calls
+        assert "left no interpreter at" in caplog.text
 
 
 # ===========================================================================

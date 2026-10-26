@@ -29,9 +29,12 @@ nothing at all (no endpoint configured means the model is never asked).
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 from typing import Mapping, Optional, Sequence
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "API_KEY_ENV",
@@ -41,7 +44,6 @@ __all__ = [
     "FEATURE_ROUTING_HEADER",
     "FEATURE_ROUTING_ID_ENV",
     "FEATURE_ROUTING_REQUIRED_ENV",
-    "FeatureRoutingError",
     "resolve_api_key",
     "resolve_base_url",
     "resolve_feature_routing_headers",
@@ -70,54 +72,50 @@ FEATURE_ROUTING_HEADER = "x-feature-id"
 _FEATURE_ROUTING_ID_RE = re.compile(r"[A-Za-z0-9_-]{1,256}\Z")
 
 
-class FeatureRoutingError(ValueError):
-    """The per-child routing contract cannot produce a safe HTTP header."""
-
-
 def resolve_feature_routing_headers(
     headers: Optional[Mapping[str, str]] = None,
     *,
     environ: Optional[Mapping[str, str]] = None,
 ) -> dict[str, str]:
-    """Return a copied header mapping with the validated feature route.
+    """Return a copied header mapping with the feature route added.
 
     The routing ID is an exact wire value: it is never stripped, truncated or
-    coerced.  Header names are compared case-insensitively.  A caller may
-    already carry the same single routing header, but a different value,
-    duplicate case variant, or reserved header without the child environment
-    is refused instead of overwritten.  ``headers`` and ``environ`` are never
-    mutated.
+    coerced.  Header names are compared case-insensitively.  Step 2 (26
+    October 2026): routing is bookkeeping, as in guardkitfactory. An inexact
+    required flag, a bad or missing id, duplicate or conflicting caller
+    headers are logged, never refused; an unusable id sends no header and a
+    caller's own header is left as it is.  ``headers`` and ``environ`` are
+    never mutated.
     """
     source: Mapping[str, str] = os.environ if environ is None else environ
     result = dict(headers or {})
 
     required_raw = source.get(FEATURE_ROUTING_REQUIRED_ENV)
     if required_raw not in (None, "0", "1"):
-        raise FeatureRoutingError(
-            f"{FEATURE_ROUTING_REQUIRED_ENV} must be exactly '0' or '1'"
+        logger.warning(
+            "%s should be exactly '0' or '1' (it is %r)",
+            FEATURE_ROUTING_REQUIRED_ENV, required_raw,
         )
-    required = required_raw == "1"
-
     routing_id = source.get(FEATURE_ROUTING_ID_ENV)
     if routing_id is not None and (
         not isinstance(routing_id, str) or _FEATURE_ROUTING_ID_RE.fullmatch(routing_id) is None
     ):
-        raise FeatureRoutingError(
-            f"{FEATURE_ROUTING_ID_ENV} must match ASCII [A-Za-z0-9_-]{{1,256}}"
+        logger.warning(
+            "%s does not match ASCII [A-Za-z0-9_-]{1,256}; no routing header is sent",
+            FEATURE_ROUTING_ID_ENV,
         )
-    if routing_id is None and required:
-        raise FeatureRoutingError(
-            f"{FEATURE_ROUTING_ID_ENV} is required when {FEATURE_ROUTING_REQUIRED_ENV}=1"
+        routing_id = None
+    if routing_id is None and required_raw == "1":
+        logger.warning(
+            "%s is not set although %s=1; no routing header is sent",
+            FEATURE_ROUTING_ID_ENV, FEATURE_ROUTING_REQUIRED_ENV,
         )
 
     reserved = [name for name in result if name.lower() == FEATURE_ROUTING_HEADER]
-    if len(reserved) > 1:
-        raise FeatureRoutingError(f"duplicate {FEATURE_ROUTING_HEADER} headers are not allowed")
     if reserved:
-        name = reserved[0]
-        if routing_id is None or result[name] != routing_id:
-            raise FeatureRoutingError(
-                f"caller-supplied {FEATURE_ROUTING_HEADER} conflicts with child routing"
+        if len(reserved) > 1 or routing_id is None or result[reserved[0]] != routing_id:
+            logger.warning(
+                "The caller's own %s header(s) are left as they are", FEATURE_ROUTING_HEADER
             )
     elif routing_id is not None:
         result[FEATURE_ROUTING_HEADER] = routing_id

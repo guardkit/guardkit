@@ -48,10 +48,7 @@ from typing import Any, Dict, List, Optional
 
 from guardkit.orchestrator.agent_invoker import async_heartbeat
 from guardkit.orchestrator.paths import TaskArtifactPaths
-from guardkit.orchestrator.quality_gates.exceptions import (
-    DesignPhaseError,
-    QualityGateBlocked,
-)
+from guardkit.orchestrator.quality_gates.exceptions import DesignPhaseError
 
 logger = logging.getLogger(__name__)
 
@@ -181,8 +178,6 @@ class TaskWorkInterface:
         ------
         DesignPhaseError
             If task-work --design-only fails or SDK is unavailable
-        QualityGateBlocked
-            If architectural review score is too low
         """
         logger.info(f"Executing design phase for {task_id} in {self.worktree_path}")
 
@@ -896,21 +891,17 @@ class TaskWorkInterface:
         DesignPhaseResult
             Parsed result object
 
-        Raises
-        ------
-        QualityGateBlocked
-            If architectural review score is below threshold
         """
         # Extract architectural review score
         arch_review = raw_result.get("architectural_review", {})
         arch_score = arch_review.get("score", 80)
 
-        # Check if architectural review blocked
+        # Step 2 (26 October 2026): a score of about 60 is a guide; a lower
+        # one is advice, never a block.
         if arch_score < 60:
-            raise QualityGateBlocked(
-                reason=f"Architectural review score {arch_score}/100 below threshold (60)",
-                gate_name="architectural_review",
-                details=arch_review,
+            logger.warning(
+                "Advice: architectural review score %s/100 is below the guide (60)",
+                arch_score,
             )
 
         return DesignPhaseResult(

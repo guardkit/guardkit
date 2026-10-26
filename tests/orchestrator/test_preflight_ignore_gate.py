@@ -21,7 +21,6 @@ from guardkit.orchestrator.preflight_ignore_gate import (
     STATUS_PASSED,
     STATUS_SKIPPED,
     check_ignore_one,
-    format_blocked_message,
     is_project_root_gitignore,
     load_planned_targets,
     run_preflight_ignore_gate,
@@ -462,81 +461,36 @@ class TestLoadPlannedTargets:
 # ---------- message formatting ----------------------------------------
 
 
-class TestFormatBlockedMessage:
-    def test_contains_path_and_rule(self, worktree: Path) -> None:
+class TestTheInvokerGivesAdvice:
+    """Step 2 (26 October 2026, GKT-129): a planned file git ignores is one
+    line of advice for the builder and the reviewer, never a stop."""
+
+    def test_an_ignored_planned_file_is_one_line_of_advice(self, worktree: Path) -> None:
+        from guardkit.orchestrator.agent_invoker import AgentInvoker
+
         _write_gitignore(worktree, "secrets/*.key")
         _write_plan_json(
             worktree,
-            "TASK-MSG",
-            {
-                "plan": {
-                    "files_to_create": ["secrets/api.key"],
-                    "files_to_modify": [],
-                }
-            },
+            "TASK-ADV",
+            {"plan": {"files_to_create": ["secrets/api.key"], "files_to_modify": []}},
         )
+        invoker = AgentInvoker(worktree_path=worktree)
 
-        result = run_preflight_ignore_gate("TASK-MSG", worktree)
-        msg = format_blocked_message("TASK-MSG", result)
+        advice = invoker._run_preflight_ignore_gate("TASK-ADV")
 
-        assert "TASK-MSG" in msg
-        assert "secrets/api.key" in msg
-        assert ".gitignore:" in msg
-        assert "secrets/*.key" in msg
-        # Rebase hint should be present for project-root .gitignore match.
-        assert "rebas" in msg.lower()
+        assert advice is not None and "\n" not in advice
+        assert "secrets/api.key" in advice
+        assert "ignored by git and will not be committed" in advice
 
-    def test_no_rebase_hint_for_nested_gitignore_match(
-        self, worktree: Path
-    ) -> None:
-        nested = worktree / "src"
-        nested.mkdir()
-        (nested / ".gitignore").write_text("generated/\n", encoding="utf-8")
+    def test_nothing_ignored_gives_no_advice(self, worktree: Path) -> None:
+        from guardkit.orchestrator.agent_invoker import AgentInvoker
+
         _write_plan_json(
             worktree,
-            "TASK-MSG2",
-            {
-                "plan": {
-                    "files_to_create": ["src/generated/output.py"],
-                    "files_to_modify": [],
-                }
-            },
+            "TASK-ADV2",
+            {"plan": {"files_to_create": ["src/handler.py"], "files_to_modify": []}},
         )
-
-        result = run_preflight_ignore_gate("TASK-MSG2", worktree)
-        msg = format_blocked_message("TASK-MSG2", result)
-
-        assert "rebas" not in msg.lower()
-
-    def test_singular_vs_plural_count_phrasing(self, worktree: Path) -> None:
-        _write_gitignore(worktree, "*.log\n*.tmp\n")
-        _write_plan_json(
-            worktree,
-            "TASK-MSG3",
-            {
-                "plan": {
-                    "files_to_create": ["a.log", "b.tmp"],
-                    "files_to_modify": [],
-                }
-            },
-        )
-
-        result = run_preflight_ignore_gate("TASK-MSG3", worktree)
-        msg = format_blocked_message("TASK-MSG3", result)
-
-        assert "2 planned targets are git-ignored" in msg
-
-    def test_raises_on_non_blocked_result(self) -> None:
-        from guardkit.orchestrator.preflight_ignore_gate import (
-            PreflightResult,
-        )
-
-        passed = PreflightResult(status=STATUS_PASSED)
-        with pytest.raises(ValueError):
-            format_blocked_message("TASK-X", passed)
-
-
-# ---------- subprocess-error resilience -------------------------------
+        assert AgentInvoker(worktree_path=worktree)._run_preflight_ignore_gate("TASK-ADV2") is None
 
 
 class TestSubprocessErrorResilience:

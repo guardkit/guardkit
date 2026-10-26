@@ -131,8 +131,9 @@ class TestValidateFeaturePreflight:
         assert not result.has_errors
         assert not result.has_warnings
 
-    def test_invalid_task_type_detected(self, tmp_path):
-        """Invalid task_type value produces an error."""
+    def test_invalid_task_type_is_left_to_the_plan_check(self, tmp_path):
+        """One rule, one place (step 2): FeatureLoader.validate_feature
+        refuses an invalid task_type; the pre-flight copy is gone."""
         _create_task_file(
             tmp_path,
             "tasks/backlog/TASK-001.md",
@@ -143,11 +144,8 @@ class TestValidateFeaturePreflight:
 
         result = validate_feature_preflight(feature, tmp_path)
 
-        assert not result.is_valid
-        assert len(result.errors) == 1
-        assert result.errors[0].task_id == "TASK-001"
-        assert "foobar" in result.errors[0].message
-        assert result.errors[0].field == "task_type"
+        assert result.is_valid
+        assert result.errors == []
 
     def test_alias_task_type_produces_warning(self, tmp_path):
         """Alias task_type produces a warning, not an error."""
@@ -277,9 +275,8 @@ class TestValidateFeaturePreflight:
 
         result = validate_feature_preflight(feature, tmp_path)
 
-        assert not result.is_valid
-        task_ids_with_errors = {issue.task_id for issue in result.errors}
-        assert task_ids_with_errors == {"TASK-001"}  # invalid task_type
+        # The invalid task_type is the plan check's (step 2, one copy).
+        assert result.is_valid
         # Missing complexity is advice since step 1 (24 October 2026).
         assert "TASK-002" in {issue.task_id for issue in result.warnings}
 

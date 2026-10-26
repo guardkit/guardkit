@@ -27,10 +27,7 @@ from guardkit.orchestrator.quality_gates.task_work_interface import (
     DesignPhaseResult,
     TaskWorkInterface,
 )
-from guardkit.orchestrator.quality_gates.exceptions import (
-    DesignPhaseError,
-    QualityGateBlocked,
-)
+from guardkit.orchestrator.quality_gates.exceptions import DesignPhaseError
 
 
 # ============================================================================
@@ -491,8 +488,8 @@ class TestExecuteDesignPhase:
                 assert isinstance(result, DesignPhaseResult)
 
     @pytest.mark.asyncio
-    async def test_raises_quality_gate_blocked_for_low_arch_score(self, interface):
-        """Test QualityGateBlocked raised for low architectural score."""
+    async def test_a_low_arch_score_is_advice(self, interface):
+        """A low architectural score is advice, never a block (step 2)."""
         with patch.object(interface, "_execute_via_sdk") as mock_execute:
             mock_execute.return_value = {
                 "implementation_plan": {},
@@ -503,10 +500,9 @@ class TestExecuteDesignPhase:
                 "clarifications": {},
             }
 
-            with pytest.raises(QualityGateBlocked) as exc_info:
-                await interface.execute_design_phase("TASK-001", {})
+            result = await interface.execute_design_phase("TASK-001", {})
 
-            assert "architectural_review" in exc_info.value.gate_name
+            assert result.architectural_review == {"score": 45}
 
 
 # ============================================================================
@@ -1027,15 +1023,13 @@ class TestParseDesignResult:
         assert result.complexity == {"score": 5}
         assert result.checkpoint_result == "approved"
 
-    def test_raises_quality_gate_blocked_for_low_score(self, interface):
-        """Test QualityGateBlocked raised for score < 60."""
+    def test_a_low_score_is_advice(self, interface):
+        """A score below 60 is advice, never a block (step 2)."""
         raw_result = {"architectural_review": {"score": 55}}
 
-        with pytest.raises(QualityGateBlocked) as exc_info:
-            interface._parse_design_result(raw_result)
+        result = interface._parse_design_result(raw_result)
 
-        assert exc_info.value.gate_name == "architectural_review"
-        assert exc_info.value.details["score"] == 55
+        assert result.architectural_review == {"score": 55}
 
     @pytest.mark.parametrize("score", [60, 70, 80, 90, 100])
     def test_accepts_scores_at_or_above_threshold(self, interface, score):

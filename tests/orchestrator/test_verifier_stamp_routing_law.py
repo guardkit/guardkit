@@ -36,7 +36,6 @@ from guardkit.orchestrator.feature_loader import (
     Feature,
     FeatureLoader,
     FeatureParseError,
-    FeatureValidationError,
 )
 from guardkit.orchestrator.quality_gates.spec_conformance import (
     TokenCoverageRule,
@@ -438,9 +437,10 @@ class TestRoutingLawEnforcement:
         assert feature.routing_law == "enforced"
         assert feature.scenarios[TITLE_B].test_ref == "test_rejected_variants"
 
-    def test_enforced_rejects_an_unstamped_scenario_by_name(
-        self, tmp_path: Path
+    def test_enforced_names_an_unstamped_scenario_as_advice(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
+        """Step 2 (26 October 2026, GKT-041): advice, the plan loads."""
         rel = _write_gherkin(tmp_path)
         _write_feature_yaml(
             tmp_path,
@@ -450,27 +450,27 @@ class TestRoutingLawEnforcement:
                 "scenarios": {TITLE_A: {"verifier": "hurl"}},  # TITLE_B unstamped
             },
         )
-        with pytest.raises(FeatureValidationError) as exc:
+        with caplog.at_level(logging.WARNING, "guardkit.orchestrator.feature_loader"):
             _load(tmp_path)
-        msg = str(exc.value)
+        msg = caplog.text
         assert "ROUTING LAW" in msg
         assert TITLE_B in msg  # the unstamped scenario is named
         assert TITLE_A not in msg.split("Unstamped:")[1]  # stamped one is not
 
-    def test_enforced_requires_a_declared_scenario_universe(
-        self, tmp_path: Path
+    def test_enforced_without_a_declared_scenario_universe_is_advice(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """Enforcement with no feature_files is a promise, not a law —
-        rejected."""
         _write_feature_yaml(
             tmp_path,
             {"routing_law": "enforced", "scenarios": self._stamped()},
         )
-        with pytest.raises(FeatureValidationError) as exc:
+        with caplog.at_level(logging.WARNING, "guardkit.orchestrator.feature_loader"):
             _load(tmp_path)
-        assert "feature_files" in str(exc.value)
+        assert "feature_files" in caplog.text
 
-    def test_enforced_rejects_a_missing_feature_file(self, tmp_path: Path) -> None:
+    def test_enforced_names_a_missing_feature_file_as_advice(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
         _write_feature_yaml(
             tmp_path,
             {
@@ -479,9 +479,9 @@ class TestRoutingLawEnforcement:
                 "scenarios": self._stamped(),
             },
         )
-        with pytest.raises(FeatureValidationError) as exc:
+        with caplog.at_level(logging.WARNING, "guardkit.orchestrator.feature_loader"):
             _load(tmp_path)
-        assert "features/gone.feature" in str(exc.value)
+        assert "features/gone.feature" in caplog.text
 
     def test_repo_flag_flips_enforcement_for_a_flagless_feature(
         self, tmp_path: Path
@@ -490,8 +490,17 @@ class TestRoutingLawEnforcement:
         _write_repo_config(tmp_path, "routing_law: enforced\n")
         rel = _write_gherkin(tmp_path)
         _write_feature_yaml(tmp_path, {"feature_files": [rel]})  # no stamps
-        with pytest.raises(FeatureValidationError):
+        import logging as _logging
+        logger = _logging.getLogger("guardkit.orchestrator.feature_loader")
+        records = []
+        handler = _logging.Handler()
+        handler.emit = records.append
+        logger.addHandler(handler)
+        try:
             _load(tmp_path)
+        finally:
+            logger.removeHandler(handler)
+        assert any("ROUTING LAW" in r.getMessage() for r in records)
 
     def test_feature_off_overrides_repo_enforced(self, tmp_path: Path) -> None:
         """The per-feature escape hatch: a flipped repo can still load a
@@ -504,15 +513,15 @@ class TestRoutingLawEnforcement:
         feature = _load(tmp_path)
         assert feature.routing_law == "off"
 
-    def test_bad_repo_flag_value_is_loud_never_silently_off(
-        self, tmp_path: Path
+    def test_bad_repo_flag_value_is_said_never_silent(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """`routing_law: enforce` (typo) must never silently mean off."""
+        """`routing_law: enforce` (typo) is named as advice, never silent."""
         _write_repo_config(tmp_path, "routing_law: enforce\n")
         _write_feature_yaml(tmp_path, {})
-        with pytest.raises(FeatureValidationError) as exc:
+        with caplog.at_level(logging.WARNING, "guardkit.orchestrator.feature_loader"):
             _load(tmp_path)
-        assert "routing_law" in str(exc.value)
+        assert "routing_law" in caplog.text
 
     def test_stale_stamp_warns_never_rejects(
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture

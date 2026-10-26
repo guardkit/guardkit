@@ -202,9 +202,9 @@ class TestFeatureCompleteOrchestrator:
     def test_validate_phase_incomplete_tasks(
         self, mock_load_feature, mock_repo_root, mock_feature, mock_worktree_manager
     ):
-        """Test validation phase with incomplete tasks."""
-        # Mark one task as incomplete
+        """Tasks not completed are advice, never a refusal (step 2, 26 October 2026)."""
         mock_feature.tasks[0].status = "in_progress"
+        mock_feature.tasks[1].status = "deferred"
         mock_load_feature.return_value = mock_feature
 
         orchestrator = FeatureCompleteOrchestrator(
@@ -214,10 +214,8 @@ class TestFeatureCompleteOrchestrator:
             force=False,
         )
 
-        with pytest.raises(FeatureCompleteError) as exc_info:
-            orchestrator._validate_phase("FEAT-TEST")
-
-        assert "incomplete" in str(exc_info.value)
+        feature, _ = orchestrator._validate_phase("FEAT-TEST")
+        assert feature == mock_feature
 
     @patch("guardkit.orchestrator.feature_complete.FeatureLoader.load_feature")
     def test_validate_phase_force_override(

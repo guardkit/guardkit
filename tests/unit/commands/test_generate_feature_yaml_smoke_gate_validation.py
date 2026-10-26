@@ -100,13 +100,13 @@ def repo_with_tests(tmp_path: Path) -> Path:
 class TestBadPath:
     """``smoke_gates.command`` references a path that does not exist."""
 
-    def test_missing_path_exits_non_zero_with_path_and_roots_in_message(
+    def test_missing_path_is_advice_with_path_and_roots_in_message(
         self, repo_with_tests: Path, capsys: pytest.CaptureFixture
     ):
         """Reproduces TASK-REV-DEA8 verbatim: ``tests/cli`` in a forge repo.
 
-        Asserts both AC requirements: non-zero exit code AND a message
-        containing the bad path AND the discovered test roots.
+        Step 2 (26 October 2026): exit 0 (advice) AND a message containing
+        the bad path AND the discovered test roots.
         """
         body = _base_body() + dedent(
             """\
@@ -127,7 +127,7 @@ class TestBadPath:
             quiet=False,
         )
 
-        assert rc != 0
+        assert rc == 0  # step 2: advice, never a refusal
         captured = capsys.readouterr()
         # Error goes to stderr per AC.
         assert "tests/cli" in captured.err
@@ -167,7 +167,7 @@ class TestBadPath:
             quiet=False,
         )
 
-        assert rc != 0
+        assert rc == 0  # step 2: advice, never a refusal
         captured = capsys.readouterr()
         # The repo root we passed in must appear in the error.
         assert str(repo_with_tests) in captured.err
@@ -306,7 +306,7 @@ class TestQuietMode:
         captured = capsys.readouterr()
         assert captured.out == ""
 
-    def test_quiet_does_not_suppress_errors(
+    def test_quiet_does_not_suppress_the_advice(
         self, repo_with_tests: Path, capsys: pytest.CaptureFixture
     ):
         """Quiet mode must NOT swallow validation errors.
@@ -332,9 +332,10 @@ class TestQuietMode:
             quiet=True,
         )
 
-        assert rc != 0
+        assert rc == 0  # step 2: advice, never a refusal
         captured = capsys.readouterr()
         assert "tests/cli" in captured.err
+        assert captured.err.startswith("Advice: ")
 
 
 # ---------------------------------------------------------------------------

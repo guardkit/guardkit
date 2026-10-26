@@ -530,8 +530,7 @@ class SmokeGatePhaseOutcome:
     ----------
     terminate : bool
         ``True`` when the wave-enumerate loop should ``break`` (smoke failed
-        terminally — exit-5 gate-not-wired, retries exhausted, or a re-run wave
-        the Coach rejected under ``stop_on_failure``). ``False`` to continue to
+        terminally — exit-5 gate-not-wired or retries exhausted). ``False`` to continue to
         the next wave (smoke passed, possibly after a retry).
     final_wave_result : WaveExecutionResult
         The wave result that should replace ``wave_results[-1]`` — the FINAL
@@ -556,8 +555,8 @@ class WiringGatePhaseOutcome:
     Attributes
     ----------
     terminate : bool
-        ``True`` only when a re-run wave the Coach rejected must stop the build
-        under ``stop_on_failure``. Wiring findings themselves NEVER terminate
+        Always ``False`` since step 2 (26 October 2026): a re-run wave the
+        Coach rejected no longer stops the build. Wiring findings NEVER terminate
         the feature (warning-severity heuristics — AC#1 "not a hard
         terminator"): an unresolved finding after the retry budget is spent
         becomes advisory and the build continues (``terminate=False``).
@@ -632,18 +631,6 @@ class FeatureOrchestrationResult:
 
 class FeatureOrchestrationError(Exception):
     """Base exception for feature orchestration errors."""
-
-    pass
-
-
-class WaveExecutionError(FeatureOrchestrationError):
-    """Raised when a wave fails and stop_on_failure is True."""
-
-    pass
-
-
-class DependencyError(FeatureOrchestrationError):
-    """Raised when task dependencies cannot be satisfied."""
 
     pass
 
@@ -892,7 +879,8 @@ class FeatureOrchestrator:
     - Single shared worktree per feature (not per task)
     - Reuses AutoBuildOrchestrator for individual task execution
     - Updates feature YAML after each task completes
-    - Supports stop-on-failure or continue-on-failure modes
+    - A failed task never stops later waves or independent tasks; tasks
+      that depend on it are skipped (step 2, 26 October 2026)
 
     Attributes
     ----------
@@ -900,8 +888,6 @@ class FeatureOrchestrator:
         Repository root directory
     max_turns : int
         Maximum turns per task
-    stop_on_failure : bool
-        Whether to stop on first task failure
     resume : bool
         Whether to resume from saved state
     fresh : bool
@@ -923,7 +909,6 @@ class FeatureOrchestrator:
         self,
         repo_root: Path,
         max_turns: int = 5,
-        stop_on_failure: bool = True,
         resume: bool = False,
         fresh: bool = False,
         refresh: bool = False,
@@ -956,8 +941,6 @@ class FeatureOrchestrator:
             Repository root directory
         max_turns : int, optional
             Maximum turns per task (default: 5)
-        stop_on_failure : bool, optional
-            Stop on first task failure (default: True)
         resume : bool, optional
             Resume from saved state (default: False)
         fresh : bool, optional
@@ -1056,7 +1039,6 @@ class FeatureOrchestrator:
         # CLI overrides flow down to every task in every wave.
         self.honesty_early_abort_threshold = honesty_early_abort_threshold
         self.honesty_early_abort_window = honesty_early_abort_window
-        self.stop_on_failure = stop_on_failure
         # TASK-AB-COACHRUNPARITY01 (arm a): bounded retry budget for the
         # post-wave smoke gate. On a real (non-gate_not_wired) smoke failure
         # the wave is re-entered with the smoke stderr fed back to the Player
@@ -1165,14 +1147,10 @@ class FeatureOrchestrator:
         # Red-baseline retro (L12 item 1): the wave-0 baseline probe result,
         # a session-scoped observation (NOT the F2 ledger).
         self._measured_baseline: Optional[BaselineResult] = None
-        # A feature-level timeout can leave its ``to_thread`` worker alive after
-        # the semaphore slot is released. Keep later dispatch fenced for the
-        # rest of this public invocation; ``orchestrate`` resets it explicitly.
-        self._feature_timeout_fence: bool = False
 
         logger.info(
             f"FeatureOrchestrator initialized: repo={self.repo_root}, "
-            f"max_turns={self.max_turns}, stop_on_failure={self.stop_on_failure}, "
+            f"max_turns={self.max_turns}, "
             f"resume={self.resume}, fresh={self.fresh}, refresh={self.refresh}, "
             f"enable_pre_loop={self.enable_pre_loop}, "
             f"enable_context={self.enable_context}, task_timeout={self.task_timeout}s"
@@ -1202,31 +1180,6 @@ class FeatureOrchestrator:
             logger.info(f"Raised file descriptor limit: {soft} → {new_soft}")
         except (ValueError, OSError) as e:
             logger.warning(f"Could not raise file descriptor limit: {e}")
-
-    _TIMEOUT_FENCE_REASON = (
-        "Feature invocation stopped after a task timed out; later work was not started"
-    )
-
-    def _timeout_fence_is_set(self) -> bool:
-        """Read the invocation fence safely for normal and bare test objects."""
-        return bool(getattr(self, "_feature_timeout_fence", False))
-
-    def _set_timeout_fence(self) -> None:
-        """Prevent new work from starting for the rest of this invocation."""
-        self._feature_timeout_fence = True
-
-    def _timeout_fence_result(self, task_id: str) -> TaskExecutionResult:
-        """Return the ordinary failed result for work refused after a timeout."""
-        return TaskExecutionResult(
-            task_id=task_id,
-            success=False,
-            total_turns=0,
-            final_decision="error",
-            error=(
-                f"Task {task_id} did not start because another task in its wave "
-                "timed out"
-            ),
-        )
 
     def orchestrate(
         self,
@@ -1272,9 +1225,6 @@ class FeatureOrchestrator:
         >>> # Run specific task only
         >>> result = orchestrator.orchestrate("FEAT-A1B2", specific_task="TASK-001")
         """
-        # New public invocation, including resume on a reused object. Internal
-        # entry points deliberately do not clear an existing timeout fence.
-        self._feature_timeout_fence = False
         logger.info(f"Starting feature orchestration for {feature_id}")
 
         try:
@@ -1378,7 +1328,6 @@ class FeatureOrchestrator:
                 f"[bold]AutoBuild Feature Orchestration[/bold]\n\n"
                 f"Feature: [cyan]{feature_id}[/cyan]\n"
                 f"Max Turns: {self.max_turns}\n"
-                f"Stop on Failure: {self.stop_on_failure}\n"
                 f"Mode: {mode_text}",
                 title="GuardKit AutoBuild",
                 border_style="blue",
@@ -1458,15 +1407,6 @@ class FeatureOrchestrator:
                 total_waves=len(feature.orchestration.parallel_groups),
                 verbose=self.verbose,
             )
-
-        # Saved YAML is diagnostic state, not authority to reuse a writer.
-        # A fresh build from a pinned source uses a new checkout identity.
-        old_path = getattr(feature.execution, "worktree_path", None)
-        physical_path = self._worktree_manager.worktrees_dir / feature_id
-        if self.resume or (FeatureLoader.is_incomplete(feature) and not self.fresh):
-            raise FeatureOrchestrationError("Automatic process resume has no retained task ownership. Work is preserved; start a new build from the pinned source.")
-        if self.fresh and (physical_path.exists() or (old_path and Path(old_path).exists())):
-            raise FeatureOrchestrationError("Fresh attempt requires a new checkout identity; the previous checkout and reports are preserved.")
 
         # Handle fresh start
         #
@@ -2702,21 +2642,13 @@ The detailed specifications are in the task markdown file.
         for wave_number, task_ids in enumerate(
             feature.orchestration.parallel_groups, 1
         ):
-            if self._timeout_fence_is_set():
-                logger.error(self._TIMEOUT_FENCE_REASON)
-                break
             # Inter-wave bootstrap: re-detect and install new dependencies
             # (e.g., Wave 1 may have created pyproject.toml that Wave 2 needs)
             if wave_number > 1:
                 self._bootstrap_pending = True
 
-            # Check dependencies satisfied
-            for task_id in task_ids:
-                task = FeatureLoader.find_task(feature, task_id)
-                if task and not self._dependencies_satisfied(task, feature):
-                    raise DependencyError(
-                        f"Task {task_id} has unsatisfied dependencies: {task.dependencies}"
-                    )
+            # A task whose dependency did not complete is skipped when its wave
+            # runs (``_execute_wave_parallel``); the rest of the wave runs.
 
             # Display wave start via progress display.
             # TASK-FIX-MAXPARALLEL01: resolve the effective max_parallel (read
@@ -2765,18 +2697,9 @@ The detailed specifications are in the task markdown file.
                 status = "[green]✓ PASSED[/green]" if wave_result.all_succeeded else "[red]✗ FAILED[/red]"
                 console.print(f"  Wave {wave_number} {status}: {passed} passed, {failed} failed")
 
-            # A feature-level timeout may leave the old worker alive. Do not
-            # start a gate, repair, bootstrap, or later wave under that worker.
-            if self._timeout_fence_is_set():
-                logger.error(self._TIMEOUT_FENCE_REASON)
-                break
-
-            # Check for stop-on-failure
-            if not wave_result.all_succeeded and self.stop_on_failure:
-                console.print(
-                    "[yellow]⚠[/yellow] Stopping execution (stop_on_failure=True)"
-                )
-                break
+            # Step 2 (26 October 2026): a failed or timed-out task no longer
+            # stops later waves. A worker still running after its time limit
+            # holds the checkout's writer lock, so the next writer waits for it.
 
             # Feature-level smoke gate (TASK-SMK-F703A). Fires AFTER a wave
             # completes successfully and BEFORE the next wave starts, catching
@@ -2807,8 +2730,7 @@ The detailed specifications are in the task markdown file.
             # feature and feeds mocked-primary-seam + composition-root
             # ctor-arity findings back to the Player as turn-1 feedback, bounded
             # by _wiring_gate_max_retries. It REPLACES wave_results[-1] (never
-            # appends) and NEVER hard-terminates on findings — only a
-            # Coach-rejected re-run under stop_on_failure terminates.
+            # appends) and NEVER hard-terminates.
             wiring_outcome = self._run_post_wave_wiring_gate(
                 wave_number, task_ids, feature, worktree, wave_result
             )
@@ -2843,9 +2765,6 @@ The detailed specifications are in the task markdown file.
             )
             if wave_result.all_succeeded and not smoke_blocked:
                 self._mark_wave_completed(feature, wave_number)
-
-        if self._timeout_fence_is_set():
-            return wave_results
 
         # Start-up checks, after the last wave (WS3-S3 check 2d, spec §4.3).
         # Everything above proves the tests pass. This proves the thing the
@@ -3215,17 +3134,6 @@ The detailed specifications are in the task markdown file.
                 self._feature_check_repair_for_wave = None
             wave_results[-1] = wave_result
             last_wave = wave_result
-            if self._timeout_fence_is_set():
-                logger.error(self._TIMEOUT_FENCE_REASON)
-                return self._finish_feature_check(
-                    feature,
-                    worktree,
-                    declaration,
-                    attempts,
-                    wave_results,
-                    status=FEATURE_CHECK_FAILED,
-                    stopped_because=self._TIMEOUT_FENCE_REASON,
-                )
             if self._wave_display:
                 passed = sum(1 for r in wave_result.results if r.success)
                 failed = len(wave_result.results) - passed
@@ -3778,8 +3686,7 @@ The detailed specifications are in the task markdown file.
           mis-config is not a fixable runtime bug. Return ``terminate=True``.
         * **failed, real**, retries remaining: feed the smoke stderr back to the
           Player as turn-1 ``seed_feedback`` and re-execute the wave (attempt N),
-          then loop to re-run the gate. ``stop_on_failure`` is honoured on a
-          re-run the Coach rejects.
+          then loop to re-run the gate.
         * **failed, real**, retries exhausted: emit the existing terminate
           banner + stderr tail and return ``terminate=True``.
 
@@ -3899,11 +3806,6 @@ The detailed specifications are in the task markdown file.
                 wave_number, task_ids, feature, worktree,
                 seed_feedback=smoke_feedback, attempt=attempt,
             )
-            if self._timeout_fence_is_set():
-                logger.error(self._TIMEOUT_FENCE_REASON)
-                return SmokeGatePhaseOutcome(
-                    terminate=True, final_wave_result=wave_result
-                )
             # Refresh the wave-completion display for the re-run (S1).
             if self._wave_display:
                 passed = sum(1 for r in wave_result.results if r.success)
@@ -3919,16 +3821,6 @@ The detailed specifications are in the task markdown file.
                     wave_number, passed, failed, skipped, recovered
                 )
 
-            # A re-run the Coach rejected: honour stop_on_failure (the same
-            # gate the wave-enumerate loop applies before the smoke gate).
-            if not wave_result.all_succeeded and self.stop_on_failure:
-                console.print(
-                    "[yellow]⚠[/yellow] Stopping execution after smoke re-run "
-                    "(stop_on_failure=True)"
-                )
-                return SmokeGatePhaseOutcome(
-                    terminate=True, final_wave_result=wave_result
-                )
             # Loop: re-run the smoke gate against the re-executed wave.
 
     # -----------------------------------------------------------------------
@@ -4432,7 +4324,7 @@ The detailed specifications are in the task markdown file.
           stack, parse-degraded, probe didn't run): ``terminate=False``,
           ``findings_unresolved=False`` — neutral, the wave proceeds.
         * Findings + retries remaining: feed back, re-execute the wave, re-run
-          the gate. ``stop_on_failure`` honoured on a Coach-rejected re-run.
+          the gate.
         * Findings + retries exhausted: log a prominent warning and continue
           (``terminate=False``, ``findings_unresolved=True``). Wiring findings
           are warning-severity heuristics and NEVER hard-terminate the feature.
@@ -4602,17 +4494,6 @@ The detailed specifications are in the task markdown file.
                 wave_number, task_ids, feature, worktree,
                 seed_feedback=wiring_feedback, attempt=attempt,
             )
-            if self._timeout_fence_is_set():
-                logger.error(self._TIMEOUT_FENCE_REASON)
-                return WiringGatePhaseOutcome(
-                    terminate=True,
-                    final_wave_result=wave_result,
-                    record=code_check_group_record(
-                        wave_number,
-                        state=CODE_CHECK_NOT_CHECKED,
-                        reason=self._TIMEOUT_FENCE_REASON,
-                    ),
-                )
             if self._wave_display:
                 passed = sum(1 for r in wave_result.results if r.success)
                 failed = len(wave_result.results) - passed
@@ -4627,26 +4508,6 @@ The detailed specifications are in the task markdown file.
                     wave_number, passed, failed, skipped, recovered
                 )
 
-            # A re-run the Coach rejected: honour stop_on_failure (parity with
-            # the smoke gate's re-run handling).
-            if not wave_result.all_succeeded and self.stop_on_failure:
-                console.print(
-                    "[yellow]⚠[/yellow] Stopping execution after wiring re-run "
-                    "(stop_on_failure=True)"
-                )
-                return WiringGatePhaseOutcome(
-                    terminate=True,
-                    final_wave_result=wave_result,
-                    record=code_check_group_record(
-                        wave_number,
-                        state=CODE_CHECK_FOUND_SOMETHING,
-                        reason=(
-                            "the build stopped after the re-run this check "
-                            "asked for, so the check did not run again"
-                        ),
-                        findings=list(findings) + list(advisory),
-                    ),
-                )
             # Loop: re-run the wiring gate against the re-executed wave.
 
     async def _execute_wave_parallel(
@@ -4903,10 +4764,7 @@ The detailed specifications are in the task markdown file.
                 call_kwargs: Dict[str, Any],
             ) -> TaskExecutionResult:
                 # This coroutine is awaited only after bound_concurrency has
-                # acquired the real semaphore slot. A timed-out predecessor
-                # sets the sticky fence before releasing that slot.
-                if self._timeout_fence_is_set():
-                    return self._timeout_fence_result(task_id)
+                # acquired the real semaphore slot.
                 try:
                     admitted = asyncio.Event()
                     loop = asyncio.get_running_loop()
@@ -4918,7 +4776,6 @@ The detailed specifications are in the task markdown file.
                     await admitted.wait()
                     return await asyncio.wait_for(asyncio.shield(worker), timeout=call_timeout)
                 except asyncio.TimeoutError:
-                    self._set_timeout_fence()
                     for event_name in ("cancellation_event", "timeout_event"):
                         event = call_kwargs.get(event_name)
                         if event is not None:
@@ -5167,8 +5024,7 @@ The detailed specifications are in the task markdown file.
         Execute all tasks in a single wave in parallel.
 
         This method delegates to _execute_wave_parallel() for parallel task
-        execution using asyncio. It preserves all existing display logic and
-        stop-on-failure behavior.
+        execution using asyncio. It preserves all existing display logic.
 
         Parameters
         ----------
@@ -5246,7 +5102,6 @@ The detailed specifications are in the task markdown file.
             )
         )
 
-        # Check for stop-on-failure AFTER all parallel tasks complete
         all_succeeded = all(r.success for r in results)
 
         # NOTE (C1): wave-completion marking moved to the wave-enumerate loop,
@@ -6165,7 +6020,7 @@ The detailed specifications are in the task markdown file.
         from guardkit.orchestrator.task_work_scope import checkout_lease, ScopeUnavailable
         admitted = kwargs.pop("admission_event", None)
         def cancelled():
-            return self._timeout_fence_is_set() or any(
+            return any(
                 event is not None and event.is_set() for event in
                 (kwargs.get("cancellation_event"), kwargs.get("timeout_event"))
             )
@@ -6175,8 +6030,6 @@ The detailed specifications are in the task markdown file.
                     lease.poison("Task admission cancelled before Player; work preserved")
                     return TaskExecutionResult(task_id=task.id, success=False, total_turns=0,
                         final_decision="cancelled", error="Task admission cancelled before Player")
-                if self._timeout_fence_is_set():
-                    return self._timeout_fence_result(task.id)
                 if kwargs.get("repair_round") is True:
                     archived = self._archive_previous_round(task.id, worktree)
                     kwargs["repair_round"] = begin_repair_round(
@@ -6251,20 +6104,19 @@ The detailed specifications are in the task markdown file.
         return approved_head(worktree.path)
 
     def _checked_writer(self, worktree, callback, *args, **kwargs):
-        from guardkit.orchestrator.task_work_scope import checkout_lease, boundary_snapshot, ScopeUnavailable, _dirty
+        """Run a feature-level check as the checkout's one writer.
+
+        Step 2 (26 October 2026): what the check leaves behind never refuses
+        the next writer or fails the feature; it is put back where it can be,
+        and logged.
+        """
+        from guardkit.orchestrator.task_work_scope import checkout_lease, boundary_snapshot
         with checkout_lease(worktree.path, self._evidence_repos_resolved) as lease:
-            try:
-                if lease.scope is None and any(_dirty(root) for _, root, _ in lease.repositories):
-                    raise ScopeUnavailable("Feature check inherited unexplained product changes; boundary refused")
-                before = boundary_snapshot(lease)
-                result = callback(*args, **kwargs)
-                if boundary_snapshot(lease) != before and not self._undo_check_side_effects(lease, before):
-                    raise ScopeUnavailable("Feature check changed product files/index or HEAD; changes preserved and gate refused")
-                return result
-            except BaseException as exc:
-                self._writer_boundary_failure = str(exc)
-                lease.poison(str(exc))
-                raise
+            before = boundary_snapshot(lease)
+            result = callback(*args, **kwargs)
+            if boundary_snapshot(lease) != before:
+                self._undo_check_side_effects(lease, before)
+            return result
 
     @staticmethod
     def _undo_check_side_effects(lease, before) -> bool:
@@ -6273,12 +6125,11 @@ The detailed specifications are in the task markdown file.
 
         A check runs the project's own commands, and those leave things behind:
         FEAT-3BA8's coverage run combined a committed ``.coverage.<host>.pid…``
-        file away and wrote ``.coverage``, and the refusal that followed ended
-        every later task (step 1 measurement, 26 October 2026). The check never
-        writes product work, so its changes are undone, not kept. Anything that
-        cannot be put back exactly (a moved HEAD, a changed index, or a file
-        that was already changed before the check) keeps the refusal. Never
-        raises: an error means the refusal stands.
+        file away and wrote ``.coverage`` (step 1 measurement, 26 October
+        2026). The check never writes product work, so its changes are undone,
+        not kept. Anything that cannot be put back exactly (a moved HEAD, a
+        changed index, or a file that was already changed before the check) is
+        left as it is and logged. Never raises.
         """
         from guardkit.orchestrator.task_work_scope import _dirty, _git, boundary_snapshot
 
@@ -6289,11 +6140,19 @@ The detailed specifications are in the task markdown file.
                 lease.repositories, before, now
             ):
                 if head != head_now or index != index_now:
+                    logger.warning(
+                        "The feature check moved HEAD or changed the index in %s; "
+                        "left as it is, the build goes on", root,
+                    )
                     return False
                 was = {path: rest for path, *rest in payload}
                 is_now = {path: rest for path, *rest in payload_now}
                 if any(is_now.get(path) != rest for path, rest in was.items()):
-                    return False  # a file that was already changed moved again
+                    logger.warning(
+                        "The feature check changed work that was already changed in %s; "
+                        "left as it is, the build goes on", root,
+                    )
+                    return False
                 for path in _dirty(root):
                     if path in was:
                         continue
@@ -6306,7 +6165,7 @@ The detailed specifications are in the task markdown file.
                     (Path(root) / path).unlink(missing_ok=True)
             if boundary_snapshot(lease) != before:
                 return False
-        except Exception as exc:  # noqa: BLE001 — the refusal stands
+        except Exception as exc:  # noqa: BLE001 — logged, the build goes on
             logger.warning("Could not put back what the feature check changed (%s)", exc)
             return False
         logger.warning(
@@ -6892,11 +6751,7 @@ The detailed specifications are in the task markdown file.
 
         # Determine final status
         final_status: Literal["completed", "failed", "paused"]
-        timeout_fenced = self._timeout_fence_is_set()
-        if timeout_fenced:
-            final_status = "failed"
-            success = False
-        elif tasks_failed == 0 and tasks_completed + tasks_deferred == len(feature.tasks) and not smoke_gate_failed:
+        if tasks_failed == 0 and tasks_completed + tasks_deferred == len(feature.tasks) and not smoke_gate_failed:
             final_status = "completed"
             success = True
         elif tasks_failed > 0 or smoke_gate_failed:
@@ -7063,12 +6918,8 @@ The detailed specifications are in the task markdown file.
                     )
                     break
 
-        # The whole-feature check's own verdict, before the writer-boundary
-        # note below can take its place (read by the approved part).
+        # The whole-feature check's own verdict (read by the approved part).
         feature_check_verdict_error = feature_check_error
-        if getattr(self, "_writer_boundary_failure", None):
-            final_status, success = "failed", False
-            feature_check_error = self._writer_boundary_failure
 
         # Update feature
         feature.status = final_status
@@ -7101,7 +6952,6 @@ The detailed specifications are in the task markdown file.
         task_stopped_because: Optional[str] = None
         if (
             not success
-            and not timeout_fenced
             and twin_error is None
             and feature_check_error is None
         ):
@@ -7154,9 +7004,7 @@ The detailed specifications are in the task markdown file.
                 None
                 if success
                 else (
-                    self._TIMEOUT_FENCE_REASON
-                    if timeout_fenced
-                    else twin_error
+                    twin_error
                     if twin_error is not None
                     else feature_check_error
                     if feature_check_error is not None
@@ -7780,6 +7628,4 @@ __all__ = [
     "TaskExecutionResult",
     "WaveExecutionResult",
     "FeatureOrchestrationError",
-    "WaveExecutionError",
-    "DependencyError",
 ]

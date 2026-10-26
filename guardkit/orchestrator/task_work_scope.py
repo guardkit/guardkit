@@ -1,6 +1,8 @@
 """Cooperating checkout writers and immutable, in-memory task attribution.
 
-The on-disk marker is deny-only crash evidence, never a resume credential.
+One rule (step 2, 26 October 2026): one writer holds a checkout at a time,
+under an exclusive lock. Nothing else about earlier writers refuses the next
+one: work a task leaves behind, approved or not, stays for the next task.
 Different worktrees have different git directories; sibling writers share locks.
 """
 
@@ -78,32 +80,29 @@ class TaskWorkScope:
 
 _registry_lock = threading.Lock()
 _locks = {}
-_history = {}
 _fresh = {}
 _bindings = {}
 _selected = {}
 # Step 1 (24 October 2026): the last approved commit of each checkout in this
 # run, kept when a task's approval completes. A later failure never erases it.
 _approved_heads = {}
+# Step 2 (26 October 2026): later tasks now run after a task that was not
+# approved, on top of what it left. The approved part stays the work before
+# the first such task, so the offer never carries unapproved work.
+_approval_stopped = set()
 _local = threading.local()
 
 
 def register_fresh_checkout(root, source_commit, *, source_root=None):
-    """Called only by fresh worktree creation with its resolved source pin.
-
-    The in-memory registration, not a clean tree or a marker, authorizes the
-    first admission. Saved files can only refuse subsequent use.
-    """
+    """Called by worktree creation with its resolved source pin: the commit
+    whose committed declarations this build reads, and a new build identity."""
     root, git_dir = identity(root)
     source = _git(root, "rev-parse", str(source_commit) + "^{commit}")
-    if _git(root, "rev-parse", "HEAD") != source:
-        raise ScopeUnavailable("Fresh worktree does not match admitted source")
     with _registry_lock:
-        if str(git_dir) in _history or (git_dir / "guardkit-writer-unsettled").exists():
-            raise ScopeUnavailable(
-                "Cannot register an old or unsettled checkout as fresh"
-            )
+        _selected.pop(str(git_dir), None)
+        _bindings.pop(str(git_dir), None)
         _approved_heads.pop(str(git_dir), None)
+        _approval_stopped.discard(str(git_dir))
         _fresh[str(git_dir)] = {
             "commit": source,
             "source_root": str(Path(source_root or root).resolve()),
@@ -116,61 +115,44 @@ def adopt_prepared_checkout(root):
     starting input, at its current HEAD, with what earlier steps left in it.
 
     Forge's repair conductor runs each work step as a new ``guardkit
-    task-work`` process in a checkout it prepared, so the checkout is neither
-    one this process created (:func:`register_fresh_checkout`) nor one with
-    approved history here. Without this, every repair step since 24 October
-    2026 was refused at admission ("Initial sibling selection requires an
-    unconsumed fresh primary source"; build-FEAT-6CE5-20261026132641). An
-    unsettled or already-used checkout is still refused.
+    task-work`` process in a checkout it prepared (build-FEAT-6CE5-20261026132641).
     """
-    root, git_dir = identity(root)
-    head = _git(root, "rev-parse", "HEAD")
-    with _registry_lock:
-        prior = _history.get(str(git_dir))
-        # A step that settled cleanly in this process may be followed by the
-        # next; a failed or unsettled one may not.
-        if (prior and prior.get("failed")) or (git_dir / "guardkit-writer-unsettled").exists():
-            raise ScopeUnavailable(
-                "Cannot adopt an unsettled checkout as this step's starting input"
-            )
-        _history.pop(str(git_dir), None)
-        _selected.pop(str(git_dir), None)
-        _approved_heads.pop(str(git_dir), None)
-        _fresh[str(git_dir)] = {
-            "commit": head,
-            "source_root": str(root),
-            "build_id": uuid.uuid4().hex,
-            "inherited_changes": True,
-        }
+    root, _ = identity(root)
+    register_fresh_checkout(root, _git(root, "rev-parse", "HEAD"), source_root=root)
 
 
 def bind_fresh_footprint(root, source_root, artifact_path, *, kind, expected=None):
     """Bind declared inputs to an immutable source blob, before any task move.
 
-    This selects starting inputs, never approves sibling work. The capability
-    is consumed by the first all-footprint lease and cannot be recreated.
+    This selects starting inputs, never approves sibling work.
     """
     import yaml
     from guardkit.orchestrator.evidence_repos import resolve_evidence_repos
 
     root, git_dir = identity(root)
-    fresh = _fresh.get(str(git_dir))
-    if not fresh or str(git_dir) in _history or str(git_dir) in _selected:
-        raise ScopeUnavailable(
-            "Initial sibling selection requires an unconsumed fresh primary source"
-        )
     source_root = Path(source_root).resolve()
-    if str(source_root) != fresh["source_root"]:
-        raise ScopeUnavailable(
-            "Declaration source differs from the fresh checkout producer"
-        )
-    if artifact_path is None:
-        if expected:
-            raise ScopeUnavailable(
-                "Sibling declaration has no immutable source artifact"
-            )
-        declared, blob_id = [], ""
-    else:
+    # Step 2 (26 October 2026): a checkout this process did not register (a
+    # resumed or re-run build) reads its declarations at its current HEAD.
+    fresh = _fresh.get(str(git_dir)) or _selected.get(str(git_dir))
+    if not fresh:
+        fresh = _fresh.setdefault(str(git_dir), {
+            "commit": _git(root, "rev-parse", "HEAD"),
+            "source_root": str(source_root),
+            "build_id": uuid.uuid4().hex,
+        })
+
+    def _declared(text):
+        if kind == "task":
+            if not text.startswith("---"):
+                raise ValueError("Task source has no frontmatter")
+            text = text.split("---", 2)[1]
+        document = yaml.safe_load(text)
+        if not isinstance(document, dict):
+            raise ValueError("Declaration source is not a mapping")
+        return document.get("evidence_repos") or []
+
+    declared, blob_id = list(expected or []), ""
+    if artifact_path is not None:
         artifact = Path(artifact_path)
         if not artifact.is_absolute():
             artifact = source_root / artifact
@@ -179,37 +161,23 @@ def bind_fresh_footprint(root, source_root, artifact_path, *, kind, expected=Non
             relative = artifact.relative_to(source_root).as_posix()
             # Git reads the registered source, never the mutable working file.
             blob_id = _git(root, "rev-parse", f"{fresh['commit']}:{relative}")
-            content = _git(root, "cat-file", "blob", blob_id)
-            if kind == "task":
-                if not content.startswith("---"):
-                    raise ValueError("Task source has no frontmatter")
-                content = content.split("---", 2)[1]
-            document = yaml.safe_load(content)
-            if not isinstance(document, dict):
-                raise ValueError("Declaration source is not a mapping")
-            declared = document.get("evidence_repos") or []
-            if kind == "task" and artifact.exists():
-                current = artifact.read_text()
-                current_document = (
-                    yaml.safe_load(current.split("---", 2)[1])
-                    if current.startswith("---")
-                    else {}
-                )
-                if (
-                    not isinstance(current_document, dict)
-                    or (current_document.get("evidence_repos") or []) != declared
-                ):
-                    raise ValueError(
-                        "Mutable task sibling declaration differs from admitted source"
-                    )
-
-        except Exception as exc:
-            raise ScopeUnavailable(
-                "Cannot bind sibling declarations to admitted source: " + str(exc)
-            ) from exc
+            declared = _declared(_git(root, "cat-file", "blob", blob_id))
+        except Exception as exc:  # noqa: BLE001 — advice, never a refusal
+            # Step 2 (26 October 2026): a declaration file that is not
+            # committed (or not readable there) is read as it is on disk.
+            blob_id = ""
+            try:
+                declared = _declared(artifact.read_text())
+            except Exception:  # noqa: BLE001
+                pass
+            logger.warning(
+                "Sibling declarations were not read from the committed %s (%s); "
+                "using %s", artifact, exc, declared or "none",
+            )
         if expected is not None and declared != (expected or []):
-            raise ScopeUnavailable(
-                "Mutable sibling declaration differs from admitted source"
+            logger.warning(
+                "The committed sibling declaration %s differs from the loaded one %s; "
+                "the committed one is used", declared, expected,
             )
     if not isinstance(declared, list):
         raise ScopeUnavailable("The complete sibling declaration must be a list")
@@ -255,12 +223,9 @@ def bind_fresh_footprint(root, source_root, artifact_path, *, kind, expected=Non
         "identities": tuple(identity(r.root) for r in resolved),
         "blob": blob_id,
         "declaration": json.dumps(declared, sort_keys=True),
-        "source": dict(fresh),
+        "source": {**fresh, "source_root": str(source_root)},
         "entry_identities": tuple(entry_identities),
     }
-    previous = _bindings.get(str(git_dir))
-    if previous is not None and previous != binding:
-        raise ScopeUnavailable("Fresh declaration binding cannot be replaced")
     _bindings[str(git_dir)] = binding
     return list(resolved)
 
@@ -300,12 +265,8 @@ class CheckoutLease:
         }
         self.scope = None
         self.checkpoints = set()
-        # True only for a checkout adopted from Forge's conductor
-        # (adopt_prepared_checkout): earlier steps' work is its input.
-        self.inherited = False
         self.owner = threading.get_ident()
         self.failure = None
-        self.continuation_snapshot = None
         # GKT-150, step 1 (24 October 2026): a branch or HEAD that moved
         # outside the task's own checkpoints is noted here, never a failure.
         self.notes = []
@@ -357,7 +318,6 @@ class CheckoutLease:
             for _, root, _ in self.repositories
         }
         self.checkpoints.add(tuple(sorted(self.expected.items())))
-        self.continuation_snapshot = boundary_snapshot(self)
 
     def admit(self, task_id, feature_id="", round_id="initial"):
         self.verify()
@@ -366,19 +326,18 @@ class CheckoutLease:
                 raise ScopeUnavailable("A different task already owns this checkout")
             return self.scope
         is_repair = str(round_id) not in {"initial", "1"}
-        if is_repair and task_id not in _history.get(
-            str(self.repositories[0][2]), {}
-        ).get("approved_tasks", ()):
-            raise ScopeUnavailable(
-                "Repair admission has no retained approval for this task"
-            )
+        # Step 2 (26 October 2026): what earlier tasks left in the checkout,
+        # approved or not, is this task's starting point; it is noted, never
+        # a refusal.
         for _, root, _ in self.repositories:
-            dirty = [] if self.inherited else _dirty(root)
+            dirty = _dirty(root)
             if dirty:
-                raise ScopeUnavailable(
-                    "Inherited product changes preserved; cannot admit task: "
+                note = (
+                    f"Task {task_id} starts with earlier work in {root}: "
                     + ", ".join(dirty[:12])
                 )
+                self.notes.append(note)
+                logger.info(note)
         self.scope = TaskWorkScope(
             task_id,
             feature_id,
@@ -419,20 +378,11 @@ class CheckoutLease:
                 "Scope record for %s could not be written (%s); the task goes on",
                 task_id, exc,
             )
-        self.continuation_snapshot = boundary_snapshot(self)
         return self.scope
 
-    def verify_continuation(self, scope):
-        self.verify(scope)
-        if scope is None or self.continuation_snapshot != boundary_snapshot(self):
-            raise ScopeUnavailable(
-                "Tracked/index/untracked state differs from the retained continuation boundary"
-            )
-
     def poison(self, reason):
+        """This writer did not finish approved; it never refuses the next one."""
         self.failure = self.failure or str(reason) or "Writer did not settle; work preserved"
-        for _, _, git_dir in self.repositories:
-            _history[str(git_dir)] = {"failed": self.failure}
 
 
 @contextmanager
@@ -490,40 +440,11 @@ def checkout_lease(root, evidence_repos=(), cancelled=None):
                 "Sibling identity changed before all-footprint admission"
             )
         selecting = str(primary[1]) in _fresh
-        # An adopted checkout carries earlier steps' work on purpose.
-        inherited = bool(_fresh.get(str(primary[1]), {}).get("inherited_changes"))
-        selected_heads = {}
-        for _, repository_root, git_dir in repos:
-            marker = git_dir / "guardkit-writer-unsettled"
-            prior = _history.get(str(git_dir))
-            fresh = _fresh.get(str(git_dir))
-            head = _git(repository_root, "rev-parse", "HEAD")
-            is_initial_input = (
-                selecting and binding is not None and git_dir != primary[1]
-            )
-            if marker.exists() or (prior and prior.get("failed")):
-                raise ScopeUnavailable(
-                    "Prior writer is unapproved or its termination is unknown; work preserved"
-                )
-            if not prior and not fresh and not is_initial_input:
-                raise ScopeUnavailable(
-                    "No retained approved boundary or freshly registered source; automatic resume refused"
-                )
-            if fresh and not prior and fresh["commit"] != head:
-                raise ScopeUnavailable(
-                    "Fresh source moved before admission; work preserved"
-                )
-            if prior and prior["head"] != head:
-                raise ScopeUnavailable(
-                    "Checkout changed outside the admitted writer; work preserved"
-                )
-            if selecting and not inherited and _dirty(repository_root):
-                raise ScopeUnavailable(
-                    "Initial input has inherited product changes; no inputs selected"
-                )
-            selected_heads[str(repository_root)] = head
+        selected_heads = {
+            str(repository_root): _git(repository_root, "rev-parse", "HEAD")
+            for _, repository_root, _ in repos
+        }
         if selecting:
-            # Consume only after every declared input passed under all locks.
             source = _fresh.pop(str(primary[1]))
             _selected[str(primary[1])] = {
                 **source,
@@ -535,57 +456,24 @@ def checkout_lease(root, evidence_repos=(), cancelled=None):
             [(Path(root).absolute(), primary)]
             + [(r.root, identity(r.root)) for r in evidence_repos],
         )
-        lease.inherited = inherited
         _local.lease = lease
         try:
-            # Initialization is part of ownership too: a failed marker write
-            # must never leave an unlocked, reusable thread-local owner.
-            for _, _, git_dir in repos:
-                (git_dir / "guardkit-writer-unsettled").write_text(
-                    "Writer in progress; never a resume credential\n"
-                )
             yield lease
             if not lease.failure:
                 lease.verify()
-                # Remove every marker before publishing any approved history.
-                # A partial removal failure poisons the complete footprint.
-                for _, _, git_dir in repos:
-                    (git_dir / "guardkit-writer-unsettled").unlink(missing_ok=True)
-                for _, root, git_dir in repos:
-                    approved = set(
-                        _history.get(str(git_dir), {}).get("approved_tasks", ())
-                    )
-                    if lease.scope:
-                        approved.add(lease.scope.task_id)
-                        _approved_heads[str(git_dir)] = lease.expected[str(root)]
-                    _history[str(git_dir)] = {
-                        "head": lease.expected[str(root)],
-                        "approved_tasks": sorted(approved),
-                        "provenance": (
-                            "approved task boundary"
-                            if lease.scope
-                            else "selected input boundary"
-                        ),
-                    }
         except BaseException as exc:
             lease.poison(str(exc))
             raise
         finally:
-            try:
-                if lease.failure:
-                    # Best effort persistent denial, including members whose
-                    # marker was already removed. In-memory denial is retained
-                    # even if the filesystem cannot record it; never mask the
-                    # original failure with another marker I/O error.
-                    for _, _, git_dir in repos:
-                        try:
-                            (git_dir / "guardkit-writer-unsettled").write_text(
-                                "Writer unsettled; automatic resume refused\n"
-                            )
-                        except OSError:
-                            pass
-            finally:
-                _local.lease = None
+            _local.lease = None
+            if lease.scope is not None:
+                # The approved part is the work before the first task that
+                # was not approved (step 2, 26 October 2026).
+                for _, root_, git_dir in repos:
+                    if lease.failure:
+                        _approval_stopped.add(str(git_dir))
+                    elif str(git_dir) not in _approval_stopped:
+                        _approved_heads[str(git_dir)] = lease.expected[str(root_)]
 
 
 def approved_head(root):
@@ -608,7 +496,7 @@ def bootstrap_admitted_checkout(scope):
     if lease is None or scope is None or scope is not lease.scope:
         raise ScopeUnavailable("Bootstrap requires the retained admitted task scope")
     lease.verify(scope)
-    selected = _selected[str(lease.repositories[0][2])]
+    selected = _selected.setdefault(str(lease.repositories[0][2]), {})
     if selected.get("bridge_bootstrapped"):
         return
     from guardkit.templates.conftest_bridge import install_features_conftest_bridge

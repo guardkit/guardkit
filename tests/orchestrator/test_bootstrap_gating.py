@@ -1095,7 +1095,7 @@ def test_a_refused_component_cwd_stops_admitted_bootstrap_before_player(tmp_path
     import subprocess
     from types import SimpleNamespace
     from guardkit.worktrees import WorktreeManager
-    from guardkit.orchestrator.task_work_scope import checkout_lease, ScopeUnavailable
+    from guardkit.orchestrator.task_work_scope import checkout_lease
 
     source = _declared_web_worktree(tmp_path, "../outside-web")
     for args in (["init", "-b", "main"], ["config", "user.name", "Fixture"],
@@ -1124,9 +1124,8 @@ def test_a_refused_component_cwd_stops_admitted_bootstrap_before_player(tmp_path
     player.assert_not_called()
     result = orchestrator._create_error_result("TASK-WEB", exc.value)
     assert result.error_type == type(exc.value.__cause__).__name__
-    with pytest.raises(ScopeUnavailable, match="Prior writer"):
-        with checkout_lease(worktree.path):
-            pass
+    with checkout_lease(worktree.path) as lease:  # the next writer is admitted (step 2)
+        lease.admit("TASK-NEXT")
 
 
 @pytest.mark.parametrize("failure_mode", ["warn", None], ids=["warn", "default"])

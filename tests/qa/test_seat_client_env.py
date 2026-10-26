@@ -26,7 +26,6 @@ from guardkit.lib.client_env import (
     FEATURE_ROUTING_HEADER,
     FEATURE_ROUTING_ID_ENV,
     FEATURE_ROUTING_REQUIRED_ENV,
-    FeatureRoutingError,
     resolve_feature_routing_headers,
 )
 
@@ -172,14 +171,13 @@ def test_review_seat_carries_the_validated_feature_route(captured_client, monkey
     "routing_id",
     ["", " padded", "dotted.id", "unicode-\N{SNOWMAN}", "a" * 257],
 )
-def test_invalid_feature_route_is_never_coerced(routing_id):
-    with pytest.raises(FeatureRoutingError):
-        resolve_feature_routing_headers(environ={FEATURE_ROUTING_ID_ENV: routing_id})
+def test_invalid_feature_route_is_never_coerced_and_sends_no_header(routing_id):
+    # Step 2 (26 October 2026): advice, never a refusal.
+    assert resolve_feature_routing_headers(environ={FEATURE_ROUTING_ID_ENV: routing_id}) == {}
 
 
-def test_required_feature_route_must_be_present():
-    with pytest.raises(FeatureRoutingError):
-        resolve_feature_routing_headers(environ={FEATURE_ROUTING_REQUIRED_ENV: "1"})
+def test_a_missing_required_feature_route_sends_no_header():
+    assert resolve_feature_routing_headers(environ={FEATURE_ROUTING_REQUIRED_ENV: "1"}) == {}
 
 
 def test_feature_route_accepts_the_256_byte_ascii_boundary():
@@ -190,11 +188,10 @@ def test_feature_route_accepts_the_256_byte_ascii_boundary():
 
 
 @pytest.mark.parametrize("required", ["", "true", " 1", "2"])
-def test_required_flag_is_not_trimmed_or_coerced(required):
-    with pytest.raises(FeatureRoutingError):
-        resolve_feature_routing_headers(
-            environ={FEATURE_ROUTING_REQUIRED_ENV: required}
-        )
+def test_an_inexact_required_flag_is_advice(required):
+    assert resolve_feature_routing_headers(
+        environ={FEATURE_ROUTING_REQUIRED_ENV: required}
+    ) == {}
 
 
 def test_feature_route_preserves_unrelated_headers_without_mutation():
@@ -218,12 +215,11 @@ def test_feature_route_preserves_unrelated_headers_without_mutation():
         {"x-feature-id": "route_A", "X-Feature-Id": "route_A"},
     ],
 )
-def test_conflicting_or_duplicate_caller_route_is_refused(headers):
-    with pytest.raises(FeatureRoutingError):
-        resolve_feature_routing_headers(
-            headers,
-            environ={FEATURE_ROUTING_ID_ENV: "route_A"},
-        )
+def test_conflicting_or_duplicate_caller_route_is_left_as_it_is(headers):
+    assert resolve_feature_routing_headers(
+        headers,
+        environ={FEATURE_ROUTING_ID_ENV: "route_A"},
+    ) == headers
 
 
 def test_review_seat_address_default_when_nothing_is_configured():

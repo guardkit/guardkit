@@ -93,10 +93,10 @@ def real_orchestrator(monkeypatch):
 
 def _new_process(root: Path) -> None:
     """Each work step is its own ``guardkit task-work`` process: forget this
-    process's in-memory writer history for the checkout, as a new process
-    would; files on disk (the unsettled marker) remain."""
+    process's in-memory writer state for the checkout, as a new process
+    would."""
     _, git_dir = identity(root)
-    for registry in (task_work_scope._history, task_work_scope._fresh, task_work_scope._selected):
+    for registry in (task_work_scope._fresh, task_work_scope._selected, task_work_scope._bindings):
         registry.pop(str(git_dir), None)
 
 
@@ -119,19 +119,28 @@ def test_the_next_step_starts_from_what_the_last_step_left(prepared, real_orches
     assert outcome.status not in ("failed", "refused"), _orchestration_error(outcome)
 
 
-def test_a_step_after_an_unsettled_writer_is_still_refused(prepared, real_orchestrator):
-    real_orchestrator.append("max_turns_exceeded")
+def test_a_step_after_a_step_that_was_not_approved_still_runs(prepared, real_orchestrator):
+    """Step 2 (26 October 2026): one writer at a time is the only rule. A step
+    that was not approved leaves its work for the next step, which runs."""
+    real_orchestrator.extend(["max_turns_exceeded", "approved"])
     run_work_leg(task_id=FIX_TASK_ID, repo_root=prepared)
+    (prepared / "pyproject.toml").write_text("[project]\nname = 'x'\n")  # the failed step's work
     _new_process(prepared)
     outcome = run_work_leg(task_id=FIX_TASK_ID, repo_root=prepared)
-    assert outcome.status == "failed"
-    assert "unsettled" in _orchestration_error(outcome)
+    assert outcome.status not in ("failed", "refused"), _orchestration_error(outcome)
+    assert (prepared / "pyproject.toml").exists()
+
+
+def test_a_step_in_the_same_process_after_a_failed_step_still_runs(prepared, real_orchestrator):
+    real_orchestrator.extend(["max_turns_exceeded", "approved"])
+    run_work_leg(task_id=FIX_TASK_ID, repo_root=prepared)
+    outcome = run_work_leg(task_id=FIX_TASK_ID, repo_root=prepared)
+    assert outcome.status not in ("failed", "refused"), _orchestration_error(outcome)
 
 
 def test_a_task_declaring_sibling_repositories_is_refused_not_half_leased(prepared, real_orchestrator, tmp_path):
     """Review R1: the adopted lease covers the conductor's checkout only, so a
-    declared sibling (here one carrying an unsettled marker) must refuse the
-    step rather than be ignored."""
+    declared sibling must refuse the step rather than be written unlocked."""
     sibling = tmp_path / "sibling"
     sibling.mkdir()
     _git(sibling, "init", "-b", "main")
@@ -140,8 +149,6 @@ def test_a_task_declaring_sibling_repositories_is_refused_not_half_leased(prepar
     (sibling / "base").write_text("sibling\n")
     _git(sibling, "add", "-A", ".")
     _git(sibling, "commit", "-m", "sibling seed")
-    _, sibling_git = identity(sibling)
-    (sibling_git / "guardkit-writer-unsettled").write_text("Writer unsettled; automatic resume refused\n")
     task = prepared / "tasks" / "backlog" / "repair" / f"{FIX_TASK_ID}.md"
     task.write_text(FIX_TASK_BODY.replace("task_type: fix\n", f"task_type: fix\nevidence_repos:\n  - {sibling}\n"))
 

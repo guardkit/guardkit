@@ -10,8 +10,8 @@ Covers the four guardkit-side units of the gate:
 3. ``_build_wiring_feedback`` — frames per-task-green ≠ feature-green and names
    the seams + ctor mismatches.
 4. ``_run_post_wave_wiring_gate`` — bounded feed-back retry, replace-not-append,
-   never hard-terminates on findings, absence-of-failure-safe, stop_on_failure
-   on a Coach-rejected re-run.
+   never hard-terminates on findings, absence-of-failure-safe, and a
+   Coach-rejected re-run does not terminate either.
 
 Coverage Target: >=85%
 """
@@ -348,10 +348,11 @@ class TestRunPostWaveWiringGate:
         assert outcome.findings_unresolved is True
 
     @_requires_guardkitfactory
-    def test_stop_on_failure_terminates_on_rejected_rerun(self, tmp_path):
+    def test_a_rejected_rerun_does_not_terminate(self, tmp_path):
+        """Step 2 (26 October 2026): a re-run the Coach rejected no longer
+        stops the build; the gate runs again and its findings stay advice."""
         orch = _orchestrator(tmp_path)
         orch._wiring_gate_max_retries = 1
-        orch.stop_on_failure = True
         wr = _wave_result(["TASK-A"])
         rejected = _wave_result(["TASK-A"], all_succeeded=False)
         with patch.object(orch, "_wave_authored_files", return_value=(["a.py"], [])), \
@@ -361,37 +362,8 @@ class TestRunPostWaveWiringGate:
             outcome = orch._run_post_wave_wiring_gate(
                 1, ["TASK-A"], MagicMock(), MagicMock(path=str(tmp_path)), wr
             )
-        assert outcome.terminate is True
+        assert outcome.terminate is False
         assert outcome.final_wave_result is rejected
-
-    @_requires_guardkitfactory
-    def test_timeout_during_wiring_retry_terminates_immediately(self, tmp_path):
-        orch = _orchestrator(tmp_path)
-        orch._wiring_gate_max_retries = 1
-        orch.stop_on_failure = False
-        wr = _wave_result(["TASK-A"])
-        timed_out = _wave_result(["TASK-A"], all_succeeded=True)
-
-        def _timeout_rerun(*args, **kwargs):
-            orch._set_timeout_fence()
-            return timed_out
-
-        with patch.object(
-            orch, "_wave_authored_files", return_value=(["a.py"], [])
-        ), patch(
-            "guardkitfactory.wiring.analyze_wiring",
-            return_value=_wiring_dict(seam_findings=[_SEAM]),
-        ) as analyze_wiring, patch.object(
-            orch, "_execute_wave", side_effect=_timeout_rerun
-        ) as execute_wave:
-            outcome = orch._run_post_wave_wiring_gate(
-                1, ["TASK-A"], MagicMock(), MagicMock(path=str(tmp_path)), wr
-            )
-
-        execute_wave.assert_called_once()
-        analyze_wiring.assert_called_once()
-        assert outcome.terminate is True
-        assert outcome.final_wave_result is timed_out
 
 
 # ============================================================================

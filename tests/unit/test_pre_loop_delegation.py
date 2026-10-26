@@ -960,19 +960,16 @@ class TestTaskWorkInterface:
         assert result.complexity == {"score": 5}
         assert result.checkpoint_result == "approved"
 
-    def test_parse_design_result_blocks_low_arch_score(self, tmp_worktree):
-        """Test QualityGateBlocked raised for low architectural score."""
+    def test_parse_design_result_a_low_arch_score_is_advice(self, tmp_worktree):
+        """A low architectural score is advice, never a block (step 2)."""
         interface = TaskWorkInterface(tmp_worktree)
 
         raw_result = {
-            "architectural_review": {"score": 45},  # Below threshold of 60
+            "architectural_review": {"score": 45},  # Below the guide of 60
         }
 
-        with pytest.raises(QualityGateBlocked) as exc_info:
-            interface._parse_design_result(raw_result)
-
-        assert "architectural_review" in exc_info.value.gate_name
-        assert exc_info.value.details["score"] == 45
+        result = interface._parse_design_result(raw_result)
+        assert result.architectural_review == {"score": 45}
 
     @pytest.mark.parametrize("score", [60, 70, 80, 100])
     def test_parse_design_result_passes_acceptable_arch_scores(

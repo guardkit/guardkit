@@ -559,11 +559,18 @@ class TestCommandsGoFirstWhenMemoryRunsOut:
         assert session == shell
 
 
+@pytest.fixture(autouse=True)
+def _self_test_not_failed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A failed self-test is remembered for the process; each test starts
+    without one (step 2, 26 October 2026)."""
+    monkeypatch.setattr(process_group, "_SELF_TEST_FAILED", [])
+
+
 class TestCleanupCapability:
-    """A factory build must leave nothing running: where a command's
-    leftovers cannot all be stopped safely, a factory launch's project
-    commands are refused before they start; a person's own run goes on with
-    the reduced clean-up and one warning."""
+    """Where a command's leftovers cannot all be stopped safely, the project
+    commands run with the reduced clean-up and one warning: on a person's own
+    run, and since step 2 (26 October 2026) on a factory launch whose
+    clean-up self-test failed (advice, never a refusal before the command)."""
 
     _MISSING = (
         "pidfd_open is refused here by the kernel or a security filter "
@@ -632,7 +639,7 @@ class TestCleanupCapability:
         assert process_group._missing_capability() == self._MISSING
 
     @linux_only
-    def test_a_refused_signal_through_a_pidfd_is_named_and_refuses_a_factory_launch(
+    def test_a_refused_signal_through_a_pidfd_is_named_and_a_factory_launch_goes_on(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         # A filter may allow opening a pidfd and refuse signalling through it.
@@ -649,10 +656,9 @@ class TestCleanupCapability:
         )
 
         assert process_group._missing_capability() == expected
-        with pytest.raises(process_group.CleanupUnavailableError) as caught:
-            _run(tmp_path, "touch ran")
-        assert caught.value.reason == expected
-        assert not (tmp_path / "ran").exists()
+        _run(tmp_path, "touch ran")
+        assert process_group._SELF_TEST_FAILED == [expected]
+        assert (tmp_path / "ran").exists()
 
     @linux_only
     def test_a_python_without_the_pidfd_wrappers_uses_the_system_calls(
@@ -695,9 +701,9 @@ class TestCleanupCapability:
         )
 
         assert process_group._missing_capability() == expected
-        with pytest.raises(process_group.CleanupUnavailableError, match="Python build lacks"):
-            _run(tmp_path, "touch ran")
-        assert not (tmp_path / "ran").exists()
+        _run(tmp_path, "touch ran")
+        assert "Python build lacks" in process_group._SELF_TEST_FAILED[0]
+        assert (tmp_path / "ran").exists()
 
     def test_without_wrappers_off_linux_the_platform_is_named(
         self, monkeypatch: pytest.MonkeyPatch
@@ -726,7 +732,7 @@ class TestCleanupCapability:
         assert len(os.listdir("/proc/self/fd")) == before
 
     @linux_only
-    def test_a_refused_waitid_is_named_and_neither_entry_point_starts_the_command(
+    def test_a_refused_waitid_is_named_and_both_entry_points_run_reduced(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         # os.waitid exists but a filter refuses it: the probe makes the call.
@@ -741,16 +747,13 @@ class TestCleanupCapability:
             "(Operation not permitted)"
         )
         assert process_group._missing_capability() == expected
-        for run in (
-            lambda: _run(tmp_path, "touch ran"),
-            lambda: run_in_own_group(
-                "touch ran", shell=True, cwd=tmp_path, env=dict(_ENV), timeout=30
-            ),
-        ):
-            with pytest.raises(process_group.CleanupUnavailableError) as caught:
-                run()
-            assert expected in caught.value.strerror
-        assert not (tmp_path / "ran").exists()
+        _run(tmp_path, "touch ran")
+        (tmp_path / "ran").unlink()
+        run_in_own_group(
+            "touch ran", shell=True, cwd=tmp_path, env=dict(_ENV), timeout=30
+        )
+        assert expected in process_group._SELF_TEST_FAILED[0]
+        assert (tmp_path / "ran").exists()
 
     @linux_only
     @pytest.mark.personal_run
@@ -833,7 +836,7 @@ class TestCleanupCapability:
         assert not _alive(_pid(tmp_path, "inner.pid"))
 
     @linux_only
-    def test_the_declared_install_says_why_it_could_not_start(
+    def test_the_declared_install_runs_with_the_reduced_clean_up(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, missing: None
     ) -> None:
         from guardkit.orchestrator.merge_environment import MergeEnvironment
@@ -848,35 +851,27 @@ class TestCleanupCapability:
             "the target",
         )
 
-        assert done.env is None
-        assert done.problem == (
-            "the declared install (`touch ran`) could not start on the target: "
-            f"The factory does not run project commands here: {self._MISSING}, "
-            "so what a command leaves running could not all be stopped safely. "
-            f"{self._ADVICE}"
-        )
-        assert not (tree / "ran").exists()
+        # The install ran (step 2); what it left is the dirty-tree check's.
+        assert "could not start" not in (done.problem or "")
+        assert (tree / "ran").exists()
 
-    def test_a_factory_launch_runs_no_project_command(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, missing: None
+    def test_a_factory_launch_with_a_failed_self_test_runs_with_one_warning(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        missing: None,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
         monkeypatch.setenv("GUARDKIT_FACTORY_LAUNCH", "build-x")
-        for run in (
-            lambda: _run(tmp_path, "touch ran"),
-            lambda: run_in_own_group(
-                "touch ran", shell=True, cwd=tmp_path, env=dict(_ENV), timeout=30
-            ),
-        ):
-            with pytest.raises(process_group.CleanupUnavailableError) as caught:
-                run()
-            assert isinstance(caught.value, OSError)
-            assert caught.value.errno == errno.ENOSYS
-            assert caught.value.strerror == (
-                f"The factory does not run project commands here: {self._MISSING}, "
-                "so what a command leaves running could not all be stopped safely. "
-                f"{self._ADVICE}"
+        with caplog.at_level(logging.WARNING, logger=process_group.__name__):
+            _run(tmp_path, "touch ran")
+            run_in_own_group(
+                "echo ok", shell=True, cwd=tmp_path, env=dict(_ENV), timeout=30
             )
-        assert not (tmp_path / "ran").exists()
+        assert (tmp_path / "ran").exists()
+        assert process_group._SELF_TEST_FAILED == [self._MISSING]
+        warnings = [r for r in caplog.records if "may be left running" in r.getMessage()]
+        assert len(warnings) == 1
 
     @pytest.mark.personal_run
     def test_a_persons_own_run_goes_on_with_one_warning(
@@ -904,14 +899,13 @@ class TestCleanupCapability:
         assert _run(tmp_path, "echo ok").stdout == "ok\n"
 
     @pytest.mark.parametrize("value", ["   ", "0", "false"])
-    def test_any_other_factory_signal_is_a_factory_launch_and_refused(
+    def test_any_other_factory_signal_is_a_factory_launch(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, missing: None, value: str
     ) -> None:
-        # Whitespace or "0" can never switch the refusal off.
+        # Whitespace or "0" is a factory launch: the self-test runs.
         monkeypatch.setenv("GUARDKIT_FACTORY_LAUNCH", value)
-        with pytest.raises(process_group.CleanupUnavailableError):
-            _run(tmp_path, "touch ran")
-        assert not (tmp_path / "ran").exists()
+        _run(tmp_path, "touch ran")
+        assert process_group._SELF_TEST_FAILED == [self._MISSING]
 
 
 class TestTheRuleOnAFactoryLaunch:
@@ -936,21 +930,20 @@ class TestTheRuleOnAFactoryLaunch:
     def test_a_denied_proc_listing_fails_the_self_test(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        # Step 2 (26 October 2026): the failed self-test is advice; the
+        # commands run with the reduced clean-up.
         self._deny_proc_listing(monkeypatch)
         monkeypatch.setattr(process_group, "_SELF_TEST_PASSED", [])
-        for run in (
-            lambda: _run(tmp_path, "touch ran"),
-            lambda: run_in_own_group(
-                "touch ran", shell=True, cwd=tmp_path, env=dict(_ENV), timeout=30
-            ),
-        ):
-            with pytest.raises(process_group.CleanupUnavailableError) as caught:
-                run()
-            assert caught.value.reason == "/proc could not be listed (Permission denied)"
-            assert caught.value.strerror.startswith(
-                "The factory does not run project commands here: /proc could not be listed"
-            )
-        assert not (tmp_path / "ran").exists()
+        monkeypatch.setattr(process_group, "_CAPABILITY", [])
+        monkeypatch.setattr(process_group, "_WARNED", [])
+        _run(tmp_path, "touch ran")
+        run_in_own_group(
+            "echo ok", shell=True, cwd=tmp_path, env=dict(_ENV), timeout=30
+        )
+        assert process_group._SELF_TEST_FAILED == [
+            "/proc could not be listed (Permission denied)"
+        ]
+        assert (tmp_path / "ran").exists()
 
     @linux_only
     def test_a_listing_denied_mid_run_ends_a_factory_command(
@@ -1055,13 +1048,13 @@ class TestTheSelfTestSeesForItself:
         own = os.getpid()
         self._deny_environ(monkeypatch, lambda pid: pid != own)
         monkeypatch.setattr(process_group, "_SELF_TEST_PASSED", [])
-        with pytest.raises(process_group.CleanupUnavailableError) as caught:
-            _run(tmp_path, "touch ran")
-        assert caught.value.reason == (
+        monkeypatch.setattr(process_group, "_CAPABILITY", [])
+        _run(tmp_path, "touch ran")  # advice since step 2: the command runs
+        assert process_group._SELF_TEST_FAILED == [
             "the clean-up self-test's process environment could not be read "
             "(Permission denied)"
-        )
-        assert not (tmp_path / "ran").exists()
+        ]
+        assert (tmp_path / "ran").exists()
 
     def test_a_denied_environment_read_mid_run_ends_a_factory_command(
         self, tmp_path: Path, started: List[int], monkeypatch: pytest.MonkeyPatch
@@ -1276,15 +1269,14 @@ class TestTheSelfTestReportsTheRealCause:
     ) -> None:
         monkeypatch.delattr(os, "waitid")
         monkeypatch.setattr(process_group, "_SELF_TEST_PASSED", [])
-        with pytest.raises(process_group.CleanupUnavailableError) as caught:
-            _run(tmp_path, "touch ran")
+        monkeypatch.setattr(process_group, "_CAPABILITY", [])
+        _run(tmp_path, "touch ran")  # advice since step 2: the command runs
+        reason = process_group._SELF_TEST_FAILED[0]
         monkeypatch.undo()
 
-        assert caught.value.reason.startswith(
-            "the clean-up self-test could not run (AttributeError: "
-        )
-        assert "waitid" in caught.value.reason
-        assert not (tmp_path / "ran").exists()
+        assert reason.startswith("the clean-up self-test could not run (AttributeError: ")
+        assert "waitid" in reason
+        assert (tmp_path / "ran").exists()
 
 
 @linux_only

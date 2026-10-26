@@ -197,10 +197,6 @@ if TYPE_CHECKING:  # pragma: no cover — annotation-only import
         RequirementsValidation,
     )
 
-# WS3-S1 Q1 SPLIT: the interpreter-resolution hard-abort must propagate past
-# the Coach exception-fallback paths below (never degrade to the LLM Coach).
-from guardkit.orchestrator.coach_verification import InterpreterResolutionError
-
 # Import criteria classifier for runtime command verification (TASK-CRV-537E)
 from guardkit.orchestrator.quality_gates.criteria_classifier import (
     classify_acceptance_criteria,
@@ -3419,14 +3415,6 @@ class AutoBuildOrchestrator:
 
     def orchestrate(self, task_id, requirements, acceptance_criteria, base_branch="main", **kwargs):
         from guardkit.orchestrator.task_work_scope import checkout_lease, ScopeUnavailable
-        if self.resume:
-            from guardkit.orchestrator.task_work_scope import current_lease
-            retained = current_lease()
-            if retained is None or getattr(self, "task_work_scope", None) is not retained.scope:
-                raise ScopeUnavailable("Process/legacy resume has no retained admission scope; preserve this checkout and start a fresh pinned attempt")
-            retained.verify_continuation(self.task_work_scope)
-            if self.task_work_scope.task_id != task_id:
-                raise ScopeUnavailable("Cannot resume a different task in the retained scope")
         if self._existing_worktree is None:
             self._existing_worktree = self._worktree_manager.create(task_id=task_id, base_branch=base_branch)
         from guardkit.orchestrator.task_work_scope import current_lease, bind_fresh_footprint
@@ -4117,9 +4105,6 @@ class AutoBuildOrchestrator:
                     None
                     if success
                     else getattr(self, "_plan_contradicts_check_sentence", None)
-                    or self._environment_gap_stopped_on(
-                        final_decision, turn_history
-                    )
                 ),
             )
 
@@ -5649,8 +5634,6 @@ class AutoBuildOrchestrator:
         # (first failing turn, dependency files). Fresh per task loop.
         self._standing_reinstall_failure: Optional[Tuple[int, List[str]]] = None
         self._reinstall_environment_gap: Optional[str] = None
-        # The environment-gap sentence the task stopped on, if it did.
-        self._environment_gap_stop: Optional[str] = None
 
         # Track loop start time for SDK-level timeout remaining budget (TASK-ABFIX-006)
         import time as _time
@@ -5925,24 +5908,23 @@ class AutoBuildOrchestrator:
                 # Record honesty score from Coach's verification
                 self._record_honesty(turn_record)
 
-                # Honesty rolling-average early-abort (TASK-FIX-HEAB).
-                # When the rolling average over _honesty_early_abort_window
-                # turns drops below _honesty_early_abort_threshold the loop
-                # short-circuits with a "honesty_collapse" final_decision —
-                # the diagnostic explains why and points at the most-flagged
-                # claim. This is the autobuild-level integration the
-                # original TASK-FIX-HEAB commit advertised but did not land;
-                # see TASK-FIX-HEAB-FOLLOWUP.
+                # Honesty rolling average (TASK-FIX-HEAB). When the rolling
+                # average over _honesty_early_abort_window turns drops below
+                # _honesty_early_abort_threshold the diagnostic (naming the
+                # most-flagged claim) is logged as advice; since step 2 (26
+                # October 2026) the loop goes on.
                 heab_msg = self._check_honesty_early_abort(
                     turn_history,
                     task_id=task_id,
                     worktree_path=worktree.path,
                 )
                 if heab_msg is not None:
+                    # Step 2 (26 October 2026): a rough guide (a score below
+                    # 0.3 over 3 turns) is advice; the Coach's verdict decides.
                     logger.warning(
-                        f"[{task_id}] HONESTY COLLAPSE after turn {turn}: {heab_msg}"
+                        f"[{task_id}] Advice, not a stop: honesty score low after "
+                        f"turn {turn}: {heab_msg}"
                     )
-                    return turn_history, "honesty_collapse"
 
                 # Display criteria progress after each turn.
                 # Wrap in try/except: this is a display-only helper and must
@@ -7415,32 +7397,20 @@ class AutoBuildOrchestrator:
         environment_gap = getattr(self, "_reinstall_environment_gap", None)
         if environment_gap and venv_refresh_feedback == environment_gap:
             # A tool the project declares is missing from the build
-            # environment (23 October 2026). The builder cannot fix it, and
-            # the next wave's setup would stop on the same gap hours later,
-            # so the task ends now as a configuration error with the plain
-            # reason — the same outcome as any check that could not run.
-            logger.error("[%s] turn %s: %s", task_id, turn, environment_gap)
-            self._environment_gap_stop = environment_gap
-            self._progress_display.complete_turn(
-                "error",
-                "Build environment is missing a declared tool",
-                error=environment_gap,
-            )
-            return TurnRecord(
-                turn=turn,
-                player_result=player_result,
-                coach_result=None,
-                decision="feedback",
-                feedback=environment_gap,
-                timestamp=timestamp,
-                player_context_status=player_context_status,
-                sdk_turns_used=getattr(player_result, 'sdk_turns_used', None),
-                sdk_max_turns=getattr(player_result, 'sdk_max_turns', None),
-                sdk_ceiling_hit=getattr(player_result, 'sdk_ceiling_hit', None),
-                is_configuration_error=True,
-                command_results=tuple(command_exec_results) if command_exec_results else None,
-                files_changed_this_turn=files_changed_this_turn,
-            )
+            # environment (23 October 2026). Step 2 (26 October 2026): advice,
+            # not a stop. The builder cannot fix it, so it is not fed back as
+            # work; the reviewer is told in one plain line (the Player report's
+            # concerns, which it reads) and still decides.
+            advice = f"The project's tests could not be run: {environment_gap}"
+            logger.warning("[%s] turn %s: advice, not a stop: %s", task_id, turn, advice)
+            report = player_result.report if isinstance(player_result.report, dict) else None
+            if report is not None:
+                concerns = report.get("concerns")
+                if not isinstance(concerns, list):
+                    concerns = []
+                    report["concerns"] = concerns
+                concerns.append(advice)
+            venv_refresh_feedback = None
         if venv_refresh_feedback is not None:
             self._progress_display.complete_turn(
                 "feedback", "Dependency reinstall failed - feeding back to Player"
@@ -11353,12 +11323,6 @@ class AutoBuildOrchestrator:
                 error=None,
             )
 
-        except InterpreterResolutionError:
-            # WS3-S1 Q1 SPLIT: do NOT fall back to the SDK LLM Coach on an
-            # interpreter-resolution hard-abort — the LLM Coach would run its
-            # own tests under the same broken interpreter, re-opening the DD4F
-            # soft-fail. Propagate so the run fails loud with the remediation.
-            raise
         except Exception as e:
             logger.warning(f"CoachValidator failed, falling back to SDK: {e}")
             try:
@@ -13144,27 +13108,6 @@ class AutoBuildOrchestrator:
 
         return "\n".join(parts)
 
-    def _environment_gap_stopped_on(
-        self, final_decision: str, turn_history: List[TurnRecord]
-    ) -> Optional[str]:
-        """The environment-gap sentence, when the task stopped on it.
-
-        23 October 2026: a tool the project declares, or an install program,
-        is missing from the build environment, and the task ended on that
-        turn as a configuration error. The sentence is carried as the task's
-        ``stopped_because`` and leads its summary, so the feature's final
-        reason names the tool and the file. None on every other outcome.
-        """
-        gap = getattr(self, "_environment_gap_stop", None)
-        if final_decision != "configuration_error" or not isinstance(gap, str):
-            return None
-        config_turn = next(
-            (t for t in reversed(turn_history) if t.is_configuration_error), None
-        )
-        if config_turn is None or config_turn.feedback != gap:
-            return None
-        return gap
-
     def _build_summary_details(
         self,
         turn_history: List[TurnRecord],
@@ -13614,18 +13557,6 @@ class AutoBuildOrchestrator:
             config_turn = next(
                 (t for t in reversed(turn_history) if t.is_configuration_error), None
             )
-            environment_gap = self._environment_gap_stopped_on(
-                final_decision, turn_history
-            )
-            if environment_gap:
-                # 23 October 2026: a tool the project declares is missing
-                # from the build environment. Its sentence comes first.
-                return (
-                    f"{environment_gap}\n"
-                    f"Stopped on turn {config_turn.turn} as a configuration "
-                    f"error; the Player cannot fix this.\n"
-                    f"Worktree preserved for inspection."
-                )
             documents_refusal = getattr(self, "_project_documents_refusal", None)
             if config_turn is None and documents_refusal:
                 # Stopped at task start by the binding-documents check: say
@@ -13772,11 +13703,6 @@ class AutoBuildOrchestrator:
             config_turn = next(
                 (t for t in reversed(turn_history) if t.is_configuration_error), None
             )
-            environment_gap = self._environment_gap_stopped_on(
-                final_decision, turn_history
-            )
-            if environment_gap:
-                return environment_gap
             detail, is_task_type = _configuration_error_cause(config_turn)
             if detail:
                 if is_task_type:
@@ -13873,19 +13799,11 @@ class AutoBuildOrchestrator:
         SetupPhaseError
             If state cannot be loaded or worktree doesn't exist
         """
-        from guardkit.orchestrator.task_work_scope import current_lease, ScopeUnavailable
-        lease = current_lease()
-        scope = getattr(self, "task_work_scope", None)
-        if lease is None or scope is None or scope is not lease.scope or scope.task_id != task_id:
-            raise ScopeUnavailable("Resume requires the retained admitted task scope; saved records are diagnostic only")
-        lease.verify_continuation(scope)
+        scope = self.task_work_scope
         logger.info(f"Resuming orchestration for {task_id} from {task_file_path}")
 
         try:
-            # Saved frontmatter is diagnostic, not execution authority. The
-            # retained scope and in-memory history are the continuation state.
-            if not isinstance(getattr(self, "_turn_history", None), list):
-                raise ScopeUnavailable("Resume has no retained in-memory turn history")
+            # The scope this run admitted is the continuation state.
             worktree = Worktree(
                 task_id=task_id,
                 branch_name=scope.repositories[0].branch,

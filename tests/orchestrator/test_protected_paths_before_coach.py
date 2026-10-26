@@ -127,11 +127,11 @@ def test_edit_is_put_back(repo: Path) -> None:
     assert _protected(repo) == before
 
 
-def test_added_file_is_removed(repo: Path) -> None:
-    before = _protected(repo)
+def test_an_added_file_in_a_protected_folder_stays(repo: Path) -> None:
+    """Step 2 (26 October 2026): only files that existed are protected."""
     (repo / "reference" / "x.txt").write_text("new\n")
-    _assert_note(_restore(repo), "reference/x.txt (added)")
-    assert _protected(repo) == before
+    assert _restore(repo) is None
+    assert (repo / "reference" / "x.txt").read_text() == "new\n"
 
 
 def test_deleted_file_is_put_back(repo: Path) -> None:
@@ -209,25 +209,31 @@ def test_huge_sparse_file_is_judged_by_size_without_reading_it(
     assert app.read_text() == APP
 
 
-def test_ignored_files_are_removed_and_only_counted(repo: Path) -> None:
-    before = _protected(repo)
+def test_new_and_generated_files_in_a_protected_folder_stay(repo: Path) -> None:
     (repo / "reference" / "node_modules" / "pkg").mkdir(parents=True)
     (repo / "reference" / "node_modules" / "pkg" / "index.js").write_text("x\n")
-    (repo / "reference" / "node_modules" / "other.js").write_text("x\n")
-    (repo / "reference" / "__pycache__").mkdir()
-    (repo / "reference" / "__pycache__" / "mod.pyc").write_bytes(b"\0")
     (repo / "reference" / "new.txt").write_text("x\n")
+    (repo / "reference" / "notes.txt").write_text("edited\n")
     note = _restore(repo)
-    _assert_note(note, "reference/new.txt (added)", "and 3 generated files that git ignores")
-    assert "node_modules" not in note and "__pycache__" not in note
-    assert _protected(repo) == before
+    _assert_note(note, "reference/notes.txt (edited)")
+    assert "new.txt" not in note and "node_modules" not in note
+    assert (repo / "reference" / "new.txt").exists()
+    assert (repo / "reference" / "node_modules" / "pkg" / "index.js").exists()
+    assert (repo / "reference" / "notes.txt").read_text() == "invented notes\n"
 
 
 def test_long_lists_are_shortened(repo: Path) -> None:
+    _git(repo, "checkout", "-q", "main")
     for index in range(12):
         (repo / "reference" / f"extra-{index:02d}.txt").write_text("x\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "twelve protected files")
+    _git(repo, "checkout", "-q", BRANCH)
+    _git(repo, "reset", "-q", "--hard", "main")
+    for index in range(12):
+        (repo / "reference" / f"extra-{index:02d}.txt").write_text("edited\n")
     note = _restore(repo)
-    assert note.count("(added)") == 10 and "2 more" in note
+    assert note.count("(edited)") == 10 and "2 more" in note
 
 
 def test_replacement_objects_are_not_used(repo: Path) -> None:
@@ -275,34 +281,50 @@ def test_the_whole_repository_or_outside_it_is_refused(value: str) -> None:
         _parse_player_project_inputs(text, config_path="config.yaml", has_file=lambda _r: False)
 
 
-def test_a_path_missing_from_the_source_commit_is_refused(repo: Path) -> None:
+def test_a_path_missing_from_the_source_commit_protects_nothing(repo: Path) -> None:
+    """Step 2 (26 October 2026): advice, never a stop."""
     _git(repo, "checkout", "-q", "main")
     (repo / ".guardkit" / "config.yaml").write_text(CONFIG + "      - docs/missing\n")
     _git(repo, "commit", "-qam", "declare a missing path")
     _git(repo, "checkout", "-q", "-b", "autobuild/TASK-PP-002")
-    refusal = _orchestrator(repo)._load_protected_reference(_worktree(repo))
-    assert refusal is not None
-    assert "'docs/missing'" in refusal and "not in the commit this build started from" in refusal
+    orch = _orchestrator(repo)
+    assert orch._load_protected_reference(_worktree(repo)) is None
+    assert orch._protected_reference.paths == ("reference", "qa/check.sh")
 
 
-def test_orchestrate_stops_before_any_model_call(repo: Path, tmp_path: Path) -> None:
-    _git(repo, "checkout", "-q", "main")
-    (repo / ".guardkit" / "config.yaml").write_text(CONFIG + "      - docs/missing\n")
-    _git(repo, "commit", "-qam", "declare a missing path")
-    _git(repo, "checkout", "-q", "-b", "autobuild/TASK-PP-003")
-    manager = MagicMock()
-    manager.create.return_value = _worktree(repo)
-    manager.worktrees_dir = tmp_path / "worktrees"
-    invoker = MagicMock()
-    orch = AutoBuildOrchestrator(
-        repo_root=repo, max_turns=3, worktree_manager=manager, agent_invoker=invoker,
-        progress_display=MagicMock(), pre_loop_gates=MagicMock(),
-        enable_checkpoints=False, enable_context=False,
-    )
-    result = orch.orchestrate(task_id="TASK-PP-003", requirements="r", acceptance_criteria=["AC-001: x"])
-    assert result.final_decision == "configuration_error"
-    assert "docs/missing" in result.error
-    invoker.invoke_player.assert_not_called()
+def test_a_file_created_in_a_protected_folder_can_be_edited_on_the_next_turn(
+    repo: Path,
+) -> None:
+    """Re-run 5 (26 October 2026): a planned new design-decision file in a
+    protected folder was put back five times. The builder's file tools (the
+    real guardkitfactory backend, rebuilt each turn as the selector builds it)
+    and GuardKit's put-back now agree: files that existed at the build's start
+    are protected; a file created during the build is the builder's own."""
+    from guardkit.orchestrator.harness.selector import _build_backend_with_optional_cap
+    from guardkit.orchestrator.protected_paths import protected_files_at_start
+
+    guardkitfactory = pytest.importorskip("guardkitfactory.harness.backend_config")
+    orch = _orchestrator(repo)
+    assert orch._load_protected_reference(_worktree(repo)) is None
+    files = protected_files_at_start(repo, ("reference", "qa/check.sh"))
+    assert "reference/notes.txt" in files and "reference" not in files
+
+    def backend():
+        return _build_backend_with_optional_cap(
+            guardkitfactory.build_autobuild_backend, repo, None, files
+        )
+
+    new = repo / "reference" / "decisions" / "DDR-111.md"
+    assert backend().write(str(new), "first draft\n").error is None  # turn 1
+    assert restore_protected_paths(repo, orch._protected_reference) is None
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "[guardkit-checkpoint] Turn 1")
+    assert restore_protected_paths(repo, orch._protected_reference) is None
+    turn_two = backend()
+    assert turn_two.edit(str(new), "first draft", "second draft").error is None
+    assert new.read_text() == "second draft\n"
+    assert turn_two.edit(str(repo / "reference" / "notes.txt"), "invented", "x").error
+    assert (repo / "reference" / "notes.txt").read_text() == "invented notes\n"
 
 
 # ---------------------------------------------------------------------------
@@ -517,7 +539,7 @@ def test_a_task_cancelled_between_player_and_coach_ends_with_paths_restored(
     coach.assert_not_called()
     assert result.final_decision == "cancelled"
     assert (repo / "qa" / "check.sh").read_text() == CHECK
-    assert not (repo / "reference" / "extra.txt").exists()
+    assert (repo / "reference" / "extra.txt").exists()  # new work stays (step 2)
 
 
 # ---------------------------------------------------------------------------
@@ -545,12 +567,23 @@ def test_a_staged_change_hidden_by_an_index_flag_is_put_back(repo: Path, flag: s
     assert _git(repo, "show", "HEAD:qa/check.sh") + "\n" == CHECK
 
 
-def test_an_extra_index_entry_under_a_protected_folder_is_removed(repo: Path) -> None:
+def test_a_new_index_entry_under_a_protected_folder_stays(repo: Path) -> None:
     (repo / "reference" / "extra.txt").write_text("x\n")
     _git(repo, "add", "reference/extra.txt")
-    (repo / "reference" / "extra.txt").unlink()
-    _assert_note(_restore(repo), "reference (changed in the git index)")
-    assert _index_of(repo, "reference/extra.txt") == ""
+    assert _restore(repo) is None
+    assert _index_of(repo, "reference/extra.txt") != ""
+
+
+def test_a_new_file_committed_under_a_protected_folder_stays_on_the_branch(
+    repo: Path,
+) -> None:
+    (repo / "reference" / "extra.txt").write_text("x\n")
+    (repo / "reference" / "notes.txt").write_text("rewritten\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "a shell commit")
+    _assert_note(_restore(repo), "reference (committed on the branch)")
+    assert _git(repo, "show", "HEAD:reference/notes.txt") == "invented notes"
+    assert _git(repo, "show", "HEAD:reference/extra.txt") == "x"
 
 
 def test_a_shell_commit_is_undone_by_one_corrective_commit(repo: Path) -> None:

@@ -14,9 +14,10 @@ mentioned. Meanwhile the quality gate recorded the tests as passed.
 Three things are pinned here, and none of them mentions a language:
 
 1. **The rule.** "The check ran and the result is bad" and "the check could
-   not run" are different outcomes. A check that could not run never reaches
-   the builder's feedback, never lets a gate report a pass, and is reported in
-   plain words to the operator and the receipt.
+   not run" are different outcomes. A check that could not run never lets a
+   gate report a pass. Since step 2 (26 October 2026) it is advice: one plain
+   line ("the project's tests could not be run: ...") goes to the reviewer,
+   the builder and the card, and the reviewer still decides.
 2. **The fallback.** When the isolated copy cannot start the check, it runs in
    the real worktree — the run a wave of one already uses. A wave of two must
    not be worse than a wave of one. Only when THAT cannot run either does the
@@ -519,7 +520,8 @@ class TestTheRule:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """The live path is the evidence bundle, not the legacy verdict: the
-        gate there must be UNKNOWN too, and nothing may ride to the builder."""
+        gate there must be UNKNOWN too, and since step 2 (26 October 2026)
+        one plain line of advice rides with it for the reviewer."""
         _root, worktree = _make_repo(tmp_path)
         _write_task_work_results(worktree)
         validator = _validator(worktree, wave_size=2)
@@ -534,7 +536,10 @@ class TestTheRule:
         assert bundle.quality_gates.tests_passed is None
         assert bundle.quality_gates.all_gates_passed is False
         assert bundle.tests is not None and bundle.tests["tests_passed"] is None
-        assert bundle.advisory_issues == []
+        assert len(bundle.advisory_issues) == 1
+        advice = bundle.advisory_issues[0]
+        assert advice["category"] == "tests_could_not_run"
+        assert advice["description"].startswith("The project's tests could not be run: ")
         serialised = bundle.to_dict()["independent_tests"]
         assert serialised["check_could_not_run"] is True
 
@@ -765,13 +770,13 @@ def _the_reviewer_blames_the_builder(task_id: str, turn: int) -> Dict[str, Any]:
 
 
 class TestTheRuleOnTheLivePath:
-    def test_the_builder_is_told_nothing_and_the_loop_stops(
+    def test_the_reviewer_decides_with_one_plain_line(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Assert the ABSENCE on the path a real build takes. Not a must-fix,
-        not an observation, not an honesty record — nothing at all — and the
-        turn is marked as one the builder cannot fix, so the loop stops
-        instead of spending five more turns on a broken estate."""
+        """Step 2 (26 October 2026, GKT-079): tests that could not start are
+        advice. The reviewer's own decision and findings stand, one plain
+        line says the project's tests could not be run, and the turn is not
+        a configuration error, so the loop goes on."""
         monkeypatch.delenv("GUARDKIT_COACH_SYNTHESIS", raising=False)
         monkeypatch.delenv("GUARDKIT_COACH_GATHER", raising=False)
         invoker = _invoker(tmp_path)
@@ -785,12 +790,15 @@ class TestTheRuleOnTheLivePath:
         )
 
         assert result.success is True
-        assert result.report["decision"] == "feedback"
-        assert result.report["issues"] == []
-        blob = json.dumps(result.report["issues"])
-        for word in ("could not run", _DECLARED_COMMAND, "runner", "missing"):
-            assert word not in blob
-        assert result.report["is_configuration_error"] is True
+        assert result.report["decision"] == "feedback"  # the reviewer's own
+        advice = [
+            i for i in result.report["issues"]
+            if i.get("category") == "tests_could_not_run"
+        ]
+        assert len(advice) == 1
+        assert advice[0]["description"].startswith("The project's tests could not be run: ")
+        assert len(result.report["issues"]) > 1  # the reviewer's findings stand
+        assert result.report.get("is_configuration_error", False) is not True
 
     def test_the_operator_is_told_in_plain_words(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
@@ -809,13 +817,14 @@ class TestTheRuleOnTheLivePath:
                 bundle=_bundle_whose_check_could_not_run(),
             )
 
-        assert _DECLARED_COMMAND in result.report["rationale"]
-        assert "no runner at" in result.report["rationale"]
+        advice = next(
+            i["description"] for i in result.report["issues"]
+            if i.get("category") == "tests_could_not_run"
+        )
+        assert _DECLARED_COMMAND in advice
+        assert "no runner at" in advice
         messages = [record.getMessage() for record in caplog.records]
-        assert any("ESTATE FAULT" in message for message in messages)
-        # Nothing disappears quietly: the reviewer's own findings for a turn
-        # in which nothing ran are named in the operator's log as set aside.
-        assert any("set aside" in message for message in messages)
+        assert any("could not be run" in message for message in messages)
 
     def test_an_absent_signal_that_did_start_is_untouched(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

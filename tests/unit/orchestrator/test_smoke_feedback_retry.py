@@ -22,8 +22,6 @@ import pytest
 from guardkit.orchestrator.autobuild import AutoBuildOrchestrator, TurnRecord
 from guardkit.orchestrator.feature_orchestrator import (
     FeatureOrchestrator,
-    TaskExecutionResult,
-    WaveExecutionResult,
 )
 from guardkit.orchestrator.feature_loader import SmokeGates
 from guardkit.orchestrator.smoke_gates import SmokeGateResult
@@ -304,37 +302,3 @@ def test_build_smoke_feedback_attribution_fails_open(tmp_path):
     assert "SMOKE-SUITE TEST FAILURE" in fb
 
 
-def test_timeout_during_smoke_retry_terminates_without_another_gate_run(tmp_path):
-    orch = _orchestrator(tmp_path)
-    orch._smoke_gate_max_retries = 1
-    feature = _feature_with_smoke()
-    wave = WaveExecutionResult(
-        wave_number=1,
-        task_ids=["TASK-A"],
-        results=[TaskExecutionResult("TASK-A", True, 1, "approved")],
-        all_succeeded=True,
-    )
-    rerun = WaveExecutionResult(
-        wave_number=1,
-        task_ids=["TASK-A"],
-        results=[TaskExecutionResult("TASK-A", True, 1, "approved_late")],
-        all_succeeded=True,
-    )
-
-    def _timeout_rerun(*args, **kwargs):
-        orch._set_timeout_fence()
-        return rerun
-
-    with patch(
-        "guardkit.orchestrator.feature_orchestrator.run_smoke_gate",
-        return_value=_smoke_result(),
-    ) as smoke, patch.object(
-        orch, "_execute_wave", side_effect=_timeout_rerun
-    ):
-        outcome = orch._run_post_wave_smoke_gate(
-            1, ["TASK-A"], feature, MagicMock(path=str(tmp_path)), wave
-        )
-
-    assert outcome.terminate is True
-    assert outcome.final_wave_result is rerun
-    assert smoke.call_count == 1

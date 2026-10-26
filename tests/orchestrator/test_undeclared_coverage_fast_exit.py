@@ -1,12 +1,10 @@
-"""A task that needs coverage stops at task start when no coverage command is declared.
+"""A task that needs coverage gets plain advice when no coverage command is declared.
 
-Since 19 September 2026 a feature, refactor, glue or wiring task passes only on
-a MEASURED coverage, and only the project's declared ``toolchain.coverage``
-command measures it. A project that declares none could therefore never pass
-such a task, but GuardKit found out one refused turn at a time and ended in a
-"no file changes" stall that said the task might not be doable as written
-(19 October 2026). Now the task stops before any model call, as a
-configuration error that says what to add.
+Only the project's declared ``toolchain.coverage`` command measures coverage.
+From 19 October 2026 such a task was stopped at task start; since step 1
+(24 October 2026) it runs, and the reason is advice shown with the Coach's
+verdict. Step 2 (26 October 2026) made the advice text say so plainly instead
+of "it was stopped before any work was done".
 
 Checked here:
 
@@ -14,11 +12,10 @@ Checked here:
   not, declared and undeclared, root block and component, and the direct-mode
   relaxation; it agrees with the Coach's own resolution of the declared
   command and of which types need coverage;
-* ``orchestrate`` stops such a task with no Player, Coach or planning call,
-  zero turns and the plain message, and the summary and error say it plainly
-  (not "fix the task_type", not "cannot be done as written");
+* ``orchestrate`` runs such a task to the turn loop with the advice set, and
+  the advice says what is missing (not that the task was stopped);
 * a project that declares a coverage command, a direct-mode task and a task
-  type that does not need coverage all reach the loop exactly as before.
+  type that does not need coverage all reach the loop with no advice.
 
 Invented projects only; no model is called.
 """
@@ -327,52 +324,40 @@ def _run(
     )
 
 
-class TestStoppedAtTaskStart:
-    def test_refactor_task_without_declared_coverage_stops_before_any_model_call(
+class TestAdviceAtTaskStart:
+    """Step 2 (26 October 2026): these tests expected the old stop at task
+    start; the task now reaches the turn loop with the advice."""
+
+    def _reach_loop(self, tmp_path: Path, root: Path):
+        orch, invoker, _ = _orchestrator(tmp_path, root)
+        with patch.object(
+            AutoBuildOrchestrator, "_loop_phase", return_value=([], "max_turns_exceeded")
+        ) as loop:
+            result = _run(orch)
+        loop.assert_called_once()
+        return orch, result
+
+    def test_refactor_task_without_declared_coverage_reaches_the_loop_with_advice(
         self, tmp_path: Path
     ) -> None:
         root = tmp_path / "proj"
         _project(root, toolchain_yaml=NO_COVERAGE, task_type="refactor")
-        orch, invoker, pre_loop_calls = _orchestrator(tmp_path, root)
-        with patch.object(
-            AutoBuildOrchestrator, "_loop_phase",
-            side_effect=AssertionError("the loop must not start"),
-        ):
-            result = _run(orch)
-        assert result.success is False
-        assert result.final_decision == "configuration_error"
-        assert result.total_turns == 0
-        assert result.turn_history == []
-        assert result.error.startswith("This project declares no coverage command")
-        assert "a refactor task needs measured coverage" in result.error
-        assert 'coverage: "<command that exits 0' in result.error
-        invoker.invoke_player.assert_not_called()
-        invoker.invoke_coach.assert_not_called()
-        assert pre_loop_calls == []  # no planning model call either
+        orch, result = self._reach_loop(tmp_path, root)
+        assert result.final_decision == "max_turns_exceeded"
+        advice = orch._coverage_declaration_advice
+        assert advice.startswith("This project declares no coverage command")
+        assert "a refactor task" in advice
+        assert 'coverage: "<command that exits 0' in advice
 
-    def test_summary_and_error_say_it_plainly(self, tmp_path: Path) -> None:
+    def test_the_advice_says_it_plainly(self, tmp_path: Path) -> None:
         root = tmp_path / "proj"
         _project(root, toolchain_yaml=NO_COVERAGE, task_type="feature")
-        orch, _, _ = _orchestrator(tmp_path, root)
-        with patch.object(
-            AutoBuildOrchestrator, "_build_summary_details",
-            autospec=True, side_effect=AutoBuildOrchestrator._build_summary_details,
-        ) as summary:
-            result = _run(orch)
-        assert result.final_decision == "configuration_error"
-        rendered = [
-            AutoBuildOrchestrator._build_summary_details(*c.args)
-            for c in summary.call_args_list
-        ]
-        message = orch._build_error_message("configuration_error", [])
-        assert rendered
-        for text in rendered + [message]:
-            assert "declares no coverage command" in text
-            assert "Fix the task_type" not in text
-            assert "fix task_type" not in text
-            assert "cannot be done as written" not in text
-            assert "unknown configuration error" not in text
-            assert "stall" not in text.lower()
+        orch, _ = self._reach_loop(tmp_path, root)
+        advice = orch._coverage_declaration_advice
+        assert "coverage could not be measured" in advice
+        for stale in ("was stopped", "before any work", "run the task again",
+                      "cannot pass", "Fix the task_type", "stall"):
+            assert stale not in advice
 
     def test_component_task_is_judged_by_its_component(self, tmp_path: Path) -> None:
         root = tmp_path / "proj"
@@ -385,62 +370,23 @@ class TestStoppedAtTaskStart:
             task_type="wiring",
             component="api",
         )
-        orch, invoker, _ = _orchestrator(tmp_path, root)
-        result = _run(orch)
-        assert result.final_decision == "configuration_error"
-        assert "for the task's component `api`" in result.error
-        invoker.invoke_player.assert_not_called()
+        orch, _ = self._reach_loop(tmp_path, root)
+        assert "for the task's component `api`" in orch._coverage_declaration_advice
 
-    def test_a_fresh_run_forgets_the_previous_runs_refusal(
+    def test_a_fresh_run_forgets_the_previous_runs_advice(
         self, tmp_path: Path
     ) -> None:
         root = tmp_path / "proj"
         _project(root, toolchain_yaml=NO_COVERAGE)
-        orch, _, _ = _orchestrator(tmp_path, root)
-        _run(orch)
-        assert orch._coverage_declaration_refusal
+        orch, _ = self._reach_loop(tmp_path, root)
+        assert orch._coverage_declaration_advice
         (root / ".guardkit" / "config.yaml").write_text(WITH_COVERAGE)
         with patch.object(
             AutoBuildOrchestrator, "_loop_phase", return_value=([], "max_turns_exceeded")
         ):
             result = _run(orch)
-        assert orch._coverage_declaration_refusal is None
+        assert orch._coverage_declaration_advice is None
         assert result.final_decision == "max_turns_exceeded"
-
-
-class TestWhatTheRecordsReceive:
-    """The factory reads the task-failed event, the build-outcome record and
-    the saved task state, not only the returned result."""
-
-    def test_event_outcome_and_task_state_carry_the_stop(self, tmp_path: Path) -> None:
-        root = tmp_path / "proj"
-        _project(root, toolchain_yaml=NO_COVERAGE, task_type="glue")
-        task_file = next((root / "tasks" / "backlog").glob("TASK-COV-001*.md"))
-        orch, _, _ = _orchestrator(tmp_path, root)
-        with patch.object(
-            AutoBuildOrchestrator, "_capture_build_outcome", autospec=True
-        ) as outcome, patch.object(
-            AutoBuildOrchestrator, "_emit_task_failed", autospec=True
-        ) as failed, patch.object(
-            AutoBuildOrchestrator, "_save_state", autospec=True
-        ) as saved:
-            result = _run(orch, task_file_path=task_file)
-        assert result.final_decision == "configuration_error"
-
-        failed.assert_called_once_with(orch, "TASK-COV-001", "configuration_error")
-
-        outcome.assert_called_once()
-        kwargs = outcome.call_args.kwargs
-        assert outcome.call_args.args[1:] == ("TASK-COV-001",)
-        assert kwargs["success"] is False
-        assert kwargs["final_decision"] == "configuration_error"
-        assert kwargs["turn_history"] == []
-        assert kwargs["error"] == result.error
-        assert "declares no coverage command" in kwargs["error"]
-
-        assert saved.call_args_list[-1].args[1] == task_file
-        assert saved.call_args_list[-1].args[3] == "blocked"
-        assert all(c.args[3] != "in_review" for c in saved.call_args_list)
 
 
 class TestUnchangedWhenTheTaskCanPass:
@@ -456,7 +402,7 @@ class TestUnchangedWhenTheTaskCanPass:
             result = _run(orch)
         loop.assert_called_once()
         assert result.final_decision == "approved"
-        assert orch._coverage_declaration_refusal is None
+        assert orch._coverage_declaration_advice is None
 
 
     @pytest.mark.parametrize(
@@ -490,7 +436,7 @@ class TestUnchangedWhenTheTaskCanPass:
         loop.assert_called_once()
         assert loop.call_args.kwargs["task_type"] == task_type
         assert result.final_decision == "max_turns_exceeded"
-        assert orch._coverage_declaration_refusal is None
+        assert orch._coverage_declaration_advice is None
 
 
 # ---------------------------------------------------------------------------
@@ -648,7 +594,7 @@ class TestNoSourceFilesAtTaskStart:
             result = _run(orch)
         loop.assert_called_once()
         assert result.final_decision == "max_turns_exceeded"
-        assert orch._coverage_declaration_refusal is None
+        assert orch._coverage_declaration_advice is None
         assert orch._coverage_due_from_task is None
         # Kept for the Coach, which makes the same exception.
         assert set(orch._declared_task_paths) == {
@@ -687,15 +633,13 @@ class TestNoSourceFilesAtTaskStart:
         with patch.object(
             AutoBuildOrchestrator, "_loop_phase", return_value=([], "max_turns_exceeded")
         ) as loop:
-            result = _run(orch)
+            _run(orch)
+        # Every task reaches the loop (step 2); a source task carries advice.
+        loop.assert_called_once()
         if reaches_loop:
-            loop.assert_called_once()
-            assert orch._coverage_declaration_refusal is None
+            assert orch._coverage_declaration_advice is None
         else:
-            loop.assert_not_called()
-            assert result.final_decision == "configuration_error"
-            assert "declares no coverage command" in result.error
-            invoker.invoke_player.assert_not_called()
+            assert "declares no coverage command" in orch._coverage_declaration_advice
 
     def test_the_default_reading_of_the_sections_is_unchanged(self) -> None:
         from guardkit.orchestrator.agent_invoker import AgentInvoker
@@ -724,7 +668,7 @@ class TestNoSourceFilesAtTaskStart:
             _run(orch)
         loop.assert_called_once()
 
-    def test_a_task_with_one_source_file_still_stops_before_any_work(
+    def test_a_task_with_one_source_file_reaches_the_loop_with_advice(
         self, tmp_path: Path
     ) -> None:
         root = tmp_path / "proj"
@@ -732,17 +676,14 @@ class TestNoSourceFilesAtTaskStart:
             root, toolchain_yaml=NO_COVERAGE, task_type="feature",
             body=WITH_ONE_SOURCE_FILE,
         )
-        orch, invoker, pre_loop_calls = _orchestrator(tmp_path, root)
+        orch, _, _ = _orchestrator(tmp_path, root)
         with patch.object(
-            AutoBuildOrchestrator, "_loop_phase",
-            side_effect=AssertionError("the loop must not start"),
-        ):
+            AutoBuildOrchestrator, "_loop_phase", return_value=([], "max_turns_exceeded")
+        ) as loop:
             result = _run(orch)
-        assert result.final_decision == "configuration_error"
-        assert result.total_turns == 0
-        assert "a feature task needs measured coverage" in result.error
-        invoker.invoke_player.assert_not_called()
-        assert pre_loop_calls == []
+        loop.assert_called_once()
+        assert result.final_decision == "max_turns_exceeded"
+        assert "a feature task" in orch._coverage_declaration_advice
 
 
 def _gate_results(**overrides: Any) -> dict:

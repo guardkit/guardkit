@@ -1086,14 +1086,18 @@ def _build_backend_with_optional_cap(
             max_tool_result_chars,
         )
 
+    # Step 2 (26 October 2026): guardkitfactory's backend is the one copy
+    # that refuses changes to protected files; GuardKit no longer refuses the
+    # turn when an older backend cannot take them (the put-back after each
+    # turn still restores them).
     if protected_paths:
-        if not _factory_accepts_kwarg(factory, "protected_paths"):
-            raise AgentInvocationError(
-                "The project declares autobuild.player.protected_paths, but the "
-                "installed guardkitfactory cannot enforce them. Install the "
-                "matching Factory revision; protection cannot be dropped."
+        if _factory_accepts_kwarg(factory, "protected_paths"):
+            kwargs["protected_paths"] = protected_paths
+        else:
+            logger.warning(
+                "The installed guardkitfactory cannot refuse changes to protected "
+                "files; they are put back after each turn instead."
             )
-        kwargs["protected_paths"] = protected_paths
     # 3 October 2026: the builder's scratch folder (``builder_scratch_dir``).
     # An older factory without it still runs; scratch writes outside the
     # worktree are then refused and never reach the builder's file list.
@@ -1445,7 +1449,15 @@ def select_harness(
                 )
             task_worktree = Path(cwd)
             project_inputs = _load_player_project_inputs(task_worktree)
-            protected_paths = project_inputs["protected_paths"]
+            # Step 2 (26 October 2026): the backend is given the protected
+            # FILES that existed at the build's start commit, not the folders,
+            # so a file the builder creates in a protected folder stays its own
+            # to edit on later turns. The put-back measures the same files.
+            from guardkit.orchestrator.protected_paths import protected_files_at_start
+
+            protected_paths = protected_files_at_start(
+                task_worktree, project_inputs["protected_paths"]
+            )
             # A declared required document is never dropped silently: either the
             # installed factory can require it, or the run refuses loudly. Same
             # discipline as ``protected_paths`` at the backend seam below.

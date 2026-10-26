@@ -140,6 +140,12 @@ def declared_setting_refusal(name: object) -> Optional[str]:
             f"{candidate!r} is not the shape of a setting name: letters, digits "
             "and underscores, never starting with a digit"
         )
+    return _fence_refusal(candidate)
+
+
+def _fence_refusal(candidate: str) -> Optional[str]:
+    """The safety fence: a reserved or credential-shaped name never reaches a
+    project command. ``None`` when the name is neither."""
     upper = candidate.upper()
     for prefix in RESERVED_PREFIXES:
         if upper.startswith(prefix):
@@ -169,23 +175,31 @@ class LaunchDeclaration:
 
 
 def _names(block: Mapping[str, Any], key: str) -> Tuple[str, ...]:
+    """The declared names. Step 2 (26 October 2026): only a reserved or
+    credential-shaped name refuses (the safety fence); anything else
+    malformed is logged and left out."""
     raw = block.get(key)
     if raw is None:
         return ()
     if isinstance(raw, str) or not isinstance(raw, (list, tuple)):
-        raise ValueError(
-            f"`launch.{key}` must be a list of names (it reads as {type(raw).__name__})"
+        logger.warning(
+            "`launch.%s` should be a list of names (it reads as %s); it is ignored",
+            key, type(raw).__name__,
         )
+        return ()
     if len(raw) > MAX_DECLARED_SETTINGS:
-        raise ValueError(
-            f"`launch.{key}` names {len(raw)} settings; at most "
-            f"{MAX_DECLARED_SETTINGS} are allowed"
+        logger.warning(
+            "`launch.%s` names %d settings; about %d is the guide",
+            key, len(raw), MAX_DECLARED_SETTINGS,
         )
     names: list = []
     for entry in raw:
         refusal = declared_setting_refusal(entry)
         if refusal is not None:
-            raise ValueError(f"`launch.{key}`: {refusal}")
+            if isinstance(entry, str) and _fence_refusal(entry.strip()):
+                raise ValueError(f"`launch.{key}`: {refusal}")
+            logger.warning("`launch.%s`: %s; it is left out", key, refusal)
+            continue
         name = entry.strip()
         # Folded, not refused: Forge's reader keeps the first of a repeat.
         if name not in names:
@@ -194,26 +208,30 @@ def _names(block: Mapping[str, Any], key: str) -> Tuple[str, ...]:
 
 
 def parse_launch_block(raw: Any) -> LaunchDeclaration:
-    """Validate a raw ``launch`` mapping. Raises ``ValueError`` when malformed.
+    """Read a raw ``launch`` mapping. Raises ``ValueError`` only for a
+    reserved or credential-shaped name (the safety fence).
 
-    ``None`` declares nothing. Any other value that is not a mapping is
-    refused: Forge would ignore it, but here ignoring a mistyped block would
-    put tool caches into the worktree.
+    ``None``, or any other value that is not a mapping, declares nothing
+    (logged, step 2, 26 October 2026).
     """
     if raw is None:
         return LaunchDeclaration()
     if not isinstance(raw, dict):
-        raise ValueError(
-            f"`launch:` must be a mapping (it reads as {type(raw).__name__})"
+        logger.warning(
+            "`launch:` should be a mapping (it reads as %s); it is ignored",
+            type(raw).__name__,
         )
+        return LaunchDeclaration()
     settings = _names(raw, SETTINGS_KEY)
     scratch = _names(raw, SCRATCH_KEY)
     both = sorted(set(settings) & set(scratch))
     if both:
-        raise ValueError(
-            f"{', '.join(both)} cannot be both passed through (`launch.settings`) "
-            "and a scratch folder (`launch.scratch`)"
+        logger.warning(
+            "%s cannot be both passed through (`launch.settings`) and a scratch "
+            "folder (`launch.scratch`); each is used as a scratch folder",
+            ", ".join(both),
         )
+        settings = tuple(name for name in settings if name not in both)
     return LaunchDeclaration(settings=settings, scratch=scratch)
 
 
@@ -297,8 +315,8 @@ def load_launch_declaration(
     except ValueError as exc:
         raise LaunchDeclarationError(
             f"The `launch:` block in {config_path} cannot be used: {exc}. Fix "
-            "it there; the work does not run without it, because its tool "
-            "caches would otherwise land inside the project."
+            "it there; the factory's own settings and credentials never reach "
+            "a project command."
         ) from exc
     return None if declaration.is_empty else declaration
 

@@ -194,7 +194,6 @@ def test_mixed_feature_run_defers_handoff_and_succeeds(
         repo_root=integration_repo,
         worktree_manager=stub_worktree_manager,
         max_turns=3,
-        stop_on_failure=False,
     )
 
     # Mock AutoBuildOrchestrator so the Player↔Coach loop "succeeds" for

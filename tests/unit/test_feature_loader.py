@@ -2454,6 +2454,13 @@ def _load_and_validate(repo: Path, feature_id: str):
     return FeatureLoader.validate_feature(feature, repo_root=repo)
 
 
+def _references(repo: Path, feature_id: str):
+    """The unordered references, which the plan check gives as advice since
+    step 2 (26 October 2026); the planner adds the order itself."""
+    feature = FeatureLoader.load_feature(feature_id, repo_root=repo, validate_paths=False)
+    return FeatureLoader.validate_task_references(feature, repo)
+
+
 _FFEC_CORRECTED_WAVES = [
     ["TASK-FFEC-001"],
     ["TASK-FFEC-003"],
@@ -2466,10 +2473,11 @@ class TestTaskReferencesNeedAnOrder:
     """FEAT-FFEC (3 October 2026): TASK-FFEC-002's task file needed
     TASK-FFEC-003's schema, but the plan never said so and both ran in wave 2."""
 
-    def test_the_committed_ffec_plan_is_refused_in_plain_words(self, tmp_path):
+    def test_the_committed_ffec_plan_gets_plain_advice(self, tmp_path):
         repo = _copy_fixture("ffec_c9c3714c", tmp_path)
 
-        assert _load_and_validate(repo, "FEAT-FFEC") == [_FFEC_SENTENCE]
+        assert _references(repo, "FEAT-FFEC") == [_FFEC_SENTENCE]
+        assert _load_and_validate(repo, "FEAT-FFEC") == []
 
     def test_the_ffec_plan_passes_once_the_need_is_declared_and_ordered(self, tmp_path):
         repo = _copy_fixture("ffec_c9c3714c", tmp_path)
@@ -2503,15 +2511,15 @@ class TestTaskReferencesNeedAnOrder:
         moved.parent.mkdir(parents=True)
         (repo / "tasks" / "backlog" / slug / name).rename(moved)
 
-        assert _load_and_validate(repo, "FEAT-FFEC") == [_FFEC_SENTENCE]
+        assert _references(repo, "FEAT-FFEC") == [_FFEC_SENTENCE]
 
         _order_tasks(repo, "FEAT-FFEC", "TASK-FFEC-002", "TASK-FFEC-003", _FFEC_CORRECTED_WAVES)
-        assert _load_and_validate(repo, "FEAT-FFEC") == []
+        assert _references(repo, "FEAT-FFEC") == []
 
     def test_a_go_project_is_checked_the_same_way(self, tmp_path):
         repo = _copy_fixture("go_rate_limiter", tmp_path)
 
-        assert _load_and_validate(repo, "FEAT-G0A7") == [
+        assert _references(repo, "FEAT-G0A7") == [
             "TASK-G0A7-002's task file refers to TASK-G0A7-003, but neither depends "
             "on the other, so they can run together or in either order. Add "
             "TASK-G0A7-003 to its dependencies (and put TASK-G0A7-002 in a later "

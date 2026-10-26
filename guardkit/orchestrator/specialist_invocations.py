@@ -1678,9 +1678,6 @@ def _deterministic_phase_4_block(
     # Lazy import: avoid any import-time coupling between this module and the
     # quality-gates package (no cycle today, but keep it loose).
     try:
-        from guardkit.orchestrator.coach_verification import (
-            InterpreterResolutionError,
-        )
         from guardkit.orchestrator.quality_gates.coach_validator import (
             CoachValidator,
         )
@@ -1749,13 +1746,6 @@ def _deterministic_phase_4_block(
         )
         if evidence_sink is not None:
             evidence_sink["run_evidence"] = getattr(result, "run_evidence", None)
-    except InterpreterResolutionError:
-        # WS3-S1 Q1 SPLIT: an interpreter-resolution hard-abort must NOT
-        # degrade to the LLM test-orchestrator specialist (which would run
-        # pytest under the same broken interpreter and re-open the DD4F
-        # soft-fail). Propagate so the run fails loud with the named
-        # remediation.
-        raise
     except Exception as exc:  # noqa: BLE001 — degrade to the specialist path
         logger.warning(
             "[%s] deterministic Phase-4 run raised (%s); falling back to "

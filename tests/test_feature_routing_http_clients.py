@@ -15,7 +15,6 @@ from guardkit.lib.client_env import (
     FEATURE_ROUTING_HEADER,
     FEATURE_ROUTING_ID_ENV,
     FEATURE_ROUTING_REQUIRED_ENV,
-    FeatureRoutingError,
 )
 from guardkit.orchestrator.stamp_model_fallback import ConfiguredAsker
 from guardkit.qa.qav_shadow import _default_seat_call as qav_call
@@ -113,13 +112,15 @@ def test_all_guardkit_clients_transmit_the_same_feature_header(loopback):
 
 
 @pytest.mark.parametrize("client", ["qav", "review", "stamp"])
-def test_missing_required_route_makes_zero_http_requests(loopback, monkeypatch, client):
+def test_missing_required_route_is_advice_and_sends_no_header(loopback, monkeypatch, client):
+    """Step 2 (26 October 2026): routing is bookkeeping, never a refusal."""
     monkeypatch.delenv(FEATURE_ROUTING_ID_ENV)
     call = {
         "qav": lambda: qav_call(loopback.base_url)("s", "u", "m", 2),
         "review": lambda: review_call(loopback.base_url, timeout_s=2)("s", "u", "m"),
         "stamp": lambda: ConfiguredAsker(loopback.base_url, "m", 2)("p"),
     }[client]
-    with pytest.raises(FeatureRoutingError):
-        call()
-    assert loopback.requests == []
+    call()
+    assert len(loopback.requests) == 1
+    _path, headers, _body = loopback.requests[0]
+    assert FEATURE_ROUTING_HEADER not in {name.lower() for name in headers}

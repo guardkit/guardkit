@@ -459,42 +459,6 @@ def test_a_failing_check_re_enters_the_last_wave_once_then_fails_the_feature(
     assert "whole-feature check failed" in (result.error or "")
 
 
-def test_timeout_during_feature_check_repair_stops_without_another_attempt(
-    tmp_path: Path,
-) -> None:
-    repo_root, worktree = _make_project(
-        tmp_path, declaration=_declaration("sh qa/feature-check.sh")
-    )
-    feature = _make_feature(worktree)
-    orchestrator = _make_orchestrator(repo_root)
-    worktree_obj = _make_worktree(worktree)
-    feedback: List[Optional[str]] = []
-
-    def _wave(wave_number, task_ids, feature_, worktree_, seed_feedback=None, **kwargs):
-        feedback.append(seed_feedback)
-        _complete_feature_tasks(feature_, list(task_ids))
-        if seed_feedback is not None:
-            orchestrator._set_timeout_fence()
-        return _succeeding_wave(wave_number, list(task_ids))
-
-    register_fresh_checkout(worktree, "HEAD")
-    with ExitStack() as stack:
-        for _cm in _common_patches(orchestrator):
-            stack.enter_context(_cm)
-        stack.enter_context(
-            patch.object(orchestrator, "_run_final_wave_boot_smoke", return_value=None)
-        )
-        stack.enter_context(patch.object(orchestrator, "_execute_wave", side_effect=_wave))
-        wave_results = orchestrator._wave_phase(feature, worktree_obj)
-        stack.enter_context(patch.object(orchestrator, "_display_summary"))
-        result = orchestrator._finalize_phase(feature, wave_results, worktree_obj)
-
-    assert len(feedback) == 2
-    assert result.status == "failed"
-    assert "timed out" in (result.error or "")
-    assert len(_receipt(worktree)["attempts"]) == 1
-
-
 def test_a_repair_round_that_fixes_the_feature_completes_it(tmp_path: Path) -> None:
     repo_root, worktree = _make_project(
         tmp_path, declaration=_declaration("sh qa/feature-check.sh")

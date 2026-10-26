@@ -11,7 +11,6 @@ Verifies:
 import threading
 import time
 import logging
-import subprocess
 from pathlib import Path
 from unittest.mock import Mock, MagicMock, patch, AsyncMock
 
@@ -24,10 +23,8 @@ from guardkit.orchestrator.autobuild import (
 )
 from guardkit.orchestrator.agent_invoker import AgentInvocationResult
 from guardkit.orchestrator.feature_orchestrator import (
-    FeatureOrchestrator,
     TaskExecutionResult,
 )
-from guardkit.orchestrator.quality_gates.coach_validator import CoachValidator
 from guardkit.worktrees import Worktree
 
 
@@ -442,128 +439,6 @@ async def test_feature_orchestrator_passes_timeout_event_to_execute_task(tmp_pat
     # The TaskExecutionResult should show "timeout"
     assert len(results) == 1
     assert results[0].final_decision == "timeout"
-
-
-@pytest.mark.asyncio
-async def test_timeout_fence_refuses_queued_peer_while_real_checkout_check_lives(
-    tmp_path, monkeypatch
-):
-    """A timed-out real-check worker cannot overlap a queued successor."""
-    monkeypatch.setenv("GUARDKIT_AUTOBUILD_TASK_TIMEOUT_FLOOR", "0")
-    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
-
-    from guardkit.orchestrator.feature_loader import (
-        Feature,
-        FeatureExecution,
-        FeatureOrchestration,
-        FeatureTask,
-    )
-
-    tasks = [
-        FeatureTask(
-            id=f"TASK-T-00{number}",
-            name=f"Task {number}",
-            file_path=Path(f"tasks/backlog/TASK-T-00{number}.md"),
-            complexity=2,
-            dependencies=[],
-            status="pending",
-            implementation_mode="task-work",
-            estimated_minutes=1,
-        )
-        for number in (1, 2)
-    ]
-    feature = Feature(
-        id="FEATURE-TIMEOUT-FENCE",
-        name="Timeout fence",
-        description="Test",
-        created="2025-01-01T00:00:00Z",
-        status="planned",
-        complexity=3,
-        estimated_tasks=2,
-        tasks=tasks,
-        orchestration=FeatureOrchestration(
-            parallel_groups=[[task.id for task in tasks]],
-            estimated_duration_minutes=1,
-            recommended_parallel=1,
-        ),
-        execution=FeatureExecution(),
-    )
-    worktree = Mock(spec=Worktree)
-    worktree.path = tmp_path
-    orchestrator = FeatureOrchestrator(
-        repo_root=tmp_path,
-        worktree_manager=Mock(),
-        task_timeout=1,
-        max_parallel=1,
-    )
-    entered_real_check = threading.Event()
-    release_real_check = threading.Event()
-    worker_finished = threading.Event()
-    worker_errors = []
-    started = []
-
-    def _real_checkout_worker(task, _feature, _worktree, **kwargs):
-        started.append(task.id)
-        validator = CoachValidator(
-            worktree_path=str(tmp_path),
-            task_id=task.id,
-            test_command="git rev-parse --is-inside-work-tree",
-            coach_test_execution="subprocess",
-            wave_size=kwargs["wave_size"],
-            effective_concurrency=kwargs["effective_concurrency"],
-        )
-        assert validator.test_isolation_concurrency == 1
-        assert kwargs["shares_working_copy"] is False
-        entered_real_check.set()
-        try:
-            assert release_real_check.wait(2)
-            check = validator.run_independent_tests(
-                task_work_results={"tests_passed": True},
-                task={"task_type": "feature"},
-                turn=1,
-            )
-            assert check.tests_passed is True
-            return TaskExecutionResult(
-                task_id=task.id,
-                success=True,
-                total_turns=1,
-                final_decision="approved",
-            )
-        except BaseException as exc:
-            worker_errors.append(exc)
-            raise
-        finally:
-            worker_finished.set()
-
-    monkeypatch.setattr(orchestrator, "_resolve_task_timeout", lambda *a, **k: 0.1)
-    try:
-        with patch(
-            "guardkit.orchestrator.feature_orchestrator.TaskLoader.load_task",
-            return_value={},
-        ), patch.object(
-            orchestrator, "_wave_task_paths", return_value={}
-        ), patch.object(
-            orchestrator, "_execute_task", side_effect=_real_checkout_worker
-        ):
-            results = await orchestrator._execute_wave_parallel(
-                1, [task.id for task in tasks], feature, worktree
-            )
-            assert entered_real_check.is_set()
-            assert started == ["TASK-T-001"]
-            assert [result.final_decision for result in results] == [
-                "timeout",
-                "error",
-            ]
-            assert results[1].total_turns == 0
-            assert "did not start" in (results[1].error or "")
-            assert tasks[1].status == "failed"
-            assert tasks[1].started_at is not None  # existing queue-time contract
-            assert tasks[1].turns_completed == 0
-            assert tasks[1].result["final_decision"] == "error"
-    finally:
-        release_real_check.set()
-        assert worker_finished.wait(2), "timed-out worker leaked from the test"
-        assert worker_errors == []
 
 
 @pytest.mark.asyncio

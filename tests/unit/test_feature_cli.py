@@ -496,8 +496,9 @@ class TestIntraWaveDependencies:
 class TestTaskReferencesThroughTheCommand:
     """``guardkit feature validate <id> --json`` is the command forge's plan
     check runs (the deploy sidecar's ``feature-validate`` pre-commit check).
-    The committed FEAT-FFEC plan is refused with the plain sentence; the same
-    plan with the need declared and the waves reordered passes."""
+    Step 2 (26 October 2026): the committed FEAT-FFEC plan passes with the
+    plain sentence as advice (the planner adds the order itself); the same
+    plan with the need declared and the waves reordered passes too."""
 
     _FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "task_references" / "ffec_c9c3714c"
 
@@ -508,20 +509,18 @@ class TestTaskReferencesThroughTheCommand:
         monkeypatch.chdir(tmp_path)
         return tmp_path
 
-    def test_the_committed_ffec_plan_is_refused(self, runner, tmp_path, monkeypatch):
+    def test_the_committed_ffec_plan_passes_with_advice(
+        self, runner, tmp_path, monkeypatch, caplog
+    ):
         self._repo(tmp_path, monkeypatch)
 
-        result = runner.invoke(feature, ["validate", "FEAT-FFEC", "--json"])
+        with caplog.at_level("WARNING"):
+            result = runner.invoke(feature, ["validate", "FEAT-FFEC", "--json"])
 
-        assert result.exit_code == 1
+        assert result.exit_code == 0, result.output
         data = json.loads(result.output[result.output.index("{"):])
-        assert data["valid"] is False
-        assert data["structural_errors"] == [
-            "TASK-FFEC-002's task file refers to TASK-FFEC-003, but neither depends "
-            "on the other, so they can run together or in either order. Add "
-            "TASK-FFEC-003 to its dependencies (and put TASK-FFEC-002 in a later "
-            "wave than TASK-FFEC-003), or remove the reference."
-        ]
+        assert data["valid"] is True
+        assert "TASK-FFEC-002's task file refers to TASK-FFEC-003" in caplog.text
 
     def test_the_corrected_ffec_plan_passes(self, runner, tmp_path, monkeypatch):
         repo = self._repo(tmp_path, monkeypatch)

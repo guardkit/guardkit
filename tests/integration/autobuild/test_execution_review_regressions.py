@@ -94,7 +94,6 @@ def test_numeric_text_fallback_cannot_hide_explicit_noncompletion(tmp_path, reve
 def _task_runner(root, callback):
     runner = FeatureOrchestrator.__new__(FeatureOrchestrator)
     runner._evidence_repos_resolved = []
-    runner._timeout_fence_is_set = lambda: False
     runner._update_task_started = lambda *args: None
     entered = []
 
@@ -118,7 +117,7 @@ def _execute(runner, root, task_id):
 
 
 @pytest.mark.parametrize("consumer", ["runtime", "independent", "recovery"])
-def test_unknown_child_blocks_approval_and_successor_through_real_consumers(
+def test_unknown_child_blocks_approval_but_not_the_successor_through_real_consumers(
     tmp_path, monkeypatch, consumer
 ):
     import guardkit.orchestrator.quality_gates.coach_validator as cv
@@ -164,9 +163,11 @@ def test_unknown_child_blocks_approval_and_successor_through_real_consumers(
         assert children[0].poll() is None
         assert first.success is False
         assert "CleanupUnavailableError" in first.error
+        # Step 2 (26 October 2026): the next task is admitted (one writer at
+        # a time is the only rule); its own check meets the same unknown child.
         second = _execute(runner, root, "TASK-B")
         assert second.success is False
-        assert entered == ["TASK-A"]
+        assert entered == ["TASK-A", "TASK-B"]
         assert current_lease() is None
     finally:
         for child in children:
@@ -205,9 +206,8 @@ def test_command_boundary_preserves_typed_cleanup_failure_before_advisory_catch(
             with pytest.raises(ScopeUnavailable):
                 process_group.run_project_command("ignored", cwd=root, env={})
             assert len(children) == 1
-        with pytest.raises(ScopeUnavailable):
-            with checkout_lease(root):
-                pass
+        with checkout_lease(root) as lease:  # the next writer is admitted (step 2)
+            lease.admit("TASK-NEXT")
     finally:
         for child in children:
             child.terminate()
@@ -215,69 +215,6 @@ def test_command_boundary_preserves_typed_cleanup_failure_before_advisory_catch(
             for stream in (child.stdout, child.stderr):
                 if stream:
                     stream.close()
-
-
-@pytest.mark.parametrize("operation", ["write_text", "unlink"])
-@pytest.mark.parametrize("fail_member", [0, 1])
-def test_marker_failure_unwinds_and_denies_complete_sibling_footprint(
-    tmp_path, monkeypatch, operation, fail_member
-):
-    sibling = _helpers.repository(tmp_path / "sibling")
-    root, repos = _helpers.fresh_with_sibling(
-        tmp_path / "source", sibling, "FEAT-MARKER"
-    )
-    original = getattr(Path, operation)
-    calls = []
-    failure = OSError("fixture marker I/O failure")
-
-    def fail_once(path, *args, **kwargs):
-        if path.name == "guardkit-writer-unsettled":
-            calls.append(path)
-            if len(calls) == fail_member + 1:
-                raise failure
-        return original(path, *args, **kwargs)
-
-    monkeypatch.setattr(Path, operation, fail_once)
-    with pytest.raises(OSError) as caught:
-        with checkout_lease(root, repos) as lease:
-            lease.admit("TASK-MARKER")
-    assert caught.value is failure
-    assert current_lease() is None
-    for member in (root, sibling):
-        _, git_dir = task_work_scope.identity(member)
-        assert task_work_scope._locks[str(git_dir)].locked() is False
-        assert (
-            "fixture marker I/O failure"
-            in task_work_scope._history[str(git_dir)]["failed"]
-        )
-        assert (git_dir / "guardkit-writer-unsettled").exists()
-    with pytest.raises(ScopeUnavailable):
-        with checkout_lease(root, repos):
-            pass
-    with pytest.raises(ScopeUnavailable):
-        with checkout_lease(sibling):
-            pass
-
-
-def test_marker_setup_error_cannot_reenter_unlocked_normal_task(tmp_path, monkeypatch):
-    root = _helpers.repository(tmp_path / "repo")
-    original = Path.write_text
-    failed = False
-
-    def fail_once(path, *args, **kwargs):
-        nonlocal failed
-        if path.name == "guardkit-writer-unsettled" and not failed:
-            failed = True
-            raise OSError("fixture marker failure")
-        return original(path, *args, **kwargs)
-
-    monkeypatch.setattr(Path, "write_text", fail_once)
-    runner, entered = _task_runner(root, lambda: None)
-    with pytest.raises(OSError):
-        _execute(runner, root, "TASK-A")
-    assert current_lease() is None
-    assert _execute(runner, root, "TASK-B").success is False
-    assert entered == []
 
 
 def test_written_observations_do_not_replace_fabricated_or_unstaged_claims(tmp_path):

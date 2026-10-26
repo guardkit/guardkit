@@ -3,12 +3,12 @@ Integration Tests for Parallel Wave Execution in FeatureOrchestrator
 
 Tests the parallel task execution capabilities of FeatureOrchestrator to ensure
 that tasks within the same wave execute in parallel, error isolation works correctly,
-and stop_on_failure behavior is properly enforced.
+and a failed task never stops later waves (step 2, 26 October 2026).
 
 Test Coverage:
     - Parallel execution timing verification
     - Error isolation between parallel tasks
-    - Stop-on-failure behavior across waves
+    - A failed task does not stop later waves
     - Heartbeat/progress logging during execution
 
 Architecture:
@@ -401,7 +401,6 @@ class TestParallelWaveExecution:
         orchestrator = FeatureOrchestrator(
             repo_root=tmp_repo_root,
             worktree_manager=mock_worktree_manager,
-            stop_on_failure=False,  # Continue on failure
             quiet=True,
         )
 
@@ -429,15 +428,14 @@ class TestParallelWaveExecution:
         assert task_results_by_id["TASK-002"].success is False
         assert task_results_by_id["TASK-003"].success is True
 
-    def test_stop_on_failure_behavior(self, tmp_repo_root, mock_worktree_manager):
+    def test_a_failed_task_does_not_stop_the_next_wave(self, tmp_repo_root, mock_worktree_manager):
         """
-        Verify stop_on_failure stops after current wave completes.
+        A failed task never stops later waves (step 2, 26 October 2026).
 
         Test Flow:
         1. Create 2 waves: wave 1 with 3 tasks (including failure), wave 2 with 2 tasks
-        2. Set stop_on_failure=True
-        3. Verify wave 1 completes fully before stopping
-        4. Verify wave 2 never starts
+        2. Verify wave 1 completes fully
+        3. Verify wave 2 still runs, and the feature ends failed
         """
         # Create feature with 2 waves
         feature = create_test_feature(
@@ -447,13 +445,13 @@ class TestParallelWaveExecution:
                 {"id": "TASK-001", "name": "Task 1", "estimated_minutes": 30},
                 {"id": "TASK-002", "name": "Task 2", "estimated_minutes": 30},
                 {"id": "TASK-003", "name": "Task 3", "estimated_minutes": 30},
-                # Wave 2 - should not execute
+                # Wave 2 - still runs
                 {"id": "TASK-004", "name": "Task 4", "estimated_minutes": 30},
                 {"id": "TASK-005", "name": "Task 5", "estimated_minutes": 30},
             ],
             parallel_groups=[
                 ["TASK-001", "TASK-002", "TASK-003"],  # Wave 1
-                ["TASK-004", "TASK-005"],  # Wave 2 (should not execute)
+                ["TASK-004", "TASK-005"],  # Wave 2
             ],
             tmp_repo_root=tmp_repo_root,
         )
@@ -461,11 +459,9 @@ class TestParallelWaveExecution:
         # Save feature YAML
         FeatureLoader.save_feature(feature, tmp_repo_root)
 
-        # Create orchestrator with stop_on_failure=True
         orchestrator = FeatureOrchestrator(
             repo_root=tmp_repo_root,
             worktree_manager=mock_worktree_manager,
-            stop_on_failure=True,
             quiet=True,
         )
 
@@ -481,19 +477,16 @@ class TestParallelWaveExecution:
         assert result.success is False
         assert result.status == "failed"
 
-        # Verify wave 1 completed fully (all 3 tasks executed)
-        assert len(result.wave_results) == 1  # Only wave 1 executed
+        # Both waves ran
+        assert len(result.wave_results) == 2
         wave1_result = result.wave_results[0]
         assert wave1_result.wave_number == 1
         assert len(wave1_result.results) == 3  # All 3 tasks in wave 1 executed
+        assert len(result.wave_results[1].results) == 2
 
-        # Verify task execution status
-        assert result.tasks_completed == 2  # Tasks 1 and 3 completed
-        assert result.tasks_failed == 1  # Task 2 failed
-
-        # Verify wave 2 tasks were never started
-        # (If they were, tasks_completed + tasks_failed would be > 3)
-        assert result.tasks_completed + result.tasks_failed == 3
+        # Tasks 1, 3, 4 and 5 completed; task 2 failed
+        assert result.tasks_completed == 4
+        assert result.tasks_failed == 1
 
     def test_heartbeat_during_execution(
         self, tmp_repo_root, mock_worktree_manager, caplog

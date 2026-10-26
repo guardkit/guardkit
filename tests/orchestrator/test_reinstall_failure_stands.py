@@ -10,10 +10,10 @@ builder to remove the declaration, which would break the declared stack.
 
 What each test below pins:
 
-- A tool the project declares that is missing from the build environment ends
-  the task on that turn as a configuration error, with a sentence naming the
-  tool and the declaring file, that never tells anyone to remove the
-  declaration, and the reviewer is not asked.
+- A tool the project declares that is missing from the build environment is
+  advice since step 2 (26 October 2026): the reviewer is asked, with one plain
+  line ("the project's tests could not be run: ...") naming the tool and the
+  declaring file, never telling anyone to remove the declaration.
   -> ``TestMissingDeclaredTool``
 - Any other failed reinstall stands until a later reinstall in the same task
   succeeds: a turn that changes no dependency file re-runs it, and the
@@ -31,10 +31,7 @@ from unittest.mock import AsyncMock, MagicMock, Mock, patch
 import pytest
 
 from guardkit.orchestrator.agent_invoker import AgentInvocationResult
-from guardkit.orchestrator.autobuild import (
-    AutoBuildOrchestrator,
-    _configuration_error_cause,
-)
+from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
 from guardkit.orchestrator.environment_bootstrap import (
     BootstrapFailureDetail,
     BootstrapResult,
@@ -170,7 +167,7 @@ class TestMissingDeclaredTool:
         assert feedback == orch._reinstall_environment_gap
         assert "missing a tool, which package.json declares" in feedback
 
-    def test_the_turn_ends_as_a_configuration_error_without_the_reviewer(
+    def test_the_reviewer_is_asked_with_one_plain_line(
         self, worktree: Path
     ) -> None:
         invoker = Mock()
@@ -196,8 +193,18 @@ class TestMissingDeclaredTool:
             enable_checkpoints=False,
         )
         wt = SimpleNamespace(path=worktree, branch_name="main")
+        seen = []
+
+        def coach(**kwargs):
+            seen.append(list(kwargs["player_report"].get("concerns") or []))
+            return AgentInvocationResult(
+                task_id=TASK, turn=1, agent_type="coach", success=True,
+                report={"decision": "feedback", "issues": [], "rationale": "r"},
+                duration_seconds=1.0,
+            )
+
         with patch.object(orch, "_attempt_state_recovery", return_value=None), \
-                patch.object(orch, "_invoke_coach_safely") as coach, \
+                patch.object(orch, "_invoke_coach_safely", side_effect=coach), \
                 patch(
                     "guardkit.orchestrator.environment_bootstrap._uv_on_path",
                     return_value=False,
@@ -206,13 +213,12 @@ class TestMissingDeclaredTool:
                 turn=1, task_id=TASK, requirements="Set up the workspace",
                 worktree=wt, previous_feedback=None,
             )
-        coach.assert_not_called()
-        assert record.is_configuration_error is True
-        assert record.coach_result is None
-        cause, is_task_type = _configuration_error_cause(record)
-        assert is_task_type is False
-        assert "`uv`" in cause and "pyproject.toml" in cause
-        assert "remov" not in cause.lower()
+        assert len(seen) == 1  # the reviewer was asked
+        advice = [c for c in seen[0] if c.startswith("The project's tests could not be run: ")]
+        assert len(advice) == 1
+        assert "`uv`" in advice[0] and "pyproject.toml" in advice[0]
+        assert "remov" not in advice[0].lower()
+        assert record.is_configuration_error is False
 
 
 # ---------------------------------------------------------------------------
@@ -407,74 +413,8 @@ class TestMissingInstallProgram:
 
 
 # ---------------------------------------------------------------------------
-# The environment-gap sentence is the task's and the feature's final reason
+# A task's stop sentence is the feature's final reason
 # ---------------------------------------------------------------------------
-
-
-def _orchestrator_with_uv_missing_turn(worktree: Path) -> AutoBuildOrchestrator:
-    invoker = Mock()
-    invoker.invoke_player = AsyncMock(
-        return_value=AgentInvocationResult(
-            task_id=TASK, turn=1, agent_type="player", success=True,
-            report={"task_id": TASK, "files_modified": [],
-                    "files_created": ["pyproject.toml"], "tests_written": []},
-            duration_seconds=60.0,
-        )
-    )
-    invoker.invoke_coach = AsyncMock()
-    invoker._get_implementation_mode.return_value = "direct"
-    manager = Mock()
-    manager.worktrees_dir = worktree
-    return AutoBuildOrchestrator(
-        repo_root=worktree,
-        max_turns=5,
-        worktree_manager=manager,
-        agent_invoker=invoker,
-        progress_display=MagicMock(),
-        enable_pre_loop=False,
-        enable_checkpoints=False,
-    )
-
-
-class TestTheReasonReachesTheEnd:
-    def test_the_task_stops_and_its_summary_leads_with_the_sentence(
-        self, worktree: Path
-    ) -> None:
-        orch = _orchestrator_with_uv_missing_turn(worktree)
-        wt = SimpleNamespace(path=worktree, branch_name="main")
-        with patch.object(orch, "_attempt_state_recovery", return_value=None), \
-                patch.object(orch, "_invoke_coach_safely") as coach, \
-                patch(
-                    "guardkit.orchestrator.environment_bootstrap._uv_on_path",
-                    return_value=False,
-                ):
-            history, decision = orch._loop_phase(
-                TASK, "Set up the workspace", ["AC-001: the workspace installs"], wt
-            )
-        coach.assert_not_called()
-        assert decision == "configuration_error"
-        assert len(history) == 1
-
-        sentence = orch._environment_gap_stopped_on(decision, history)
-        assert sentence is not None
-        assert sentence.startswith("The build environment is missing `uv`")
-        assert "pyproject.toml declares" in sentence
-
-        # The task's error and summary lead with it; the cause the loop
-        # printed is the same sentence (_configuration_error_cause).
-        error = orch._build_error_message(decision, history)
-        assert error == sentence
-        details = orch._build_summary_details(history, decision)
-        assert details.splitlines()[0] == sentence
-        assert "Stopped on turn 1" in details
-        assert "task_type" not in details
-        assert _configuration_error_cause(history[-1]) == (sentence, False)
-
-    def test_no_sentence_on_other_outcomes(self, worktree: Path) -> None:
-        orch = _bare_orchestrator()
-        orch._environment_gap_stop = "The build environment is missing `uv`."
-        assert orch._environment_gap_stopped_on("max_turns_exceeded", []) is None
-        assert orch._environment_gap_stopped_on("configuration_error", []) is None
 
 
 def _feature_with_one_task():
