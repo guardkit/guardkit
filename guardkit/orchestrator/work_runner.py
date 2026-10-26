@@ -1207,13 +1207,30 @@ def run_work_leg(
             model=model,
             venv_python=provision.path,
         )
-        result = orchestrator.orchestrate(
-            task_id=task_id,
-            requirements=requirements,
-            acceptance_criteria=acceptance,
-            base_branch=branch,
-            task_file_path=task.get("file_path"),
+        from guardkit.orchestrator.task_work_scope import (  # noqa: PLC0415
+            adopt_prepared_checkout,
+            checkout_lease,
+            current_lease,
         )
+
+        def _orchestrate():
+            return orchestrator.orchestrate(
+                task_id=task_id,
+                requirements=requirements,
+                acceptance_criteria=acceptance,
+                base_branch=branch,
+                task_file_path=task.get("file_path"),
+            )
+
+        if current_lease() is None:
+            # The conductor prepared this checkout; this step adopts it and
+            # runs under its own writer lease, as a feature task does.
+            adopt_prepared_checkout(repo_root)
+            with checkout_lease(repo_root) as lease:
+                lease.admit(task_id)
+                result = _orchestrate()
+        else:
+            result = _orchestrate()
     except Exception as exc:  # noqa: BLE001 — the leg must never traceback out
         orchestration_error = f"{type(exc).__name__}: {exc}"
         logger.warning("work leg orchestration raised: %s", orchestration_error)

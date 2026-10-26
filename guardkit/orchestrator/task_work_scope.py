@@ -111,6 +111,39 @@ def register_fresh_checkout(root, source_commit, *, source_root=None):
         }
 
 
+def adopt_prepared_checkout(root):
+    """A checkout another factory process prepared becomes this process's
+    starting input, at its current HEAD, with what earlier steps left in it.
+
+    Forge's repair conductor runs each work step as a new ``guardkit
+    task-work`` process in a checkout it prepared, so the checkout is neither
+    one this process created (:func:`register_fresh_checkout`) nor one with
+    approved history here. Without this, every repair step since 24 October
+    2026 was refused at admission ("Initial sibling selection requires an
+    unconsumed fresh primary source"; build-FEAT-6CE5-20261026132641). An
+    unsettled or already-used checkout is still refused.
+    """
+    root, git_dir = identity(root)
+    head = _git(root, "rev-parse", "HEAD")
+    with _registry_lock:
+        prior = _history.get(str(git_dir))
+        # A step that settled cleanly in this process may be followed by the
+        # next; a failed or unsettled one may not.
+        if (prior and prior.get("failed")) or (git_dir / "guardkit-writer-unsettled").exists():
+            raise ScopeUnavailable(
+                "Cannot adopt an unsettled checkout as this step's starting input"
+            )
+        _history.pop(str(git_dir), None)
+        _selected.pop(str(git_dir), None)
+        _approved_heads.pop(str(git_dir), None)
+        _fresh[str(git_dir)] = {
+            "commit": head,
+            "source_root": str(root),
+            "build_id": uuid.uuid4().hex,
+            "inherited_changes": True,
+        }
+
+
 def bind_fresh_footprint(root, source_root, artifact_path, *, kind, expected=None):
     """Bind declared inputs to an immutable source blob, before any task move.
 
@@ -267,6 +300,9 @@ class CheckoutLease:
         }
         self.scope = None
         self.checkpoints = set()
+        # True only for a checkout adopted from Forge's conductor
+        # (adopt_prepared_checkout): earlier steps' work is its input.
+        self.inherited = False
         self.owner = threading.get_ident()
         self.failure = None
         self.continuation_snapshot = None
@@ -337,7 +373,7 @@ class CheckoutLease:
                 "Repair admission has no retained approval for this task"
             )
         for _, root, _ in self.repositories:
-            dirty = _dirty(root)
+            dirty = [] if self.inherited else _dirty(root)
             if dirty:
                 raise ScopeUnavailable(
                     "Inherited product changes preserved; cannot admit task: "
@@ -454,6 +490,8 @@ def checkout_lease(root, evidence_repos=(), cancelled=None):
                 "Sibling identity changed before all-footprint admission"
             )
         selecting = str(primary[1]) in _fresh
+        # An adopted checkout carries earlier steps' work on purpose.
+        inherited = bool(_fresh.get(str(primary[1]), {}).get("inherited_changes"))
         selected_heads = {}
         for _, repository_root, git_dir in repos:
             marker = git_dir / "guardkit-writer-unsettled"
@@ -479,7 +517,7 @@ def checkout_lease(root, evidence_repos=(), cancelled=None):
                 raise ScopeUnavailable(
                     "Checkout changed outside the admitted writer; work preserved"
                 )
-            if selecting and _dirty(repository_root):
+            if selecting and not inherited and _dirty(repository_root):
                 raise ScopeUnavailable(
                     "Initial input has inherited product changes; no inputs selected"
                 )
@@ -497,6 +535,7 @@ def checkout_lease(root, evidence_repos=(), cancelled=None):
             [(Path(root).absolute(), primary)]
             + [(r.root, identity(r.root)) for r in evidence_repos],
         )
+        lease.inherited = inherited
         _local.lease = lease
         try:
             # Initialization is part of ownership too: a failed marker write
