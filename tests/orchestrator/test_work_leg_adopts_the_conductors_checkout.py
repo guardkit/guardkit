@@ -126,3 +126,26 @@ def test_a_step_after_an_unsettled_writer_is_still_refused(prepared, real_orches
     outcome = run_work_leg(task_id=FIX_TASK_ID, repo_root=prepared)
     assert outcome.status == "failed"
     assert "unsettled" in _orchestration_error(outcome)
+
+
+def test_a_task_declaring_sibling_repositories_is_refused_not_half_leased(prepared, real_orchestrator, tmp_path):
+    """Review R1: the adopted lease covers the conductor's checkout only, so a
+    declared sibling (here one carrying an unsettled marker) must refuse the
+    step rather than be ignored."""
+    sibling = tmp_path / "sibling"
+    sibling.mkdir()
+    _git(sibling, "init", "-b", "main")
+    _git(sibling, "config", "user.email", "leg@example.test")
+    _git(sibling, "config", "user.name", "Work Leg")
+    (sibling / "base").write_text("sibling\n")
+    _git(sibling, "add", "-A", ".")
+    _git(sibling, "commit", "-m", "sibling seed")
+    _, sibling_git = identity(sibling)
+    (sibling_git / "guardkit-writer-unsettled").write_text("Writer unsettled; automatic resume refused\n")
+    task = prepared / "tasks" / "backlog" / "repair" / f"{FIX_TASK_ID}.md"
+    task.write_text(FIX_TASK_BODY.replace("task_type: fix\n", f"task_type: fix\nevidence_repos:\n  - {sibling}\n"))
+
+    outcome = run_work_leg(task_id=FIX_TASK_ID, repo_root=prepared)
+
+    assert outcome.status == "failed"
+    assert "sibling repositories" in _orchestration_error(outcome)

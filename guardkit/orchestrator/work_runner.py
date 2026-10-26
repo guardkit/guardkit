@@ -1224,7 +1224,17 @@ def run_work_leg(
 
         if current_lease() is None:
             # The conductor prepared this checkout; this step adopts it and
-            # runs under its own writer lease, as a feature task does.
+            # runs under its own writer lease, as a feature task does. That
+            # lease covers this checkout only, so a task that declares sibling
+            # repositories is refused, never run with them unleased (review R1).
+            declared = (task.get("frontmatter") or {}).get("evidence_repos") or []
+            if declared:
+                from guardkit.orchestrator.task_work_scope import ScopeUnavailable  # noqa: PLC0415
+
+                raise ScopeUnavailable(
+                    "a repair step adopts only the conductor's checkout, and this "
+                    "task declares sibling repositories (evidence_repos); refused"
+                )
             adopt_prepared_checkout(repo_root)
             with checkout_lease(repo_root) as lease:
                 lease.admit(task_id)
