@@ -3452,9 +3452,13 @@ class AutoBuildOrchestrator:
                 self._agent_invoker.task_work_scope = self.task_work_scope
                 self._agent_invoker._baseline_commit = self.task_work_scope.baseline_commit
             result = self._orchestrate_owned(task_id, requirements, acceptance_criteria, base_branch, **kwargs)
-            if lease.failure and result.final_decision == "approved":
+            # A task the tree already satisfied is done, as an approved one is
+            # (TASK_COMPLETE_DECISIONS): treating it as unapproved refused every
+            # later task of FEAT-CC77 (step 1 measurement, 26 October 2026).
+            done = result.final_decision in TASK_COMPLETE_DECISIONS
+            if lease.failure and done:
                 raise ScopeUnavailable(lease.failure)
-            if result.final_decision != "approved":
+            if not done:
                 lease.poison(f"Task {task_id} was not approved; predecessor work preserved")
             return result
 

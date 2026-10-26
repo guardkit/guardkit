@@ -6258,13 +6258,63 @@ The detailed specifications are in the task markdown file.
                     raise ScopeUnavailable("Feature check inherited unexplained product changes; boundary refused")
                 before = boundary_snapshot(lease)
                 result = callback(*args, **kwargs)
-                if boundary_snapshot(lease) != before:
+                if boundary_snapshot(lease) != before and not self._undo_check_side_effects(lease, before):
                     raise ScopeUnavailable("Feature check changed product files/index or HEAD; changes preserved and gate refused")
                 return result
             except BaseException as exc:
                 self._writer_boundary_failure = str(exc)
                 lease.poison(str(exc))
                 raise
+
+    @staticmethod
+    def _undo_check_side_effects(lease, before) -> bool:
+        """Put back what a feature check changed in files that were clean
+        before it ran, and say so; True when the boundary is whole again.
+
+        A check runs the project's own commands, and those leave things behind:
+        FEAT-3BA8's coverage run combined a committed ``.coverage.<host>.pid…``
+        file away and wrote ``.coverage``, and the refusal that followed ended
+        every later task (step 1 measurement, 26 October 2026). The check never
+        writes product work, so its changes are undone, not kept. Anything that
+        cannot be put back exactly (a moved HEAD, a changed index, or a file
+        that was already changed before the check) keeps the refusal. Never
+        raises: an error means the refusal stands.
+        """
+        from guardkit.orchestrator.task_work_scope import _dirty, _git, boundary_snapshot
+
+        try:
+            now = boundary_snapshot(lease)
+            plan = []
+            for (_, root, _), (head, index, payload), (head_now, index_now, payload_now) in zip(
+                lease.repositories, before, now
+            ):
+                if head != head_now or index != index_now:
+                    return False
+                was = {path: rest for path, *rest in payload}
+                is_now = {path: rest for path, *rest in payload_now}
+                if any(is_now.get(path) != rest for path, rest in was.items()):
+                    return False  # a file that was already changed moved again
+                for path in _dirty(root):
+                    if path in was:
+                        continue
+                    tracked = bool(_git(root, "ls-tree", "--name-only", "HEAD", "--", path))
+                    plan.append((root, path, tracked))
+            for root, path, tracked in plan:
+                if tracked:
+                    _git(root, "checkout", "HEAD", "--", path)
+                else:
+                    (Path(root) / path).unlink(missing_ok=True)
+            if boundary_snapshot(lease) != before:
+                return False
+        except Exception as exc:  # noqa: BLE001 — the refusal stands
+            logger.warning("Could not put back what the feature check changed (%s)", exc)
+            return False
+        logger.warning(
+            "The feature check changed %d file(s) that were clean before it ran (%s); "
+            "they were put back and the build goes on",
+            len(plan), ", ".join(path for _, path, _ in plan),
+        )
+        return True
 
     def _execute_task_owned(
         self,
