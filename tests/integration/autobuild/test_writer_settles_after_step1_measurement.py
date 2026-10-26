@@ -99,7 +99,7 @@ def test_a_checks_coverage_leftovers_are_put_back_and_the_next_writer_is_admitte
         lease.admit("TASK-NEXT")
 
 
-def test_a_check_that_commits_or_rewrites_changed_work_is_still_refused(tmp_path):
+def test_a_check_that_rewrites_already_changed_work_is_still_refused(tmp_path):
     root = repository(tmp_path / "checkout")
     feature, worktree = _feature(root)
     with checkout_lease(root) as lease:
@@ -112,3 +112,30 @@ def test_a_check_that_commits_or_rewrites_changed_work_is_still_refused(tmp_path
         with pytest.raises(ScopeUnavailable, match="changed product files"):
             feature._checked_writer(worktree, rewrite)
         assert (root / "base").read_text() == "the check rewrote it\n"
+
+
+def test_a_check_that_stages_a_change_is_still_refused(tmp_path):
+    root = repository(tmp_path / "checkout")
+    feature, worktree = _feature(root)
+
+    def stage():
+        (root / "staged").write_text("the check staged this")
+        git(root, "add", "staged")
+
+    with pytest.raises(ScopeUnavailable, match="changed product files"):
+        feature._checked_writer(worktree, stage)
+    assert git(root, "diff", "--cached", "--name-only") == "staged"
+
+
+def test_a_check_that_commits_is_still_refused(tmp_path):
+    root = repository(tmp_path / "checkout")
+    feature, worktree = _feature(root)
+
+    def commit():
+        (root / "committed").write_text("the check committed this")
+        git(root, "add", "committed")
+        git(root, "commit", "-m", "a check must never commit")
+
+    with pytest.raises(ScopeUnavailable, match="changed product files"):
+        feature._checked_writer(worktree, commit)
+    assert (root / "committed").exists()
