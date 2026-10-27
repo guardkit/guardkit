@@ -1,25 +1,28 @@
 """CoachValidator sibling-repo independent tests (TASK-AB-XREPOEV01 AC-002).
 
 The Coach must be able to run a declared sibling repo's tests independently
-and have the results land in the evidence bundle, with a failed/unrunnable
-suite blocking the turn.
+and have the results land in the evidence bundle.
 """
 
 from __future__ import annotations
 
+import shlex
+import sys
 from pathlib import Path
 
 import pytest
 
-from guardkit.orchestrator.coach_verification import HonestyVerification
 from guardkit.orchestrator.evidence_repos import EvidenceRepo
 from guardkit.orchestrator.quality_gates.coach_evidence import CoachEvidenceBundle
 from guardkit.orchestrator.quality_gates.coach_validator import CoachValidator
 
+# The running interpreter, not a bare ``python`` that may not be on PATH.
+_PYTHON = shlex.quote(sys.executable)
+
 
 def _bundle(**kw) -> CoachEvidenceBundle:
-    """Build a minimal bundle (only ``honesty`` is required)."""
-    return CoachEvidenceBundle(honesty=HonestyVerification(verified=True), **kw)
+    """Build a minimal bundle (every field has a default)."""
+    return CoachEvidenceBundle(**kw)
 
 
 class TestRunEvidenceRepoTests:
@@ -33,7 +36,7 @@ class TestRunEvidenceRepoTests:
         repo = EvidenceRepo(
             name="guardkitfactory",
             root=factory,
-            test_command="python -c 'import sys; sys.exit(0)'",
+            test_command=f"{_PYTHON} -c 'import sys; sys.exit(0)'",
         )
         validator = CoachValidator(str(tmp_path), evidence_repos=[repo])
         results = validator.run_evidence_repo_tests()
@@ -48,7 +51,7 @@ class TestRunEvidenceRepoTests:
         repo = EvidenceRepo(
             name="guardkitfactory",
             root=factory,
-            test_command="python -c 'import sys; sys.exit(1)'",
+            test_command=f"{_PYTHON} -c 'import sys; sys.exit(1)'",
         )
         validator = CoachValidator(str(tmp_path), evidence_repos=[repo])
         results = validator.run_evidence_repo_tests()

@@ -892,17 +892,7 @@ class TaskWorkInterface:
             Parsed result object
 
         """
-        # Extract architectural review score
         arch_review = raw_result.get("architectural_review", {})
-        arch_score = arch_review.get("score", 80)
-
-        # Step 2 (26 October 2026): a score of about 60 is a guide; a lower
-        # one is advice, never a block.
-        if arch_score < 60:
-            logger.warning(
-                "Advice: architectural review score %s/100 is below the guide (60)",
-                arch_score,
-            )
 
         return DesignPhaseResult(
             implementation_plan=raw_result.get("implementation_plan", {}),

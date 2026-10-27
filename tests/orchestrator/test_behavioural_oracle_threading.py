@@ -10,8 +10,7 @@ unit test wrote the key.
 These tests pin the wire end to end:
 
   1. task frontmatter -> ``orchestrate()`` -> the task dict handed to the
-     Coach, on BOTH Coach paths (``gather_evidence`` primary and legacy
-     ``validate()``);
+     Coach (``gather_evidence``);
   2. the feature-level declaration threaded by the caller, and the
      precedence law (design §B.1): the per-task frontmatter declaration
      WINS over the feature/repo-level one;
@@ -22,6 +21,10 @@ These tests pin the wire end to end:
      deciding the verdict (LAW §B.4: the exit code IS the verdict);
   5. a failing DECLARED oracle NAMES ITSELF in the approve-override
      rationale instead of saying ``<unknown>``.
+
+27 October 2026 cull: the frontmatter declaration is passed on as written
+(unknown keys and values are no longer refused), and the legacy Coach path
+and the orchestrator-side test specialist are deleted, so their tests went.
 
 Network-free and broker-free by construction: every subprocess is a shell
 builtin (``true`` / ``false`` / ``sleep``), and no Coach LLM is invoked.
@@ -40,6 +43,7 @@ from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
 from guardkit.orchestrator.feature_loader import BehaviouralOracle
 from guardkit.orchestrator.quality_gates.coach_validator import CoachValidator
 from guardkit.worktrees import Worktree
+from tests.task_scope_fixtures import init_checkout
 
 
 # ============================================================================
@@ -49,10 +53,11 @@ from guardkit.worktrees import Worktree
 
 
 @pytest.fixture
-def mock_worktree() -> Mock:
+def mock_worktree(tmp_path: Path) -> Mock:
     worktree = Mock(spec=Worktree)
     worktree.task_id = "TASK-TSD1A-001"
-    worktree.path = Path("/tmp/worktrees/TASK-TSD1A-001")
+    # A real checkout: ``orchestrate()`` admits the task on it.
+    worktree.path = init_checkout(tmp_path / "TASK-TSD1A-001")
     worktree.branch_name = "autobuild/TASK-TSD1A-001"
     worktree.base_branch = "main"
     return worktree
@@ -212,17 +217,11 @@ def _capture_coach_task_dict(
     mock_worktree: Mock,
     *,
     behavioural_oracle: Any = None,
-    legacy: bool = False,
     effective_concurrency: Optional[int] = None,
     constructor_kwargs: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """Return the task dict ``_invoke_coach_safely`` hands to CoachValidator.
-
-    ``legacy=False`` exercises the primary Coach path (``gather_evidence``);
-    ``legacy=True`` exercises the legacy ``validate()`` path via
-    ``GUARDKIT_COACH_LEGACY=1``. The D.1a spec calls for the mirror
-    explicitly, so both are pinned.
-    """
+    """Return the task dict ``_invoke_coach_safely`` hands to CoachValidator
+    (``gather_evidence``)."""
     captured: List[Dict[str, Any]] = []
 
     mock_validator = MagicMock()
@@ -233,12 +232,8 @@ def _capture_coach_task_dict(
         raise RuntimeError("stop after the task dict is built")
 
     mock_validator.gather_evidence.side_effect = _capture
-    mock_validator.validate.side_effect = _capture
 
-    env = {"GUARDKIT_COACH_LEGACY": "1"} if legacy else {}
-    with patch("guardkit.orchestrator.autobuild.CoachValidator") as mock_cv, patch.dict(
-        "os.environ", env, clear=False
-    ):
+    with patch("guardkit.orchestrator.autobuild.CoachValidator") as mock_cv:
         mock_cv.return_value = mock_validator
         orchestrator._invoke_coach_safely(
             task_id="TASK-TSD1A-COACH",
@@ -258,17 +253,14 @@ def _capture_coach_task_dict(
     return captured[0]
 
 
-@pytest.mark.parametrize("legacy", [False, True])
-def test_both_coach_paths_receive_effective_concurrency(
+def test_the_coach_receives_effective_concurrency(
     orchestrator: AutoBuildOrchestrator,
     mock_worktree: Mock,
-    legacy: bool,
 ) -> None:
     captured: Dict[str, Any] = {}
     _capture_coach_task_dict(
         orchestrator,
         mock_worktree,
-        legacy=legacy,
         effective_concurrency=1,
         constructor_kwargs=captured,
     )
@@ -277,7 +269,7 @@ def test_both_coach_paths_receive_effective_concurrency(
     assert captured["effective_concurrency"] == 1
 
 
-def test_execute_turn_forwards_effective_concurrency_to_both_top_hops(
+def test_execute_turn_forwards_effective_concurrency_to_the_coach(
     tmp_path: Path,
     mock_worktree: Mock,
     mock_worktree_manager: Mock,
@@ -302,7 +294,6 @@ def test_execute_turn_forwards_effective_concurrency_to_both_top_hops(
         wave_size=2,
         effective_concurrency=1,
     )
-    phase4 = AsyncMock(return_value=Mock(status="passed"))
     coach = Mock(return_value=_coach_approve_result(task_id))
 
     with patch.object(
@@ -315,14 +306,6 @@ def test_execute_turn_forwards_effective_concurrency_to_both_top_hops(
         orchestrator, "_maybe_refresh_venv_for_manifest_change", return_value=None
     ), patch(
         "guardkit.orchestrator.autobuild._worktree_change_snapshot", return_value={}
-    ), patch(
-        "guardkit.orchestrator.specialist_invocations.invoke_test_orchestrator", phase4
-    ), patch(
-        "guardkit.orchestrator.specialist_invocations.invoke_code_reviewer", AsyncMock()
-    ), patch(
-        "guardkit.qa.qav_shadow.schedule_qav_shadow"
-    ), patch(
-        "guardkit.orchestrator.arch_conformance.observe_task_conformance"
     ):
         record = orchestrator._execute_turn(
             turn=1,
@@ -334,11 +317,9 @@ def test_execute_turn_forwards_effective_concurrency_to_both_top_hops(
         )
 
     assert record.decision == "approve"
-    phase4.assert_awaited_once()
     coach.assert_called_once()
-    for call in (phase4.call_args, coach.call_args):
-        assert call.kwargs["wave_size"] == 2
-        assert call.kwargs["effective_concurrency"] == 1
+    assert coach.call_args.kwargs["wave_size"] == 2
+    assert coach.call_args.kwargs["effective_concurrency"] == 1
 
 
 @pytest.mark.parametrize("effective_concurrency", [1, 2])
@@ -351,7 +332,6 @@ def test_primary_coach_caller_reaches_real_test_isolation_decision(
     effective_concurrency: int,
 ) -> None:
     """Connect the normal caller to the inherited runner's isolation choice."""
-    from guardkit.orchestrator.coach_verification import HonestyVerification
     from guardkit.orchestrator.quality_gates.coach_evidence import CoachEvidenceBundle
     from guardkit.orchestrator.quality_gates.coach_validator import IndependentTestResult
 
@@ -360,7 +340,6 @@ def test_primary_coach_caller_reaches_real_test_isolation_decision(
     orchestrator.enable_context = False
     mock_agent_invoker._get_implementation_mode.return_value = "task-work"
     mock_agent_invoker.invoke_coach.return_value = _coach_approve_result(task_id)
-    monkeypatch.setenv("GUARDKIT_COACH_LEGACY", "0")
     monkeypatch.setenv("GUARDKIT_COACH_TEST_EXECUTION", "subprocess")
     validators: List[CoachValidator] = []
     test_results: List[IndependentTestResult] = []
@@ -378,10 +357,7 @@ def test_primary_coach_caller_reaches_real_test_isolation_decision(
                 task_work_results={}, task=kwargs["task"], turn=kwargs["turn"]
             )
             test_results.append(result)
-            return CoachEvidenceBundle(
-                honesty=HonestyVerification(verified=True),
-                independent_tests=result,
-            )
+            return CoachEvidenceBundle(independent_tests=result)
 
     isolated_result = IndependentTestResult(
         tests_passed=True,
@@ -393,8 +369,6 @@ def test_primary_coach_caller_reaches_real_test_isolation_decision(
         "guardkit.orchestrator.autobuild.CoachValidator", RunnerEvidenceValidator
     ), patch.object(
         orchestrator, "_coach_documents_for_turn", return_value=()
-    ), patch.object(
-        orchestrator, "_produce_spec_conformance_leg", return_value=None
     ), patch.object(
         CoachValidator, "_run_isolated_tests", return_value=isolated_result
     ) as isolated, patch(
@@ -445,9 +419,8 @@ class TestFrontmatterLift:
             "TASK-TSD1A-001",
             {"behavioural_oracle": {"command": "npm test"}},
         )
-        # The lift VALIDATES and normalizes through BehaviouralOracle
-        # (coordinator cure): the dump carries the schema defaults.
-        assert kwargs["behavioural_oracle"] == {"command": "npm test", "expected_exit": 0}
+        # Passed on as written (27 October 2026 cull: not validated here).
+        assert kwargs["behavioural_oracle"] == {"command": "npm test"}
 
     def test_string_shortcut_survives_the_lift(
         self, orchestrator: AutoBuildOrchestrator
@@ -455,8 +428,8 @@ class TestFrontmatterLift:
         kwargs = _capture_loop_kwargs(
             orchestrator, "TASK-TSD1A-002", {"behavioural_oracle": "npm test"}
         )
-        # String shortcut normalizes to the validated dict shape.
-        assert kwargs["behavioural_oracle"] == {"command": "npm test", "expected_exit": 0}
+        # The string shortcut becomes the command.
+        assert kwargs["behavioural_oracle"] == {"command": "npm test"}
 
     def test_absent_frontmatter_threads_none(
         self, orchestrator: AutoBuildOrchestrator
@@ -493,7 +466,7 @@ class TestPrecedence:
             {"behavioural_oracle": {"command": "npm run test:task"}},
             behavioural_oracle=BehaviouralOracle(command="npm test"),
         )
-        assert kwargs["behavioural_oracle"] == {"command": "npm run test:task", "expected_exit": 0}
+        assert kwargs["behavioural_oracle"] == {"command": "npm run test:task"}
 
     def test_model_instance_is_readable_by_extract_command(self) -> None:
         """``_extract_command`` accepts the schema model, not only dict/str."""
@@ -508,9 +481,8 @@ class TestPrecedence:
 
 
 class TestCoachTaskDict:
-    """``autobuild.py``'s two hand-built task-dict literals — the
-    ``gather_evidence`` one and the legacy ``validate()`` mirror — are the
-    exact place the declaration went missing."""
+    """``autobuild.py``'s hand-built ``gather_evidence`` task-dict literal is
+    the exact place the declaration went missing."""
 
     def test_gather_evidence_path_carries_the_declaration(
         self, orchestrator: AutoBuildOrchestrator, mock_worktree: Mock
@@ -519,17 +491,6 @@ class TestCoachTaskDict:
             orchestrator,
             mock_worktree,
             behavioural_oracle={"command": "npm test"},
-        )
-        assert task["behavioural_oracle"] == {"command": "npm test"}
-
-    def test_legacy_validate_path_carries_the_declaration(
-        self, orchestrator: AutoBuildOrchestrator, mock_worktree: Mock
-    ) -> None:
-        task = _capture_coach_task_dict(
-            orchestrator,
-            mock_worktree,
-            behavioural_oracle={"command": "npm test"},
-            legacy=True,
         )
         assert task["behavioural_oracle"] == {"command": "npm test"}
 
@@ -572,12 +533,6 @@ class TestAbsenceIsUnchanged:
         assert set(task) == self._PRE_D1A_KEYS
         assert "behavioural_oracle" not in task
 
-    def test_no_declaration_legacy_path_too(
-        self, orchestrator: AutoBuildOrchestrator, mock_worktree: Mock
-    ) -> None:
-        task = _capture_coach_task_dict(orchestrator, mock_worktree, legacy=True)
-        assert set(task) == self._PRE_D1A_KEYS
-
     def test_falsy_declaration_is_treated_as_absent(
         self, orchestrator: AutoBuildOrchestrator, mock_worktree: Mock
     ) -> None:
@@ -618,7 +573,6 @@ class TestExecutorHonoursTheDeclaration:
 
         validator._run_shell_command = spy  # type: ignore[method-assign]
         result = validator._produce_behavioural_oracle(
-            authored_files=[],
             task={"behavioural_oracle": {"command": "true"}},
         )
         assert seen["command"] == "true"
@@ -630,7 +584,6 @@ class TestExecutorHonoursTheDeclaration:
     def test_model_declaration_reaches_the_executor(self, tmp_path: Path) -> None:
         validator = CoachValidator(worktree_path=tmp_path)
         result = validator._produce_behavioural_oracle(
-            authored_files=[],
             task={"behavioural_oracle": BehaviouralOracle(command="true")},
         )
         assert result is not None
@@ -645,7 +598,6 @@ class TestExecutorHonoursTheDeclaration:
         validator = CoachValidator(worktree_path=tmp_path)
         with patch.dict("os.environ", {"GUARDKIT_ORACLE_TIMEOUT": "300"}):
             result = validator._produce_behavioural_oracle(
-                authored_files=[],
                 task={
                     "behavioural_oracle": {"command": "sleep 30", "timeout": 1}
                 },
@@ -662,7 +614,6 @@ class TestExecutorHonoursTheDeclaration:
         validator = CoachValidator(worktree_path=tmp_path)
         with patch.dict("os.environ", {"GUARDKIT_ORACLE_TIMEOUT": "1"}):
             result = validator._produce_behavioural_oracle(
-                authored_files=[],
                 task={"behavioural_oracle": {"command": "sleep 30"}},
             )
         assert result is not None
@@ -673,7 +624,6 @@ class TestExecutorHonoursTheDeclaration:
         expected_exit (default 0)."""
         validator = CoachValidator(worktree_path=tmp_path)
         passing = validator._produce_behavioural_oracle(
-            authored_files=[],
             task={
                 "behavioural_oracle": {"command": "exit 3", "expected_exit": 3}
             },
@@ -683,7 +633,6 @@ class TestExecutorHonoursTheDeclaration:
         assert passing["exit_code"] == 3
 
         failing = validator._produce_behavioural_oracle(
-            authored_files=[],
             task={"behavioural_oracle": {"command": "exit 3"}},
         )
         assert failing is not None
@@ -697,7 +646,6 @@ class TestExecutorHonoursTheDeclaration:
 
 def _guard_decision(oracle: Dict[str, Any]) -> Dict[str, Any]:
     """Run the approve-override guard over a bundle carrying *oracle*."""
-    from guardkit.orchestrator.coach_verification import HonestyVerification
     from guardkit.orchestrator.quality_gates.coach_evidence import (
         CoachEvidenceBundle,
     )
@@ -705,9 +653,6 @@ def _guard_decision(oracle: Dict[str, Any]) -> Dict[str, Any]:
     invoker = AgentInvoker.__new__(AgentInvoker)
     invoker._persist_coach_decision = MagicMock()  # type: ignore[method-assign]
     bundle = CoachEvidenceBundle(
-        honesty=HonestyVerification(
-            verified=True, discrepancies=[], honesty_score=1.0, resolved_paths=[]
-        ),
         gathering_status="complete",
         behavioural_oracle=oracle,
     )
@@ -834,7 +779,6 @@ class TestDeclarationOverridesApprove:
     ) -> None:
         validator = CoachValidator(worktree_path=tmp_path)
         oracle = validator._produce_behavioural_oracle(
-            authored_files=[],
             task={"behavioural_oracle": {"command": "echo boom >&2; exit 1"}},
         )
         assert oracle is not None
@@ -854,45 +798,12 @@ class TestDeclarationOverridesApprove:
     ) -> None:
         validator = CoachValidator(worktree_path=tmp_path)
         oracle = validator._produce_behavioural_oracle(
-            authored_files=[],
             task={"behavioural_oracle": {"command": "true"}},
         )
         assert oracle is not None
         decision = _guard_decision(oracle)
         assert decision["decision"] == "approve"
         assert "issues" not in decision
-
-
-class TestFrontmatterValidationIsLoud:
-    """Coordinator-cure pins (D.1a coach): the HIGHEST-precedence declaration
-    path runs the schema — a typo or an unbounded timeout is LOUD, never a
-    silent absence."""
-
-    def test_typo_key_fails_the_task_load_loudly(
-        self, orchestrator: AutoBuildOrchestrator
-    ) -> None:
-        import pydantic
-        import pytest as _pytest
-
-        with _pytest.raises(pydantic.ValidationError):
-            _capture_loop_kwargs(
-                orchestrator,
-                "TASK-TSD1A-010",
-                {"behavioural_oracle": {"commnad": "npm test"}},
-            )
-
-    def test_out_of_bound_timeout_fails_loudly(
-        self, orchestrator: AutoBuildOrchestrator
-    ) -> None:
-        import pydantic
-        import pytest as _pytest
-
-        with _pytest.raises(pydantic.ValidationError):
-            _capture_loop_kwargs(
-                orchestrator,
-                "TASK-TSD1A-011",
-                {"behavioural_oracle": {"command": "npm test", "timeout": 999999}},
-            )
 
 
 class TestRequiredAuthoritySurvivesMetadataErrors:
@@ -923,35 +834,3 @@ class TestRequiredAuthoritySurvivesMetadataErrors:
             behavioural_oracle={"command": "optional", "required": False},
         )
         assert kwargs["behavioural_oracle"] == required
-
-    def test_invalid_required_task_declaration_fails_before_loop_despite_metadata_error(
-        self, orchestrator: AutoBuildOrchestrator
-    ) -> None:
-        import pydantic
-        import pytest as _pytest
-
-        invalid = self._required()
-        invalid.pop("checker_sha256")
-        with _pytest.raises(pydantic.ValidationError):
-            _capture_loop_kwargs(
-                orchestrator,
-                "TASK-TSD1A-REQ-002",
-                {
-                    "behavioural_oracle": invalid,
-                    "evidence_repos": 1,
-                },
-                behavioural_oracle={"command": "optional", "required": False},
-            )
-
-    def test_empty_present_task_declaration_is_not_treated_as_absent(
-        self, orchestrator: AutoBuildOrchestrator
-    ) -> None:
-        import pydantic
-        import pytest as _pytest
-
-        with _pytest.raises(pydantic.ValidationError):
-            _capture_loop_kwargs(
-                orchestrator,
-                "TASK-TSD1A-REQ-003",
-                {"behavioural_oracle": {}},
-            )

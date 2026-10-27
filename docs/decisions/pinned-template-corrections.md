@@ -35,6 +35,18 @@
 - reason: <one line>
 -->
 
+### 2026-10-27 — the cull: checks removed from the feature loader, the feature command and the task-type profiles (guardkit/orchestrator/feature_loader.py, guardkit/cli/feature.py, guardkit/models/task_types.py)
+- specialist-agent re-pin commit / contract §0 note: none needed — no pinned template bytes
+  changed (feature-spec.md and feature-plan.md are byte-identical; the template pin test
+  passes). The model fields specialist-agent reads (`Feature`, `FeatureTask`,
+  `FeatureOrchestration` and their fields, `TaskType`, `TASK_TYPE_ALIASES`,
+  `VALID_TASK_TYPES`, `DEFAULT_PROFILES`) still exist.
+- G2b re-freeze: not applicable (code, not template bytes); Rich asked for the cull on
+  27 October 2026 ("proceed with ripping this crap out").
+- reason: the loader's value and shape refusals, the feature-file audit and preflight
+  refusals, and the quality-gate profile settings other than `tests_required` were deleted
+  with the checks they served.
+
 ### 2026-07-11 — DF-019 re-pin window: PB-4 emission text + PB-10 phase 2 + DF-018 Phase 3 (feature-spec.md, feature-plan.md)
 - specialist-agent re-pin commit / contract §0 note: the DF-019 window correction note in
   specialist-agent `docs/design/contracts/CONTRACT-feature-spec-plan-outputs.md` §0 (dated

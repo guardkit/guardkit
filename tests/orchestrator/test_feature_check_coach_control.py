@@ -183,14 +183,7 @@ def _drive(main: Path, wt: Path, feature, waves: _Waves):
     )
     with ExitStack() as stack:
         for cm in (
-            patch.object(orch, "_preflight_check"),
             patch.object(orch, "_bootstrap_environment"),
-            patch.object(
-                orch,
-                "_run_post_wave_wiring_gate",
-                autospec=True,
-                side_effect=lambda wn, ti, f, w: MagicMock(record=None),
-            ),
             patch(
                 "guardkit.orchestrator.feature_orchestrator.FeatureLoader.find_task",
                 side_effect=lambda f, tid: f,
@@ -198,7 +191,6 @@ def _drive(main: Path, wt: Path, feature, waves: _Waves):
             patch(
                 "guardkit.orchestrator.feature_orchestrator.FeatureLoader.save_feature"
             ),
-            patch.object(orch, "_run_final_wave_boot_smoke", return_value=None),
             patch.object(orch, "_execute_wave", side_effect=waves),
             patch.object(orch, "_display_summary"),
         ):

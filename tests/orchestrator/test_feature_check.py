@@ -24,9 +24,10 @@ exit code.
 
 ``_execute_wave`` is stubbed throughout, so no model is ever called.
 
-WHERE THIS FILE LIVES, AND WHY: see the note in ``test_boot_smoke_wiring.py``.
-``tests/orchestrator/`` is collected by the command CI actually runs; a proof
-under ``tests/integration/`` would be silently skipped.
+WHERE THIS FILE LIVES, AND WHY: ``tests/orchestrator/`` is collected by the
+command CI actually runs. Everything under ``tests/integration/`` is marked
+``integration`` and skipped unless ``--run-integration`` is passed, so a proof
+there would be silently skipped.
 """
 
 from __future__ import annotations
@@ -51,8 +52,6 @@ from guardkit.orchestrator.feature_check import (
     RECEIPT_RELATIVE_PATH,
     FeatureCheckAttempt,
     build_feature_check_feedback,
-    claimed_machine_criteria,
-    completion_verdict,
     load_feature_check_declaration,
     parse_scenarios_covered,
 )
@@ -222,20 +221,9 @@ def _complete_feature_tasks(feature, task_ids: List[str]) -> None:
             task.status = "completed"
 
 
-def _pass_the_wiring_gate(wave_number, task_ids, feature, worktree):
-    return MagicMock(record=None)
-
-
 def _common_patches(orchestrator: FeatureOrchestrator):
     return (
-        patch.object(orchestrator, "_preflight_check"),
         patch.object(orchestrator, "_bootstrap_environment"),
-        patch.object(
-            orchestrator,
-            "_run_post_wave_wiring_gate",
-            autospec=True,
-            side_effect=_pass_the_wiring_gate,
-        ),
         patch(
             "guardkit.orchestrator.feature_orchestrator.FeatureLoader.find_task",
             side_effect=lambda f, tid: f,
@@ -327,9 +315,6 @@ def _run_build(
     with ExitStack() as stack:
         for _cm in _common_patches(orchestrator):
             stack.enter_context(_cm)
-        stack.enter_context(
-            patch.object(orchestrator, "_run_final_wave_boot_smoke", return_value=None)
-        )
         stack.enter_context(patch.object(orchestrator, "_execute_wave", side_effect=recorder))
         wave_results = orchestrator._wave_phase(feature, worktree)
         if not finalize:
@@ -529,31 +514,6 @@ def test_the_retry_budget_is_the_operator_s(tmp_path: Path, monkeypatch) -> None
 # ---------------------------------------------------------------------------
 
 
-def test_missing_twins_under_enforcement_re_enter_the_wave_with_the_titles(
-    tmp_path: Path,
-) -> None:
-    repo_root, worktree = _make_project(
-        tmp_path,
-        declaration=_declaration("sh qa/feature-check.sh"),
-        enforce_twins=True,
-    )
-    _write(worktree, "THE_FEATURE_IS_FIXED", "")  # the command itself would pass
-    feature = _make_feature(worktree, hurl_scenario=True)
-    recorder = _WaveRecorder(worktree)
-
-    _, _, result = _run_build(repo_root, worktree, feature, recorder)
-
-    assert result.status == "failed"
-    assert len(recorder.feedback) == 2
-    assert SCENARIO_TITLE in recorder.feedback[1]
-    assert "no twin file exists" in recorder.feedback[1]
-    receipt = _receipt(worktree)
-    assert receipt["attempts"][0]["missing_twins"] == [SCENARIO_TITLE]
-    # The command never ran: a promise with no artifact is answered before a
-    # command gets the chance to say the feature is fine.
-    assert receipt["attempts"][0]["exit_code"] is None
-
-
 def test_a_twin_that_exists_lets_the_check_run(tmp_path: Path) -> None:
     repo_root, worktree = _make_project(
         tmp_path,
@@ -619,9 +579,6 @@ def test_a_build_that_did_not_finish_does_not_run_the_check(tmp_path: Path) -> N
         for _cm in _common_patches(orchestrator):
             stack.enter_context(_cm)
         stack.enter_context(
-            patch.object(orchestrator, "_run_final_wave_boot_smoke", return_value=None)
-        )
-        stack.enter_context(
             patch.object(orchestrator, "_execute_wave", side_effect=_stop_after_one)
         )
         orchestrator._wave_phase(feature, _make_worktree(worktree))
@@ -681,123 +638,6 @@ def _write_claimed_criterion(worktree: Path, name: str) -> None:
         ),
         encoding="utf-8",
     )
-
-
-def test_a_claimed_promise_the_check_did_not_cover_is_not_checked_not_blocked(
-    tmp_path: Path,
-) -> None:
-    """21 September 2026: it comes back by name instead of failing the build.
-
-    The old rule refused the whole build over a promise nothing had proved.
-    The new rule says so out loud — on the not-checked list, by name, with a
-    reason — and never records it as passed.
-    """
-    repo_root, worktree = _make_project(
-        tmp_path, declaration=_declaration("sh qa/feature-check.sh")
-    )
-    _stub_receipt(worktree)
-    _write_claimed_criterion(worktree, SCENARIO_TITLE)
-    feature = _make_feature(worktree)
-
-    verdict = completion_verdict(
-        repo_root=repo_root, worktree_root=worktree, feature=feature
-    )
-
-    assert verdict.blocks is False
-    assert SCENARIO_TITLE in verdict.reason
-    assert [e["name"] for e in verdict.not_checked] == [SCENARIO_TITLE]
-    assert verdict.not_checked[0]["reason"]
-
-
-def test_a_claimed_promise_the_check_covered_does_not_block(tmp_path: Path) -> None:
-    repo_root, worktree = _make_project(
-        tmp_path, declaration=_declaration("sh qa/feature-check.sh")
-    )
-    _stub_receipt(worktree, scenarios_covered=[SCENARIO_TITLE])
-    _write_claimed_criterion(worktree, SCENARIO_TITLE)
-    feature = _make_feature(worktree)
-
-    verdict = completion_verdict(
-        repo_root=repo_root, worktree_root=worktree, feature=feature
-    )
-
-    assert verdict.blocks is False, verdict.reason
-
-
-def test_a_pass_recorded_against_different_code_does_not_count(tmp_path: Path) -> None:
-    repo_root, worktree = _make_project(
-        tmp_path, declaration=_declaration("sh qa/feature-check.sh")
-    )
-    _stub_receipt(
-        worktree,
-        attempts=[{"attempt": 1, "passed": True, "candidate_sha": "0" * 40}],
-    )
-    feature = _make_feature(worktree)
-
-    verdict = completion_verdict(
-        repo_root=repo_root, worktree_root=worktree, feature=feature
-    )
-
-    # Step 1 (24 October 2026, GKT-163): a stale pass is advice, not a block.
-    assert verdict.blocks is False
-    assert "different code" in verdict.reason
-
-
-def test_a_declared_check_with_no_receipt_is_advice(tmp_path: Path) -> None:
-    """Step 1 (24 October 2026, GKT-163): a missing receipt is advice."""
-    repo_root, worktree = _make_project(
-        tmp_path, declaration=_declaration("sh qa/feature-check.sh")
-    )
-    feature = _make_feature(worktree)
-
-    verdict = completion_verdict(
-        repo_root=repo_root, worktree_root=worktree, feature=feature
-    )
-
-    assert verdict.blocks is False
-    assert "no receipt" in verdict.reason
-
-
-def test_no_declaration_never_blocks_completion(tmp_path: Path) -> None:
-    repo_root, worktree = _make_project(tmp_path, declaration=None)
-    _write_claimed_criterion(worktree, SCENARIO_TITLE)
-    feature = _make_feature(worktree)
-
-    verdict = completion_verdict(
-        repo_root=repo_root, worktree_root=worktree, feature=feature
-    )
-
-    assert verdict.blocks is False
-
-
-def test_the_claimed_reader_survives_a_factory_that_never_writes_the_word(
-    tmp_path: Path,
-) -> None:
-    """Absent evidence is not evidence of a claim — and never an exception."""
-    worktree = tmp_path / "worktree"
-    (worktree / ".guardkit/autobuild-private/TASK-001").mkdir(parents=True)
-    (worktree / ".guardkit/autobuild-private/TASK-001/coach_turn_1.json").write_text(
-        "{not json at all", encoding="utf-8"
-    )
-    assert claimed_machine_criteria(worktree, ["TASK-001"]) == []
-    assert claimed_machine_criteria(worktree, ["TASK-404"]) == []
-    assert claimed_machine_criteria(tmp_path / "nothing-here", ["TASK-001"]) == []
-
-
-def test_a_claimed_criterion_that_is_not_machine_class_is_not_consumed(
-    tmp_path: Path,
-) -> None:
-    worktree = tmp_path / "worktree"
-    path = worktree / ".guardkit/autobuild-private/TASK-001/coach_turn_1.json"
-    path.parent.mkdir(parents=True)
-    path.write_text(
-        json.dumps(
-            {"criteria": [{"criterion": "the docs read well", "status": "claimed",
-                           "pass_bar_class": "human"}]}
-        ),
-        encoding="utf-8",
-    )
-    assert claimed_machine_criteria(worktree, ["TASK-001"]) == []
 
 
 # ---------------------------------------------------------------------------
@@ -1018,47 +858,6 @@ def test_a_valid_approved_head_selects_only_the_approved_work(tmp_path: Path) ->
 # (coordinator's integration fix, 19 September: the list was hardcoded empty).
 
 
-def test_the_receipt_names_the_criteria_still_claimed(tmp_path: Path) -> None:
-    repo_root, worktree = _make_project(
-        tmp_path, declaration=_declaration("sh qa/feature-check.sh")
-    )
-    _write(worktree, "THE_FEATURE_IS_FIXED", "")
-    _write(
-        worktree,
-        ".guardkit/autobuild-private/TASK-001/coach_evidence_turn_1.json",
-        json.dumps(
-            {
-                "requirements": {
-                    "criteria_results": [
-                        {
-                            "criterion_id": "AC-001",
-                            "text": SCENARIO_TITLE,
-                            "status": "claimed",
-                            "class": "machine",
-                        },
-                        {
-                            "criterion_id": "AC-002",
-                            "text": "lint passes",
-                            "status": "verified",
-                            "class": "toolchain",
-                        },
-                    ]
-                }
-            }
-        ),
-    )
-    feature = _make_feature(worktree)
-    recorder = _WaveRecorder(worktree)
-
-    _, _, result = _run_build(repo_root, worktree, feature, recorder)
-
-    receipt = _receipt(worktree)
-    assert receipt["criteria_still_claimed"] == [SCENARIO_TITLE]
-    # The check covered that scenario, so the feature may still complete.
-    assert receipt["scenarios_covered"] == [SCENARIO_TITLE]
-    assert result.status == "completed"
-
-
 # ---------------------------------------------------------------------------
 # The pass bars are where the delivered-surface promises actually live
 # (coordinator's integration fix, 19 September). In the plans the factory
@@ -1085,63 +884,6 @@ criteria:
   evidence_kind: screenshot
   runbook_ref: docs/runbook.md
 """
-
-
-def test_a_pass_bar_promise_the_check_did_not_name_reaches_the_record(
-    tmp_path: Path,
-) -> None:
-    """The build completes and the record says, by name, what nothing checked.
-
-    This is the whole end of the chain (21 September 2026): the rule stops
-    blocking, hands the names back, and the caller finishes the record on disk
-    BEFORE the runner exports it — so the complete record is the one exported.
-    """
-    repo_root, worktree = _make_project(
-        tmp_path, declaration=_declaration("sh qa/feature-check.sh")
-    )
-    _write(worktree, "THE_FEATURE_IS_FIXED", "")
-    promise = "A promise nobody checked at the surface"
-    _write(worktree, "qa/pass-bar-TASK-001.yaml", PASS_BAR.format(title=promise))
-    feature = _make_feature(worktree)
-
-    _, _, result = _run_build(repo_root, worktree, feature, _WaveRecorder(worktree))
-
-    assert result.status == "completed"
-    assert result.success is True
-    receipt = _receipt(worktree)
-    assert receipt["status"] == "passed", "the command itself passed"
-    assert receipt["criteria_still_claimed"] == [promise]
-    assert [e["name"] for e in receipt["not_checked"]] == [promise]
-    assert promise not in receipt["scenarios_covered"], (
-        "a name on the not-checked list is never also on the covered list"
-    )
-
-
-def test_a_pass_bar_promise_the_check_named_lets_the_feature_complete(
-    tmp_path: Path,
-) -> None:
-    repo_root, worktree = _make_project(
-        tmp_path, declaration=_declaration("sh qa/feature-check.sh")
-    )
-    _write(worktree, "THE_FEATURE_IS_FIXED", "")
-    _write(worktree, "qa/pass-bar-TASK-001.yaml", PASS_BAR.format(title=SCENARIO_TITLE))
-    feature = _make_feature(worktree)
-
-    _, _, result = _run_build(repo_root, worktree, feature, _WaveRecorder(worktree))
-
-    assert result.status == "completed"
-    assert _receipt(worktree)["criteria_still_claimed"] == [SCENARIO_TITLE]
-
-
-def test_operator_rows_and_broken_pass_bars_register_nothing(tmp_path: Path) -> None:
-    from guardkit.orchestrator.feature_check import pass_bar_machine_criteria
-
-    _write(tmp_path, "qa/pass-bar-TASK-001.yaml", PASS_BAR.format(title="Machine promise"))
-    _write(tmp_path, "qa/pass-bar-TASK-002.yaml", "criteria: [not, a, mapping]\n")
-    _write(tmp_path, "qa/pass-bar-TASK-003.yaml", ": : not yaml : :\n")
-    assert pass_bar_machine_criteria(
-        tmp_path, ["TASK-001", "TASK-002", "TASK-003", "TASK-404"]
-    ) == ["Machine promise"]
 
 
 def test_a_project_with_no_declared_check_is_not_held_to_its_pass_bars(
@@ -1409,43 +1151,6 @@ def test_a_failed_attempt_publishes_neither_its_command_nor_its_output(
         assert len(_attempt_events(emitter)) == 2, "both failed attempts are published"
     if not completes:
         assert FIXED_LABEL in (result.error or ""), result.error
-    assert any(FIXED_LABEL in text for text in published)
-
-
-@pytest.mark.parametrize("command", SECRET_COMMANDS, ids=SECRET_COMMAND_IDS)
-def test_a_resumed_build_with_no_record_does_not_publish_the_command(
-    tmp_path: Path, caplog: pytest.LogCaptureFixture, command: str
-) -> None:
-    """Every wave already done, the check never ran here, and no record.
-
-    Since step 1 (24 October 2026, GKT-163) a missing record is advice: the
-    feature completes, and the finaliser says why nothing proved it in the log
-    and on the console, naming the check by its fixed label only.
-    """
-    repo_root, worktree = _make_project(tmp_path, declaration=_declaration(command))
-    feature = _make_feature(worktree)
-    emitter = NullEmitter(capture=True)
-    recording = Console(record=True, file=io.StringIO(), width=400)
-    caplog.set_level(logging.DEBUG)
-    waves = [_succeeding_wave(1, ["TASK-001"])]
-    _complete_feature_tasks(feature, ["TASK-001"])
-    orchestrator = _make_orchestrator(repo_root, emitter=emitter, quiet=False)
-    with ExitStack() as stack:
-        for _cm in _common_patches(orchestrator):
-            stack.enter_context(_cm)
-        stack.enter_context(patch.object(orchestrator, "_display_summary"))
-        stack.enter_context(
-            patch("guardkit.orchestrator.feature_orchestrator.console", recording)
-        )
-        result = orchestrator._finalize_phase(
-            feature, waves, _make_worktree(worktree)
-        )
-
-    assert not (worktree / RECEIPT_RELATIVE_PATH).exists()
-    assert result.status == "completed"
-    published = _assert_nothing_secret_published(
-        caplog, recording, result, waves, emitter
-    )
     assert any(FIXED_LABEL in text for text in published)
 
 

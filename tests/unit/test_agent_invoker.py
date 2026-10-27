@@ -3,6 +3,7 @@
 import asyncio
 import json
 import signal
+import subprocess
 from pathlib import Path
 from typing import Dict, Any
 from unittest.mock import AsyncMock, Mock, patch, MagicMock
@@ -13,7 +14,6 @@ from guardkit.orchestrator.agent_invoker import (
     AgentInvoker,
     AgentInvocationResult,
     DEFAULT_SDK_TIMEOUT,
-    DOCUMENTATION_LEVEL_MAX_FILES,
     MAX_SDK_TIMEOUT,
     TaskWorkStreamParser,
     TASK_WORK_SDK_MAX_TURNS,
@@ -26,13 +26,12 @@ from guardkit.orchestrator.agent_invoker import (
 from guardkit.orchestrator.exceptions import (
     AgentInvocationError,
     PlayerReportNotFoundError,
-    PlayerReportInvalidError,
     CoachDecisionNotFoundError,
-    CoachDecisionInvalidError,
     SDKTimeoutError,
     TaskWorkResult,
 )
 from tests.conftest import M0_FLEET_SEAT
+from tests.task_scope_fixtures import admitted_task, init_checkout
 
 
 # ==================== Fixtures ====================
@@ -40,10 +39,15 @@ from tests.conftest import M0_FLEET_SEAT
 
 @pytest.fixture
 def worktree_path(tmp_path):
-    """Create temporary worktree directory."""
-    worktree = tmp_path / "worktree"
-    worktree.mkdir()
-    return worktree
+    """A real git checkout, held by an admitted task, as a build's worktree is.
+
+    The invoker reads the files a task changed from its admitted task scope
+    (``task_work_scope.collect_changes``), so the checkout must be a real
+    repository with the task admitted for the whole test.
+    """
+    worktree = init_checkout(tmp_path / "worktree")
+    with admitted_task(worktree, "TASK-001", register=True):
+        yield worktree
 
 
 @pytest.fixture
@@ -116,6 +120,19 @@ def sample_coach_feedback():
             }
         ],
         "rationale": "Security requirement not met",
+    }
+
+
+def _observed(modified=(), created=(), deleted=()):
+    """What ``AgentInvoker._detect_git_changes`` returns: the admitted task
+    scope's observed inventory (``task_work_scope.collect_changes``)."""
+    return {
+        "available": True,
+        "scope_id": "scope-under-test",
+        "baseline_commit": "0" * 40,
+        "created": list(created),
+        "modified": list(modified),
+        "deleted": list(deleted),
     }
 
 
@@ -349,37 +366,6 @@ class TestPlayerInvocation:
             assert result.success is False
             assert "Invalid JSON" in result.error
 
-    @pytest.mark.asyncio
-    async def test_invoke_player_report_missing_fields(
-        self, agent_invoker, worktree_path
-    ):
-        """Raises error if Player report is missing required fields."""
-        # Setup: Create report with missing fields
-        incomplete_report = {
-            "task_id": "TASK-001",
-            "turn": 1,
-            # Missing required fields
-        }
-        create_report_file(
-            worktree_path, "TASK-001", 1, "player", incomplete_report
-        )
-
-        # Mock SDK
-        with patch.object(
-            agent_invoker, "_invoke_with_role", new_callable=AsyncMock
-        ):
-            # Execute
-            result = await agent_invoker.invoke_player(
-                task_id="TASK-001",
-                turn=1,
-                requirements="Implement OAuth2 authentication",
-            )
-
-            # Verify
-            assert result.success is False
-            assert "validation failed" in result.error
-            assert "Missing fields" in result.error
-
 
 # ==================== Coach Invocation Tests ====================
 
@@ -397,7 +383,7 @@ class TestCoachInvocation:
         JSON block in ``AssistantMessageEvent.text``. The orchestrator's
         ``coach_output_parser.extract_and_write`` writes
         ``coach_turn_N.json`` from the parser side, then
-        ``_load_agent_report`` re-reads it for ``_validate_coach_decision``.
+        ``_load_agent_report`` re-reads it.
         """
         # Mock SDK to return the verdict as a structured event stream.
         with patch.object(
@@ -421,8 +407,7 @@ class TestCoachInvocation:
             assert result.report["decision"] == sample_coach_approval["decision"]
             assert result.report["task_id"] == sample_coach_approval["task_id"]
             assert result.report["turn"] == sample_coach_approval["turn"]
-            # Honesty verification is now added by invoke_coach
-            assert "honesty_verification" in result.report
+            assert result.report["reviewer_decision"] == "approve"
             assert result.duration_seconds > 0
 
             # Verify SDK was called with read-only permissions and the
@@ -471,10 +456,12 @@ class TestCoachInvocation:
             assert result.report["decision"] == "approve"
 
     @pytest.mark.asyncio
-    async def test_invoke_coach_feedback(
+    async def test_invoke_coach_feedback_is_advice(
         self, agent_invoker, worktree_path, sample_player_report, sample_coach_feedback
     ):
-        """Coach provides feedback."""
+        """The reviewer's feedback is advice (27 October 2026): its verdict and
+        findings stay in the record, and the turn is approved unless one of
+        the project's own checks ran and failed."""
         with patch.object(
             agent_invoker, "_invoke_with_role",
             _coach_mock(sample_coach_feedback),
@@ -487,19 +474,16 @@ class TestCoachInvocation:
             )
 
             assert result.success is True
-            assert result.report["decision"] == "feedback"
+            assert result.report["decision"] == "approve"
+            assert result.report["reviewer_decision"] == "feedback"
             assert len(result.report["issues"]) > 0
 
     @pytest.mark.asyncio
-    async def test_invoke_coach_decision_not_found(self, agent_invoker, sample_player_report):
-        """Raises error if Coach doesn't emit a fenced JSON block.
-
-        TASK-FIX-COACHOUT01 Shape A: the failure mode is no event stream
-        (or an event stream with no fenced ``json`` block). The parser
-        raises ``CoachDecisionNotFoundError`` which propagates to
-        ``invoke_coach``'s except branch.
-        """
-        # Mock SDK to return an empty event stream (no AssistantMessageEvent).
+    async def test_invoke_coach_decision_not_found_goes_on(
+        self, agent_invoker, sample_player_report
+    ):
+        """No fenced JSON verdict from the reviewer: the turn goes on with no
+        reviewer findings (its verdict is advice, 27 October 2026)."""
         with patch.object(
             agent_invoker, "_invoke_with_role",
             _coach_mock(None),
@@ -511,30 +495,25 @@ class TestCoachInvocation:
                 player_report=sample_player_report,
             )
 
-            assert result.success is False
-            # COACHSF01 greps for this substring in autobuild.py:5676-5678.
-            assert "Coach decision not found" in result.error
+            assert result.success is True
+            assert result.report["decision"] == "approve"
+            assert result.report["issues"] == []
+            assert "no readable verdict" in result.report["rationale"]
 
     @pytest.mark.asyncio
-    async def test_invoke_coach_invalid_decision_value(
+    async def test_invoke_coach_unusual_decision_value_is_kept_as_advice(
         self, agent_invoker, worktree_path, sample_player_report
     ):
-        """Raises error if Coach decision has an invalid ``decision`` value.
-
-        TASK-FIX-COACHOUT01 Shape A: the parser validates the decision
-        field against ``{"approve", "feedback"}`` before writing
-        ``coach_turn_N.json``. ``"maybe"`` triggers
-        ``CoachDecisionInvalidError`` directly from the parser, so the
-        file is never created.
-        """
-        invalid_decision = {
+        """The parser no longer checks the verdict's values: whatever the
+        reviewer said is kept as ``reviewer_decision`` and the turn goes on."""
+        unusual_decision = {
             "task_id": "TASK-001",
             "turn": 1,
-            "decision": "maybe",  # Invalid - must be "approve" or "feedback"
+            "decision": "maybe",
         }
         with patch.object(
             agent_invoker, "_invoke_with_role",
-            _coach_mock(invalid_decision),
+            _coach_mock(unusual_decision),
         ):
             result = await agent_invoker.invoke_coach(
                 task_id="TASK-001",
@@ -543,15 +522,9 @@ class TestCoachInvocation:
                 player_report=sample_player_report,
             )
 
-            # Verify
-            assert result.success is False
-            # TASK-FIX-COACHOUT01 Shape A: the parser catches the invalid
-            # ``decision`` value earlier in the pipeline (before
-            # ``_validate_coach_decision`` runs), so the error string now
-            # carries the parser's prefix instead of the validator's
-            # "validation failed" wording. COACHSF01 greps for this
-            # substring in autobuild.py:5676-5678.
-            assert "Coach decision invalid" in result.error
+            assert result.success is True
+            assert result.report["decision"] == "approve"
+            assert result.report["reviewer_decision"] == "maybe"
 
 
 # ==================== Prompt Building Tests ====================
@@ -650,65 +623,6 @@ class TestPromptBuilding:
         assert "```json" in prompt
         # The "last fenced block wins" rule is load-bearing — pin it.
         assert "last" in prompt.lower()
-
-
-# ==================== Report Validation Tests ====================
-
-
-class TestReportValidation:
-    """Test report validation."""
-
-    def test_validate_player_report_valid(self, agent_invoker, sample_player_report):
-        """Valid Player report passes validation."""
-        # Should not raise
-        agent_invoker._validate_player_report(sample_player_report)
-
-    def test_validate_player_report_missing_field(self, agent_invoker):
-        """Raises error if required field missing."""
-        incomplete_report = {
-            "task_id": "TASK-001",
-            "turn": 1,
-            # Missing other required fields
-        }
-
-        with pytest.raises(PlayerReportInvalidError) as exc_info:
-            agent_invoker._validate_player_report(incomplete_report)
-
-        assert "Missing fields" in str(exc_info.value)
-        assert "files_modified" in str(exc_info.value)
-
-    def test_validate_player_report_wrong_type(self, agent_invoker, sample_player_report):
-        """Raises error if field has wrong type."""
-        invalid_report = sample_player_report.copy()
-        invalid_report["tests_run"] = "yes"  # Should be bool
-
-        with pytest.raises(PlayerReportInvalidError) as exc_info:
-            agent_invoker._validate_player_report(invalid_report)
-
-        assert "Type errors" in str(exc_info.value)
-
-    def test_validate_coach_decision_approve(self, agent_invoker, sample_coach_approval):
-        """Valid Coach approval passes validation."""
-        # Should not raise
-        agent_invoker._validate_coach_decision(sample_coach_approval)
-
-    def test_validate_coach_decision_feedback(self, agent_invoker, sample_coach_feedback):
-        """Valid Coach feedback passes validation."""
-        # Should not raise
-        agent_invoker._validate_coach_decision(sample_coach_feedback)
-
-    def test_validate_coach_decision_invalid_value(self, agent_invoker):
-        """Raises error if decision value is invalid."""
-        invalid_decision = {
-            "task_id": "TASK-001",
-            "turn": 1,
-            "decision": "maybe",  # Invalid
-        }
-
-        with pytest.raises(CoachDecisionInvalidError) as exc_info:
-            agent_invoker._validate_coach_decision(invalid_decision)
-
-        assert "must be 'approve' or 'feedback'" in str(exc_info.value)
 
 
 # ==================== SDK Integration Tests ====================
@@ -2326,8 +2240,10 @@ class TestInvokePlayerWithDelegation:
                 # Report is created from task_work_results.json
                 assert result.report["task_id"] == "TASK-001"
                 assert result.report["turn"] == 1
-                assert result.report["files_modified"] == ["src/auth.py"]
-                assert result.report["files_created"] == ["tests/test_auth.py"]
+                # The builder's lists are its claims; nothing changed on disk.
+                assert result.report["claimed_files_modified"] == ["src/auth.py"]
+                assert result.report["claimed_files_created"] == ["tests/test_auth.py"]
+                assert result.report["files_modified"] == []
                 assert result.report["tests_passed"] is True
 
     @pytest.mark.asyncio
@@ -3419,9 +3335,12 @@ class TestCreatePlayerReportFromTaskWork:
         report = json.loads(player_report_path.read_text())
         assert report["task_id"] == task_id
         assert report["turn"] == turn
-        # Files are sorted after git verification merge (TASK-DMRF-003)
-        assert set(report["files_modified"]) == set(sample_task_work_results["files_modified"])
-        assert set(report["files_created"]) == set(sample_task_work_results["files_created"])
+        # The builder's lists are kept as its claims; the observed inventory
+        # (nothing changed in the checkout here) is files_modified/created.
+        assert set(report["claimed_files_modified"]) == set(sample_task_work_results["files_modified"])
+        assert set(report["claimed_files_created"]) == set(sample_task_work_results["files_created"])
+        assert report["files_modified"] == []
+        assert report["files_created"] == []
         assert report["tests_run"] is True
         assert report["tests_passed"] is True
         assert report["test_output_summary"] == "12 tests passed in 0.45s"
@@ -3482,7 +3401,7 @@ class TestCreatePlayerReportFromTaskWork:
         with patch.object(
             invoker_with_worktree,
             "_detect_git_changes",
-            return_value={"modified": ["src/changed.py"], "created": []},
+            return_value=_observed(modified=["src/changed.py"], created=[]),
         ):
             invoker_with_worktree._create_player_report_from_task_work(
                 task_id=task_id, turn=turn, task_work_result=task_work_result
@@ -3494,12 +3413,11 @@ class TestCreatePlayerReportFromTaskWork:
         assert report_path.exists()
 
         report = json.loads(report_path.read_text())
-        # Output merges with git detection
-        # git detection returns: modified=["src/changed.py"], created=[]
-        # output has: files_created=["src/new_file.py"]
-        # Result: files_created should be ["src/new_file.py"], files_modified should be ["src/changed.py"]
-        assert report["files_created"] == ["src/new_file.py"]
+        # The observed inventory: modified=["src/changed.py"], created=[].
+        # The output's files_created=["src/new_file.py"] is kept as a claim.
+        assert report["files_created"] == []
         assert report["files_modified"] == ["src/changed.py"]
+        assert report["claimed_files_created"] == ["src/new_file.py"]
 
     def test_output_merges_with_file_data(
         self, invoker_with_worktree, worktree_path, sample_task_work_results
@@ -3532,12 +3450,13 @@ class TestCreatePlayerReportFromTaskWork:
         report = json.loads(
             (autobuild_dir / f"player_turn_{turn}.json").read_text()
         )
-        # Output should merge (union) with file data
+        # The claims merge (union) with file data
         # sample_task_work_results has: ["src/auth.py", "src/config.py"]
         # output has: ["src/override.py"]
         # merged result should be sorted union
-        assert set(report["files_modified"]) == {"src/auth.py", "src/config.py", "src/override.py"}
-        assert report["files_modified"] == sorted(report["files_modified"])
+        claimed = report["claimed_files_modified"]
+        assert set(claimed) == {"src/auth.py", "src/config.py", "src/override.py"}
+        assert claimed == sorted(claimed)
         assert report["tests_passed"] is False
         assert report["tests_run"] is True  # Set when tests_passed is in output
 
@@ -3564,7 +3483,7 @@ class TestCreatePlayerReportFromTaskWork:
         with patch.object(
             invoker_with_worktree,
             "_detect_git_changes",
-            return_value={"modified": [], "created": []},
+            return_value=_observed(modified=[], created=[]),
         ):
             # Should not raise exception
             invoker_with_worktree._create_player_report_from_task_work(
@@ -3591,7 +3510,7 @@ class TestCreatePlayerReportFromTaskWork:
         with patch.object(
             invoker_with_worktree,
             "_detect_git_changes",
-            return_value={"modified": [], "created": []},
+            return_value=_observed(modified=[], created=[]),
         ):
             invoker_with_worktree._create_player_report_from_task_work(
                 task_id=task_id, turn=turn, task_work_result=task_work_result
@@ -3604,7 +3523,7 @@ class TestCreatePlayerReportFromTaskWork:
     def test_report_includes_all_required_fields(
         self, invoker_with_worktree, worktree_path
     ):
-        """Created report includes all fields from PLAYER_REPORT_SCHEMA."""
+        """Created report includes every Player report field."""
         task_id = "TASK-007"
         turn = 1
 
@@ -3613,7 +3532,7 @@ class TestCreatePlayerReportFromTaskWork:
         with patch.object(
             invoker_with_worktree,
             "_detect_git_changes",
-            return_value={"modified": [], "created": []},
+            return_value=_observed(modified=[], created=[]),
         ):
             invoker_with_worktree._create_player_report_from_task_work(
                 task_id=task_id, turn=turn, task_work_result=task_work_result
@@ -3624,7 +3543,7 @@ class TestCreatePlayerReportFromTaskWork:
             (autobuild_dir / f"player_turn_{turn}.json").read_text()
         )
 
-        # Verify all required fields from PLAYER_REPORT_SCHEMA
+        # Every Player report field
         required_fields = [
             "task_id",
             "turn",
@@ -3698,7 +3617,7 @@ class TestCreatePlayerReportFromTaskWork:
         with patch.object(
             invoker_with_worktree,
             "_detect_git_changes",
-            return_value={"modified": [], "created": []},
+            return_value=_observed(modified=[], created=[]),
         ):
             invoker_with_worktree._create_player_report_from_task_work(
                 task_id=task_id, turn=turn, task_work_result=task_work_result
@@ -3739,7 +3658,7 @@ class TestCreatePlayerReportFromTaskWork:
         with patch.object(
             invoker_with_worktree,
             "_detect_git_changes",
-            return_value={"modified": [], "created": []},
+            return_value=_observed(modified=[], created=[]),
         ):
             invoker_with_worktree._create_player_report_from_task_work(
                 task_id=task_id, turn=turn, task_work_result=task_work_result
@@ -3775,7 +3694,7 @@ class TestCreatePlayerReportFromTaskWork:
         with patch.object(
             invoker_with_worktree,
             "_detect_git_changes",
-            return_value={"modified": [], "created": []},
+            return_value=_observed(modified=[], created=[]),
         ):
             invoker_with_worktree._create_player_report_from_task_work(
                 task_id=task_id, turn=turn, task_work_result=task_work_result
@@ -3819,10 +3738,10 @@ class TestCreatePlayerReportFromTaskWork:
         with patch.object(
             invoker_with_worktree,
             "_detect_git_changes",
-            return_value={
-                "modified": ["src/changed.py", "src/updated.py"],
-                "created": ["src/new_file.py"],
-            },
+            return_value=_observed(
+                modified=["src/changed.py", "src/updated.py"],
+                created=["src/new_file.py"],
+            ),
         ):
             invoker_with_worktree._create_player_report_from_task_work(
                 task_id=task_id, turn=turn, task_work_result=task_work_result
@@ -3837,10 +3756,11 @@ class TestCreatePlayerReportFromTaskWork:
         assert "src/updated.py" in report["files_modified"]
         assert "src/new_file.py" in report["files_created"]
 
-    def test_git_verification_merges_with_existing_files(
+    def test_git_verification_keeps_claims_beside_the_observed_files(
         self, invoker_with_worktree, worktree_path
     ):
-        """Git detection merges with existing files (union, not replacement) (TASK-DMRF-003)."""
+        """The observed inventory is files_*; the builder's own lists are kept
+        as claimed_* beside it (TASK-DMRF-003, task scope)."""
         task_id = "TASK-GIT-002"
         turn = 1
 
@@ -3862,10 +3782,10 @@ class TestCreatePlayerReportFromTaskWork:
         with patch.object(
             invoker_with_worktree,
             "_detect_git_changes",
-            return_value={
-                "modified": ["src/git_detected.py"],
-                "created": ["src/git_new.py"],
-            },
+            return_value=_observed(
+                modified=["src/git_detected.py"],
+                created=["src/git_new.py"],
+            ),
         ):
             invoker_with_worktree._create_player_report_from_task_work(
                 task_id=task_id, turn=turn, task_work_result=task_work_result
@@ -3875,11 +3795,10 @@ class TestCreatePlayerReportFromTaskWork:
             (autobuild_dir / f"player_turn_{turn}.json").read_text()
         )
 
-        # Both original AND git-detected files should be present
-        assert "src/existing.py" in report["files_modified"]
-        assert "src/git_detected.py" in report["files_modified"]
-        assert "src/original.py" in report["files_created"]
-        assert "src/git_new.py" in report["files_created"]
+        assert report["files_modified"] == ["src/git_detected.py"]
+        assert report["files_created"] == ["src/git_new.py"]
+        assert report["claimed_files_modified"] == ["src/existing.py"]
+        assert report["claimed_files_created"] == ["src/original.py"]
 
     def test_git_verification_deduplicates_files(
         self, invoker_with_worktree, worktree_path
@@ -3906,10 +3825,10 @@ class TestCreatePlayerReportFromTaskWork:
         with patch.object(
             invoker_with_worktree,
             "_detect_git_changes",
-            return_value={
-                "modified": ["src/shared.py", "src/unique_git.py"],  # shared.py overlaps
-                "created": ["src/common.py", "src/new_git.py"],  # common.py overlaps
-            },
+            return_value=_observed(
+                modified=["src/shared.py", "src/unique_git.py"],  # shared.py overlaps
+                created=["src/common.py", "src/new_git.py"],  # common.py overlaps
+            ),
         ):
             invoker_with_worktree._create_player_report_from_task_work(
                 task_id=task_id, turn=turn, task_work_result=task_work_result
@@ -3919,11 +3838,12 @@ class TestCreatePlayerReportFromTaskWork:
             (autobuild_dir / f"player_turn_{turn}.json").read_text()
         )
 
-        # No duplicates - each file should appear only once
-        assert report["files_modified"].count("src/shared.py") == 1
-        assert report["files_created"].count("src/common.py") == 1
-        # All unique files should be present
-        assert "src/unique_orig.py" in report["files_modified"]
+        # No duplicates - each file should appear only once in each list
+        for key in ("files_modified", "claimed_files_modified"):
+            assert report[key].count("src/shared.py") == 1
+        for key in ("files_created", "claimed_files_created"):
+            assert report[key].count("src/common.py") == 1
+        assert "src/unique_orig.py" in report["claimed_files_modified"]
         assert "src/unique_git.py" in report["files_modified"]
         assert "src/new_git.py" in report["files_created"]
 
@@ -3952,21 +3872,21 @@ class TestCreatePlayerReportFromTaskWork:
         with patch.object(
             invoker_with_worktree,
             "_detect_git_changes",
-            return_value={"modified": ["src/from_git.py"], "created": []},
+            return_value=_observed(modified=["src/from_git.py"], created=[]),
         ) as mock_git:
             invoker_with_worktree._create_player_report_from_task_work(
                 task_id=task_id, turn=turn, task_work_result=task_work_result
             )
 
             # Git detection should always be called
-            mock_git.assert_called_once()
+            mock_git.assert_called()
 
         report = json.loads(
             (autobuild_dir / f"player_turn_{turn}.json").read_text()
         )
 
         # Both file and git sources should be present
-        assert "src/from_file.py" in report["files_modified"]
+        assert "src/from_file.py" in report["claimed_files_modified"]
         assert "src/from_git.py" in report["files_modified"]
 
     def test_git_verification_handles_detection_failure(
@@ -3990,23 +3910,28 @@ class TestCreatePlayerReportFromTaskWork:
 
         task_work_result = TaskWorkResult(success=True, output={}, exit_code=0)
 
-        # Mock git detection to raise exception
+        # Git detection fails the way the task scope fails
+        from guardkit.orchestrator.task_work_scope import ScopeUnavailable
+
         with patch.object(
             invoker_with_worktree,
             "_detect_git_changes",
-            side_effect=Exception("Git error: not a repository"),
+            side_effect=ScopeUnavailable("Task writer no longer owns the checkout"),
         ):
             # Should not raise exception
             invoker_with_worktree._create_player_report_from_task_work(
                 task_id=task_id, turn=turn, task_work_result=task_work_result
             )
 
-        # Report should still be created with original data
+        # Report should still be created; the builder's lists are kept as
+        # its claims and the inventory says it could not be read.
         report = json.loads(
             (autobuild_dir / f"player_turn_{turn}.json").read_text()
         )
-        assert report["files_modified"] == ["src/preserved.py"]
-        assert report["files_created"] == ["src/kept.py"]
+        assert report["claimed_files_modified"] == ["src/preserved.py"]
+        assert report["claimed_files_created"] == ["src/kept.py"]
+        assert report["files_modified"] == []
+        assert report["file_inventory_available"] is False
 
     def test_git_verification_sorts_file_lists(
         self, invoker_with_worktree, worktree_path
@@ -4033,10 +3958,10 @@ class TestCreatePlayerReportFromTaskWork:
         with patch.object(
             invoker_with_worktree,
             "_detect_git_changes",
-            return_value={
-                "modified": ["src/middle.py"],
-                "created": ["src/aardvark.py", "src/zoo.py"],
-            },
+            return_value=_observed(
+                modified=["src/middle.py"],
+                created=["src/aardvark.py", "src/zoo.py"],
+            ),
         ):
             invoker_with_worktree._create_player_report_from_task_work(
                 task_id=task_id, turn=turn, task_work_result=task_work_result
@@ -4047,8 +3972,10 @@ class TestCreatePlayerReportFromTaskWork:
         )
 
         # Files should be sorted alphabetically
-        assert report["files_modified"] == ["src/alpha.py", "src/middle.py", "src/zebra.py"]
-        assert report["files_created"] == ["src/aardvark.py", "src/beta.py", "src/zoo.py"]
+        assert report["files_modified"] == ["src/middle.py"]
+        assert report["files_created"] == ["src/aardvark.py", "src/zoo.py"]
+        assert report["claimed_files_modified"] == ["src/alpha.py", "src/zebra.py"]
+        assert report["claimed_files_created"] == ["src/beta.py"]
 
     def test_tests_written_populated_when_tests_info_absent(
         self, invoker_with_worktree, worktree_path
@@ -4157,74 +4084,73 @@ class TestCreatePlayerReportFromTaskWork:
 
 
 class TestDetectGitChanges:
-    """Test _detect_git_changes method."""
+    """``_detect_git_changes``: the admitted task scope's observed inventory.
+
+    Real git checkouts; the task is admitted at a commit holding two files.
+    """
 
     @pytest.fixture
-    def invoker(self, worktree_path):
-        """Create AgentInvoker instance."""
-        return AgentInvoker(
-            worktree_path=worktree_path,
-            sdk_timeout_seconds=60,
+    def checkout(self, tmp_path):
+        root = init_checkout(tmp_path / "scoped")
+        (root / "src").mkdir()
+        (root / "src" / "auth.py").write_text("AUTH = 1\n")
+        (root / "src" / "config.py").write_text("CONFIG = 1\n")
+        subprocess.run(["git", "add", "-A"], cwd=root, check=True)
+        subprocess.run(
+            ["git", "-c", "user.name=T", "-c", "user.email=t@example.invalid",
+             "commit", "-q", "-m", "task base"],
+            cwd=root, check=True,
         )
+        return root
+
+    @pytest.fixture
+    def invoker(self, checkout):
+        with admitted_task(checkout, "TASK-001", register=True):
+            yield AgentInvoker(worktree_path=checkout, sdk_timeout_seconds=60)
 
     def test_detect_git_changes_returns_dict(self, invoker):
         """_detect_git_changes returns dict with modified and created keys."""
-        with patch("subprocess.run") as mock_run:
-            mock_run.return_value = Mock(returncode=0, stdout="")
-            result = invoker._detect_git_changes()
+        result = invoker._detect_git_changes()
 
-        assert "modified" in result
-        assert "created" in result
-        assert isinstance(result["modified"], list)
-        assert isinstance(result["created"], list)
+        assert result["modified"] == []
+        assert result["created"] == []
+        assert result["scope_id"] == invoker.task_work_scope.scope_id
+        assert result["baseline_commit"] == invoker.task_work_scope.baseline_commit
 
-    def test_detect_git_changes_parses_modified_files(self, invoker):
-        """_detect_git_changes parses modified files from git diff."""
-        with patch("subprocess.run") as mock_run:
-            # First call for modified files
-            mock_modified = Mock(returncode=0, stdout="src/auth.py\nsrc/config.py\n")
-            # Second call for untracked files
-            mock_untracked = Mock(returncode=0, stdout="")
-            mock_run.side_effect = [mock_modified, mock_untracked]
+    def test_detect_git_changes_lists_modified_files(self, invoker, checkout):
+        (checkout / "src" / "auth.py").write_text("AUTH = 2\n")
+        (checkout / "src" / "config.py").write_text("CONFIG = 2\n")
 
-            result = invoker._detect_git_changes()
+        result = invoker._detect_git_changes()
 
         assert result["modified"] == ["src/auth.py", "src/config.py"]
+        assert result["created"] == []
 
-    def test_detect_git_changes_parses_untracked_files(self, invoker):
-        """_detect_git_changes parses untracked files from git ls-files."""
-        with patch("subprocess.run") as mock_run:
-            # First call for modified files
-            mock_modified = Mock(returncode=0, stdout="")
-            # Second call for untracked files
-            mock_untracked = Mock(returncode=0, stdout="src/new_file.py\ntests/test_new.py\n")
-            mock_run.side_effect = [mock_modified, mock_untracked]
+    def test_detect_git_changes_lists_new_files(self, invoker, checkout):
+        (checkout / "src" / "new_file.py").write_text("NEW = 1\n")
+        (checkout / "tests").mkdir()
+        (checkout / "tests" / "test_new.py").write_text("def test_x():\n    pass\n")
 
-            result = invoker._detect_git_changes()
+        result = invoker._detect_git_changes()
 
         assert result["created"] == ["src/new_file.py", "tests/test_new.py"]
 
-    def test_detect_git_changes_handles_git_failure(self, invoker):
-        """_detect_git_changes returns empty lists when git fails."""
-        with patch("subprocess.run") as mock_run:
-            mock_run.return_value = Mock(returncode=1, stdout="")
-            result = invoker._detect_git_changes()
+    def test_a_deleted_file_is_listed_as_modified(self, invoker, checkout):
+        (checkout / "src" / "config.py").unlink()
 
-        # Should return empty lists, not raise
-        assert result["modified"] == []
-        assert result["created"] == []
+        result = invoker._detect_git_changes()
 
-    def test_detect_git_changes_handles_timeout(self, invoker):
-        """_detect_git_changes handles subprocess timeout."""
-        import subprocess
+        assert result["modified"] == ["src/config.py"]
 
-        with patch("subprocess.run") as mock_run:
-            mock_run.side_effect = subprocess.TimeoutExpired(cmd="git", timeout=30)
-            result = invoker._detect_git_changes()
+    def test_without_an_admitted_task_the_inventory_is_unavailable(self, tmp_path):
+        """Callers record the inventory as unavailable (``_apply_scope_inventory``)."""
+        from guardkit.orchestrator.task_work_scope import ScopeUnavailable
 
-        # Should return empty lists, not raise
-        assert result["modified"] == []
-        assert result["created"] == []
+        invoker = AgentInvoker(
+            worktree_path=init_checkout(tmp_path / "unscoped"), sdk_timeout_seconds=60
+        )
+        with pytest.raises(ScopeUnavailable):
+            invoker._detect_git_changes()
 
 
 # ==================== TaskWorkStreamParser Tests ====================
@@ -5345,8 +5271,9 @@ class TestWriteTaskWorkResults:
         parsed = json.loads(results_path.read_text())
         assert "files_modified" in parsed
         assert "files_created" in parsed
-        assert "src/auth.py" in parsed["files_modified"]
-        assert "tests/test_auth.py" in parsed["files_created"]
+        # The builder's lists are its claims; files_* is the observed inventory.
+        assert "src/auth.py" in parsed["claimed_files_modified"]
+        assert "tests/test_auth.py" in parsed["claimed_files_created"]
 
     def test_write_deduplicates_file_lists(self, invoker, worktree_path):
         """Results deduplicate file lists."""
@@ -5358,8 +5285,8 @@ class TestWriteTaskWorkResults:
         results_path = invoker._write_task_work_results("TASK-001", result_data)
 
         parsed = json.loads(results_path.read_text())
-        assert parsed["files_modified"].count("src/auth.py") == 1
-        assert parsed["files_created"].count("tests/test.py") == 1
+        assert parsed["claimed_files_modified"].count("src/auth.py") == 1
+        assert parsed["claimed_files_created"].count("tests/test.py") == 1
 
     def test_write_sorts_file_lists(self, invoker, worktree_path):
         """Results have sorted file lists."""
@@ -5371,7 +5298,7 @@ class TestWriteTaskWorkResults:
         results_path = invoker._write_task_work_results("TASK-001", result_data)
 
         parsed = json.loads(results_path.read_text())
-        assert parsed["files_modified"] == ["a_file.py", "m_file.py", "z_file.py"]
+        assert parsed["claimed_files_modified"] == ["a_file.py", "m_file.py", "z_file.py"]
 
     # -------------- files_authored Tests (TASK-FIX-CC-COND) --------------
 
@@ -5390,8 +5317,8 @@ class TestWriteTaskWorkResults:
 
         parsed = json.loads(results_path.read_text())
         assert parsed["files_authored"] == ["src/a.py", "src/b.py"]
-        # files_modified is independent — git-diff noise stays where it is.
-        assert "src/peer_noise.py" in parsed["files_modified"]
+        # The modified-file claims are independent of files_authored.
+        assert "src/peer_noise.py" in parsed["claimed_files_modified"]
 
     def test_write_persists_empty_files_authored_as_present(
         self, invoker, worktree_path
@@ -5520,9 +5447,9 @@ class TestWriteTaskWorkResults:
         results_path = invoker._write_task_work_results("TASK-001", result_data)
 
         parsed = json.loads(results_path.read_text())
-        assert "src/module.py" in parsed["files_created"]
-        assert "house" not in parsed["files_created"]
-        assert "**" not in parsed["files_created"]
+        assert "src/module.py" in parsed["claimed_files_created"]
+        assert "house" not in parsed["claimed_files_created"]
+        assert "**" not in parsed["claimed_files_created"]
 
     def test_write_filters_non_path_from_files_modified(self, invoker, worktree_path):
         """_write_task_work_results removes non-path strings from files_modified."""
@@ -5533,22 +5460,9 @@ class TestWriteTaskWorkResults:
         results_path = invoker._write_task_work_results("TASK-001", result_data)
 
         parsed = json.loads(results_path.read_text())
-        assert "guardkit/core.py" in parsed["files_modified"]
-        assert "word" not in parsed["files_modified"]
-        assert "*" not in parsed["files_modified"]
-
-    def test_write_filters_before_constraint_validation(self, invoker, worktree_path, caplog):
-        """Constraint check uses filtered file list, so spurious entries don't trigger warning."""
-        import logging
-        # 3 entries but only 1 is a real path — constraint (max 2) should not warn
-        result_data = {
-            "files_created": ["src/real.py", "house", "**"],
-        }
-
-        with caplog.at_level(logging.WARNING, logger="guardkit.orchestrator.agent_invoker"):
-            invoker._write_task_work_results("TASK-001", result_data, documentation_level="minimal")
-
-        assert "Documentation level constraint violated" not in caplog.text
+        assert "guardkit/core.py" in parsed["claimed_files_modified"]
+        assert "word" not in parsed["claimed_files_modified"]
+        assert "*" not in parsed["claimed_files_modified"]
 
 
 # ==================== Generate Summary Tests ====================
@@ -5797,248 +5711,6 @@ class TestHeartbeatLogging:
         assert "(2s elapsed)" in caplog.text
 
 
-# ==================== File Count Constraint Validation Tests ====================
-
-
-class TestFileCountConstraintValidation:
-    """Tests for documentation level file count constraints."""
-
-    def test_documentation_level_max_files_constant(self):
-        """Verify constant mapping is correct."""
-        assert DOCUMENTATION_LEVEL_MAX_FILES["minimal"] == 2
-        assert DOCUMENTATION_LEVEL_MAX_FILES["standard"] == 2
-        assert DOCUMENTATION_LEVEL_MAX_FILES["comprehensive"] is None
-
-    def test_validate_file_count_minimal_within_limit(self, agent_invoker, caplog):
-        """Minimal level allows up to 2 files without warning."""
-        import logging
-
-        caplog.set_level(logging.WARNING, logger="guardkit.orchestrator.agent_invoker")
-
-        agent_invoker._validate_file_count_constraint(
-            task_id="TASK-001",
-            documentation_level="minimal",
-            files_created=["file1.py", "file2.py"],
-        )
-
-        # No warning should be logged for 2 files (within limit)
-        assert "Documentation level constraint violated" not in caplog.text
-
-    def test_validate_file_count_minimal_exceeds_limit(self, agent_invoker, caplog):
-        """Minimal level logs warning when >2 files created."""
-        import logging
-
-        caplog.set_level(logging.WARNING, logger="guardkit.orchestrator.agent_invoker")
-
-        agent_invoker._validate_file_count_constraint(
-            task_id="TASK-001",
-            documentation_level="minimal",
-            files_created=["file1.py", "file2.py", "file3.py"],
-        )
-
-        # Warning should be logged for 3 files (exceeds limit of 2)
-        assert "Documentation level constraint violated" in caplog.text
-        assert "created 3 files" in caplog.text
-        assert "max allowed 2" in caplog.text
-        assert "minimal" in caplog.text
-
-    def test_validate_file_count_standard_within_limit(self, agent_invoker, caplog):
-        """Standard level allows up to 2 files without warning."""
-        import logging
-
-        caplog.set_level(logging.WARNING, logger="guardkit.orchestrator.agent_invoker")
-
-        agent_invoker._validate_file_count_constraint(
-            task_id="TASK-002",
-            documentation_level="standard",
-            files_created=["src/module.py"],
-        )
-
-        # No warning for 1 file (within limit)
-        assert "Documentation level constraint violated" not in caplog.text
-
-    def test_validate_file_count_standard_exceeds_limit(self, agent_invoker, caplog):
-        """Standard level logs warning when >2 files created."""
-        import logging
-
-        caplog.set_level(logging.WARNING, logger="guardkit.orchestrator.agent_invoker")
-
-        agent_invoker._validate_file_count_constraint(
-            task_id="TASK-002",
-            documentation_level="standard",
-            files_created=["a.py", "b.py", "c.py", "d.py"],
-        )
-
-        # Warning should be logged for 4 files (exceeds limit of 2)
-        assert "Documentation level constraint violated" in caplog.text
-        assert "created 4 files" in caplog.text
-
-    def test_validate_file_count_comprehensive_unlimited(self, agent_invoker, caplog):
-        """Comprehensive level has no file limit."""
-        import logging
-
-        caplog.set_level(logging.WARNING, logger="guardkit.orchestrator.agent_invoker")
-
-        # Create 10 files - should not trigger warning
-        agent_invoker._validate_file_count_constraint(
-            task_id="TASK-003",
-            documentation_level="comprehensive",
-            files_created=[f"file{i}.py" for i in range(10)],
-        )
-
-        # No warning should be logged (comprehensive has no limit)
-        assert "Documentation level constraint violated" not in caplog.text
-
-    def test_validate_file_count_unknown_level_no_limit(self, agent_invoker, caplog):
-        """Unknown documentation level is treated as having no limit."""
-        import logging
-
-        caplog.set_level(logging.WARNING, logger="guardkit.orchestrator.agent_invoker")
-
-        agent_invoker._validate_file_count_constraint(
-            task_id="TASK-004",
-            documentation_level="unknown_level",
-            files_created=[f"file{i}.py" for i in range(15)],
-        )
-
-        # No warning for unknown level (treated as no limit)
-        assert "Documentation level constraint violated" not in caplog.text
-
-    def test_validate_file_count_empty_files_list(self, agent_invoker, caplog):
-        """Empty files list should not trigger warning."""
-        import logging
-
-        caplog.set_level(logging.WARNING, logger="guardkit.orchestrator.agent_invoker")
-
-        agent_invoker._validate_file_count_constraint(
-            task_id="TASK-005",
-            documentation_level="minimal",
-            files_created=[],
-        )
-
-        # No warning for empty list
-        assert "Documentation level constraint violated" not in caplog.text
-
-    def test_validate_file_count_warning_includes_file_preview(self, agent_invoker, caplog):
-        """Warning message includes preview of created files."""
-        import logging
-
-        caplog.set_level(logging.WARNING, logger="guardkit.orchestrator.agent_invoker")
-
-        files = ["a.py", "b.py", "c.py", "d.py"]
-        agent_invoker._validate_file_count_constraint(
-            task_id="TASK-006",
-            documentation_level="minimal",
-            files_created=files,
-        )
-
-        # Check that file names appear in warning
-        assert "a.py" in caplog.text
-
-    def test_validate_file_count_truncates_long_file_list(self, agent_invoker, caplog):
-        """Warning truncates file list when more than 5 files."""
-        import logging
-
-        caplog.set_level(logging.WARNING, logger="guardkit.orchestrator.agent_invoker")
-
-        # Create 8 files
-        files = [f"file{i}.py" for i in range(8)]
-        agent_invoker._validate_file_count_constraint(
-            task_id="TASK-007",
-            documentation_level="minimal",
-            files_created=files,
-        )
-
-        # Check that ellipsis is added for truncated list
-        assert "..." in caplog.text
-        assert "created 8 files" in caplog.text
-
-    # TASK-GK-DOC-001: orchestrator artefacts must not count toward the
-    # doc-level file-count limit (FEAT-PEBR turn-1 false-positive fix).
-
-    def test_validate_file_count_excludes_only_artefacts(self, agent_invoker, caplog):
-        """List of only orchestrator artefacts triggers no warning."""
-        import logging
-
-        caplog.set_level(logging.WARNING, logger="guardkit.orchestrator.agent_invoker")
-
-        agent_invoker._validate_file_count_constraint(
-            task_id="TASK-GK-DOC-001",
-            documentation_level="minimal",
-            files_created=[
-                ".guardkit/autobuild/TASK-PEBR-001/player_turn_1.json",
-                ".guardkit/bdd/results.xml",
-                ".claude/task-plans/TASK-PEBR-001-implementation-plan.md",
-                "src/foo/__init__.py",
-            ],
-        )
-
-        assert "Documentation level constraint violated" not in caplog.text
-
-    def test_validate_file_count_counts_only_real_code(self, agent_invoker, caplog):
-        """Mixed list (artefacts + real source) counts only the real files."""
-        import logging
-
-        caplog.set_level(logging.WARNING, logger="guardkit.orchestrator.agent_invoker")
-
-        # FEAT-PEBR turn-1 fixture: 4 raw files, 2 real new code files.
-        agent_invoker._validate_file_count_constraint(
-            task_id="TASK-GK-DOC-001",
-            documentation_level="minimal",
-            files_created=[
-                ".guardkit/autobuild/TASK-PEBR-001/player_turn_1.json",
-                "src/forge/pipeline/build_ack_handle.py",
-                "tests/forge/adapters/nats/__init__.py",
-                "tests/forge/adapters/nats/test_pipeline_consumer.py",
-            ],
-        )
-
-        # 2 real files <= max 2 for minimal — no warning.
-        assert "Documentation level constraint violated" not in caplog.text
-
-    def test_validate_file_count_real_files_still_warn(self, agent_invoker, caplog):
-        """3 real source files in minimal mode still trip the warning."""
-        import logging
-
-        caplog.set_level(logging.WARNING, logger="guardkit.orchestrator.agent_invoker")
-
-        agent_invoker._validate_file_count_constraint(
-            task_id="TASK-GK-DOC-001",
-            documentation_level="minimal",
-            files_created=[
-                "src/foo.py",
-                "src/bar.py",
-                "src/baz.py",
-            ],
-        )
-
-        assert "Documentation level constraint violated" in caplog.text
-        assert "created 3 files" in caplog.text
-
-    def test_validate_file_count_warning_preview_excludes_artefacts(
-        self, agent_invoker, caplog
-    ):
-        """When the warning fires, the preview shows only real files."""
-        import logging
-
-        caplog.set_level(logging.WARNING, logger="guardkit.orchestrator.agent_invoker")
-
-        agent_invoker._validate_file_count_constraint(
-            task_id="TASK-GK-DOC-001",
-            documentation_level="minimal",
-            files_created=[
-                ".guardkit/autobuild/TASK-X/player_turn_1.json",
-                "src/a.py",
-                "src/b.py",
-                "src/c.py",
-            ],
-        )
-
-        assert "Documentation level constraint violated" in caplog.text
-        assert "created 3 files" in caplog.text
-        assert "player_turn_1.json" not in caplog.text
-
-
 # ==================== Tests for Direct Mode Routing (TASK-FB-2D8B) ====================
 
 
@@ -6266,8 +5938,8 @@ Task with deprecated manual mode - should be normalized to task-work.
         assert results["task_id"] == task_id
         assert results["implementation_mode"] == "direct"
         assert results["success"] is True
-        assert results["files_created"] == ["docs/new-file.md"]
-        assert results["files_modified"] == ["README.md"]
+        assert results["claimed_files_created"] == ["docs/new-file.md"]
+        assert results["claimed_files_modified"] == ["README.md"]
 
     def test_write_direct_mode_results_handles_failure(self, agent_invoker, worktree_path):
         """_write_direct_mode_results handles failure cases."""
@@ -6332,8 +6004,8 @@ Task with deprecated manual mode - should be normalized to task-work.
         results = json.loads(result_path.read_text())
 
         # Verify deduplication and sorting
-        assert results["files_modified"] == ["a.py", "b.py", "c.py"]
-        assert results["files_created"] == ["a.py", "z.py"]
+        assert results["claimed_files_modified"] == ["a.py", "b.py", "c.py"]
+        assert results["claimed_files_created"] == ["a.py", "z.py"]
 
     # ========================================================================
     # Direct Mode Test Count Propagation Tests (TASK-FIX-CEE8a)
@@ -6581,8 +6253,8 @@ Task with deprecated manual mode - should be normalized to task-work.
         assert report["turn"] == turn
         assert report["implementation_mode"] == "direct"
         assert report["success"] is True
-        assert report["files_created"] == ["docs/new-file.md"]
-        assert report["files_modified"] == ["README.md"]
+        assert report["claimed_files_created"] == ["docs/new-file.md"]
+        assert report["claimed_files_modified"] == ["README.md"]
 
     def test_write_player_report_for_direct_mode_handles_failure(
         self, agent_invoker, worktree_path
@@ -6607,7 +6279,7 @@ Task with deprecated manual mode - should be normalized to task-work.
     def test_write_player_report_for_direct_mode_schema_compliant(
         self, agent_invoker, worktree_path
     ):
-        """Player report contains all PLAYER_REPORT_SCHEMA fields."""
+        """Player report carries every field of the Player report, typed."""
         task_id = "TASK-PRH-003"
         turn = 1
         player_report = {
@@ -6631,10 +6303,20 @@ Task with deprecated manual mode - should be normalized to task-work.
 
         report = json.loads(result_path.read_text())
 
-        # Verify all PLAYER_REPORT_SCHEMA fields are present
-        from guardkit.orchestrator.agent_invoker import PLAYER_REPORT_SCHEMA
-
-        for field, expected_type in PLAYER_REPORT_SCHEMA.items():
+        expected_fields = {
+            "task_id": str,
+            "turn": int,
+            "files_modified": list,
+            "files_created": list,
+            "tests_written": list,
+            "tests_run": bool,
+            "tests_passed": bool,
+            "implementation_notes": str,
+            "concerns": list,
+            "requirements_addressed": list,
+            "requirements_remaining": list,
+        }
+        for field, expected_type in expected_fields.items():
             assert field in report, f"Missing required field: {field}"
             assert isinstance(
                 report[field], expected_type
@@ -6702,7 +6384,7 @@ Task with deprecated manual mode - should be normalized to task-work.
         )
 
         report_v1 = json.loads(result_path.read_text())
-        assert report_v1["files_modified"] == ["v1.py"]
+        assert report_v1["claimed_files_modified"] == ["v1.py"]
 
         # Second write (overwrite)
         player_report_v2 = {
@@ -6715,7 +6397,7 @@ Task with deprecated manual mode - should be normalized to task-work.
         )
 
         report_v2 = json.loads(result_path_v2.read_text())
-        assert report_v2["files_modified"] == ["v2.py", "v2_extra.py"]
+        assert report_v2["claimed_files_modified"] == ["v2.py", "v2_extra.py"]
         assert result_path == result_path_v2
 
     def test_write_player_report_for_direct_mode_propagates_synthetic_flag(
@@ -6934,10 +6616,7 @@ implementation_mode: direct
 
         # Mock SDK invocation (doesn't write report)
         # Mock git detection to return files
-        git_changes = {
-            "modified": ["README.md"],
-            "created": []
-        }
+        git_changes = _observed(modified=["README.md"])
 
         with patch.object(
             agent_invoker, "_invoke_with_role", new_callable=AsyncMock
@@ -7025,7 +6704,7 @@ implementation_mode: direct
         report_path = worktree_path / ".guardkit" / "autobuild" / task_id / f"player_turn_{turn}.json"
         report = json.loads(report_path.read_text())
         assert report["implementation_notes"] == "SDK-written report"
-        assert report["files_modified"] == ["sdk_modified.py"]
+        assert report["claimed_files_modified"] == ["sdk_modified.py"]
 
         # Verify result shows success
         assert result.success is True
@@ -7224,8 +6903,6 @@ implementation_mode: direct
         ), patch.object(
             agent_invoker, "_load_agent_report", return_value=mock_report
         ), patch.object(
-            agent_invoker, "_validate_player_report"
-        ), patch.object(
             agent_invoker, "_retry_with_backoff",
             side_effect=lambda fn, *a, **kw: fn(*a),
         ):
@@ -7313,8 +6990,6 @@ Fix the typo in README.md.
             agent_invoker, "_invoke_with_role", side_effect=mock_invoke_with_role
         ), patch.object(
             agent_invoker, "_load_agent_report", return_value=mock_report
-        ), patch.object(
-            agent_invoker, "_validate_player_report"
         ), patch.object(
             agent_invoker, "_retry_with_backoff",
             side_effect=lambda fn, *a, **kw: fn(*a),
@@ -7850,7 +7525,6 @@ class TestAgentInvokerClassIntegrity:
             "_write_failure_results",
             "_read_json_artifact",
             "_generate_summary",
-            "_validate_file_count_constraint",
             "extract_acceptance_criteria",
             "parse_completion_promises",
             "parse_criteria_verifications",
@@ -8039,9 +7713,9 @@ class TestToolUseBlockIntegrationWithWriter:
         results_path = agent_invoker._write_task_work_results("TASK-001", result_data)
 
         written = json.loads(results_path.read_text())
-        assert "guardkit/cli/main.py" in written["files_modified"]
-        assert "src/planning/system_plan.py" in written["files_created"]
-        assert "tests/unit/test_system_plan.py" in written["files_created"]
+        assert "guardkit/cli/main.py" in written["claimed_files_modified"]
+        assert "src/planning/system_plan.py" in written["claimed_files_created"]
+        assert "tests/unit/test_system_plan.py" in written["claimed_files_created"]
 
     def test_empty_file_lists_written_as_empty_arrays(self, agent_invoker):
         """When no files tracked, results have empty arrays (not missing keys)."""
@@ -8883,8 +8557,8 @@ class TestCompletionPromisesPropagation:
             exit_code=0,
         )
         
-        # Mock git detection to return empty (so we only test task_work propagation)
-        with patch.object(invoker, '_detect_git_changes', return_value=None):
+        # Git detection observes no changes (so we only test task_work propagation)
+        with patch.object(invoker, '_detect_git_changes', return_value=_observed()):
             # Call _create_player_report_from_task_work (returns None, writes to file)
             invoker._create_player_report_from_task_work(task_id, turn, result)
         
@@ -8935,7 +8609,7 @@ class TestCompletionPromisesPropagation:
         )
         
         # Mock git detection to return empty
-        with patch.object(invoker, '_detect_git_changes', return_value=None):
+        with patch.object(invoker, '_detect_git_changes', return_value=_observed()):
             # Call _create_player_report_from_task_work (returns None, writes to file)
             invoker._create_player_report_from_task_work(task_id, turn, result)
         
@@ -9085,226 +8759,58 @@ class TestGitOperationThreadingLock:
         inv2 = AgentInvoker(worktree_path=worktree_path)
         assert inv1._git_lock is inv2._git_lock
 
-    def test_detect_git_changes_acquires_lock(self, agent_invoker):
-        """Verify _detect_git_changes acquires _git_lock before running git commands."""
-        lock_acquired = False
-        original_lock = AgentInvoker._git_lock
-
-        class TrackingRLock:
-            """RLock wrapper that records acquire/release calls."""
-            def __init__(self):
-                self.was_used_as_context_manager = False
-            def __enter__(self):
-                nonlocal lock_acquired
-                lock_acquired = True
-                self.was_used_as_context_manager = True
-                return self
-            def __exit__(self, *args):
-                pass
-
-        tracking_lock = TrackingRLock()
-        AgentInvoker._git_lock = tracking_lock
-        try:
-            with patch("subprocess.run") as mock_run:
-                mock_proc = Mock()
-                mock_proc.returncode = 0
-                mock_proc.stdout = "file1.py\nfile2.py"
-                mock_run.return_value = mock_proc
-
-                result = agent_invoker._detect_git_changes()
-
-            assert tracking_lock.was_used_as_context_manager, (
-                "_detect_git_changes must acquire _git_lock"
-            )
-            assert lock_acquired
-        finally:
-            AgentInvoker._git_lock = original_lock
-
-    def test_detect_git_changes_releases_lock_on_exception(self, agent_invoker):
-        """Verify lock is released even if git commands raise exceptions."""
-        original_lock = AgentInvoker._git_lock
-        tracking_lock_released = False
-
-        class TrackingRLock:
-            def __enter__(self):
-                return self
-            def __exit__(self, *args):
-                nonlocal tracking_lock_released
-                tracking_lock_released = True
-                return False  # Don't suppress exception
-
-        AgentInvoker._git_lock = TrackingRLock()
-        try:
-            with patch("subprocess.run", side_effect=OSError("simulated failure")):
-                # Should not raise - method has internal exception handling
-                result = agent_invoker._detect_git_changes()
-
-            assert tracking_lock_released, "Lock must be released on exception"
-            assert result == {"modified": [], "created": []} or isinstance(result, dict)
-        finally:
-            AgentInvoker._git_lock = original_lock
-
 
 # ==================== Baseline Commit Tests (TASK-FIX-VL06) ====================
 
 
 class TestBaselineCommit:
-    """Test per-task baseline commit recording for accurate git detection."""
+    """The task's baseline is the commit it was admitted at (task scope).
 
-    @pytest.fixture
-    def invoker(self, worktree_path):
-        """Create AgentInvoker instance."""
-        return AgentInvoker(
-            worktree_path=worktree_path,
-            sdk_timeout_seconds=60,
+    TASK-FIX-VL06 recorded HEAD per task; the admitted task scope now holds
+    the baseline and ``_record_baseline`` never recaptures a later HEAD.
+    """
+
+    def _commit(self, root, name):
+        (root / name).write_text(name + "\n")
+        subprocess.run(["git", "add", "-A"], cwd=root, check=True)
+        subprocess.run(
+            ["git", "-c", "user.name=T", "-c", "user.email=t@example.invalid",
+             "commit", "-q", "-m", name],
+            cwd=root, check=True,
         )
 
-    def test_baseline_commit_initially_none(self, invoker):
-        """_baseline_commit is None before _record_baseline is called."""
-        assert invoker._baseline_commit is None
+    def test_the_baseline_is_the_admitted_commit(self, agent_invoker, worktree_path):
+        head = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=worktree_path,
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()
 
-    def test_record_baseline_stores_commit_hash(self, invoker):
-        """_record_baseline stores the git HEAD commit hash."""
-        fake_hash = "abc123def456789"
-        with patch("subprocess.run") as mock_run:
-            mock_run.return_value = Mock(returncode=0, stdout=f"{fake_hash}\n")
-            invoker._record_baseline()
+        assert agent_invoker._baseline_commit == head
+        agent_invoker._record_baseline()
+        assert agent_invoker._baseline_commit == head
 
-        assert invoker._baseline_commit == fake_hash
+    def test_record_baseline_never_recaptures_a_later_head(
+        self, agent_invoker, worktree_path
+    ):
+        """Turn 1's checkpoint moves HEAD; the task still diffs against the
+        commit it was admitted at, so its own committed files stay its own."""
+        admitted = agent_invoker._baseline_commit
+        self._commit(worktree_path, "turn_one.py")
 
-    def test_record_baseline_strips_whitespace(self, invoker):
-        """_record_baseline strips trailing newlines from git output."""
-        with patch("subprocess.run") as mock_run:
-            mock_run.return_value = Mock(returncode=0, stdout="  abc123  \n")
-            invoker._record_baseline()
+        agent_invoker._record_baseline()
 
-        assert invoker._baseline_commit == "abc123"
+        assert agent_invoker._baseline_commit == admitted
+        assert agent_invoker._detect_git_changes()["created"] == ["turn_one.py"]
 
-    def test_record_baseline_handles_git_failure(self, invoker):
-        """_record_baseline leaves _baseline_commit as None when git fails."""
-        with patch("subprocess.run") as mock_run:
-            mock_run.return_value = Mock(returncode=128, stdout="")
-            invoker._record_baseline()
+    def test_without_an_admitted_task_there_is_no_baseline(self, tmp_path):
+        from guardkit.orchestrator.task_work_scope import ScopeUnavailable
 
-        assert invoker._baseline_commit is None
-
-    def test_record_baseline_handles_timeout(self, invoker):
-        """_record_baseline handles subprocess timeout gracefully."""
-        import subprocess
-
-        with patch("subprocess.run") as mock_run:
-            mock_run.side_effect = subprocess.TimeoutExpired(cmd="git", timeout=30)
-            invoker._record_baseline()
-
-        assert invoker._baseline_commit is None
-
-    def test_record_baseline_handles_exception(self, invoker):
-        """_record_baseline handles unexpected exceptions gracefully."""
-        with patch("subprocess.run", side_effect=OSError("git not found")):
-            invoker._record_baseline()
-
-        assert invoker._baseline_commit is None
-
-    def test_record_baseline_acquires_git_lock(self, invoker):
-        """_record_baseline acquires _git_lock before running git."""
-        original_lock = AgentInvoker._git_lock
-        lock_used = False
-
-        class TrackingRLock:
-            def __enter__(self):
-                nonlocal lock_used
-                lock_used = True
-                return self
-            def __exit__(self, *args):
-                pass
-
-        AgentInvoker._git_lock = TrackingRLock()
-        try:
-            with patch("subprocess.run") as mock_run:
-                mock_run.return_value = Mock(returncode=0, stdout="abc123\n")
-                invoker._record_baseline()
-
-            assert lock_used, "_record_baseline must acquire _git_lock"
-        finally:
-            AgentInvoker._git_lock = original_lock
-
-    def test_detect_git_changes_uses_baseline_commit(self, invoker):
-        """_detect_git_changes uses _baseline_commit instead of HEAD when set."""
-        invoker._baseline_commit = "abc123def456"
-
-        with patch("subprocess.run") as mock_run:
-            mock_run.return_value = Mock(returncode=0, stdout="")
-            invoker._detect_git_changes()
-
-        # First call should be git diff with baseline commit, not HEAD
-        calls = mock_run.call_args_list
-        assert len(calls) >= 1
-        diff_cmd = calls[0][0][0]  # First positional arg (the command list)
-        assert "abc123def456" in diff_cmd, (
-            f"Expected baseline commit in git diff command, got: {diff_cmd}"
+        invoker = AgentInvoker(
+            worktree_path=init_checkout(tmp_path / "unscoped"), sdk_timeout_seconds=60
         )
-        assert "HEAD" not in diff_cmd, (
-            f"Should not use HEAD when baseline commit is set, got: {diff_cmd}"
-        )
-
-    def test_detect_git_changes_falls_back_to_head(self, invoker):
-        """_detect_git_changes falls back to HEAD when no baseline commit."""
         assert invoker._baseline_commit is None
-
-        with patch("subprocess.run") as mock_run:
-            mock_run.return_value = Mock(returncode=0, stdout="")
-            invoker._detect_git_changes()
-
-        calls = mock_run.call_args_list
-        assert len(calls) >= 1
-        diff_cmd = calls[0][0][0]
-        assert "HEAD" in diff_cmd, (
-            f"Expected HEAD fallback in git diff command, got: {diff_cmd}"
-        )
-
-    def test_parallel_tasks_use_independent_baselines(self, worktree_path):
-        """Two invokers record independent baseline commits (no cross-contamination)."""
-        inv1 = AgentInvoker(worktree_path=worktree_path, sdk_timeout_seconds=60)
-        inv2 = AgentInvoker(worktree_path=worktree_path, sdk_timeout_seconds=60)
-
-        with patch("subprocess.run") as mock_run:
-            # Task A records baseline at commit aaa
-            mock_run.return_value = Mock(returncode=0, stdout="aaa111\n")
-            inv1._record_baseline()
-
-            # Task B records baseline at commit bbb (HEAD moved)
-            mock_run.return_value = Mock(returncode=0, stdout="bbb222\n")
-            inv2._record_baseline()
-
-        assert inv1._baseline_commit == "aaa111"
-        assert inv2._baseline_commit == "bbb222"
-        assert inv1._baseline_commit != inv2._baseline_commit
-
-    def test_baseline_prevents_cross_task_file_attribution(self, worktree_path):
-        """Baseline commit prevents Task B from seeing Task A's committed files."""
-        inv_a = AgentInvoker(worktree_path=worktree_path, sdk_timeout_seconds=60)
-        inv_b = AgentInvoker(worktree_path=worktree_path, sdk_timeout_seconds=60)
-
-        # Both record their baselines at the same initial HEAD
-        with patch("subprocess.run") as mock_run:
-            mock_run.return_value = Mock(returncode=0, stdout="initial_commit\n")
-            inv_a._record_baseline()
-            inv_b._record_baseline()
-
-        # Both should use "initial_commit" for git diff, not HEAD
-        # This means even if HEAD moves due to Task A's commit,
-        # Task B still diffs against the original baseline
-        assert inv_a._baseline_commit == "initial_commit"
-        assert inv_b._baseline_commit == "initial_commit"
-
-        # Verify git diff uses the baseline, not HEAD
-        with patch("subprocess.run") as mock_run:
-            mock_run.return_value = Mock(returncode=0, stdout="taskB_file.py\n")
-            result = inv_b._detect_git_changes()
-
-        diff_cmd = mock_run.call_args_list[0][0][0]
-        assert "initial_commit" in diff_cmd
-        assert "HEAD" not in diff_cmd
+        with pytest.raises(ScopeUnavailable):
+            invoker._record_baseline()
 
 
 # ==================== Cross-Platform Subprocess Cleanup Tests (TASK-FIX-DFCB) ====================

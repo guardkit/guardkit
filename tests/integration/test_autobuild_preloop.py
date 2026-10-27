@@ -42,9 +42,6 @@ from guardkit.orchestrator.quality_gates.task_work_interface import (
     TaskWorkInterface,
     DesignPhaseResult,
 )
-from guardkit.orchestrator.quality_gates.exceptions import (
-    QualityGateBlocked,
-)
 from guardkit.orchestrator.agent_invoker import (
     AgentInvoker,
     AgentInvocationResult,
@@ -194,24 +191,6 @@ def mock_design_phase_result(mock_worktree_with_plan) -> DesignPhaseResult:
     )
 
 
-@pytest.fixture
-def mock_design_phase_result_no_plan() -> DesignPhaseResult:
-    """
-    Create a mock DesignPhaseResult with no plan path.
-
-    Returns:
-        DesignPhaseResult: Mock result with missing plan
-    """
-    return DesignPhaseResult(
-        implementation_plan={},
-        plan_path=None,  # No plan path returned
-        complexity={"score": 5},
-        checkpoint_result="approved",
-        architectural_review={},
-        clarifications={},
-    )
-
-
 # ============================================================================
 # TestPreLoopCreatesPlansForPlayer - Happy Path Tests
 # ============================================================================
@@ -350,82 +329,6 @@ Begin implementation according to the plan.
 # ============================================================================
 # TestPreLoopFailsWithoutPlan - Pre-loop Error Handling Tests
 # ============================================================================
-
-
-@pytest.mark.integration
-class TestPreLoopFailsWithoutPlan:
-    """Test that pre-loop fails appropriately when plan is not generated."""
-
-    @pytest.mark.asyncio
-    async def test_preloop_fails_without_plan_path(
-        self,
-        mock_worktree_with_task,
-        mock_design_phase_result_no_plan,
-    ):
-        """
-        Verify pre-loop raises QualityGateBlocked when design phase returns no plan path.
-        """
-        # Create mock interface that returns result with no plan
-        mock_interface = MagicMock(spec=TaskWorkInterface)
-        mock_interface.execute_design_phase = AsyncMock(
-            return_value=mock_design_phase_result_no_plan
-        )
-
-        gates = PreLoopQualityGates(
-            worktree_path=str(mock_worktree_with_task),
-            interface=mock_interface,
-        )
-
-        # Execute should raise QualityGateBlocked
-        with pytest.raises(QualityGateBlocked) as exc_info:
-            await gates.execute(
-                task_id="TASK-PRELOOP-001",
-                options={},
-            )
-
-        # Verify error message contains task ID and helpful context
-        error_msg = str(exc_info.value)
-        assert "TASK-PRELOOP-001" in error_msg or exc_info.value.details.get("task_id") == "TASK-PRELOOP-001"
-        assert exc_info.value.gate_name == "plan_generation"
-
-    @pytest.mark.asyncio
-    async def test_preloop_fails_when_plan_file_missing(
-        self,
-        mock_worktree_with_task,
-    ):
-        """
-        Verify pre-loop raises QualityGateBlocked when plan path points to non-existent file.
-        """
-        # Create result with plan_path that doesn't exist
-        non_existent_plan_path = mock_worktree_with_task / ".claude" / "task-plans" / "TASK-MISSING-001-implementation-plan.md"
-
-        mock_result = DesignPhaseResult(
-            implementation_plan={"overview": "Test"},
-            plan_path=str(non_existent_plan_path),  # Path exists in result but file doesn't
-            complexity={"score": 5},
-            checkpoint_result="approved",
-            architectural_review={},
-            clarifications={},
-        )
-
-        mock_interface = MagicMock(spec=TaskWorkInterface)
-        mock_interface.execute_design_phase = AsyncMock(return_value=mock_result)
-
-        gates = PreLoopQualityGates(
-            worktree_path=str(mock_worktree_with_task),
-            interface=mock_interface,
-        )
-
-        # Execute should raise QualityGateBlocked
-        with pytest.raises(QualityGateBlocked) as exc_info:
-            await gates.execute(
-                task_id="TASK-MISSING-001",
-                options={},
-            )
-
-        # Verify error indicates plan validation failure
-        assert exc_info.value.gate_name == "plan_validation"
-        assert "not found" in str(exc_info.value).lower() or "not found" in exc_info.value.reason.lower()
 
 
 # ============================================================================

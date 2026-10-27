@@ -63,6 +63,9 @@ def mock_worktree(tmp_path) -> Worktree:
     """Create a mock Worktree for testing."""
     worktree_path = tmp_path / "worktree"
     worktree_path.mkdir(parents=True)
+    from tests.task_scope_fixtures import init_checkout
+
+    init_checkout(worktree_path)  # the writer lock reads its git identity
 
     # Create required directories
     (worktree_path / "tasks" / "backlog").mkdir(parents=True)

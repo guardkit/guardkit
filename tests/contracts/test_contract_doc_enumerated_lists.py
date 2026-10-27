@@ -1,4 +1,4 @@
-"""Check FOUR enumerated lists in the written contract document against the code.
+"""Check TWO enumerated lists in the written contract document against the code.
 
 WHAT THIS CHECKS — and nothing else
 ===================================
@@ -8,26 +8,28 @@ what the ``/feature-spec`` and ``/feature-plan`` commands are supposed to emit. 
 frozen exam cites that document as the authority it grades against, so when the
 document drifts away from the code, the exam grades against a falsehood.
 
-Most of that document is prose, and prose cannot be machine-checked. FOUR things
+Most of that document is prose, and prose cannot be machine-checked. TWO things
 in it *are* lists of fixed values that also exist in guardkit's own source, and
-this module checks exactly those four, at five places in the document:
+this module checks exactly those two, at three places in the document:
 
-  1. ``Feature.status``      — the allowed statuses of a feature   (6 values)
-  2. ``FeatureTask.status``  — the allowed statuses of a task      (6 values)
-  3. ``TaskType``            — the allowed task-type values       (11 values),
+  1. ``TaskType``            — the allowed task-type values       (11 values),
      checked at BOTH places the document states them: the canonical bullet list
      in section B.4, and the fenced block in the same section that claims to
      reproduce the validator's error message word for word.
-  4. ``Feature.model_fields`` — the field names of the feature model (20 names)
+  2. ``Feature.model_fields`` — the field names of the feature model (20 names)
+
+(The feature and task status lists were checked here until 27 October 2026,
+when the code stopped restricting a status to a fixed list; there is no list
+in the code to compare with any more.)
 
 The values are IMPORTED from guardkit at run time. This module deliberately
-contains no second copy of any of the four lists: a hardcoded copy here would be
+contains no second copy of either list: a hardcoded copy here would be
 one more place to drift, which is the very problem being guarded against.
 
 WHAT THIS DOES **NOT** CHECK — read this before trusting a green run
 ====================================================================
-This is a four-list check, NOT a contract check. A green run here means those
-four lists agree with the code. It means nothing whatsoever about the rest of
+This is a two-list check, NOT a contract check. A green run here means those
+two lists agree with the code. It means nothing whatsoever about the rest of
 the document, and the document is mostly not lists.
 
 Specifically, this check is blind to:
@@ -38,12 +40,12 @@ Specifically, this check is blind to:
     is the largest category of defect found in this document and it remains
     entirely uncovered.
   * **Whether the values are described correctly.** The check confirms that the
-    value ``awaiting_merge`` is present. It cannot tell whether the sentence
-    explaining what ``awaiting_merge`` means is true.
+    task type ``scaffolding`` is present. It cannot tell whether the sentence
+    explaining what ``scaffolding`` means is true.
   * **Everything in Part A** (the four-file ``/feature-spec`` output contract).
     Part A once claimed a three-file output for seven days after the code began
     enforcing four files. Nothing here would have caught that.
-  * **The other enumerable lists in the document** that are not among the four —
+  * **The other enumerable lists in the document** that are not among the two —
     for example the task-type *aliases*, the ``implementation_mode`` values, and
     the ``FeatureTask`` field names. They are checkable in principle; they are
     not checked here.
@@ -87,7 +89,7 @@ from typing import List, Optional
 import pytest
 
 from guardkit.models.task_types import TaskType
-from guardkit.orchestrator.feature_loader import Feature, FeatureTask
+from guardkit.orchestrator.feature_loader import Feature
 
 # --------------------------------------------------------------------------
 # Locating the document
@@ -254,36 +256,6 @@ def _table_rows_after(text: str, anchor: str) -> List[List[str]]:
     return rows
 
 
-def _row_by_field_name(rows: List[List[str]], field: str, anchor: str) -> List[str]:
-    for cells in rows:
-        names = _BACKTICKED.findall(cells[0])
-        if field in names:
-            return cells
-    raise _fail_shape(f"the {field!r} row of the table under {anchor!r}", anchor)
-
-
-def _leading_alternation(cell: str) -> List[str]:
-    """Read a leading run of backticked values joined by an escaped pipe.
-
-    ``"`a` \\| `b` \\| `c` (default `a`)"`` yields ``["a", "b", "c"]`` — the
-    trailing parenthetical prose is not part of the alternation and is ignored.
-    """
-    values: List[str] = []
-    rest = cell.strip()
-    token = re.compile(r"^`([^`]+)`")
-    separator = re.compile(r"^\s*\\\|\s*")
-    match = token.match(rest)
-    while match:
-        values.append(match.group(1))
-        rest = rest[match.end():]
-        sep = separator.match(rest)
-        if not sep:
-            break
-        rest = rest[sep.end():]
-        match = token.match(rest)
-    return values
-
-
 # Anchors are the FULL introduction text of each list, not a short phrase, and
 # each is required to occur exactly once (see `_find_unique`). The document
 # discusses its own tables in prose, so a short anchor such as
@@ -292,21 +264,8 @@ def _leading_alternation(cell: str) -> List[str]:
 FEATURE_TABLE_ANCHOR = (
     '**Feature (top level)** — `extra="ignore"` (unknown keys tolerated):'
 )
-TASK_TABLE_ANCHOR = '**Task** — `extra="ignore"`:'
 TASK_TYPE_LIST_ANCHOR = "**Valid `task_type` values** (guardkit/models/task_types.py)"
 TASK_TYPE_VERBATIM_ANCHOR = "**Verbatim from the live validator"
-
-
-def _documented_feature_statuses(text: str) -> List[str]:
-    rows = _table_rows_after(text, FEATURE_TABLE_ANCHOR)
-    row = _row_by_field_name(rows, "status", FEATURE_TABLE_ANCHOR)
-    return _leading_alternation(row[-1])
-
-
-def _documented_task_statuses(text: str) -> List[str]:
-    rows = _table_rows_after(text, TASK_TABLE_ANCHOR)
-    row = _row_by_field_name(rows, "status", TASK_TABLE_ANCHOR)
-    return _leading_alternation(row[-1])
 
 
 def _documented_feature_fields(text: str) -> List[str]:
@@ -455,37 +414,11 @@ def _mismatch(
 
 
 class TestContractDocEnumeratedLists:
-    """Four enumerated lists, checked at five places in the document.
+    """Two enumerated lists, checked at three places in the document.
 
     NOT a check of the contract document as a whole — see the module docstring
     for the (large) uncovered surface.
     """
-
-    def test_feature_status_values_match_code(self, contract_doc_text: str) -> None:
-        code_values = list(Feature.model_fields["status"].annotation.__args__)
-        doc_values = _documented_feature_statuses(contract_doc_text)
-        assert doc_values == code_values, _mismatch(
-            list_name="Feature.status — the allowed statuses of a feature",
-            code_location="guardkit/orchestrator/feature_loader.py "
-            "(class Feature, the `status` Literal)",
-            doc_section="'B.2 · Schema layer' — the **Feature (top level)** "
-            "table, the `status` row, 'Constraint / default' column",
-            code_values=code_values,
-            doc_values=doc_values,
-        )
-
-    def test_task_status_values_match_code(self, contract_doc_text: str) -> None:
-        code_values = list(FeatureTask.model_fields["status"].annotation.__args__)
-        doc_values = _documented_task_statuses(contract_doc_text)
-        assert doc_values == code_values, _mismatch(
-            list_name="FeatureTask.status — the allowed statuses of a task",
-            code_location="guardkit/orchestrator/feature_loader.py "
-            "(class FeatureTask, the `status` Literal)",
-            doc_section="'B.2 · Schema layer' — the **Task** table, the "
-            "`status` row, 'Constraint / default' column",
-            code_values=code_values,
-            doc_values=doc_values,
-        )
 
     def test_task_type_values_match_code(self, contract_doc_text: str) -> None:
         code_values = [t.value for t in TaskType]
@@ -551,7 +484,7 @@ def test_contract_document_is_present_when_declared_required() -> None:
     assert doc is not None, (
         f"COULD NOT CHECK — {REQUIRED_ENV_VAR}=1 but {DOC_DISPLAY_NAME} was not "
         f"found.\nSearched:\n{_searched_paths_text()}\n\n"
-        "The four enumerated-list checks in this module all skipped, which "
+        "The enumerated-list checks in this module all skipped, which "
         "looks like success and is not. Fix the specialist-agent checkout step "
         "in .github/workflows/seam-tests.yml."
     )

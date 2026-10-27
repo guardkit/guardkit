@@ -404,17 +404,21 @@ class TestPreLoopQualityGates:
 
 
 class TestPlanValidation:
-    """Test plan existence validation in pre-loop."""
+    """A missing plan no longer blocks the task (the cull, 27 October 2026):
+    ``plan_path`` is ``None`` and the loop carries on with the task file."""
 
-    def test_raises_when_plan_path_is_none(
+    @pytest.mark.parametrize(
+        "reported", [None, "", "docs/state/TASK-001/implementation_plan.md"]
+    )
+    def test_missing_plan_carries_on_without_a_plan_path(
         self,
         tmp_worktree,
         mock_task_work_interface,
+        reported,
     ):
-        """Test QualityGateBlocked raised when plan_path is None."""
         result = DesignPhaseResult(
             implementation_plan={"steps": ["Step 1"]},
-            plan_path=None,  # No plan path
+            plan_path=reported,
             complexity={"score": 5},
             checkpoint_result="approved",
             architectural_review={"score": 85},
@@ -427,72 +431,11 @@ class TestPlanValidation:
             interface=mock_task_work_interface,
         )
 
-        with pytest.raises(QualityGateBlocked) as exc_info:
-            asyncio.run(gates.execute("TASK-001", {}))
+        pre_loop = asyncio.run(gates.execute("TASK-001", {}))
 
-        assert exc_info.value.gate_name == "plan_generation"
-        assert "TASK-001" in exc_info.value.reason
-        assert "did not return plan path" in exc_info.value.reason
-        assert exc_info.value.details["plan_path"] is None
-
-    def test_raises_when_plan_file_missing(
-        self,
-        tmp_worktree,
-        mock_task_work_interface,
-    ):
-        """Test QualityGateBlocked raised when plan file doesn't exist."""
-        # Use a path that doesn't exist
-        nonexistent_path = str(tmp_worktree / "nonexistent" / "plan.md")
-        result = DesignPhaseResult(
-            implementation_plan={"steps": ["Step 1"]},
-            plan_path=nonexistent_path,
-            complexity={"score": 5},
-            checkpoint_result="approved",
-            architectural_review={"score": 85},
-            clarifications={},
-        )
-        mock_task_work_interface.execute_design_phase.return_value = result
-
-        gates = PreLoopQualityGates(
-            worktree_path=str(tmp_worktree),
-            interface=mock_task_work_interface,
-        )
-
-        with pytest.raises(QualityGateBlocked) as exc_info:
-            asyncio.run(gates.execute("TASK-001", {}))
-
-        assert exc_info.value.gate_name == "plan_validation"
-        assert "TASK-001" in exc_info.value.reason
-        assert "not found at" in exc_info.value.reason
-        assert exc_info.value.details["plan_path"] == nonexistent_path
-
-    def test_error_message_suggests_manual_debug(
-        self,
-        tmp_worktree,
-        mock_task_work_interface,
-    ):
-        """Test error message includes actionable suggestion to run task-work manually."""
-        result = DesignPhaseResult(
-            implementation_plan={"steps": ["Step 1"]},
-            plan_path=None,
-            complexity={"score": 5},
-            checkpoint_result="approved",
-            architectural_review={"score": 85},
-            clarifications={},
-        )
-        mock_task_work_interface.execute_design_phase.return_value = result
-
-        gates = PreLoopQualityGates(
-            worktree_path=str(tmp_worktree),
-            interface=mock_task_work_interface,
-        )
-
-        with pytest.raises(QualityGateBlocked) as exc_info:
-            asyncio.run(gates.execute("TASK-001", {}))
-
-        # Check that error message suggests running task-work manually
-        assert "--design-only" in exc_info.value.reason
-        assert "manually" in exc_info.value.reason.lower()
+        assert not pre_loop.plan_path
+        assert pre_loop.plan == {"steps": ["Step 1"]}
+        assert pre_loop.max_turns == 5
 
     def test_success_when_plan_file_exists(
         self,
@@ -528,61 +471,6 @@ class TestPlanValidation:
         assert pre_loop_result.plan_path == str(plan_path)
         assert pre_loop_result.complexity == 5
         assert pre_loop_result.checkpoint_passed is True
-
-    def test_validation_checks_path_before_existence(
-        self,
-        tmp_worktree,
-        mock_task_work_interface,
-    ):
-        """Test that None plan_path is caught before file existence check."""
-        result = DesignPhaseResult(
-            implementation_plan={"steps": ["Step 1"]},
-            plan_path=None,
-            complexity={"score": 5},
-            checkpoint_result="approved",
-            architectural_review={"score": 85},
-            clarifications={},
-        )
-        mock_task_work_interface.execute_design_phase.return_value = result
-
-        gates = PreLoopQualityGates(
-            worktree_path=str(tmp_worktree),
-            interface=mock_task_work_interface,
-        )
-
-        with pytest.raises(QualityGateBlocked) as exc_info:
-            asyncio.run(gates.execute("TASK-001", {}))
-
-        # Should be plan_generation error, not plan_validation
-        assert exc_info.value.gate_name == "plan_generation"
-
-    def test_empty_string_plan_path_treated_as_missing(
-        self,
-        tmp_worktree,
-        mock_task_work_interface,
-    ):
-        """Test that empty string plan_path is treated as missing."""
-        result = DesignPhaseResult(
-            implementation_plan={"steps": ["Step 1"]},
-            plan_path="",  # Empty string
-            complexity={"score": 5},
-            checkpoint_result="approved",
-            architectural_review={"score": 85},
-            clarifications={},
-        )
-        mock_task_work_interface.execute_design_phase.return_value = result
-
-        gates = PreLoopQualityGates(
-            worktree_path=str(tmp_worktree),
-            interface=mock_task_work_interface,
-        )
-
-        with pytest.raises(QualityGateBlocked) as exc_info:
-            asyncio.run(gates.execute("TASK-001", {}))
-
-        # Empty string is falsy, should be caught as plan_generation error
-        assert exc_info.value.gate_name == "plan_generation"
-
 
 # ============================================================================
 # Test Relative Path Resolution (TASK-FB-FIX-007)
@@ -728,35 +616,6 @@ class TestRelativePathResolution:
         # Verify fallback found the plan
         assert Path(pre_loop_result.plan_path).exists()
         assert str(tmp_worktree) in pre_loop_result.plan_path
-
-    def test_raises_when_no_plan_found_anywhere(
-        self,
-        tmp_worktree,
-        mock_task_work_interface,
-    ):
-        """Verify error when no plan found in SDK path or fallback locations."""
-        # SDK returns a path but no plan exists anywhere
-        result = DesignPhaseResult(
-            implementation_plan={"content": "test"},
-            plan_path="docs/state/TASK-001/implementation_plan.md",
-            complexity={"score": 5},
-            checkpoint_result="approved",
-            architectural_review={"score": 80},
-            clarifications={},
-        )
-        mock_task_work_interface.execute_design_phase.return_value = result
-
-        gates = PreLoopQualityGates(
-            worktree_path=str(tmp_worktree),
-            interface=mock_task_work_interface,
-        )
-
-        with pytest.raises(QualityGateBlocked) as exc_info:
-            asyncio.run(gates.execute("TASK-001", {}))
-
-        # Should fail with plan_validation (path exists but file doesn't)
-        assert exc_info.value.gate_name == "plan_validation"
-
 
 class TestComplexityToMaxTurns:
     """Test complexity score to max_turns mapping."""

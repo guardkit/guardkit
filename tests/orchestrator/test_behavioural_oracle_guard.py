@@ -4,9 +4,9 @@ Deterministic backstop: when the Coach's ``behavioural_oracle`` bundle reports
 ``ran-and-failed``, an approving Coach verdict is overridden to ``feedback``
 with a ``must_fix`` issue naming the oracle and its failure output.
 
-Tests model the guard verbatim on the
-``_reconcile_absent_independent_test_signal`` archetype (wired at the same
-post-verdict seam, beside the COACHFG01 and spec-gap guards).
+The guard runs after the reviewer's verdict, which is advice (27 October
+2026); a ran-and-failed declared check is one of the few things that sends a
+turn back. The "not independent" warning was removed in the cull.
 
 Tests exercise every outcome branch:
   - ran-and-failed → hard RED override (AC-1)
@@ -15,7 +15,6 @@ Tests exercise every outcome branch:
   - None bundle → no-op (AC-3)
   - None oracle field → no-op (AC-3)
   - passing oracle → no override (AC-4)
-  - not_independent → no override, warning recorded (AC-5)
   - absent → no override (AC-7)
   - dogfood end-to-end with real failing oracle (AC-8)
 
@@ -36,7 +35,6 @@ import pytest
 import yaml
 
 from guardkit.orchestrator.agent_invoker import AgentInvoker
-from guardkit.orchestrator.coach_verification import HonestyVerification
 from guardkit.orchestrator.harness import (
     AssistantMessageEvent,
     ResultMessageEvent,
@@ -67,9 +65,6 @@ def _bundle(
 ) -> CoachEvidenceBundle:
     """A minimal bundle whose behavioural_oracle leg is whatever the test supplies."""
     return CoachEvidenceBundle(
-        honesty=HonestyVerification(
-            verified=True, discrepancies=[], honesty_score=1.0, resolved_paths=[]
-        ),
         gathering_status="complete",
         behavioural_oracle=behavioural_oracle,
     )
@@ -362,45 +357,6 @@ class TestPassPath:
 
         assert result.success is True
         assert result.report["decision"] == "approve"
-
-
-# ===========================================================================
-# AC-5: independence — Player-authored oracle degrades to not_independent
-# ===========================================================================
-
-
-class TestIndependence:
-    def test_player_authored_oracle_is_not_independent(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """AC-5. A Player-authored oracle (in the authored set) is recorded
-        as ``not_independent`` + a ``should_fix`` warning; it neither passes
-        nor blocks."""
-        monkeypatch.delenv("GUARDKIT_COACH_SYNTHESIS", raising=False)
-        monkeypatch.delenv("GUARDKIT_COACH_GATHER", raising=False)
-        invoker = _make_invoker(tmp_path)
-
-        oracle = {
-            "status": "not_independent",
-            "passed": False,
-            "oracle_path": str(tmp_path / "tests" / "acceptance" / "sample_roundtrip.py"),
-            "provenance": "convention_path",
-        }
-        result = _run_coach(
-            invoker,
-            task_id="TASK-RT08",
-            turn=1,
-            bundle=_bundle(oracle),
-            player_report={"files_modified": [str(tmp_path / "tests" / "acceptance" / "sample_roundtrip.py")], "tests_passed": True},
-        )
-
-        assert result.success is True
-        # The oracle is not independent, so the approve stands (no override)
-        assert result.report["decision"] == "approve"
-        # But there should be a warning issue
-        issues = result.report["issues"]
-        should_fix = [i for i in issues if i.get("severity") == "should_fix"]
-        assert len(should_fix) >= 1
 
 
 # ===========================================================================

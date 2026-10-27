@@ -153,6 +153,9 @@ def stub_worktree(tmp_path: Path) -> Worktree:
     """Stub Worktree backed by a real (empty) directory."""
     worktree_path = tmp_path / ".guardkit" / "worktrees" / "FEAT-FPTC-DEF"
     worktree_path.mkdir(parents=True, exist_ok=True)
+    from tests.task_scope_fixtures import init_checkout
+
+    init_checkout(worktree_path)  # the writer lock reads its git identity
     return Worktree(
         task_id="FEAT-FPTC-DEF",
         branch_name="autobuild/FEAT-FPTC-DEF",

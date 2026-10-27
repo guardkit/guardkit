@@ -28,14 +28,7 @@ import yaml
 
 from guardkit.models.task_types import TaskType, TASK_TYPE_ALIASES
 from guardkit.orchestrator.stamp_normalizer import StampNormalizerError
-from guardkit.orchestrator.verifier_stamp import (
-    ScenarioStamp,
-    extract_scenario_titles,
-    load_repo_routing_law,
-    normalize_routing_law_flag,
-    parse_scenario_stamp,
-    VERIFIER_HOMES,
-)
+from guardkit.orchestrator.verifier_stamp import ScenarioStamp
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +40,7 @@ logger = logging.getLogger(__name__)
 TASK_SCHEMA = """
 Task Schema:
   id: str (required)        # e.g., "TASK-XXX-YYYY"
-  file_path: str (required) # Path to task markdown file
+  file_path: str            # Path to task markdown file
   name: str                 # Human-readable name (defaults to id)
   complexity: int           # 1-10 (default: 5)
   dependencies: list        # Task IDs this depends on
@@ -60,7 +53,7 @@ Task Schema:
 FEATURE_SCHEMA = """
 Feature Schema:
   id: str (required)        # e.g., "FEAT-A1B2"
-  name: str (required)      # Human-readable name
+  name: str                 # Human-readable name (defaults to id)
   description: str          # Feature description
   tasks: list               # List of task objects
   orchestration: dict       # Parallel execution configuration
@@ -80,60 +73,6 @@ Orchestration Schema:
 # ============================================================================
 # Error Message Helpers
 # ============================================================================
-
-
-def _find_similar_ids(target: str, candidates: set, max_distance: int = 2) -> List[str]:
-    """
-    Find task IDs similar to the target from a set of candidates.
-
-    Uses simple matching logic: prefix matching and character difference count.
-    Returns up to 3 similar IDs sorted by similarity.
-
-    Parameters
-    ----------
-    target : str
-        The unknown task ID to find matches for
-    candidates : set
-        Set of valid task IDs to search
-    max_distance : int
-        Maximum character differences allowed (default: 2)
-
-    Returns
-    -------
-    List[str]
-        List of similar task IDs (up to 3), sorted by similarity
-    """
-    similar = []
-    target_lower = target.lower()
-
-    for candidate in candidates:
-        candidate_lower = candidate.lower()
-
-        # Check prefix match (e.g., TASK-XXX-001 matches TASK-XXX-002)
-        # Extract prefix up to last number segment
-        target_prefix = target_lower.rsplit("-", 1)[0] if "-" in target_lower else target_lower
-        candidate_prefix = candidate_lower.rsplit("-", 1)[0] if "-" in candidate_lower else candidate_lower
-
-        if target_prefix == candidate_prefix:
-            similar.append((0, candidate))  # Priority 0 for prefix match
-            continue
-
-        # Check character difference count (simple edit distance approximation)
-        if len(target) == len(candidate):
-            diff_count = sum(1 for a, b in zip(target_lower, candidate_lower) if a != b)
-            if diff_count <= max_distance:
-                similar.append((diff_count, candidate))
-                continue
-
-        # Check if one contains the other (substring match)
-        if target_lower in candidate_lower or candidate_lower in target_lower:
-            similar.append((1, candidate))
-
-    # Sort by similarity score (lower is better), then alphabetically
-    similar.sort(key=lambda x: (x[0], x[1]))
-
-    # Return up to 3 matches, extracting just the IDs
-    return [item[1] for item in similar[:3]]
 
 
 def _truncate_data(data: Any, max_length: int = 200) -> str:
@@ -243,10 +182,13 @@ class FeatureTask(BaseModel):
     id: str
     name: str = ""
     file_path: Path = Path("")
-    complexity: int = Field(default=5, ge=1, le=10)
+    # The cull (27 October 2026, GKT-033): no allowed-value lists or ranges.
+    # A value the planner wrote is kept as it is; code that compares it
+    # simply finds no match.
+    complexity: int = 5
     dependencies: List[str] = Field(default_factory=list)
-    status: Literal["pending", "in_progress", "completed", "failed", "skipped", "deferred"] = "pending"
-    implementation_mode: Literal["direct", "task-work", "manual"] = "task-work"
+    status: str = "pending"
+    implementation_mode: str = "task-work"
     estimated_minutes: int = 30
     requires_infrastructure: List[str] = Field(default_factory=list)
     result: Optional[Dict[str, Any]] = None
@@ -363,8 +305,7 @@ class SmokeGates(BaseModel):
     expected_exit : int
         Exit code that signals success. Default: 0.
     timeout : int
-        Seconds before the subprocess is killed. Bounded [1, 600] to keep
-        ``/feature-build`` deterministic. Default: 120.
+        Seconds before the subprocess is killed. Default: 120.
     exit5_is_hard_fail : bool
         Treat pytest exit code 5 (no tests collected) as a hard failure.
         Default ``False`` — exit 5 is treated as a soft "gate not wired"
@@ -372,46 +313,16 @@ class SmokeGates(BaseModel):
         gate enforcement (TASK-FIX-SG05).
     """
 
-    # ``extra="forbid"`` ensures malformed configuration (typos, unknown
-    # keys) is rejected before ``/feature-build`` starts, per AC.
-    model_config = ConfigDict(extra="forbid")
+    # The cull (27 October 2026, GKT-034): unknown keys are ignored and the
+    # values are not range-checked. A block with no command, or one that
+    # cannot be read at all, is skipped at load (``_parse_feature``).
+    model_config = ConfigDict(extra="ignore")
 
     after_wave: Union[int, List[int], Literal["all"]]
     command: str = Field(min_length=1)
     expected_exit: int = 0
-    timeout: int = Field(default=120, ge=1, le=600)
+    timeout: int = 120
     exit5_is_hard_fail: bool = False
-
-    @field_validator("after_wave", mode="before")
-    @classmethod
-    def _validate_after_wave(cls, v: Any) -> Any:
-        """Reject invalid after_wave shapes before Pydantic's type coercion.
-
-        ``mode="before"`` runs on the raw input, so we can reject ``True``
-        before it is coerced to ``1`` (bool is a subclass of int in Python).
-        """
-        if isinstance(v, bool):
-            raise ValueError("after_wave must be int, list of ints, or 'all'")
-        if isinstance(v, int):
-            if v < 1:
-                raise ValueError("after_wave must be >= 1 (waves are 1-indexed)")
-            return v
-        if isinstance(v, list):
-            if not v:
-                raise ValueError("after_wave list cannot be empty")
-            for item in v:
-                if isinstance(item, bool) or not isinstance(item, int):
-                    raise ValueError(
-                        "after_wave list must contain positive integers"
-                    )
-                if item < 1:
-                    raise ValueError(
-                        "after_wave list must contain positive integers"
-                    )
-            return v
-        if v == "all":
-            return v
-        raise ValueError("after_wave must be int, list of ints, or 'all'")
 
 
 class BehaviouralOracle(BaseModel):
@@ -423,10 +334,8 @@ class BehaviouralOracle(BaseModel):
     thing that ever read it was ``CoachValidator._extract_command``, from a
     task dict no production caller ever populated.
 
-    Modelled deliberately on :class:`SmokeGates` (and, one level up, on
-    ``AssertCommandRule`` in ``spec_conformance``): a declared shell command,
-    ``extra="forbid"`` so a typo is LOUD rather than silently ignored, and a
-    bounded timeout so a runaway oracle cannot hold a build open.
+    Modelled on :class:`SmokeGates`: a declared shell command and its
+    expected exit code.
 
     Unlike ``SmokeGates`` this is NOT a between-waves gate. It is the
     per-task independent-evidence leg: ``CoachValidator`` runs it during
@@ -441,70 +350,23 @@ class BehaviouralOracle(BaseModel):
         Exit code that signals success. Default ``0`` — LAW (design §B.4):
         the exit code is the verdict; parsing stdout is advisory only.
     timeout : int
-        Seconds before the subprocess is killed. Bounded [1, 3600]. When
-        unset the executor keeps its historical behaviour and reads
-        ``GUARDKIT_ORACLE_TIMEOUT`` (default 300s).
+        Seconds before the subprocess is killed. When unset the executor
+        reads ``GUARDKIT_ORACLE_TIMEOUT`` (default 300s).
     """
 
-    # ``extra="forbid"`` matches SmokeGates: an unknown key is a typo, and a
-    # silently-ignored typo in a verdict-bearing declaration is a false green.
-    model_config = ConfigDict(extra="forbid")
+    # The cull (27 October 2026, GKT-035): unknown keys are ignored and the
+    # values are not checked; a required declaration need not name its
+    # checker. The extra fields are accepted and kept as written.
+    model_config = ConfigDict(extra="ignore")
 
     command: str = Field(min_length=1)
     expected_exit: int = 0
-    timeout: Optional[int] = Field(default=None, ge=1, le=3600)
+    timeout: Optional[int] = None
     required: bool = False
-    expected_checks: Optional[int] = Field(default=None, ge=1)
-    checker_path: Optional[str] = Field(default=None, min_length=1)
-    checker_sha256: Optional[str] = Field(
-        default=None, pattern=r"^[0-9a-f]{64}$"
-    )
+    expected_checks: Optional[int] = None
+    checker_path: Optional[str] = None
+    checker_sha256: Optional[str] = None
     source_paths: Optional[List[str]] = None
-
-    @field_validator("expected_checks", mode="before")
-    @classmethod
-    def _expected_checks_is_strict_integer(cls, value: Any) -> Any:
-        """Reject booleans and coercible scalar values for verdict counts."""
-        if value is not None and (
-            isinstance(value, bool) or not isinstance(value, int)
-        ):
-            raise ValueError("expected_checks must be a positive integer")
-        return value
-
-    @field_validator("source_paths")
-    @classmethod
-    def _source_paths_are_non_empty_strings(
-        cls, value: Optional[List[str]],
-    ) -> Optional[List[str]]:
-        if value is None:
-            return None
-        if not value or any(
-            not isinstance(item, str) or not item for item in value
-        ):
-            raise ValueError("source_paths must be a non-empty list of paths")
-        if len(set(value)) != len(value):
-            raise ValueError("source_paths must not contain duplicates")
-        return value
-
-    @model_validator(mode="after")
-    def _required_declaration_is_complete(self) -> "BehaviouralOracle":
-        if not self.required:
-            return self
-        missing = [
-            name
-            for name in (
-                "expected_checks",
-                "checker_path",
-                "checker_sha256",
-                "source_paths",
-            )
-            if getattr(self, name) is None
-        ]
-        if missing:
-            raise ValueError(
-                "required behavioural_oracle is missing: " + ", ".join(missing)
-            )
-        return self
 
 
 class Feature(BaseModel):
@@ -542,33 +404,16 @@ class Feature(BaseModel):
     model_config = ConfigDict(extra="ignore", arbitrary_types_allowed=True)
 
     id: str
-    name: str
+    name: str = ""
     description: str = ""
     created: str = ""
-    # ``awaiting_merge`` is the merge-ready checkpoint specified by TASK-FC-003
-    # ("Update feature YAML: set status: awaiting_merge") and written by
-    # FeatureOrchestrator._archive_phase. History, corrected at review
-    # (2026-08-15): the writer and this Literal were born in the SAME commit
-    # (b7f0472ac, as a dataclass whose annotation was not enforced — archival
-    # WORKED); the defect was ARMED by the 2026-02-15 pydantic migration
-    # (91dfad127), which began enforcing the five-value list unwidened. So this
-    # was a validation-migration regression, not a stale enum — and every
-    # feature archival raised on save from that day until the widening
-    # (test-debt triage L1, 2026-08-14). Widening is additive: nothing matches
-    # exhaustively over this set (no dict, no match statement, no
-    # assert_never). KNOWN READERS (three, corrected at review — the third was
-    # missed): FeatureLoader.is_resumable's membership test
-    # (in_progress/paused/failed), FeatureCompleteOrchestrator's
-    # ``== "completed"`` guard — both treat awaiting_merge correctly — and
-    # feature_audit's status inferrer, which can only ever return
-    # planned/in_progress/completed and therefore reports every awaiting_merge
-    # feature as STALE; ``guardkit feature audit --fix`` would silently rewrite
-    # the checkpoint back to completed. Operator-invoked only (no CI wiring);
-    # the inferrer widening is a ledgered follow-on — until it lands, do not
-    # run ``feature audit --fix`` over archived features.
-    status: Literal[
-        "planned", "in_progress", "completed", "failed", "paused", "awaiting_merge"
-    ] = "planned"
+    # Known values: planned, in_progress, completed, failed, paused and
+    # awaiting_merge (the merge-ready checkpoint written by
+    # FeatureOrchestrator._archive_phase). ``guardkit feature audit --fix``
+    # cannot infer awaiting_merge and would rewrite it to completed.
+    # The cull (27 October 2026): no allowed-value list; the status is kept
+    # as written.
+    status: str = "planned"
     complexity: int = 5
     estimated_tasks: int = 0
     tasks: List[FeatureTask] = Field(default_factory=list)
@@ -593,191 +438,47 @@ class Feature(BaseModel):
     # and per-repo git/test plumbing live in
     # ``guardkit.orchestrator.evidence_repos``.
     evidence_repos: List[Any] = Field(default_factory=list)
-    # ROUTING LAW (card Q8/A.2, ruled 2026-08-14). Three opt-in fields:
-    #
-    # * ``routing_law`` — the per-feature enforcement flag. ``None`` (absent)
-    #   defers to the per-repo flag in .guardkit/config.yaml; an explicit
-    #   value WINS over the repo flag (the task-frontmatter-outranks-broader
-    #   precedence law), so ``off`` is the escape hatch that lets a flipped
-    #   repo still load a historical, pre-law feature.
-    # * ``feature_files`` — repo-relative Gherkin ``.feature`` paths naming
-    #   the feature's approved-scenario universe. Explicit, never inferred
-    #   (the component-selector law: no path inference); required when the
-    #   law is enforced, because an enforcement pass with no enumerable
-    #   universe is a promise wearing a law's name.
-    # * ``scenarios`` — the per-scenario map: Gherkin scenario title ->
-    #   verifier stamp from the closed vocabulary. The stamp SCHEMA is
-    #   validated whenever present (unknown verifier = loud load error, flag
-    #   or no flag); the enforcement flag only controls whether an ABSENT
-    #   stamp rejects the plan load (_enforce_routing_law).
-    routing_law: Optional[Literal["enforced", "off"]] = None
+    # Scenario stamps (card Q8/A.2). ``routing_law`` is accepted and kept as
+    # written; nothing in GuardKit reads it since the cull (27 October 2026,
+    # GKT-041). ``feature_files`` names the feature's Gherkin files (the stamp
+    # normaliser reads them); ``scenarios`` maps a scenario title to its
+    # verifier stamp. A stamp that cannot be read is skipped (GKT-036).
+    routing_law: Any = None
     feature_files: List[str] = Field(default_factory=list)
     scenarios: Dict[str, ScenarioStamp] = Field(default_factory=dict)
     # DELIVERY OWNERSHIP (B9 corrections, 19 September 2026). Approved scenario
     # title -> the id of the task whose acceptance criteria state that
-    # scenario's observable behaviour at the delivered surface.
-    #
-    # It is a TOP-LEVEL key and not a field of the stamp because the two are
-    # written by different hands at different times: the plan writer writes
-    # ownership on its first answer, and the stamp normaliser mints `scenarios:`
-    # afterwards from the approved feature files. Measured 19 September 2026
-    # across eight real planner sessions: a first answer carries no `scenarios:`
-    # map at all, so ownership carried inside that map was written by nobody.
-    #
-    # Keys are NOT validated against the .feature here. The plan-side check owns
-    # that: it has the approved specification in hand at planning time, where a
-    # violation can still be repaired by one re-ask. By load time the repair
-    # round is long gone, and a loud refusal over a title would strand a build
-    # with nothing to do about it.
-    scenario_owners: Dict[str, str] = Field(default_factory=dict)
+    # scenario's observable behaviour. Accepted and kept as written; the
+    # names are not checked against the feature's tasks (GKT-036).
+    scenario_owners: Dict[str, Any] = Field(default_factory=dict)
     file_path: Optional[Path] = None
-
-    @field_validator("feature_files")
-    @classmethod
-    def _validate_feature_files(cls, v: List[str]) -> List[str]:
-        """Each entry must be a non-empty repo-relative path string."""
-        if not isinstance(v, list):
-            raise ValueError("feature_files must be a list of paths")
-        for entry in v:
-            if not isinstance(entry, str) or not entry.strip():
-                raise ValueError(
-                    f"feature_files entries must be non-empty repo-relative "
-                    f"paths; got {entry!r}"
-                )
-        return v
 
     @field_validator("scenarios", mode="before")
     @classmethod
     def _coerce_scenario_stamps(cls, v: Any) -> Any:
-        """Coerce per-scenario map entries via the stamp parser.
-
-        Accepts the bare-string shorthand (``"toolchain"``) and validates the
-        verifier against the closed vocabulary — an unknown value raises HERE,
-        at parse time, flag or no flag (the component-selector loud-failure
-        law). Keys must be scenario-title strings.
-        """
-        if v is None:
-            return {}
+        """Read the per-scenario map; the bare-string shorthand
+        (``"toolchain"``) means ``{verifier: toolchain}``. An entry that
+        cannot be read is skipped."""
         if not isinstance(v, dict):
-            raise ValueError(
-                "scenarios must be a mapping of Gherkin scenario title -> "
-                f"verifier stamp; got {type(v).__name__}. Allowed verifier "
-                f"homes: {', '.join(VERIFIER_HOMES)}"
-            )
+            return {}
         coerced: Dict[str, Any] = {}
         for title, stamp in v.items():
-            if not isinstance(title, str) or not title.strip():
-                raise ValueError(
-                    f"scenarios keys must be non-empty scenario titles; "
-                    f"got {title!r}"
-                )
+            if isinstance(stamp, str):
+                stamp = {"verifier": stamp}
             if isinstance(stamp, ScenarioStamp):
-                coerced[title] = stamp
-            else:
-                coerced[title] = parse_scenario_stamp(stamp, scenario=title)
+                coerced[str(title)] = stamp
+                continue
+            try:
+                coerced[str(title)] = ScenarioStamp.model_validate(stamp)
+            except ValidationError:
+                continue
         return coerced
 
     @field_validator("scenario_owners", mode="before")
     @classmethod
-    def _validate_scenario_owners_shape(cls, v: Any) -> Any:
-        """``scenario_owners`` is a flat mapping of title -> task id.
-
-        Loud at parse time, in the same voice as an unknown verifier: a
-        mis-shaped ownership map would otherwise be silently dropped by
-        ``extra="ignore"`` and the feature would look owned when nothing owned
-        it — the exact failure the field exists to stop.
-        """
-        if v is None:
-            return {}
-        if not isinstance(v, dict):
-            raise ValueError(
-                "scenario_owners must be a mapping of approved scenario title "
-                f"-> task id; got {type(v).__name__}"
-            )
-        for title, owner in v.items():
-            if not isinstance(title, str) or not title.strip():
-                raise ValueError(
-                    f"scenario_owners keys must be non-empty scenario titles; "
-                    f"got {title!r}"
-                )
-            if not isinstance(owner, str) or not owner.strip():
-                raise ValueError(
-                    f"scenario_owners[{title!r}] must be a non-empty task id "
-                    f"string; got {owner!r}"
-                )
-        return v
-
-    @field_validator("evidence_repos")
-    @classmethod
-    def _validate_evidence_repos(cls, v: List[Any]) -> List[Any]:
-        """Reject malformed ``evidence_repos`` declarations at parse time.
-
-        Each entry must be a non-empty path string, or a mapping carrying a
-        ``path`` (string), an optional ``test_command`` (string), and an
-        optional ``interpreter`` (string — the explicit per-repo Python the
-        test_command pins to, TASK-FIX-SIBTESTENV01). Failing loudly here is
-        the namespace-hygiene / seam-test posture: a feature that declares
-        cross-repo evidence must not be silently degraded to absent-signal
-        by a typo (TASK-AB-XREPOEV01).
-        """
-        if not isinstance(v, list):
-            raise ValueError("evidence_repos must be a list")
-        for entry in v:
-            if isinstance(entry, str):
-                if not entry.strip():
-                    raise ValueError("evidence_repos entries must be non-empty paths")
-                continue
-            if isinstance(entry, dict):
-                path = entry.get("path") or entry.get("repo")
-                if not isinstance(path, str) or not path.strip():
-                    raise ValueError(
-                        "evidence_repos mapping entries require a non-empty "
-                        f"'path' string; got {entry!r}"
-                    )
-                test_command = entry.get("test_command") or entry.get("tests")
-                if test_command is not None and not isinstance(test_command, str):
-                    raise ValueError(
-                        "evidence_repos 'test_command' must be a string; got "
-                        f"{test_command!r}"
-                    )
-                interpreter = entry.get("interpreter")
-                if interpreter is not None and not isinstance(interpreter, str):
-                    raise ValueError(
-                        "evidence_repos 'interpreter' must be a string; got "
-                        f"{interpreter!r}"
-                    )
-                continue
-            raise ValueError(
-                "evidence_repos entries must be a path string or a mapping "
-                f"with a 'path' key; got {entry!r}"
-            )
-        return v
-
-    @field_validator("bootstrap_extras")
-    @classmethod
-    def _validate_bootstrap_extras(cls, v: List[str]) -> List[str]:
-        """Validate each entry is a syntactically valid PEP 621 extra name.
-
-        Per PEP 621 / PyPA spec, optional-dependency keys are restricted to
-        the same character class as project names: letters, digits, dots,
-        hyphens, underscores. Reject anything else at parse time so the
-        operator sees a useful error from ``/feature-build`` instead of a
-        cryptic pip error during bootstrap. (TASK-GK-BS-001 AC-1)
-        """
-        if not isinstance(v, list):
-            raise ValueError("bootstrap_extras must be a list of strings")
-        pattern = re.compile(r"^[A-Za-z0-9._-]+$")
-        for entry in v:
-            if not isinstance(entry, str):
-                raise ValueError(
-                    f"bootstrap_extras entries must be strings; got {entry!r}"
-                )
-            if not pattern.match(entry):
-                raise ValueError(
-                    f"bootstrap_extras contains invalid PEP 621 extra name: "
-                    f"{entry!r}. Names must match ^[A-Za-z0-9._-]+$"
-                )
-        return v
+    def _owners_mapping(cls, v: Any) -> Any:
+        """``None`` or anything that is not a mapping reads as no owners."""
+        return v if isinstance(v, dict) else {}
 
 
 # ============================================================================
@@ -799,18 +500,6 @@ class FeatureParseError(ValueError):
 
 class FeatureValidationError(ValueError):
     """Raised when feature fails validation."""
-
-    pass
-
-
-class SchemaValidationError(FeatureParseError):
-    """Raised when a feature YAML schema section is malformed.
-
-    Subclass of ``FeatureParseError`` so existing ``except FeatureParseError``
-    handlers continue to work. Used specifically for schema-level violations
-    (e.g. malformed ``smoke_gates``) that must be surfaced before
-    ``/feature-build`` starts — see TASK-SMK-F703A.
-    """
 
     pass
 
@@ -841,9 +530,8 @@ class FeatureLoader:
     # doc ai-transition/docs/routing-law-stamp-normalizer-rules-2026-08-15.md).
     # OFF by default: v1's invoker is forge's plan-commit hook shelling
     # `guardkit qa normalize-stamps`, NOT every load. Flip this class attribute
-    # (or pass `normalize_stamps=True`) to run the SAME function inline —
-    # after parse, BEFORE the routing-law enforcement pass — so the stamps it
-    # writes are the stamps enforcement reads. Refusals surface as themselves.
+    # (or pass `normalize_stamps=True`) to run the SAME function inline,
+    # after parse.
     normalize_stamps_on_load: bool = False
 
     @staticmethod
@@ -872,13 +560,9 @@ class FeatureLoader:
             THE STAMP NORMALIZER hook. ``None`` (default) defers to the
             class flag ``FeatureLoader.normalize_stamps_on_load`` (OFF).
             When on, ``stamp_normalizer.normalize_feature`` runs after
-            parse and BEFORE the routing-law enforcement pass, WRITING
-            rule-minted stamps for unstamped scenarios into the feature
-            YAML (never overwriting an existing stamp) and re-parsing.
-            Undecidable titles are NOT stamped and are logged by name (a
-            partial result — the decided subset IS written; whether an
-            unstamped remainder blocks the load is the routing-law
-            enforcement pass's decision, not the normalizer's). Only
+            parse, WRITING rule-minted stamps for unstamped scenarios into
+            the feature YAML (never overwriting an existing stamp) and
+            re-parsing. Titles no rule decides are left unstamped. Only
             meaningful when the feature declares ``feature_files:``.
 
         Returns
@@ -930,7 +614,7 @@ class FeatureLoader:
             feature.file_path = feature_file
             # THE STAMP NORMALIZER hook (OFF unless asked): mint stamps by
             # rule for unstamped scenarios and WRITE them, then re-parse so
-            # enforcement below reads what was written.
+            # the returned feature carries what was written.
             run_normalizer = (
                 FeatureLoader.normalize_stamps_on_load
                 if normalize_stamps is None
@@ -942,21 +626,6 @@ class FeatureLoader:
                 outcome = normalize_feature(
                     feature_file, feature.feature_files, repo_root
                 )
-                if outcome.disagreements:
-                    # (2) parity with the CLI echo: the load-time hook says
-                    # where an existing stamp and the rules disagree —
-                    # advisory, never overwritten, never a load failure.
-                    logger.warning(
-                        "STAMP NORMALIZER (load-time hook): feature %s — %d "
-                        "stamp DISAGREEMENT(s) (advisory, not overwritten): %s",
-                        feature_id,
-                        len(outcome.disagreements),
-                        "; ".join(
-                            f"{d['title']!r} stamped {d['stamped']}, rules say "
-                            f"{d['rule_home']} ({d['rule']})"
-                            for d in outcome.disagreements
-                        ),
-                    )
                 if outcome.model_stamped:
                     # Parity with the CLI echo: a stamp the MODEL decided
                     # (because no rule could) is never silent at load time
@@ -980,39 +649,13 @@ class FeatureLoader:
                         validate_paths=validate_paths,
                     )
                     feature.file_path = feature_file
-            # ROUTING LAW (card Q8/A.2): when enforcement is on for this
-            # feature (feature-level flag, else the per-repo flag in
-            # .guardkit/config.yaml), an unstamped approved scenario REJECTS
-            # the plan load — loudly, here, before any build machinery runs.
-            FeatureLoader._enforce_routing_law(feature, repo_root)
-            # DELIVERY OWNERSHIP (B9 corrections, 19 September 2026): a
-            # scenario's `owner_task:` must name a task this feature actually
-            # contains. Absent is allowed everywhere — historical features carry
-            # no such field and load exactly as before.
-            FeatureLoader._validate_scenario_owner_tasks(feature)
-            # Same rule for the plan writer's own top-level ownership map, which
-            # is where ownership actually arrives (B9 revision, 19 September
-            # 2026): a value naming a task this feature does not contain is a
-            # loud load error. Absent is allowed.
-            FeatureLoader._validate_scenario_owners(feature)
-            # TASK-AB-WAVECTL01: warn (never block) when the configured smoke
-            # gate leaves the final wave ungated.
-            coverage_warning = (
-                FeatureLoader.check_smoke_gate_final_wave_coverage(feature)
-            )
-            if coverage_warning:
-                logger.warning(coverage_warning)
             return feature
         except FeatureParseError:
             # Re-raise with schema hints intact
             raise
-        except FeatureValidationError:
-            # ROUTING LAW rejections surface as themselves — never re-wrapped
-            # into a generic "Invalid feature structure" parse error below.
-            raise
         except StampNormalizerError:
-            # THE STAMP NORMALIZER's refusal / cannot-run surfaces as itself
-            # (it names every undecidable title) — never re-wrapped.
+            # The stamp normaliser could not read the feature file; surfaces
+            # as itself, never re-wrapped.
             raise
         except KeyError as e:
             # Wrap KeyError with schema context
@@ -1046,10 +689,7 @@ class FeatureLoader:
         data : Dict[str, Any]
             Raw YAML data
         repo_root : Optional[Path]
-            Repository root used for ``smoke_gates.command`` path-existence
-            pre-flight (TASK-FPSG-005). When ``None``, path validation is
-            skipped — used only by callers that have no repo context (e.g.
-            in-memory parsing for tests).
+            Kept for callers; not read.
         validate_paths : bool
             Kept for callers; no effect since step 2 (26 October 2026).
 
@@ -1063,8 +703,10 @@ class FeatureLoader:
         FeatureParseError
             If required fields are missing, with schema hints
         """
-        # Validate required fields at feature level
-        required_fields = ["id", "name"]
+        # The one required field (item 7 of the cull, 27 October 2026): a
+        # feature with no id names nothing to build. A missing name defaults
+        # to the id, the rule FeatureTask already uses.
+        required_fields = ["id"]
 
         for field in required_fields:
             if field not in data:
@@ -1107,26 +749,24 @@ class FeatureLoader:
                 f"Invalid orchestration data:\n{e}"
             ) from e
 
-        # Parse optional smoke_gates (TASK-SMK-F703A). Key absent → None.
-        # Malformed key → SchemaValidationError before /feature-build starts.
+        # Parse optional smoke_gates (TASK-SMK-F703A). Key absent -> None.
+        # The cull (27 October 2026, GKT-034): a block that cannot be read
+        # (no command, or a shape that does not parse) is skipped, and the
+        # feature loads without a smoke gate.
         smoke_gates_data = data.get("smoke_gates")
         smoke_gates: Optional[SmokeGates] = None
         if smoke_gates_data is not None:
             try:
                 smoke_gates = SmokeGates.model_validate(smoke_gates_data)
             except ValidationError as e:
-                raise SchemaValidationError(
-                    f"Invalid smoke_gates configuration:\n{e}"
-                ) from e
-            # Step 2 (26 October 2026, GKT-040): the smoke command's paths
-            # are checked once, as advice, by the planning step
-            # (``generate-feature-yaml --validate-smoke-gates``).
+                logger.warning(
+                    "Feature %s: smoke_gates block could not be read and is "
+                    "skipped: %s", data.get("id"), e,
+                )
 
-        # Parse optional behavioural_oracle (TS-lane D.1a). Same shape and
-        # same discipline as smoke_gates directly above: key absent -> None
-        # (byte-identical to the pre-D.1a behaviour); malformed key ->
-        # SchemaValidationError before /feature-build starts, never a
-        # silently-dropped verdict-bearing declaration.
+        # Parse optional behavioural_oracle (TS-lane D.1a). Same as
+        # smoke_gates above: key absent -> None; a block that cannot be read
+        # is skipped (the cull, GKT-035).
         oracle_data = data.get("behavioural_oracle")
         behavioural_oracle: Optional[BehaviouralOracle] = None
         if oracle_data is not None:
@@ -1138,9 +778,10 @@ class FeatureLoader:
             try:
                 behavioural_oracle = BehaviouralOracle.model_validate(oracle_data)
             except ValidationError as e:
-                raise SchemaValidationError(
-                    f"Invalid behavioural_oracle configuration:\n{e}"
-                ) from e
+                logger.warning(
+                    "Feature %s: behavioural_oracle block could not be read "
+                    "and is skipped: %s", data.get("id"), e,
+                )
 
         # Parse execution (may not exist) - keep as dataclass
         exec_data = data.get("execution", {})
@@ -1172,7 +813,7 @@ class FeatureLoader:
 
             return Feature.model_validate({
                 "id": data["id"],
-                "name": data["name"],
+                "name": data.get("name") or data["id"],
                 "description": data.get("description", ""),
                 "created": created_str,
                 "status": data.get("status", "planned"),
@@ -1195,20 +836,10 @@ class FeatureLoader:
                 # never activates on the feature path — declaring
                 # ``evidence_repos`` in the YAML was inert (FEAT-RBX repro).
                 "evidence_repos": data.get("evidence_repos", []),
-                # ROUTING LAW (card Q8/A.2): thread the three opt-in fields
-                # through — Feature is extra="ignore", so an unthreaded key
-                # here would be silently dropped exactly the way
-                # evidence_repos once was. The model's own validators do the
-                # loud vocabulary check (unknown verifier = load error);
-                # enforcement of ABSENT stamps runs in load_feature via
-                # _enforce_routing_law, which needs repo_root. The flag is
-                # normalized FIRST because YAML 1.1 parses a bare `off` as
-                # boolean False — the documented value must load, and a
-                # boolean true must be told to write `enforced`, loudly.
-                "routing_law": normalize_routing_law_flag(
-                    data.get("routing_law"),
-                    where=f"feature {data['id']}",
-                ),
+                # Scenario stamp fields: thread them through — Feature is
+                # extra="ignore", so an unthreaded key here would be silently
+                # dropped exactly the way evidence_repos once was.
+                "routing_law": data.get("routing_law"),
                 "feature_files": data.get("feature_files", []),
                 "scenarios": data.get("scenarios", {}),
                 # DELIVERY OWNERSHIP (B9 corrections, 19 September 2026): thread
@@ -1221,195 +852,6 @@ class FeatureLoader:
             raise FeatureParseError(
                 f"Invalid feature data:\n{e}"
             ) from e
-
-    @staticmethod
-    def _enforce_routing_law(feature: Feature, repo_root: Path) -> None:
-        """ROUTING LAW (card Q8/A.2): reject unstamped scenarios at plan load.
-
-        Effective flag resolution: the feature's own ``routing_law`` value
-        wins when set (``off`` is the per-feature escape hatch); otherwise
-        the per-repo flag in ``.guardkit/config.yaml`` applies. Absent both
-        ⇒ no enforcement — every existing repo and feature loads exactly as
-        before this method existed. The stamp SCHEMA (closed vocabulary) is
-        validated at parse time regardless; this pass only polices ABSENCE.
-
-        When enforced:
-
-        * ``feature_files`` must name at least one Gherkin file — the
-          approved-scenario universe must be enumerable, or the law is a
-          promise wearing a law's name. Explicit, never inferred.
-        * Every declared feature file must exist under ``repo_root``.
-        * Every scenario title found in those files must appear in the
-          ``scenarios`` map. Unstamped titles are listed BY NAME in the
-          rejection so the planner can fix the YAML in one edit.
-        * A stamp naming a scenario absent from every declared file is a
-          WARNING (stale stamp), never a rejection.
-
-        Step 2 (26 October 2026, GKT-041): every finding above is advice,
-        logged in the same words; the plan loads and the build goes on.
-        """
-        if feature.routing_law is not None:
-            effective = feature.routing_law
-        else:
-            try:
-                effective = load_repo_routing_law(repo_root)
-            except ValueError as exc:
-                logger.warning("Advice: %s; the routing law is not applied", exc)
-                return
-
-        if effective != "enforced":
-            return
-
-        vocabulary = ", ".join(VERIFIER_HOMES)
-
-        if not feature.feature_files:
-            logger.warning(
-                "Advice: %s",
-                f"Feature {feature.id} is under `routing_law: enforced` but "
-                "declares no `feature_files:` — the routing law needs the "
-                "approved-scenario universe to be enumerable (explicit, "
-                "never inferred). FIX: list the feature's Gherkin "
-                "`.feature` path(s) under `feature_files:`, stamp every "
-                "scenario in `scenarios:`, or set `routing_law: off` on "
-                "this feature."
-            )
-            return
-
-        titles: List[str] = []
-        for rel in feature.feature_files:
-            path = Path(repo_root) / rel
-            if not path.exists():
-                logger.warning(
-                    "Advice: %s",
-                    f"Feature {feature.id} is under `routing_law: enforced` "
-                    f"and declares feature file {rel!r}, which does not "
-                    f"exist under {repo_root}. An enforced law over a "
-                    "missing scenario universe is a silent gap — fix the "
-                    "path or the file."
-                )
-                continue
-            try:
-                text = path.read_text(encoding="utf-8", errors="replace")
-            except OSError as exc:
-                logger.warning(
-                    "Advice: Feature %s: declared feature file %r is "
-                    "unreadable (%s) under `routing_law: enforced`.",
-                    feature.id, rel, exc,
-                )
-                continue
-            titles.extend(extract_scenario_titles(text))
-
-        unstamped = [t for t in dict.fromkeys(titles) if t not in feature.scenarios]
-        if unstamped:
-            listed = "\n".join(f"  - {t}" for t in unstamped)
-            logger.warning(
-                "Advice: %s",
-                f"ROUTING LAW: feature {feature.id} has "
-                f"{len(unstamped)} UNSTAMPED scenario(s) under "
-                f"`routing_law: enforced`; the plan loads, and each one is "
-                f"a verification gap to fill.\nUnstamped:\n{listed}\n"
-                f"FIX: add each title to this feature's `scenarios:` map "
-                f"with a `verifier:` from the closed list ({vocabulary}), "
-                f"or set `routing_law: off` on this feature."
-            )
-
-        stale = [t for t in feature.scenarios if t not in set(titles)]
-        if stale:
-            logger.warning(
-                "ROUTING LAW: feature %s stamps %d scenario title(s) not "
-                "found in its declared feature_files (stale stamp or "
-                "renamed scenario?): %s",
-                feature.id,
-                len(stale),
-                ", ".join(repr(t) for t in stale),
-            )
-
-    @staticmethod
-    def _validate_scenario_owner_tasks(feature: Feature) -> None:
-        """Refuse a scenario stamp whose ``owner_task:`` names no task here.
-
-        The B9 build shipped five tasks that each passed their own checks while
-        the endpoint the person asked for was wrong: a correct helper and a
-        wrong route both counted as done, because nothing said which task owed
-        the promise at the surface the person uses. ``owner_task`` says it.
-
-        A value naming a task the feature does not contain is a load error in
-        the same voice as an unknown verifier — a typo'd owner would leave the
-        scenario unowned behind a map that looks complete, which is the exact
-        failure this field exists to stop. ABSENT is allowed: every feature
-        written before the field existed loads unchanged.
-
-        Raises
-        ------
-        FeatureValidationError
-            When any stamp names a task id absent from ``feature.tasks``.
-        """
-        known = {task.id for task in feature.tasks if getattr(task, "id", None)}
-        unknown: List[str] = []
-        for title, stamp in feature.scenarios.items():
-            owner = getattr(stamp, "owner_task", None)
-            if not isinstance(owner, str) or not owner.strip():
-                continue
-            if owner.strip() not in known:
-                unknown.append(f"  - {title!r} names owner_task {owner!r}")
-        if not unknown:
-            return
-        listed = "\n".join(unknown)
-        available = ", ".join(sorted(known)) or "(this feature declares no tasks)"
-        raise FeatureValidationError(
-            f"Feature {feature.id}: {len(unknown)} scenario stamp(s) name an "
-            f"`owner_task:` that is not a task of this feature — a scenario "
-            f"owned by a task that does not exist is not owned at all.\n"
-            f"{listed}\n"
-            f"Tasks in this feature: {available}.\n"
-            f"FIX: name the task whose acceptance criteria state the "
-            f"scenario's behaviour at the delivered surface, or remove the "
-            f"`owner_task:` line."
-        )
-
-    @staticmethod
-    def _validate_scenario_owners(feature: Feature) -> None:
-        """Refuse a ``scenario_owners:`` value that names no task of this feature.
-
-        The same rule and the same voice as ``_validate_scenario_owner_tasks``,
-        applied to the map the plan writer actually writes. A typo'd owner would
-        leave the scenario unowned behind a map that looks complete, which is the
-        exact failure this key exists to stop. ABSENT is allowed: every feature
-        written before the key existed loads unchanged.
-
-        The keys are NOT compared with the approved ``.feature`` here — that is
-        the plan-side check's job, where the specification is in hand and a
-        violation can still be repaired by one re-ask.
-
-        Raises
-        ------
-        FeatureValidationError
-            When any value names a task id absent from ``feature.tasks``.
-        """
-        owners = getattr(feature, "scenario_owners", None) or {}
-        if not owners:
-            return
-        known = {task.id for task in feature.tasks if getattr(task, "id", None)}
-        unknown: List[str] = []
-        for title, owner in owners.items():
-            if not isinstance(owner, str) or not owner.strip():
-                continue
-            if owner.strip() not in known:
-                unknown.append(f"  - {title!r} is owned by {owner!r}")
-        if not unknown:
-            return
-        listed = "\n".join(unknown)
-        available = ", ".join(sorted(known)) or "(this feature declares no tasks)"
-        raise FeatureValidationError(
-            f"Feature {feature.id}: {len(unknown)} `scenario_owners:` entr"
-            f"{'y' if len(unknown) == 1 else 'ies'} name a task that is not in "
-            f"this feature — a scenario owned by a task that does not exist is "
-            f"not owned at all.\n"
-            f"{listed}\n"
-            f"Tasks in this feature: {available}.\n"
-            f"FIX: name the task whose acceptance criteria state the "
-            f"scenario's behaviour at the delivered surface."
-        )
 
     @staticmethod
     def _parse_task(task_data: Dict[str, Any]) -> FeatureTask:
@@ -1431,8 +873,10 @@ class FeatureLoader:
         FeatureParseError
             If required fields are missing or validation fails
         """
-        # Validate required fields with helpful error messages
-        required_fields = ["id", "file_path"]
+        # The one required field (item 7 of the cull): a task with no id
+        # cannot be named or scheduled. A missing file_path keeps the empty
+        # default; the task file is then found by its id.
+        required_fields = ["id"]
 
         for field in required_fields:
             if field not in task_data:
@@ -1482,27 +926,20 @@ class FeatureLoader:
         if not feature.tasks:
             errors.append("Feature has no tasks defined")
 
-        # Check task files exist and are valid
+        # A task file that is not there leaves nothing to build from (item 7
+        # of the cull). The path's form is not checked: the file is also
+        # looked for by task id across the task folders.
         for task in feature.tasks:
             task_file = repo_root / task.file_path
-            if task_file.is_dir():
-                errors.append(
-                    f"Task file_path is a directory, not a file: {task.id} at {task.file_path}"
-                )
-            elif not str(task.file_path).endswith(".md"):
-                errors.append(
-                    f"Task file_path does not end with .md: {task.id} at {task.file_path}"
-                )
-            elif "tasks" not in Path(task.file_path).parts:
-                errors.append(
-                    f"Task file_path does not contain 'tasks' directory: {task.id} at {task.file_path}"
-                )
-            elif not task_file.exists() and not _resolve_task_across_lifecycle(
+            if not task_file.exists() and not _resolve_task_across_lifecycle(
                 repo_root, task.id
             ):
                 errors.append(f"Task file not found: {task.id} at {task.file_path}")
 
-        # Check orchestration has all tasks
+        # Waves and dependencies (argued keep in the cull, 27 October 2026):
+        # the scheduler runs only the tasks named in a wave, and skips a task
+        # whose dependency has not finished, so these mistakes lose work at
+        # run time rather than at planning time.
         all_task_ids = {t.id for t in feature.tasks}
         orchestrated_ids = set()
         for wave in feature.orchestration.parallel_groups:
@@ -1520,159 +957,11 @@ class FeatureLoader:
                 f"Tasks not in orchestration: {', '.join(missing)}"
             )
 
-        # Check dependencies are valid
-        for task in feature.tasks:
-            for dep_id in task.dependencies:
-                if dep_id not in all_task_ids:
-                    error_msg = f"Task {task.id} has unknown dependency: {dep_id}"
-                    similar_ids = _find_similar_ids(dep_id, all_task_ids)
-                    if similar_ids:
-                        suggestions = ", ".join(similar_ids)
-                        error_msg += f". Did you mean: {suggestions}?"
-                    errors.append(error_msg)
-
-        # Check for circular dependencies
-        circular = FeatureLoader._detect_circular_dependencies(feature)
-        if circular:
-            errors.append(f"Circular dependency detected: {' -> '.join(circular)}")
-
         # Check for intra-wave dependencies (tasks depending on others in same wave)
         wave_errors = FeatureLoader.validate_parallel_groups(feature)
         errors.extend(wave_errors)
 
-        # A task file that names another task of this feature needs an order
-        # between the two (FEAT-FFEC, 3 October 2026). Step 2 (26 October
-        # 2026): advice; the planner adds the missing order itself.
-        for advice in FeatureLoader.validate_task_references(feature, repo_root):
-            logger.warning("Advice: %s", advice)
-
-        # Validate task_type in task file frontmatter (fail-fast on invalid values)
-        for task in feature.tasks:
-            task_file = repo_root / task.file_path
-            if task_file.exists() and task_file.is_file():
-                task_type_error = FeatureLoader._validate_task_type_in_file(
-                    task.id, task_file
-                )
-                if task_type_error:
-                    errors.append(task_type_error)
-
         return errors
-
-    @staticmethod
-    def _detect_circular_dependencies(feature: Feature) -> Optional[List[str]]:
-        """
-        Detect circular dependencies in task graph.
-
-        Parameters
-        ----------
-        feature : Feature
-            Feature to check
-
-        Returns
-        -------
-        Optional[List[str]]
-            Circular dependency chain if found, None otherwise
-        """
-        # Build adjacency list
-        graph = {t.id: t.dependencies for t in feature.tasks}
-        visited = set()
-        rec_stack = set()
-        path = []
-
-        def dfs(task_id: str) -> bool:
-            visited.add(task_id)
-            rec_stack.add(task_id)
-            path.append(task_id)
-
-            for dep_id in graph.get(task_id, []):
-                if dep_id not in visited:
-                    if dfs(dep_id):
-                        return True
-                elif dep_id in rec_stack:
-                    # Found cycle
-                    cycle_start = path.index(dep_id)
-                    path.append(dep_id)  # Close the cycle
-                    return True
-
-            path.pop()
-            rec_stack.remove(task_id)
-            return False
-
-        for task_id in graph:
-            if task_id not in visited:
-                if dfs(task_id):
-                    return path
-
-        return None
-
-    @staticmethod
-    def _validate_task_type_in_file(task_id: str, task_file: Path) -> Optional[str]:
-        """
-        Validate task_type in a task file's YAML frontmatter.
-
-        Reads the frontmatter from the task file and checks that the task_type
-        field (if present) is a valid TaskType enum value or alias.
-
-        Parameters
-        ----------
-        task_id : str
-            Task identifier (for error messages)
-        task_file : Path
-            Path to the task markdown file
-
-        Returns
-        -------
-        Optional[str]
-            Error message string if invalid, None if valid or no task_type set
-        """
-        try:
-            content = task_file.read_text(encoding="utf-8")
-        except OSError:
-            return None  # Cannot read file - structural validator handles this
-
-        # Must start with YAML frontmatter delimiter
-        if not content.startswith("---"):
-            return None
-
-        # Find the closing --- delimiter
-        try:
-            end_idx = content.index("---", 3)
-        except ValueError:
-            return None  # No closing delimiter - not valid frontmatter
-
-        frontmatter_str = content[3:end_idx]
-        try:
-            frontmatter = yaml.safe_load(frontmatter_str)
-        except yaml.YAMLError:
-            return None  # YAML parse error - not our concern here
-
-        if not isinstance(frontmatter, dict):
-            return None
-
-        task_type_str = frontmatter.get("task_type")
-        if task_type_str is None:
-            return None  # Missing task_type defaults to feature - acceptable
-
-        # Check TaskType enum values first
-        try:
-            TaskType(task_type_str)
-            return None  # Valid enum value
-        except ValueError:
-            pass
-
-        # Check aliases
-        if task_type_str in TASK_TYPE_ALIASES:
-            return None  # Valid alias
-
-        # Invalid value - build actionable error message
-        valid_values = ", ".join(t.value for t in TaskType)
-        valid_aliases = ", ".join(sorted(TASK_TYPE_ALIASES.keys()))
-        return (
-            f"Task {task_id} has invalid task_type: '{task_type_str}'. "
-            f"Valid values: {valid_values}. "
-            f"Valid aliases: {valid_aliases}. "
-            f"Fix: Update task_type in {task_file}"
-        )
 
     @staticmethod
     def validate_parallel_groups(feature: Feature) -> List[str]:
@@ -1739,183 +1028,10 @@ class FeatureLoader:
         feature: Feature,
         repo_root: Optional[Path] = None,
     ) -> List[str]:
-        """Refuse a task file that names another task of the same feature when
-        neither task depends on the other, directly or through other tasks.
-
-        Measured on FEAT-FFEC (3 October 2026), a feature of the product being
-        built: the acceptance criteria of its task 002 said the response shape
-        must match the schema from its task 003, but the plan declared both as
-        depending only on its task 001, so they were scheduled in the same
-        wave. The need was written only in the
-        task's own text, where the scheduler never looks.
-
-        Only the feature's own task IDs are matched, so this works the same for
-        any language or project type. A reference to a task that comes later
-        and depends on this one ("TASK-004 adds the tests") is fine: the two
-        are already ordered.
-
-        Parameters
-        ----------
-        feature : Feature
-            Feature to validate
-        repo_root : Optional[Path]
-            Repository root the task file paths are relative to (default:
-            current directory)
-
-        Returns
-        -------
-        List[str]
-            One plain sentence per unordered reference (empty if none)
-        """
-        repo_root = Path(repo_root) if repo_root is not None else Path.cwd()
-        task_ids = [t.id for t in feature.tasks if t.id]
-        if len(task_ids) < 2:
-            return []
-        known = set(task_ids)
-        deps = {
-            t.id: [d for d in t.dependencies if d in known] for t in feature.tasks
-        }
-
-        # Everything each task waits for, directly or through other tasks.
-        # Iterative and cycle-safe (a cycle is reported by its own check).
-        upstream: Dict[str, set] = {}
-        for task_id in task_ids:
-            seen: set = set()
-            stack = list(deps.get(task_id, []))
-            while stack:
-                current = stack.pop()
-                if current in seen:
-                    continue
-                seen.add(current)
-                stack.extend(deps.get(current, []))
-            upstream[task_id] = seen
-
-        # Longest IDs first so TASK-XXX-0010 is never read as TASK-XXX-001; an
-        # ID must not run on into more letters, digits or underscores. A
-        # trailing hyphen is allowed, so a file name such as
-        # TASK-XXX-003-schemas.md still counts as naming TASK-XXX-003.
-        alternatives = "|".join(
-            re.escape(i) for i in sorted(known, key=len, reverse=True)
-        )
-        id_pattern = re.compile(
-            rf"(?<![A-Za-z0-9_])({alternatives})(?![A-Za-z0-9_])"
-        )
-
-        first_wave: Dict[str, int] = {}
-        for wave_num, wave in enumerate(feature.orchestration.parallel_groups, 1):
-            for wave_task in wave:
-                first_wave.setdefault(wave_task, wave_num)
-
-        errors: List[str] = []
-        for task in feature.tasks:
-            if not task.id:
-                continue
-            task_file = FeatureLoader._readable_task_file(repo_root, task)
-            if task_file is None:
-                continue
-            try:
-                text = task_file.read_text(encoding="utf-8")
-            except (OSError, UnicodeDecodeError):
-                continue
-            named: List[str] = []
-            for match in id_pattern.finditer(text):
-                other = match.group(1)
-                if other != task.id and other not in named:
-                    named.append(other)
-            for other in named:
-                if other in upstream[task.id] or task.id in upstream.get(other, set()):
-                    continue
-                errors.append(
-                    FeatureLoader._unordered_reference_sentence(
-                        task.id,
-                        other,
-                        first_wave.get(task.id),
-                        first_wave.get(other),
-                    )
-                )
-        return errors
-
-    @staticmethod
-    def _unordered_reference_sentence(
-        task_id: str,
-        other: str,
-        task_wave: Optional[int],
-        other_wave: Optional[int],
-    ) -> str:
-        """The refusal for one unordered reference, worded for where the two
-        tasks sit in the waves today. Every form starts "<task>'s task file
-        refers to <other>", which callers may rely on."""
-        if task_wave is not None and other_wave is not None:
-            if other_wave < task_wave:
-                return (
-                    f"{task_id}'s task file refers to {other}, but neither "
-                    f"depends on the other; only the wave order runs {other} "
-                    f"first. Add {other} to its dependencies, or remove the "
-                    f"reference."
-                )
-            if other_wave > task_wave:
-                return (
-                    f"{task_id}'s task file refers to {other}, which runs in a "
-                    f"later wave, but neither depends on the other. If "
-                    f"{task_id} needs {other}'s work, add {other} to its "
-                    f"dependencies and move {task_id} to a later wave than "
-                    f"{other}; if {other} builds on {task_id}, add {task_id} to "
-                    f"{other}'s dependencies; otherwise remove the reference."
-                )
-        return (
-            f"{task_id}'s task file refers to {other}, but neither depends on "
-            f"the other, so they can run together or in either order. Add "
-            f"{other} to its dependencies (and put {task_id} in a later wave "
-            f"than {other}), or remove the reference."
-        )
-
-    @staticmethod
-    def check_smoke_gate_final_wave_coverage(feature: Feature) -> Optional[str]:
-        """Warn-only check: does ``smoke_gates.after_wave`` cover the final wave?
-
-        TASK-AB-WAVECTL01. A smoke gate configured with an int/list
-        ``after_wave`` that skips the final wave of
-        ``orchestration.parallel_groups`` leaves the assembled feature's last
-        wave(s) ungated, letting composition breaks ship silently
-        (FEAT-SMP-001 used ``after_wave: [2, 3, 4]`` with 7 waves). This is a
-        validation WARNING, never an error, and existing YAMLs are never
-        silently rewritten — final-wave gating is genuine operator policy
-        (see .claude/rules/activate-by-artefact-not-opt-in-flag.md).
-
-        Parameters
-        ----------
-        feature : Feature
-            Already-parsed feature.
-
-        Returns
-        -------
-        Optional[str]
-            Warning message when the final wave is uncovered; ``None`` when
-            there is nothing to warn about (no smoke_gates block, no wave
-            layout, ``after_wave: "all"``, or a covering int/list).
-        """
-        if feature.smoke_gates is None:
-            return None
-        waves = feature.orchestration.parallel_groups
-        if not waves:
-            # No wave layout to check — absent signal, neither warn nor block.
-            return None
-
-        final_wave = len(waves)
-        after = feature.smoke_gates.after_wave
-        if after == "all":
-            return None
-        covered = {after} if isinstance(after, int) else set(after)
-        if final_wave in covered:
-            return None
-
-        return (
-            f"Feature {feature.id}: smoke_gates.after_wave={after!r} does not "
-            f"cover the final wave (wave {final_wave} of {final_wave}) — "
-            f"composition breaks in the ungated final wave(s) will ship "
-            f"unverified. Add wave {final_wave} to after_wave or use "
-            f'after_wave: "all" (TASK-AB-WAVECTL01).'
-        )
+        """Kept for callers outside GuardKit (specialist-agent); returns no
+        findings. The check that a task file naming another task has an
+        order to it was deleted in the cull (27 October 2026, GKT-049)."""
+        return []
 
     @staticmethod
     def validate_yaml(data: Dict[str, Any]) -> List[str]:
@@ -1946,19 +1062,6 @@ class FeatureLoader:
         ...         print(error)
         """
         errors = []
-
-        # The YAML-1.1 boolean trap, absorbed at the SCHEMA layer too
-        # (2026-08-18, the api_test enforcement flip): guardkit's own template
-        # writes `routing_law: off` UNQUOTED and YAML 1.1 reads that bare
-        # token as boolean False — the loader path already absorbs it via
-        # normalize_routing_law_flag (see load_feature), but validate_yaml is
-        # what `guardkit feature validate` (forge's plan-commit) runs FIRST,
-        # and Pydantic's Literal["enforced","off"] rejected False on seven
-        # real features. Same absorber, same rules: False -> "off"; True /
-        # anything else stays invalid and is reported by the schema below.
-        # Copy-on-absorb: the caller's dict is never mutated.
-        if isinstance(data, dict) and data.get("routing_law") is False:
-            data = {**data, "routing_law": "off"}
 
         try:
             # Validate using Pydantic Feature model
@@ -2112,7 +1215,7 @@ class FeatureLoader:
         if not data.get("bootstrap_extras"):
             data.pop("bootstrap_extras", None)
 
-        # ROUTING LAW fields: same missing-key-equals-null law. Never sprout
+        # Scenario stamp fields: same missing-key-equals-null law. Never sprout
         # ``routing_law: null`` / empty maps into every rewritten feature
         # file; compact each stamp so ``test_ref: null`` is not persisted.
         if data.get("routing_law") is None:

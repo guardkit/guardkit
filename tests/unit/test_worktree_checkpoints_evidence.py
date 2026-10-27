@@ -139,31 +139,6 @@ class TestEvidenceRepoCheckpoint:
                 "the harness lock must be left untracked, never checkpointed"
             )
 
-    def test_rollback_resets_sibling_repo(self, worktree_and_sibling):
-        worktree, sibling = worktree_and_sibling
-        repo = EvidenceRepo(name="guardkitfactory", root=sibling)
-        with _checkpoint_scope(worktree, "TASK-X", [repo]) as scope:
-            manager = WorktreeCheckpointManager(
-                task_work_scope=scope,
-                worktree_path=worktree, task_id="TASK-X", evidence_repos=[repo]
-            )
-
-            # Turn 1: good sibling work, checkpoint.
-            (sibling / "good.py").write_text("ok = True\n")
-            manager.create_checkpoint(turn=1, tests_passed=True)
-            good_head = _head(sibling)
-
-            # Turn 2: polluted sibling work, checkpoint.
-            (sibling / "bad.py").write_text("broken = True\n")
-            manager.create_checkpoint(turn=2, tests_passed=False)
-            assert (sibling / "bad.py").exists()
-
-            # Roll back to turn 1.
-            assert manager.rollback_to(1) is True
-            assert _head(sibling) == good_head
-            assert (sibling / "good.py").exists()
-            assert not (sibling / "bad.py").exists()  # polluted work discarded
-
     def test_no_evidence_repos_is_unchanged_behaviour(self, worktree_and_sibling):
         worktree, _ = worktree_and_sibling
         with _checkpoint_scope(worktree, "TASK-X", ()) as scope:

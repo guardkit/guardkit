@@ -1,8 +1,8 @@
 """Step 1 of the factory simplification (24 October 2026).
 
-Checks that refused good work become advice, bookkeeping never ends work, and
-the approved part of a feature that did not finish reaches Forge on GuardKit's
-stdout line as ``approved_head``. Real checks that ran and failed still block.
+Bookkeeping never ends work, and the approved part of a feature that did not
+finish reaches Forge on GuardKit's stdout line as ``approved_head``. Real
+checks that ran and failed still block.
 
 Network-free: tmp_path git repositories only.
 """
@@ -17,10 +17,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from guardkit.orchestrator import task_work_scope
 from guardkit.orchestrator.feature_check import (
     STOPPED_BECAUSE_MARKER,
-    completion_verdict,
 )
 from guardkit.orchestrator.feature_loader import FeatureLoader
 from guardkit.orchestrator.feature_orchestrator import (
@@ -30,9 +28,7 @@ from guardkit.orchestrator.feature_orchestrator import (
 )
 from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
 from guardkit.orchestrator.quality_gates.coach_validator import (
-    CoachValidator,
     IndependentTestResult,
-    QualityGateStatus,
 )
 from guardkit.orchestrator.task_work_scope import (
     approved_head,
@@ -73,113 +69,17 @@ def _approve_task_a(root: Path) -> str:
 
 
 # ============================================================================
-# 1. Advice instead of refusals
-# ============================================================================
-
-
-def _gates(**overrides) -> QualityGateStatus:
-    values = dict(
-        tests_passed=True,
-        coverage_met=None,
-        arch_review_passed=True,
-        plan_audit_passed=True,
-    )
-    values.update(overrides)
-    return QualityGateStatus(**values)
-
-
-def test_unmeasured_coverage_passes_the_gate_with_advice() -> None:
-    gates = _gates(coverage_met=None)
-    assert gates.all_gates_passed is True
-    advice = CoachValidator._unmeasured_coverage_advice(gates)
-    assert [a["category"] for a in advice] == ["coverage_unknown"]
-    assert advice[0]["severity"] == "should_fix"
-
-
-def test_measured_low_coverage_still_fails_the_gate() -> None:
-    gates = _gates(coverage_met=False)
-    assert gates.all_gates_passed is False
-    assert CoachValidator._unmeasured_coverage_advice(gates) == []
-
-
-def test_high_plan_audit_passes_with_advice(tmp_path: Path) -> None:
-    validator = CoachValidator(str(tmp_path))
-    results = {
-        "quality_gates": {"tests_passed": True, "coverage_met": True},
-        "code_review": {"score": 90},
-        "plan_audit": {
-            "status": "violation",
-            "severity": "high",
-            "violations": 2,
-            "extra_files": ["src/unplanned.py"],
-        },
-    }
-    status = validator.verify_quality_gates(results)
-    assert status.plan_audit_passed is True
-    assert [a["category"] for a in status.advisories] == ["plan_audit"]
-    assert status.advisories[0]["severity"] == "should_fix"
-    assert "src/unplanned.py" in status.advisories[0]["description"]
-
-
-def test_test_command_exit_zero_without_test_names_keeps_the_approval(
-    tmp_path: Path,
-) -> None:
-    from guardkit.orchestrator.agent_invoker import AgentInvoker
-
-    invoker = AgentInvoker.__new__(AgentInvoker)
-    decision = {"decision": "approve", "rationale": "fine", "issues": []}
-    independent = SimpleNamespace(
-        signal_absent=True,
-        check_could_not_run=False,
-        exit_code=0,
-        test_command="make test",
-        test_output_summary="ok",
-    )
-    bundle = SimpleNamespace(independent_tests=independent)
-    path = tmp_path / "coach_turn_1.json"
-    path.write_text(json.dumps(decision))
-
-    invoker._reconcile_absent_independent_test_signal(
-        decision=decision,
-        evidence_bundle=bundle,
-        task_id="TASK-A",
-        turn=1,
-        coach_output_path=path,
-    )
-
-    assert decision["decision"] == "approve"
-    assert [i["severity"] for i in decision["issues"]] == ["should_fix"]
-    assert json.loads(path.read_text())["decision"] == "approve"
-
-
-def test_missing_frontmatter_fields_are_advice(tmp_path: Path) -> None:
-    from guardkit.orchestrator.feature_validator import validate_feature_preflight
-
-    task_file = tmp_path / "tasks" / "TASK-A.md"
-    task_file.parent.mkdir(parents=True)
-    task_file.write_text("---\nid: TASK-A\ntitle: A\ntask_type: feature\n---\nbody\n")
-    feature = SimpleNamespace(
-        tasks=[SimpleNamespace(id="TASK-A", file_path="tasks/TASK-A.md")]
-    )
-    result = validate_feature_preflight(feature, tmp_path)
-    assert result.is_valid
-    assert [w.field for w in result.warnings] == ["complexity"]
-    assert "default" in result.warnings[0].message
-
-
-# ============================================================================
 # 2. Bookkeeping never ends work
 # ============================================================================
 
 
-def test_a_moved_head_is_noted_not_fatal(repo: Path) -> None:
+def test_a_moved_head_is_not_fatal(repo: Path) -> None:
     with checkout_lease(repo) as lease:
         lease.admit("TASK-A", "FEAT-S1")
         (repo / "b.txt").write_text("b\n")
         _git(repo, "add", "-A")
         _git(repo, "commit", "-q", "-m", "the builder committed by itself")
         lease.verify()
-        assert any("HEAD moved" in note for note in lease.notes)
     assert approved_head(repo) == _git(repo, "rev-parse", "HEAD")
 
 
@@ -223,32 +123,8 @@ def _feature_check_project(tmp_path: Path) -> tuple[Path, Path]:
     return repo_root, worktree
 
 
-def test_missing_whole_feature_receipt_is_advice(tmp_path: Path) -> None:
-    repo_root, worktree = _feature_check_project(tmp_path)
-    feature = SimpleNamespace(tasks=[], scenarios={})
-    verdict = completion_verdict(
-        repo_root=repo_root, worktree_root=worktree, feature=feature
-    )
-    assert verdict.blocks is False
-    assert "no receipt" in verdict.reason
-
-
-def test_failed_whole_feature_check_still_blocks(tmp_path: Path) -> None:
-    from guardkit.orchestrator.feature_check import RECEIPT_RELATIVE_PATH
-
-    repo_root, worktree = _feature_check_project(tmp_path)
-    receipt = worktree / RECEIPT_RELATIVE_PATH
-    receipt.parent.mkdir(parents=True)
-    receipt.write_text(json.dumps({"status": "failed"}))
-    feature = SimpleNamespace(tasks=[], scenarios={})
-    verdict = completion_verdict(
-        repo_root=repo_root, worktree_root=worktree, feature=feature
-    )
-    assert verdict.blocks is True
-
-
 # ============================================================================
-# 3. The task's real test and lint state, carried from the Coach's evidence
+# 3. The task's real test state, carried from the Coach's evidence
 # ============================================================================
 
 
@@ -281,47 +157,19 @@ def _absent_run() -> IndependentTestResult:
     )
 
 
-LINT_RED = {
-    "status": "failed",
-    "failures": [{"rule_id": "lint", "kind": "assert_command", "detail": "exit 1"}],
-}
-LINT_GREEN = {"status": "passed", "failures": []}
-
-
-def test_a_failed_lint_command_is_carried() -> None:
-    runner = _runner()
-    runner._carry_measured_checks(_passed_run(), LINT_RED)
-    assert runner.real_check_failed is True
-
-
-def test_lint_clears_only_when_measured_again() -> None:
-    runner = _runner()
-    runner._carry_measured_checks(None, LINT_RED)
-    runner._carry_measured_checks(None, None)  # leg absent: nothing measured
-    assert runner.real_check_failed is True
-    runner._carry_measured_checks(None, LINT_GREEN)
-    assert runner.real_check_failed is False
-
-
 def test_a_red_test_then_no_result_stays_red() -> None:
     runner = _runner()
-    runner._carry_measured_checks(_failed_run(), None)
-    runner._carry_measured_checks(_absent_run(), None)
-    runner._carry_measured_checks(None, None)
+    runner._carry_measured_checks(_failed_run())
+    runner._carry_measured_checks(_absent_run())
+    runner._carry_measured_checks(None)
     assert runner.real_check_failed is True
 
 
 def test_a_red_test_then_a_measured_pass_clears() -> None:
     runner = _runner()
-    runner._carry_measured_checks(_failed_run(), None)
-    runner._carry_measured_checks(_passed_run(), None)
+    runner._carry_measured_checks(_failed_run())
+    runner._carry_measured_checks(_passed_run())
     assert runner.real_check_failed is False
-
-
-def test_a_failed_test_phase_counts_when_no_independent_run_measured() -> None:
-    runner = _runner()
-    runner._carry_measured_checks(None, None, test_phase={"tests_failed": 2})
-    assert runner.real_check_failed is True
 
 
 def test_an_exception_ending_keeps_what_was_measured(tmp_path: Path) -> None:
@@ -452,32 +300,25 @@ def test_failing_record_writes_still_give_a_result(tmp_path, repo, capsys) -> No
 
 
 def _b_state(*turns) -> bool:
-    """Task B's carried state after the given (tests, lint) turns."""
+    """Task B's carried state after the given test runs, one per turn."""
     runner = _runner()
-    for independent, conformance in turns:
-        runner._carry_measured_checks(independent, conformance)
+    for independent in turns:
+        runner._carry_measured_checks(independent)
     return runner.real_check_failed
-
-
-def test_b_red_lint_withholds_approved_head(tmp_path, repo, capsys) -> None:
-    _approve_task_a(repo)
-    red = _b_state((_passed_run(), LINT_RED))
-    _, lines = _finalize(tmp_path, repo, _waves(b_real_check_failed=red), capsys)
-    assert lines == []
 
 
 def test_b_red_test_then_no_result_withholds_approved_head(
     tmp_path, repo, capsys
 ) -> None:
     _approve_task_a(repo)
-    red = _b_state((_failed_run(), None), (_absent_run(), None))
+    red = _b_state(_failed_run(), _absent_run())
     _, lines = _finalize(tmp_path, repo, _waves(b_real_check_failed=red), capsys)
     assert lines == []
 
 
 def test_b_red_test_then_pass_gives_approved_head(tmp_path, repo, capsys) -> None:
     head_a = _approve_task_a(repo)
-    red = _b_state((_failed_run(), None), (_passed_run(), None))
+    red = _b_state(_failed_run(), _passed_run())
     _, lines = _finalize(tmp_path, repo, _waves(b_real_check_failed=red), capsys)
     assert [line["approved_head"] for line in lines] == [head_a]
 

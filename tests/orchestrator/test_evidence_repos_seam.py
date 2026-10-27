@@ -46,17 +46,15 @@ class TestEvidenceContractDeclaration:
 
         assert "evidence_repos" in Feature.model_fields
 
-    def test_malformed_declaration_fails_loudly_not_silently(self):
-        # The rule's core: a typo'd / malformed evidence_repos declaration must
-        # raise at parse time, not be silently swallowed (absent-signal).
-        from pydantic import ValidationError
-
+    def test_malformed_entries_load_and_the_resolver_skips_them(self, tmp_path):
+        # The cull (27 October 2026, GKT-037): the declaration is not checked
+        # at parse time; resolve_evidence_repos skips an entry it cannot use.
+        from guardkit.orchestrator.evidence_repos import resolve_evidence_repos
         from guardkit.orchestrator.feature_loader import Feature
 
-        with pytest.raises(ValidationError):
-            Feature(id="FEAT-X", name="x", evidence_repos=[123])
-        with pytest.raises(ValidationError):
-            Feature(id="FEAT-X", name="x", evidence_repos=[{"no_path": "y"}])
+        feature = Feature(id="FEAT-X", name="x", evidence_repos=[123, {"no_path": "y"}])
+        assert feature.evidence_repos == [123, {"no_path": "y"}]
+        assert resolve_evidence_repos(feature.evidence_repos, tmp_path) == []
 
     def test_resolver_is_importable(self):
         from guardkit.orchestrator.evidence_repos import resolve_evidence_repos
@@ -71,11 +69,6 @@ class TestEvidenceContractConsumers:
         from guardkit.orchestrator.agent_invoker import AgentInvoker
 
         assert _has_param(AgentInvoker.__init__, "evidence_repos")
-
-    def test_coach_verifier_accepts_evidence_repos(self):
-        from guardkit.orchestrator.coach_verification import CoachVerifier
-
-        assert _has_param(CoachVerifier.__init__, "evidence_repos")
 
     def test_coach_validator_accepts_evidence_repos(self):
         from guardkit.orchestrator.quality_gates.coach_validator import (
@@ -134,27 +127,14 @@ class TestEvidenceContractThreading:
         src = _inspect.getsource(feature_orchestrator)
         assert "evidence_repos=self._evidence_repos_resolved" in src
 
-    def test_coach_honesty_verifier_receives_evidence_repos(self):
-        # CRITICAL regression guard (review finding): the CoachVerifier built
-        # INSIDE coach_validator._verify_honesty must receive evidence_repos,
-        # else the Coach's own honesty gate fail-open-skips every sibling-repo
-        # claim and a Player can lie about sibling files undetected.
-        import inspect as _inspect
-
-        from guardkit.orchestrator.quality_gates import coach_validator
-
-        src = _inspect.getsource(coach_validator)
-        assert "evidence_repos=self._evidence_repos" in src
-
-    def test_both_coach_paths_run_the_sibling_test_gate(self):
-        # HIGH regression guard (review finding): both the primary and legacy
-        # (GUARDKIT_COACH_LEGACY=1) Coach paths must run the AC-002 gate, or the
-        # legacy revert silently ignores a declared sibling test_command (a
-        # BDDW-002 false-green re-opens). Shared via _evidence_repo_gate; assert
-        # it is invoked from at least two sites.
+    def test_the_coach_path_runs_the_sibling_test_gate(self):
+        # Regression guard (review finding): the Coach path must run the
+        # AC-002 gate, or a declared sibling test_command is silently ignored
+        # (a BDDW-002 false-green re-opens). The legacy Coach path was
+        # removed in the 27 October 2026 cull, so one call site remains.
         import inspect as _inspect
 
         from guardkit.orchestrator import autobuild
 
         src = _inspect.getsource(autobuild)
-        assert src.count("self._evidence_repo_gate(") >= 2
+        assert src.count("self._evidence_repo_gate(") >= 1

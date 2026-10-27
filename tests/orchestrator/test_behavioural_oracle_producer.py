@@ -7,7 +7,8 @@ Outcome branches exercised:
   - no oracle file → ``None`` (absent, AC-5)
   - independent failing oracle → ``{"status": "ran", "passed": False}`` (AC-1)
   - independent passing oracle → ``{"status": "ran", "passed": True}`` (AC-2)
-  - Player-authored oracle → ``{"status": "not_independent"}`` (AC-3)
+  - an oracle the Player wrote runs like any other (the "not independent"
+    outcome was removed in the cull, 27 October 2026)
   - timeout → ``{"status": "ran", "passed": False, "timed_out": True}`` (AC-4)
   - failed-to-start → ``None`` (absent, AC-4)
   - end-to-end: guard overrides approve→feedback with failing oracle (AC-1)
@@ -16,15 +17,11 @@ Outcome branches exercised:
 from __future__ import annotations
 
 import json
-import subprocess
 import textwrap
-import time
 from pathlib import Path
 from typing import Any, Dict, Optional
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-import pytest
-import yaml
 
 # Ensure the project root is on sys.path for imports.
 _project_root = Path(__file__).resolve().parents[3]
@@ -35,7 +32,6 @@ from guardkit.orchestrator.quality_gates.coach_evidence import (
     CoachEvidenceBundle,
 )
 from guardkit.orchestrator.quality_gates.coach_validator import CoachValidator
-from guardkit.orchestrator.coach_verification import HonestyVerification
 
 
 # ============================================================================
@@ -149,9 +145,6 @@ def _bundle(
     behavioural_oracle: Optional[Dict[str, Any]] = None,
 ) -> CoachEvidenceBundle:
     return CoachEvidenceBundle(
-        honesty=HonestyVerification(
-            verified=True, discrepancies=[], honesty_score=1.0, resolved_paths=[]
-        ),
         gathering_status="complete",
         behavioural_oracle=behavioural_oracle,
     )
@@ -185,7 +178,7 @@ class TestAbsenceDiscipline:
         worktree_path = tmp_path / "worktree-absent"
         worktree_path.mkdir()
         validator = _make_validator(worktree_path)
-        result = validator._produce_behavioural_oracle(authored_files=[])
+        result = validator._produce_behavioural_oracle()
         assert result is None
 
     def test_gather_evidence_keeps_none_when_absent(self, tmp_path: Path) -> None:
@@ -230,7 +223,7 @@ def test_roundtrip():
 """,
         )
         validator = _make_validator(worktree_path)
-        result = validator._produce_behavioural_oracle(authored_files=[])
+        result = validator._produce_behavioural_oracle()
         assert result is not None
         assert result["status"] == "ran"
         assert result["passed"] is False
@@ -279,7 +272,7 @@ def test_roundtrip():
 """,
         )
         validator = _make_validator(worktree_path)
-        result = validator._produce_behavioural_oracle(authored_files=[])
+        result = validator._produce_behavioural_oracle()
         assert result is not None
         assert result["status"] == "ran"
         assert result["passed"] is True
@@ -302,7 +295,7 @@ class TestPassPath:
             body="def test_ok():\n    assert True\n",
         )
         validator = _make_validator(worktree_path)
-        result = validator._produce_behavioural_oracle(authored_files=[])
+        result = validator._produce_behavioural_oracle()
         assert result["status"] == "ran"
         assert result["passed"] is True
         assert "oracle_path" in result
@@ -311,45 +304,25 @@ class TestPassPath:
 
 
 # ============================================================================
-# AC-3: independence
+# AC-3: independence (removed in the cull)
 # ============================================================================
 
 
 class TestIndependence:
-    """AC-3: Player-authored oracle → not_independent + warning."""
+    """An oracle the Player wrote is run like any other."""
 
-    def test_player_authored_oracle_not_independent(self, tmp_path: Path) -> None:
-        """When the oracle is in the authored set, status=not_independent."""
+    def test_a_player_written_oracle_still_runs(self, tmp_path: Path) -> None:
         worktree_path = tmp_path / "worktree-authored"
         _write_oracle(
             worktree_path,
             "my",
-            body="def test_my():\n    assert True\n",
+            body="def test_my():\n    assert False\n",
         )
         validator = _make_validator(worktree_path)
-        result = validator._produce_behavioural_oracle(
-            authored_files=["tests/acceptance/my_roundtrip.py"]
-        )
-        assert result is not None
-        assert result["status"] == "not_independent"
-        assert "oracle_path" in result
-        assert result["provenance"] == "player_authored"
-
-    def test_independent_oracle_not_in_authored_set(self, tmp_path: Path) -> None:
-        """Oracle NOT in authored set → independent."""
-        worktree_path = tmp_path / "worktree-independent"
-        _write_oracle(
-            worktree_path,
-            "indep",
-            body="def test_indep():\n    assert True\n",
-        )
-        validator = _make_validator(worktree_path)
-        result = validator._produce_behavioural_oracle(
-            authored_files=["src/app.py"]
-        )
+        result = validator._produce_behavioural_oracle()
         assert result is not None
         assert result["status"] == "ran"
-        assert result["provenance"] == "independent"
+        assert result["passed"] is False
 
 
 # ============================================================================
@@ -376,7 +349,7 @@ def test_hung():
         validator = _make_validator(worktree_path)
         # Use a very short timeout for the test
         with patch.dict("os.environ", {"GUARDKIT_ORACLE_TIMEOUT": "0.1"}):
-            result = validator._produce_behavioural_oracle(authored_files=[])
+            result = validator._produce_behavioural_oracle()
         assert result is not None
         assert result["status"] == "ran"
         assert result["passed"] is False
@@ -395,7 +368,7 @@ def test_hung():
         with patch.object(
             validator, "_pytest_interpreter", return_value="/nonexistent/python"
         ):
-            result = validator._produce_behavioural_oracle(authored_files=[])
+            result = validator._produce_behavioural_oracle()
         # Should return None (absent) because the subprocess fails to start
         assert result is None
 

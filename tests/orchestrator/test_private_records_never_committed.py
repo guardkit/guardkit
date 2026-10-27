@@ -29,6 +29,7 @@ import pytest
 from guardkit.orchestrator import work_runner
 from guardkit.orchestrator.evidence_repos import EvidenceRepo
 from guardkit.orchestrator.worktree_checkpoints import WorktreeCheckpointManager
+from tests.task_scope_fixtures import admitted_task
 
 
 RECORD = ".guardkit/autobuild-private/feature_check.json"
@@ -64,8 +65,12 @@ def _write(root: Path, rel: str, text: str) -> None:
 
 
 def _run_task_checkpoint(repo: Path, tmp_path: Path, turn: int) -> None:
-    manager = WorktreeCheckpointManager(worktree_path=repo, task_id="TASK-001")
-    manager.create_checkpoint(turn=turn, tests_passed=True, test_count=1)
+    # A checkpoint is written by the checkout's one admitted writer, as in a build.
+    with admitted_task(repo, "TASK-001") as (_, scope):
+        manager = WorktreeCheckpointManager(
+            worktree_path=repo, task_id="TASK-001", task_work_scope=scope
+        )
+        manager.create_checkpoint(turn=turn, tests_passed=True, test_count=1)
 
 
 def _run_sibling_evidence_checkpoint(repo: Path, tmp_path: Path, turn: int) -> None:
@@ -74,14 +79,17 @@ def _run_sibling_evidence_checkpoint(repo: Path, tmp_path: Path, turn: int) -> N
     worktree = tmp_path / "build-worktree"
     if not worktree.exists():
         _init_repo(worktree)
-    manager = WorktreeCheckpointManager(
-        worktree_path=worktree,
-        task_id="TASK-001",
-        evidence_repos=[EvidenceRepo(name="sibling", root=repo)],
-    )
-    checkpoint = manager.create_checkpoint(
-        turn=turn, tests_passed=True, test_count=1
-    )
+    sibling = [EvidenceRepo(name="sibling", root=repo)]
+    with admitted_task(worktree, "TASK-001", evidence_repos=sibling) as (_, scope):
+        manager = WorktreeCheckpointManager(
+            worktree_path=worktree,
+            task_id="TASK-001",
+            evidence_repos=sibling,
+            task_work_scope=scope,
+        )
+        checkpoint = manager.create_checkpoint(
+            turn=turn, tests_passed=True, test_count=1
+        )
     assert "sibling" in checkpoint.evidence_commits, "the sibling was committed"
 
 
@@ -391,8 +399,11 @@ def _nested_repository(repo: Path) -> str:
 
 
 def _checkpoint(repo: Path, turn: int = 1):
-    manager = WorktreeCheckpointManager(worktree_path=repo, task_id="TASK-001")
-    return manager.create_checkpoint(turn=turn, tests_passed=True, test_count=1)
+    with admitted_task(repo, "TASK-001") as (_, scope):
+        manager = WorktreeCheckpointManager(
+            worktree_path=repo, task_id="TASK-001", task_work_scope=scope
+        )
+        return manager.create_checkpoint(turn=turn, tests_passed=True, test_count=1)
 
 
 def test_an_untracked_inner_build_folder_does_not_stop_the_checkpoint(
@@ -820,15 +831,20 @@ def test_records_renamed_during_the_checkpoint_never_fail_it(tmp_path: Path) -> 
 
     thread = threading.Thread(target=writer, daemon=True)
     thread.start()
-    manager = WorktreeCheckpointManager(worktree_path=repo, task_id="TASK-001")
     failures = []
     try:
-        for turn in range(1, 151):
-            _write(repo, f"src/f{turn}.txt", f"{turn}\n")
-            try:
-                manager.create_checkpoint(turn=turn, tests_passed=True, test_count=1)
-            except Exception as exc:  # noqa: BLE001 - counted, then asserted
-                failures.append(f"turn {turn}: {type(exc).__name__}")
+        with admitted_task(repo, "TASK-001") as (_, scope):
+            manager = WorktreeCheckpointManager(
+                worktree_path=repo, task_id="TASK-001", task_work_scope=scope
+            )
+            for turn in range(1, 151):
+                _write(repo, f"src/f{turn}.txt", f"{turn}\n")
+                try:
+                    manager.create_checkpoint(
+                        turn=turn, tests_passed=True, test_count=1
+                    )
+                except Exception as exc:  # noqa: BLE001 - counted, then asserted
+                    failures.append(f"turn {turn}: {type(exc).__name__}")
     finally:
         stop.set()
         thread.join(timeout=10)

@@ -6,15 +6,13 @@ frontmatter validator, no Feature field."* A verdict-bearing declaration
 with no schema means a typo is silently ignored and the leg quietly goes
 absent — a false green wearing a spelling mistake.
 
-``BehaviouralOracle`` is modelled on :class:`SmokeGates`, which sits three
-lines above it in the same module, and these tests hold it to the same
-posture:
+``BehaviouralOracle`` is modelled on :class:`SmokeGates`. Since the cull
+(27 October 2026, GKT-035):
 
-  - ``extra="forbid"`` — an unknown key is LOUD;
-  - a non-empty command is mandatory;
-  - the timeout is bounded;
-  - the loader raises ``SchemaValidationError`` on a malformed block,
-    before ``/feature-build`` starts, never at Wave-1 o'clock;
+  - an unknown key is ignored and the timeout is not range-checked;
+  - a non-empty command is still needed to form a declaration;
+  - a block the loader cannot read is skipped, and the feature loads
+    without it;
   - and the absence path (no key at all) yields ``None``, exactly as
     before the field existed.
 """
@@ -32,7 +30,6 @@ from guardkit.orchestrator.feature_loader import (
     BehaviouralOracle,
     Feature,
     FeatureLoader,
-    SchemaValidationError,
     SmokeGates,
 )
 
@@ -106,35 +103,32 @@ class TestGoodShapes:
             600,
         )
 
-    @pytest.mark.parametrize("timeout", [1, 300, 3600])
-    def test_timeout_bounds_accept_the_edges(self, timeout: int) -> None:
+    @pytest.mark.parametrize("timeout", [0, 1, 300, 3600, 7200])
+    def test_any_timeout_is_kept(self, timeout: int) -> None:
         assert BehaviouralOracle(command="x", timeout=timeout).timeout == timeout
 
+    def test_unknown_key_is_ignored(self) -> None:
+        oracle = BehaviouralOracle(command="npm test", timeout_seconds=600)
+        assert oracle.command == "npm test" and oracle.timeout is None
 
-# ---------------------------------------------------------------------------
-# 2. The model itself — bad shapes are LOUD
-# ---------------------------------------------------------------------------
-
-
-class TestBadShapes:
-    def test_unknown_key_is_rejected(self) -> None:
-        """extra="forbid" posture, matching SmokeGates exactly.
-
-        A silently-ignored ``timeout_seconds:`` typo would leave the oracle
-        running on the 300s default while the author believed otherwise.
-        """
-        with pytest.raises(ValidationError) as exc:
-            BehaviouralOracle(command="npm test", timeout_seconds=600)
-        assert "timeout_seconds" in str(exc.value)
-
-    def test_extra_forbid_matches_smoke_gates(self) -> None:
-        """The posture is copied, not merely similar."""
+    def test_extra_ignore_matches_smoke_gates(self) -> None:
         assert (
             BehaviouralOracle.model_config["extra"]
             == SmokeGates.model_config["extra"]
-            == "forbid"
+            == "ignore"
         )
 
+    def test_required_declaration_need_not_name_its_checker(self) -> None:
+        oracle = BehaviouralOracle(command="npm test", required=True)
+        assert oracle.required is True and oracle.checker_sha256 is None
+
+
+# ---------------------------------------------------------------------------
+# 2. A declaration needs a command
+# ---------------------------------------------------------------------------
+
+
+class TestNoCommand:
     def test_missing_command_is_rejected(self) -> None:
         with pytest.raises(ValidationError):
             BehaviouralOracle()  # type: ignore[call-arg]
@@ -142,11 +136,6 @@ class TestBadShapes:
     def test_empty_command_is_rejected(self) -> None:
         with pytest.raises(ValidationError):
             BehaviouralOracle(command="")
-
-    @pytest.mark.parametrize("timeout", [0, -1, 3601])
-    def test_out_of_bounds_timeout_is_rejected(self, timeout: int) -> None:
-        with pytest.raises(ValidationError):
-            BehaviouralOracle(command="npm test", timeout=timeout)
 
     def test_non_string_command_is_rejected(self) -> None:
         with pytest.raises(ValidationError):
@@ -185,34 +174,15 @@ class TestFeatureField:
         assert isinstance(feature.behavioural_oracle, BehaviouralOracle)
         assert feature.behavioural_oracle.command == "npm test"
 
-    def test_typo_raises_schema_validation_error_at_load(
+    def test_a_block_without_a_command_is_skipped_at_load(
         self, repo: Path
     ) -> None:
-        """Loud at load time — the same seam smoke_gates uses, so the
-        author learns before the worktree bootstraps, not after Wave 1."""
-        with pytest.raises(SchemaValidationError) as exc:
-            _load(
-                repo,
-                dedent(
-                    """\
-                    behavioural_oracle:
-                      commnad: npm test
-                    """
-                ),
-            )
-        assert "behavioural_oracle" in str(exc.value)
-
-    def test_missing_command_raises_at_load(self, repo: Path) -> None:
-        with pytest.raises(SchemaValidationError):
-            _load(
-                repo,
-                dedent(
-                    """\
-                    behavioural_oracle:
-                      timeout: 600
-                    """
-                ),
-            )
+        """A typo'd or missing command leaves nothing to run; the block is
+        skipped and the feature loads (the cull, 27 October 2026)."""
+        for block in ("behavioural_oracle:\n  commnad: npm test\n",
+                      "behavioural_oracle:\n  timeout: 600\n"):
+            feature = _load(repo, block)
+            assert feature.behavioural_oracle is None
 
     def test_declaration_is_not_silently_dropped(self, repo: Path) -> None:
         """Regression pin against the evidence_repos class of bug

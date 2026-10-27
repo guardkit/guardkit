@@ -61,47 +61,22 @@ def _make_large_player_report(n_promises: int = 200) -> Dict[str, Any]:
 
 
 def _make_large_evidence_bundle() -> Dict[str, Any]:
-    """Create an evidence bundle with large raw_output and output_tail fields."""
+    """Evidence bundle fields with large raw_output and output_tail values."""
+    from guardkit.orchestrator.quality_gates.coach_validator import (
+        IndependentTestResult,
+    )
+
     large_output = "X" * 30000  # 30k char raw output
     large_tail = "Y" * 20000    # 20k char output tail
     return {
-        "gathering_status": "complete",
-        "honesty": {
-            "verified": True,
-            "discrepancies": [],
-            "honesty_score": 1.0,
-            "resolved_paths": [],
-        },
-        "independent_tests": {
-            "tests_passed": True,
-            "tests_run": 100,
-            "test_output_summary": "All 100 tests passed",
-            "raw_output": large_output,
-            "signal_absent": False,
-        },
-        "bdd": {
-            "scenarios_attempted": 10,
-            "scenarios_passed": 10,
-            "scenarios_failed": 0,
-            "discoveries": [{"name": f"scenario_{i}", "status": "passed"} for i in range(25)],
-            "errors": [{"message": f"error_{i}"} for i in range(15)],
-        },
-        "coverage_details": {
-            "line_coverage": 85.0,
-            "branch_coverage": 70.0,
-            "files_below_threshold": [],
-        },
-        "quality_gates": {
-            "all_passed": True,
-            "tests_failed": 0,
-            "tests_run": True,
-            "coverage_met": True,
-        },
-        "stub_scan": {
-            "status": "clean",
-            "findings": [],
-            "symbols_examined": 50,
-        },
+        "independent_tests": IndependentTestResult(
+            tests_passed=True,
+            test_command="pytest -q",
+            test_output_summary="All 100 tests passed",
+            duration_seconds=1.0,
+            raw_output=large_output,
+            signal_absent=False,
+        ),
         "behavioural_oracle": {
             "status": "ran",
             "passed": True,
@@ -124,31 +99,17 @@ def _build_synthesis_prompt(
         sdk_timeout_seconds=30,
     )
 
-    from guardkit.orchestrator.coach_verification import HonestyVerification
     from guardkit.orchestrator.quality_gates.coach_evidence import CoachEvidenceBundle
-
-    honesty = HonestyVerification(
-        verified=True,
-        discrepancies=[],
-        honesty_score=1.0,
-        resolved_paths=[],
-    )
 
     bundle = None
     if evidence_bundle is not None:
-        bundle = CoachEvidenceBundle(
-            honesty=honesty,
-            gathering_status="complete",
-            **{k: v for k, v in evidence_bundle.items()
-               if k not in ("honesty", "gathering_status")},
-        )
+        bundle = CoachEvidenceBundle(gathering_status="complete", **evidence_bundle)
 
     return invoker._build_coach_prompt(
         task_id="TASK-SELFFIX-003",
         turn=1,
         requirements=requirements or "# Requirements\n\nTest requirements",
         player_report=player_report or {},
-        honesty_verification=honesty,
         evidence_bundle=bundle,
         acceptance_criteria=acceptance_criteria or [
             {"id": "AC-001", "text": "Criterion 1"},
@@ -248,24 +209,13 @@ class TestTrimmingPreservesVerdictFields:
         result = AgentInvoker._trim_synthesis_prompt(prompt)
         assert criteria_text in result
 
-    def test_honesty_section_preserved(self) -> None:
-        """Honesty verification section is never trimmed."""
-        # Pass a minimal evidence_bundle so the XML-tagged path is taken
-        # (without it, _build_coach_prompt uses the legacy prose path)
+    def test_independent_tests_preserved(self) -> None:
+        """independent_tests field in bundle is never trimmed."""
         bundle = _make_large_evidence_bundle()
         prompt = _build_synthesis_prompt(evidence_bundle=bundle)
         prompt += "\n" + "Z" * 400000
         result = AgentInvoker._trim_synthesis_prompt(prompt)
-        assert "## Honesty Verification" in result
-        assert "<honesty_verification>" in result
-
-    def test_stub_scan_preserved(self) -> None:
-        """stub_scan field in bundle is never trimmed."""
-        bundle = _make_large_evidence_bundle()
-        prompt = _build_synthesis_prompt(evidence_bundle=bundle)
-        prompt += "\n" + "Z" * 400000
-        result = AgentInvoker._trim_synthesis_prompt(prompt)
-        assert "stub_scan" in result
+        assert "independent_tests" in result
         assert "## Deterministic Evidence Bundle" in result
 
     def test_behavioural_oracle_preserved(self) -> None:
@@ -296,7 +246,6 @@ class TestTrimmingPreservesVerdictFields:
         # Must still contain verdict-bearing content
         assert "## Original Requirements" in result
         assert "## Acceptance Criteria to Verify" in result
-        assert "## Honesty Verification" in result
         assert "<evidence_bundle>" in result
         assert "</evidence_bundle>" in result
 
@@ -317,12 +266,12 @@ class TestTrimmingPreservesVerdictFields:
         try:
             data = json.loads(bundle_json)
             # Key verdict-bearing fields should exist
-            assert "stub_scan" in data
+            assert "independent_tests" in data
             assert "behavioural_oracle" in data
         except json.JSONDecodeError:
             # If not valid JSON (e.g., truncated mid-JSON), at least check
             # the key fields are present as text
-            assert "stub_scan" in bundle_json
+            assert "independent_tests" in bundle_json
             assert "behavioural_oracle" in bundle_json
 
 
@@ -415,7 +364,5 @@ class TestFullSynthesisIntegration:
         assert "## Acceptance Criteria to Verify" in prompt
         assert "## Player's Report" in prompt
         assert "## Deterministic Evidence Bundle" in prompt
-        assert "## Honesty Verification" in prompt
-        assert "<absence_of_failure_guards>" in prompt
         assert "## Decision Format" in prompt
         assert "## Your Responsibilities" in prompt

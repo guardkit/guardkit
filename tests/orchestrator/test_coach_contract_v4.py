@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -26,6 +25,7 @@ from guardkit.orchestrator.agent_invoker import (
     AgentInvoker,
     _resolve_coach_contract,
 )
+from guardkit.orchestrator.quality_gates.coach_evidence import CoachEvidenceBundle
 
 # Path to fixture files for byte-comparison tests.
 _FIXTURES_DIR = Path(__file__).resolve().parent.parent / "fixtures" / "coach-contract"
@@ -154,15 +154,7 @@ class TestV4VocabularySubstitutions:
             turn=1,
             requirements="test reqs",
             player_report={"files_modified": []},
-            evidence_bundle=SimpleNamespace(
-                honesty=SimpleNamespace(
-                    verified=True,
-                    discrepancies=[],
-                    honesty_score=1.0,
-                    resolved_paths=[],
-                ),
-                gathering_status="complete",
-            ),
+            evidence_bundle=CoachEvidenceBundle(gathering_status="complete"),
             synthesis=True,
         )
         assert bad_phrase not in prompt, (
@@ -179,21 +171,9 @@ class TestV4VocabularySubstitutions:
             requirements="test reqs",
             player_report={"files_modified": []},
             acceptance_criteria=[{"id": "AC-001", "text": "Test criterion"}],
-            evidence_bundle=SimpleNamespace(
-                honesty=SimpleNamespace(
-                    verified=True,
-                    discrepancies=[],
-                    honesty_score=1.0,
-                    resolved_paths=[],
-                ),
-                gathering_status="complete",
-            ),
+            evidence_bundle=CoachEvidenceBundle(gathering_status="complete"),
             synthesis=True,
         )
-        assert "Surface as a reject finding" in prompt
-        assert 'Surface a "reject" verdict' in prompt
-        assert "verbatim in the finding locus" in prompt
-        assert "that is a REJECT, not approval" in prompt
         assert "Either APPROVE or REJECT with specific findings" in prompt
         assert "verify each criterion against the evidence" in prompt
         assert "## Acceptance Criteria to Verify" in prompt
@@ -231,21 +211,9 @@ class TestCoachsplitBackwardCompatibility:
             requirements="test reqs",
             player_report={"files_modified": []},
             acceptance_criteria=[{"id": "AC-001", "text": "Test criterion"}],
-            evidence_bundle=SimpleNamespace(
-                honesty=SimpleNamespace(
-                    verified=True,
-                    discrepancies=[],
-                    honesty_score=1.0,
-                    resolved_paths=[],
-                ),
-                gathering_status="complete",
-            ),
+            evidence_bundle=CoachEvidenceBundle(gathering_status="complete"),
             synthesis=True,
         )
-        assert "Surface as feedback" in prompt
-        assert 'Surface a "feedback" decision' in prompt
-        assert "verbatim in the rationale" in prompt
-        assert "that is FEEDBACK, not approval" in prompt
         assert "Either APPROVE or provide specific FEEDBACK" in prompt
         assert "create a criteria_verification entry" in prompt
         assert "## Acceptance Criteria to Verify" in prompt
@@ -270,15 +238,7 @@ class TestSynthesisBudgetV4Path:
             requirements="test reqs",
             player_report=large_report,
             acceptance_criteria=[{"id": "AC-001", "text": "Test criterion"}],
-            evidence_bundle=SimpleNamespace(
-                honesty=SimpleNamespace(
-                    verified=True,
-                    discrepancies=[],
-                    honesty_score=1.0,
-                    resolved_paths=[],
-                ),
-                gathering_status="complete",
-            ),
+            evidence_bundle=CoachEvidenceBundle(gathering_status="complete"),
             synthesis=True,
         )
         # The prompt should still contain verdict-bearing markers
@@ -286,11 +246,8 @@ class TestSynthesisBudgetV4Path:
         always_present = [
             "## Original Requirements",
             "## Acceptance Criteria to Verify",
-            "## Honesty Verification",
-            "<honesty_verification>",
             "<evidence_bundle>",
             "## Deterministic Evidence Bundle",
-            "<absence_of_failure_guards>",
         ]
         for marker in always_present:
             assert marker in prompt, f"Verdict-bearing marker missing: {marker!r}"
@@ -306,21 +263,13 @@ class TestSynthesisBudgetV4Path:
             requirements="test reqs",
             player_report={"files_modified": []},
             acceptance_criteria=[{"id": "AC-001", "text": "Test criterion"}],
-            evidence_bundle=SimpleNamespace(
-                honesty=SimpleNamespace(
-                    verified=True,
-                    discrepancies=[],
-                    honesty_score=1.0,
-                    resolved_paths=[],
-                ),
-                gathering_status="complete",
-            ),
+            evidence_bundle=CoachEvidenceBundle(gathering_status="complete"),
             synthesis=True,
         )
         # Core verdict-bearing sections must survive
         assert "## Original Requirements" in prompt
         assert "## Acceptance Criteria to Verify" in prompt
-        assert "<absence_of_failure_guards>" in prompt
+        assert "<evidence_bundle>" in prompt
 
 
 # ---------------------------------------------------------------------------

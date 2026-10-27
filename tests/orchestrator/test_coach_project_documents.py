@@ -8,21 +8,21 @@ What is checked here, each against the real code, real git repositories, and
 fakes only at the model and validator seams:
 
 * the loader reads the declaration and every document from a COMMIT's
-  committed content, with hashes, refuses a missing document, a symbolic link
-  (for the Player too) and a total over the 128 KiB budget, follows an
-  instruction-file link only inside the repository, and is opt-in;
+  committed content, with hashes, follows an instruction-file link only inside
+  the repository, and is opt-in; since the cull (27 October 2026) a document
+  that cannot be read (missing, a symbolic link, a link leading outside, not
+  UTF-8) is left out, and there is no size limit;
 * the Coach prompt carries a ``## Project documents`` section beside the
   requirements, and a project with nothing declared gets today's prompt;
 * an oversized player report and evidence bundle, forcing the synthesis
   trimmer and its last-resort tail cut, leave the section whole in the prompt
-  the harness receives (checked by hash), and a prompt that cannot keep it
-  whole is refused before the model is called;
+  the harness receives (checked by hash); a reviewer turn is never refused
+  for documents;
 * the documents are captured once per build from the commit the build started
   from (the base branch's fork point, not the caller's checkout), reused by
   every task of a feature and by a resume, and a Player's later edits reach
   only the turn record's drift note;
-* a declaration that cannot be given whole stops the task before any model
-  call, with a summary that names the files.
+* a declaration that cannot be read never stops the task.
 """
 
 from __future__ import annotations
@@ -33,7 +33,6 @@ import inspect
 import json
 import subprocess
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any, Dict, Optional
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -41,10 +40,7 @@ import pytest
 
 from guardkit.orchestrator.agent_invoker import AgentInvocationResult, AgentInvoker
 from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
-from guardkit.orchestrator.coach_verification import HonestyVerification
-from guardkit.orchestrator.exceptions import AgentInvocationError
 from guardkit.orchestrator.harness.selector import (
-    PROJECT_DOCUMENTS_BUDGET_BYTES,
     ProjectDocument,
     _load_player_project_inputs,
     load_project_documents_at_commit,
@@ -267,24 +263,22 @@ class TestLoadAtCommit:
         ],
         ids=["outside-relative", "outside-absolute", "missing-target", "loop", "linked-folder-outside"],
     )
-    def test_broken_instruction_links_are_refused(
+    def test_broken_instruction_links_are_left_out(
         self, tmp_path: Path, make: Any, expected: str
     ) -> None:
         _write_project(tmp_path, documents={"docs/mission.md": MISSION}, agents_md=None)
         make(tmp_path)
         _player_commits(tmp_path)
-        with pytest.raises(AgentInvocationError, match=expected):
-            _load(tmp_path)
+        assert [d.path for d in _load(tmp_path)] == ["docs/mission.md"]
 
-    def test_declared_instruction_missing_is_refused(self, tmp_path: Path) -> None:
+    def test_declared_instruction_missing_is_left_out(self, tmp_path: Path) -> None:
         _write_project(tmp_path, documents={"docs/mission.md": MISSION})
         (tmp_path / ".guardkit" / "config.yaml").write_text(
             "autobuild:\n  player:\n    instructions:\n      - docs/RULES.md\n"
             "    required_documents:\n      - docs/mission.md\n"
         )
         _player_commits(tmp_path)
-        with pytest.raises(AgentInvocationError, match="docs/RULES.md"):
-            _load(tmp_path)
+        assert [d.path for d in _load(tmp_path)] == ["AGENTS.md", "docs/mission.md"]
 
     def test_order_declared_instructions_then_conventional_then_required(
         self, tmp_path: Path
@@ -313,21 +307,19 @@ class TestLoadAtCommit:
         assert mission.text == crlf
         assert mission.sha256 == _sha(crlf.encode()) and mission.size == len(crlf.encode())
 
-    def test_invalid_utf8_refused(self, tmp_path: Path) -> None:
+    def test_invalid_utf8_is_left_out(self, tmp_path: Path) -> None:
         _write_project(tmp_path, documents={"docs/mission.md": "x"})
         (tmp_path / "docs" / "mission.md").write_bytes(b"caf\xe9 latin-1\n")
         _player_commits(tmp_path)
-        with pytest.raises(AgentInvocationError, match="not valid UTF-8"):
-            _load(tmp_path)
+        assert [d.path for d in _load(tmp_path)] == ["AGENTS.md"]
 
-    def test_missing_declared_document_refused(self, tmp_path: Path) -> None:
+    def test_missing_declared_document_is_left_out(self, tmp_path: Path) -> None:
         _write_project(tmp_path, documents={"docs/mission.md": MISSION})
         (tmp_path / "docs" / "mission.md").unlink()
         _player_commits(tmp_path)
-        with pytest.raises(AgentInvocationError, match="docs/mission.md"):
-            _load(tmp_path)
+        assert [d.path for d in _load(tmp_path)] == ["AGENTS.md"]
 
-    def test_symbolic_link_refused_for_coach_and_player(self, tmp_path: Path) -> None:
+    def test_symbolic_link_is_left_out_for_the_coach(self, tmp_path: Path) -> None:
         _write_project(tmp_path, documents={"docs/real.md": MISSION})
         (tmp_path / "docs" / "linked.md").symlink_to("real.md")
         (tmp_path / ".guardkit" / "config.yaml").write_text(
@@ -335,13 +327,13 @@ class TestLoadAtCommit:
             encoding="utf-8",
         )
         _player_commits(tmp_path)
-        with pytest.raises(AgentInvocationError, match="symbolic link"):
-            _load(tmp_path)
-        # The Player's own loader refuses it too, before guardkitfactory follows it.
-        with pytest.raises(AgentInvocationError, match="symbolic link"):
-            _load_player_project_inputs(tmp_path)
+        assert [d.path for d in _load(tmp_path)] == ["AGENTS.md"]
+        # The Player's own loader no longer refuses it either.
+        assert _load_player_project_inputs(tmp_path)["required_documents"] == (
+            "docs/linked.md",
+        )
 
-    def test_document_under_a_linked_folder_refused(self, tmp_path: Path) -> None:
+    def test_document_under_a_linked_folder_is_left_out(self, tmp_path: Path) -> None:
         _write_project(tmp_path, documents={"real/mission.md": MISSION})
         (tmp_path / "docs").symlink_to("real", target_is_directory=True)
         (tmp_path / ".guardkit" / "config.yaml").write_text(
@@ -349,18 +341,14 @@ class TestLoadAtCommit:
             encoding="utf-8",
         )
         _player_commits(tmp_path)
-        with pytest.raises(AgentInvocationError, match="docs is a symbolic link"):
-            _load(tmp_path)
+        assert [d.path for d in _load(tmp_path)] == ["AGENTS.md"]
 
-    def test_over_budget_refused_naming_files_and_sizes(self, tmp_path: Path) -> None:
-        big = "x" * (PROJECT_DOCUMENTS_BUDGET_BYTES - 100)
+    def test_large_documents_are_given_whole(self, tmp_path: Path) -> None:
+        big = "x" * (200 * 1024)
         _write_project(tmp_path, documents={"docs/big.md": big, "docs/tech.md": TECH})
-        with pytest.raises(AgentInvocationError) as excinfo:
-            _load(tmp_path)
-        message = str(excinfo.value)
-        assert str(PROJECT_DOCUMENTS_BUDGET_BYTES) in message
-        assert f"docs/big.md ({len(big)} bytes)" in message
-        assert "docs/tech.md" in message and "AGENTS.md" in message
+        docs = _load(tmp_path)
+        assert [d.path for d in docs] == ["AGENTS.md", "docs/big.md", "docs/tech.md"]
+        assert docs[1].text == big
 
 
 # ---------------------------------------------------------------------------
@@ -374,13 +362,7 @@ def _docs(root: Path) -> tuple[ProjectDocument, ...]:
 
 
 def _bundle(**extra: Any) -> CoachEvidenceBundle:
-    return CoachEvidenceBundle(
-        honesty=HonestyVerification(
-            verified=True, discrepancies=[], honesty_score=1.0, resolved_paths=[]
-        ),
-        gathering_status="complete",
-        **extra,
-    )
+    return CoachEvidenceBundle(gathering_status="complete", **extra)
 
 
 def _invoker(worktree: Path) -> AgentInvoker:
@@ -388,9 +370,6 @@ def _invoker(worktree: Path) -> AgentInvoker:
     invoker.worktree_path = worktree
     invoker.sdk_timeout_seconds = 600
     invoker._calculate_sdk_timeout = MagicMock(return_value=600)  # type: ignore[method-assign]
-    invoker._verify_player_claims = MagicMock(  # type: ignore[method-assign]
-        return_value=SimpleNamespace(verified=True, honesty_score=1.0, discrepancies=[])
-    )
     return invoker
 
 
@@ -477,7 +456,7 @@ class TestTrimmerKeepsTheSectionWhole:
         monkeypatch.delenv("GUARDKIT_COACH_GATHER", raising=False)
         # Documents near the budget (but under it), plus an untrimmable memory
         # context after them, so the last-resort tail cut must fire.
-        docs = list(_docs(tmp_path))
+        _docs(tmp_path)
         filler = "Binding rule line.\n" * ((40 * 1024) // 19)
         (tmp_path / "docs" / "rules.md").write_text(filler, encoding="utf-8")
         (tmp_path / ".guardkit" / "config.yaml").write_text(
@@ -487,7 +466,6 @@ class TestTrimmerKeepsTheSectionWhole:
         )
         _player_commits(tmp_path)
         docs = _load(tmp_path)
-        assert sum(d.size for d in docs) <= PROJECT_DOCUMENTS_BUDGET_BYTES
 
         invoker, iwr, _ = self._run(tmp_path, docs, coach_context="M" * 400_000)
 
@@ -512,16 +490,17 @@ class TestTrimmerKeepsTheSectionWhole:
             (d.path, d.sha256, d.size) for d in docs
         ]
 
-    def test_refused_before_the_model_when_it_cannot_stay_whole(
+    def test_a_prompt_that_cannot_keep_them_whole_still_reaches_the_reviewer(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        """Requirements alone (never trimmed) overflow the prompt limit, so the
+        documents cannot be kept: the reviewer still runs, and the record says
+        no section was sent."""
         monkeypatch.delenv("GUARDKIT_COACH_SYNTHESIS", raising=False)
         monkeypatch.delenv("GUARDKIT_COACH_GATHER", raising=False)
         docs = _docs(tmp_path)
         invoker = _invoker(tmp_path)
-        iwr = AsyncMock(side_effect=RuntimeError("must not be called"))
-        # Requirements alone (never trimmed) overflow the prompt limit, so the
-        # documents cannot be kept: the turn is refused, not sent cut short.
+        iwr = AsyncMock(side_effect=RuntimeError("the reviewer gave nothing"))
         with patch.object(invoker, "_invoke_with_role", iwr):
             result = asyncio.run(
                 invoker.invoke_coach(
@@ -533,27 +512,27 @@ class TestTrimmerKeepsTheSectionWhole:
                     project_documents=docs,
                 )
             )
-        iwr.assert_not_awaited()
-        assert result.success is False
-        assert "could not be kept whole" in result.error
+        iwr.assert_awaited_once()
+        assert result.success is True
+        assert result.report["decision"] == "approve"
         record = json.loads(
             TaskArtifactPaths.private_artifact_path(
                 "TASK-PD-004", "coach_project_documents_turn_1.json", tmp_path
             ).read_text()
         )
         assert record["section_sha256"] is None
-        assert "could not be kept whole" in record["refused"]
+        assert record["refused"] is None
 
-    def test_over_budget_refused_before_any_model_call(
+    def test_large_documents_reach_the_reviewer(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.delenv("GUARDKIT_COACH_SYNTHESIS", raising=False)
-        monkeypatch.setenv("GUARDKIT_COACH_GATHER", "1")  # Phase A would call a model
+        monkeypatch.delenv("GUARDKIT_COACH_GATHER", raising=False)
         big = ProjectDocument(
-            path="docs/big.md", sha256="0" * 64, text="x", size=PROJECT_DOCUMENTS_BUDGET_BYTES + 1
+            path="docs/big.md", sha256="0" * 64, text="x", size=200 * 1024
         )
         invoker = _invoker(tmp_path)
-        iwr = AsyncMock(side_effect=RuntimeError("must not be called"))
+        iwr = AsyncMock(side_effect=RuntimeError("the reviewer gave nothing"))
         with patch.object(invoker, "_invoke_with_role", iwr):
             result = asyncio.run(
                 invoker.invoke_coach(
@@ -562,9 +541,9 @@ class TestTrimmerKeepsTheSectionWhole:
                     project_documents=(big,),
                 )
             )
-        iwr.assert_not_awaited()
-        assert result.success is False
-        assert "docs/big.md" in result.error and str(PROJECT_DOCUMENTS_BUDGET_BYTES) in result.error
+        iwr.assert_awaited_once()
+        assert result.success is True
+        assert '<project_document path="docs/big.md"' in iwr.call_args.kwargs["prompt"]
 
 
 # ---------------------------------------------------------------------------
@@ -619,9 +598,7 @@ def _call(orch: AutoBuildOrchestrator, worktree: Worktree) -> AgentInvocationRes
         validator = MagicMock()
         validator.gather_evidence.return_value = _bundle()
         validator_class.return_value = validator
-        orch._produce_spec_conformance_leg = MagicMock(return_value=None)  # type: ignore[method-assign]
         orch._evidence_repo_gate = MagicMock(return_value=None)  # type: ignore[method-assign]
-        orch._direct_mode_evidence_gate = MagicMock(return_value=None)  # type: ignore[method-assign]
         result = orch._invoke_coach_safely(
             task_id="TASK-PD-010", turn=1, requirements="reqs",
             player_report={"files_modified": []}, worktree=worktree,
@@ -634,7 +611,6 @@ class TestInvokeCoachSafely:
     def test_documents_loaded_from_the_worktree_and_passed(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.delenv("GUARDKIT_COACH_LEGACY", raising=False)
         root = tmp_path / "wt"
         _write_project(root, documents={"docs/mission.md": MISSION})
         invoke = _real_signature_mock()
@@ -650,7 +626,6 @@ class TestInvokeCoachSafely:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, declaration: Optional[str]
     ) -> None:
         """Opt-in: instruction files present, nothing declared → today's call."""
-        monkeypatch.delenv("GUARDKIT_COACH_LEGACY", raising=False)
         root = tmp_path / "wt"
         _write_project(root, documents={})  # writes AGENTS.md
         (root / "CLAUDE.md").write_text("# Written for Claude sessions\n")
@@ -665,7 +640,7 @@ class TestInvokeCoachSafely:
         # Exactly the keyword set the base commit passed.
         assert set(invoke.call_args.kwargs) == {
             "task_id", "turn", "requirements", "player_report", "remaining_budget",
-            "evidence_bundle", "behavioural_oracle_declaration",
+            "evidence_bundle",
         }
         assert not list(root.rglob("coach_project_documents_turn_*.json"))
 
@@ -675,7 +650,6 @@ class TestInvokeCoachSafely:
         """The real invoker under the orchestrator, AGENTS.md present, nothing
         declared: the prompt the harness receives equals the one built by a
         direct call that never mentions project documents (today's call)."""
-        monkeypatch.delenv("GUARDKIT_COACH_LEGACY", raising=False)
         monkeypatch.delenv("GUARDKIT_COACH_SYNTHESIS", raising=False)
         monkeypatch.delenv("GUARDKIT_COACH_GATHER", raising=False)
         root = tmp_path / "wt"
@@ -702,34 +676,19 @@ class TestInvokeCoachSafely:
         assert "Run the root check" not in captured[0]  # AGENTS.md not delivered
         assert not list(root.rglob("coach_project_documents_turn_*.json"))
 
-    def test_unloadable_documents_refuse_before_anything_runs(
+    def test_an_unreadable_document_is_left_out_and_the_turn_runs(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.delenv("GUARDKIT_COACH_LEGACY", raising=False)
         root = tmp_path / "wt"
         _write_project(root, documents={"docs/mission.md": MISSION})
         (root / "docs" / "mission.md").unlink()
         _commit_start(root)
         invoke = _real_signature_mock()
         result = _call(_orchestrator(tmp_path, invoke), _worktree(root))
-        assert result.success is False
-        assert "docs/mission.md" in result.error
-        assert result.gather_calls == 0  # type: ignore[attr-defined]
-        invoke.assert_not_awaited()
-
-    def test_invoker_that_cannot_take_documents_is_refused_not_dropped(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.delenv("GUARDKIT_COACH_LEGACY", raising=False)
-        root = tmp_path / "wt"
-        _write_project(root, documents={"docs/mission.md": MISSION})
-
-        async def old_invoke_coach(task_id, turn, requirements, player_report, remaining_budget=None):
-            raise AssertionError("must not be called")
-
-        result = _call(_orchestrator(tmp_path, old_invoke_coach), _worktree(root))
-        assert result.success is False
-        assert "never dropped" in result.error
+        assert result.success is True
+        assert result.gather_calls == 1  # type: ignore[attr-defined]
+        passed = invoke.call_args.kwargs["project_documents"]
+        assert [d.path for d in passed] == ["AGENTS.md"]
 
 
 # ---------------------------------------------------------------------------
@@ -746,7 +705,7 @@ def _record(root: Path, task_id: str, turn: int) -> dict:
 
 
 def _no_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    for name in ("GUARDKIT_COACH_LEGACY", "GUARDKIT_COACH_SYNTHESIS", "GUARDKIT_COACH_GATHER"):
+    for name in ("GUARDKIT_COACH_SYNTHESIS", "GUARDKIT_COACH_GATHER"):
         monkeypatch.delenv(name, raising=False)
 
 
@@ -762,9 +721,7 @@ def _coach_prompt(orch: AutoBuildOrchestrator, invoker: AgentInvoker, worktree, 
         validator = MagicMock()
         validator.gather_evidence.return_value = _bundle()
         validator_class.return_value = validator
-        orch._produce_spec_conformance_leg = MagicMock(return_value=None)  # type: ignore[method-assign]
         orch._evidence_repo_gate = MagicMock(return_value=None)  # type: ignore[method-assign]
-        orch._direct_mode_evidence_gate = MagicMock(return_value=None)  # type: ignore[method-assign]
         orch._invoke_coach_safely(
             task_id=task_id, turn=1, requirements="reqs",
             player_report={"files_modified": []}, worktree=worktree,
@@ -919,7 +876,8 @@ class TestCapturedFromTheBuildCommit:
         orch = _orchestrator(tmp_path, _real_signature_mock())
         # Undeclared: nothing, no refusal.
         assert orch._capture_coach_project_documents("TASK-PD-080", _worktree(plain)) is None
-        # Declared: refused, because it cannot be read as committed.
+        # Declared: a sentence for the log, because it cannot be read as
+        # committed; the task goes on without the documents.
         (plain / ".guardkit" / "config.yaml").write_text(
             "autobuild:\n  player:\n    required_documents:\n      - docs/mission.md\n"
         )
@@ -969,98 +927,19 @@ class TestResume:
         ]
 
 
-def _orchestrate(tmp_path: Path, root: Path):
-    from guardkit.orchestrator.quality_gates.pre_loop import PreLoopResult
+class TestNothingStopsTheTask:
+    """Since the cull (27 October 2026) the documents never stop a task."""
 
-    worktree = _worktree(root)
-    manager = MagicMock()
-    manager.create.return_value = worktree
-    manager.worktrees_dir = tmp_path / "worktrees"
-    invoker = MagicMock()
-    invoker.invoke_player = AsyncMock(side_effect=AssertionError("Player must not run"))
-    invoker.invoke_coach = AsyncMock(side_effect=AssertionError("Coach must not run"))
-    gates = MagicMock()
-    pre_loop_calls: list[Any] = []
-
-    async def execute(*args: Any, **kwargs: Any) -> PreLoopResult:
-        pre_loop_calls.append(args)
-        return PreLoopResult(
-            plan={"steps": []}, plan_path="/tmp/plan.md", complexity=3, max_turns=3,
-            checkpoint_passed=True, architectural_score=90, clarifications={},
-        )
-
-    gates.execute = execute
-    orch = AutoBuildOrchestrator(
-        repo_root=root,
-        max_turns=3,
-        worktree_manager=manager,
-        agent_invoker=invoker,
-        progress_display=MagicMock(),
-        pre_loop_gates=gates,
-        enable_checkpoints=False,
-        enable_context=False,
-    )
-    result = orch.orchestrate(
-        task_id="TASK-PD-020", requirements="reqs", acceptance_criteria=["AC-001: x"],
-    )
-    return result, invoker, pre_loop_calls
-
-
-class TestTaskStartRefusal:
-    def test_over_budget_declaration_stops_before_the_player_runs(
-        self, tmp_path: Path
-    ) -> None:
+    def test_large_declaration_is_captured_whole(self, tmp_path: Path) -> None:
         root = tmp_path / "wt"
-        big = "x" * (PROJECT_DOCUMENTS_BUDGET_BYTES + 1)
-        _write_project(root, documents={"docs/big.md": big})
-        result, invoker, pre_loop_calls = _orchestrate(tmp_path, root)
-        assert result.success is False
-        assert result.final_decision == "configuration_error"
-        assert result.total_turns == 0
-        assert "docs/big.md" in result.error
-        assert str(PROJECT_DOCUMENTS_BUDGET_BYTES) in result.error
-        invoker.invoke_player.assert_not_called()
-        invoker.invoke_coach.assert_not_called()
-        assert pre_loop_calls == []  # no planning model call either
-
-    def test_refusal_summary_names_files_sizes_and_limit(self, tmp_path: Path) -> None:
-        root = tmp_path / "wt"
-        big = "x" * (PROJECT_DOCUMENTS_BUDGET_BYTES + 1)
+        big = "x" * (200 * 1024)
         _write_project(root, documents={"docs/big.md": big})
         orch = _orchestrator(tmp_path, _real_signature_mock())
-        refusal = orch._capture_coach_project_documents("TASK-PD-050", _worktree(root))
-        assert refusal is not None
-        orch._project_documents_refusal = refusal
-        summary = orch._build_summary_details([], "configuration_error")
-        message = orch._build_error_message("configuration_error", [])
-        for text in (summary, message):
-            assert f"docs/big.md ({len(big)} bytes)" in text
-            assert str(PROJECT_DOCUMENTS_BUDGET_BYTES) in text
-            assert "task_type" not in text
-            assert "unknown configuration error" not in text
-        # An ordinary configuration error still reads as before.
-        plain = _orchestrator(tmp_path, _real_signature_mock())
-        assert "unknown configuration error" in plain._build_summary_details(
-            [], "configuration_error"
-        )
+        assert orch._capture_coach_project_documents("TASK-PD-050", _worktree(root)) is None
+        docs = orch._captured_coach_documents()["TASK-PD-050"]
+        assert [d.path for d in docs] == ["AGENTS.md", "docs/big.md"]
 
-    def test_orchestrate_summary_carries_the_refusal(self, tmp_path: Path) -> None:
-        root = tmp_path / "wt"
-        _write_project(root, documents={"docs/big.md": "x" * (PROJECT_DOCUMENTS_BUDGET_BYTES + 1)})
-        with patch.object(
-            AutoBuildOrchestrator, "_build_summary_details",
-            autospec=True, side_effect=AutoBuildOrchestrator._build_summary_details,
-        ) as summary:
-            result, _, _ = _orchestrate(tmp_path, root)
-        assert result.final_decision == "configuration_error"
-        rendered = [
-            AutoBuildOrchestrator._build_summary_details(*c.args) for c in summary.call_args_list
-        ]
-        assert rendered and all("docs/big.md" in r for r in rendered)
-
-    def test_linked_declared_document_stops_before_the_player_runs(
-        self, tmp_path: Path
-    ) -> None:
+    def test_linked_declared_document_is_left_out(self, tmp_path: Path) -> None:
         root = tmp_path / "wt"
         _write_project(root, documents={"docs/real.md": MISSION})
         (root / "docs" / "linked.md").symlink_to("real.md")
@@ -1068,54 +947,11 @@ class TestTaskStartRefusal:
             "autobuild:\n  player:\n    required_documents:\n      - docs/linked.md\n"
         )
         _commit_start(root)
-        result, invoker, _ = _orchestrate(tmp_path, root)
-        assert result.final_decision == "configuration_error"
-        assert "symbolic link" in result.error
-        invoker.invoke_player.assert_not_called()
-
-
-class TestLegacyCoach:
-    """Review fix 3: GUARDKIT_COACH_LEGACY=1 says it did not use the documents."""
-
-    def _legacy(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, documents):
-        monkeypatch.setenv("GUARDKIT_COACH_LEGACY", "1")
-        root = tmp_path / "wt"
-        _write_project(root, documents=documents)
-        invoke = _real_signature_mock()
-        orch = _orchestrator(tmp_path, invoke)
-        orch._evidence_repo_gate = MagicMock(return_value=None)  # type: ignore[method-assign]
-        orch._direct_mode_evidence_gate = MagicMock(return_value=None)  # type: ignore[method-assign]
-        with patch("guardkit.orchestrator.autobuild.CoachValidator") as validator_class:
-            validator = MagicMock()
-            validator.validate.return_value.to_dict.return_value = {"decision": "approve"}
-            validator.save_decision.return_value = tmp_path / "absent.json"
-            validator_class.return_value = validator
-            result = orch._invoke_coach_safely(
-                task_id="TASK-PD-030", turn=1, requirements="reqs",
-                player_report={"files_modified": []}, worktree=_worktree(root),
-            )
-        return root, result, invoke
-
-    def test_declared_documents_unused_is_warned_and_recorded(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
-    ) -> None:
-        root, result, invoke = self._legacy(
-            tmp_path, monkeypatch, {"docs/mission.md": MISSION}
-        )
-        assert result.success is True
-        invoke.assert_not_awaited()
-        record = _record(root, "TASK-PD-030", 1)
-        assert record["note"] == "declared documents not used by the legacy Coach"
-        assert record["section_sha256"] is None
-        assert [d["path"] for d in record["documents"]] == ["AGENTS.md", "docs/mission.md"]
-        assert any("legacy rule-based Coach" in r.getMessage() for r in caplog.records)
-
-    def test_undeclared_project_writes_nothing(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        root, result, _ = self._legacy(tmp_path, monkeypatch, {})
-        assert result.success is True
-        assert not list(root.rglob("coach_project_documents_*.json"))
+        orch = _orchestrator(tmp_path, _real_signature_mock())
+        assert orch._capture_coach_project_documents("TASK-PD-051", _worktree(root)) is None
+        assert [d.path for d in orch._captured_coach_documents()["TASK-PD-051"]] == [
+            "AGENTS.md"
+        ]
 
 
 class TestReadingRuleAtTheCoachCapture:
@@ -1151,12 +987,12 @@ class TestReadingRuleAtTheCoachCapture:
         assert refusal is None
         assert [(d.path, d.text) for d in docs][0] == (".claude/CLAUDE.md", "# Shared\n")
 
-    def test_outside_repo_refused(self, tmp_path: Path) -> None:
+    def test_outside_repo_is_left_out(self, tmp_path: Path) -> None:
         refusal, docs = self._capture(
             tmp_path, lambda r: (r / "CLAUDE.md").symlink_to("../../outside.md")
         )
-        assert refusal and "leads outside the repository" in refusal
-        assert docs is None
+        assert refusal is None
+        assert [d.path for d in docs] == ["docs/mission.md"]
 
     def test_crlf_kept(self, tmp_path: Path) -> None:
         crlf = b"Status: accepted\r\n\r\nLine two.\r\n"
@@ -1167,12 +1003,12 @@ class TestReadingRuleAtTheCoachCapture:
         mission = next(d for d in docs if d.path == "docs/mission.md")
         assert mission.text.encode() == crlf and mission.sha256 == _sha(crlf)
 
-    def test_invalid_utf8_refused(self, tmp_path: Path) -> None:
+    def test_invalid_utf8_is_left_out(self, tmp_path: Path) -> None:
         refusal, docs = self._capture(
             tmp_path, lambda r: (r / "docs" / "mission.md").write_bytes(b"\xff\xfe bad\n")
         )
-        assert refusal and "not valid UTF-8" in refusal
-        assert docs is None
+        assert refusal is None
+        assert docs == ()
 
 
 class TestSnapshotIsTheBuildsIdentity:
@@ -1289,13 +1125,3 @@ class TestSnapshotIsTheBuildsIdentity:
             )
         feature_orch._worktree_manager.create.assert_called_once()
         assert not snapshot.exists()
-
-
-def test_budget_is_128_kib_the_same_value_forge_uses_for_the_planning_writers() -> None:
-    """GuardKit's Coach budget and Forge's planning budget are kept in step.
-
-    Forge's ``PROJECT_DOCUMENTS_BUDGET_BYTES`` (in
-    ``src/forge/planning/project_documents.py``) has its own test pinning the
-    same number; change both together.
-    """
-    assert PROJECT_DOCUMENTS_BUDGET_BYTES == 131_072

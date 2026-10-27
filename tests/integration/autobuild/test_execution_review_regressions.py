@@ -5,13 +5,11 @@ Only temporary Git repositories, deterministic fakes and owned Python children.
 
 import importlib.util
 from pathlib import Path
-import subprocess
-import sys
 from types import SimpleNamespace
 
 import pytest
 
-from guardkit.orchestrator import process_group, task_work_scope
+from guardkit.orchestrator import task_work_scope
 from guardkit.orchestrator.agent_invoker import AgentInvoker
 from guardkit.orchestrator.coach_verification import CoachVerifier
 from guardkit.orchestrator.feature_orchestrator import (
@@ -19,12 +17,7 @@ from guardkit.orchestrator.feature_orchestrator import (
     TaskExecutionResult,
 )
 from guardkit.orchestrator.quality_gates.coach_validator import CoachValidator
-from guardkit.orchestrator.state_detection import detect_test_results
-from guardkit.orchestrator.task_work_scope import (
-    checkout_lease,
-    current_lease,
-    ScopeUnavailable,
-)
+from guardkit.orchestrator.task_work_scope import checkout_lease
 
 _spec = importlib.util.spec_from_file_location(
     "execution_scope_test_helpers",
@@ -114,107 +107,6 @@ def _execute(runner, root, task_id):
         SimpleNamespace(id="FEAT"),
         SimpleNamespace(path=root),
     )
-
-
-@pytest.mark.parametrize("consumer", ["runtime", "independent", "recovery"])
-def test_unknown_child_blocks_approval_but_not_the_successor_through_real_consumers(
-    tmp_path, monkeypatch, consumer
-):
-    import guardkit.orchestrator.quality_gates.coach_validator as cv
-    import guardkit.orchestrator.project_command_env as command_env
-
-    root = _helpers.repository(tmp_path / "repo")
-    children = []
-
-    def unknown(*args, **kwargs):
-        children.append(
-            subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
-        )
-        raise process_group.CleanupUnavailableError("fixture child termination unknown")
-
-    monkeypatch.setattr(process_group, "run_project_command", unknown)
-    monkeypatch.setattr(cv, "_checker_env", lambda *args, **kwargs: {})
-    monkeypatch.setattr(cv, "_checker_declared_env", lambda *args, **kwargs: {})
-    monkeypatch.setattr(
-        command_env, "main_checkout_environment", lambda *args, **kwargs: {}
-    )
-    validator = CoachValidator(
-        str(root),
-        smoke_command="fixture",
-        test_command="fixture",
-        wave_size=1,
-        coach_test_execution="subprocess",
-    )
-
-    def check():
-        if consumer == "runtime":
-            assert validator._gather_runtime_parity().ran is False
-        elif consumer == "independent":
-            assert validator.run_independent_tests().tests_passed is False
-        else:
-            result = detect_test_results(root, "TASK-A", 1)
-            assert result.tests_passed is False
-            assert "fixture child termination unknown" in result.error
-
-    runner, entered = _task_runner(root, check)
-    try:
-        first = _execute(runner, root, "TASK-A")
-        assert len(children) == 1
-        assert children[0].poll() is None
-        assert first.success is False
-        assert "CleanupUnavailableError" in first.error
-        # Step 2 (26 October 2026): the next task is admitted (one writer at
-        # a time is the only rule); its own check meets the same unknown child.
-        second = _execute(runner, root, "TASK-B")
-        assert second.success is False
-        assert entered == ["TASK-A", "TASK-B"]
-        assert current_lease() is None
-    finally:
-        for child in children:
-            child.terminate()
-            child.wait(timeout=5)
-
-
-@pytest.mark.parametrize("entrypoint", ["run_project_command", "run_in_own_group"])
-def test_command_boundary_preserves_typed_cleanup_failure_before_advisory_catch(
-    tmp_path, monkeypatch, entrypoint
-):
-    root = _helpers.repository(tmp_path / "repo")
-    children = []
-    failure = process_group.CleanupUnavailableError("fixture cleanup unavailable")
-
-    def interrupted(proc, *args, **kwargs):
-        children.append(proc)
-        raise failure
-
-    monkeypatch.setattr(process_group, "_check_capability", lambda: None)
-    monkeypatch.setattr(process_group, "_run", interrupted)
-    try:
-        with checkout_lease(root) as lease:
-            lease.admit("TASK-CHILD")
-            with pytest.raises(process_group.CleanupUnavailableError) as caught:
-                getattr(process_group, entrypoint)(
-                    [sys.executable, "-c", "import time; time.sleep(30)"],
-                    cwd=root,
-                    env={},
-                    timeout=5,
-                )
-            assert caught.value is failure
-            assert children[0].poll() is None
-            assert "CleanupUnavailableError" in lease.failure
-            # An advisory catcher cannot launch another command afterwards.
-            with pytest.raises(ScopeUnavailable):
-                process_group.run_project_command("ignored", cwd=root, env={})
-            assert len(children) == 1
-        with checkout_lease(root) as lease:  # the next writer is admitted (step 2)
-            lease.admit("TASK-NEXT")
-    finally:
-        for child in children:
-            child.terminate()
-            child.wait(timeout=5)
-            for stream in (child.stdout, child.stderr):
-                if stream:
-                    stream.close()
 
 
 def test_written_observations_do_not_replace_fabricated_or_unstaged_claims(tmp_path):

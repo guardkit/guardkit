@@ -1,14 +1,12 @@
 """Unit tests for AgentInvoker task-work results writing functionality.
 
 This module tests the TaskWorkResult writing capabilities of AgentInvoker,
-specifically the _write_task_work_results(), _generate_summary(), and
-_validate_file_count_constraint() methods that support Coach validation.
+specifically the _write_task_work_results() and _generate_summary() methods.
 
 Test Coverage:
 - File creation with valid parsed results
 - Quality gates data structure validation
 - Partial results on timeout handling
-- File count constraint validation
 - CoachValidator integration readiness
 """
 
@@ -23,7 +21,6 @@ import pytest
 
 from guardkit.orchestrator.agent_invoker import (
     AgentInvoker,
-    DOCUMENTATION_LEVEL_MAX_FILES,
     _build_task_work_runtime_evidence,
     _runtime_tool_category,
 )
@@ -243,8 +240,8 @@ class TestWriteTaskWorkResults:
         results = json.loads(result_path.read_text())
 
         # Should be deduplicated and sorted
-        assert results["files_created"] == ["file1.py", "file2.py"]
-        assert results["files_modified"] == ["file3.py"]
+        assert results["claimed_files_created"] == ["file1.py", "file2.py"]
+        assert results["claimed_files_modified"] == ["file3.py"]
 
     def test_sorts_file_lists(self, agent_invoker):
         """Test that file lists are sorted."""
@@ -263,8 +260,8 @@ class TestWriteTaskWorkResults:
         results = json.loads(result_path.read_text())
 
         # Should be alphabetically sorted
-        assert results["files_created"] == ["alpha.py", "beta.py", "zebra.py"]
-        assert results["files_modified"] == ["a_file.py", "z_file.py"]
+        assert results["claimed_files_created"] == ["alpha.py", "beta.py", "zebra.py"]
+        assert results["claimed_files_modified"] == ["a_file.py", "z_file.py"]
 
     def test_handles_missing_optional_fields(self, agent_invoker):
         """Test that missing optional fields are handled gracefully."""
@@ -493,112 +490,6 @@ class TestGenerateSummary:
 # ==================== Tests for _validate_file_count_constraint ====================
 
 
-class TestValidateFileCountConstraint:
-    """Test suite for _validate_file_count_constraint method."""
-
-    def test_no_error_when_under_limit(self, agent_invoker, caplog):
-        """Test that no warning when files are under limit."""
-        task_id = "TASK-021"
-        files_created = ["file1.py"]  # Under limit of 2
-
-        agent_invoker._validate_file_count_constraint(
-            task_id, "minimal", files_created
-        )
-
-        # Should not log a warning
-        assert "constraint violated" not in caplog.text.lower()
-
-    def test_no_error_when_at_limit(self, agent_invoker, caplog):
-        """Test that no warning when files equal limit."""
-        task_id = "TASK-022"
-        files_created = ["file1.py", "file2.py"]  # Exactly at limit
-
-        agent_invoker._validate_file_count_constraint(
-            task_id, "minimal", files_created
-        )
-
-        assert "constraint violated" not in caplog.text.lower()
-
-    def test_warning_when_over_limit(self, agent_invoker, caplog):
-        """Test that warning is logged when over limit."""
-        task_id = "TASK-023"
-        files_created = ["file1.py", "file2.py", "file3.py"]  # Over limit
-
-        agent_invoker._validate_file_count_constraint(
-            task_id, "minimal", files_created
-        )
-
-        # Should log a warning
-        assert "constraint violated" in caplog.text.lower()
-        assert task_id in caplog.text
-
-    def test_comprehensive_level_has_no_limit(self, agent_invoker, caplog):
-        """Test that comprehensive level has no limit."""
-        task_id = "TASK-024"
-        files_created = [f"file{i}.py" for i in range(100)]
-
-        agent_invoker._validate_file_count_constraint(
-            task_id, "comprehensive", files_created
-        )
-
-        # Should not log a warning
-        assert "constraint violated" not in caplog.text.lower()
-
-    def test_standard_level_limit_is_two(self, agent_invoker, caplog):
-        """Test that standard level has limit of 2."""
-        task_id = "TASK-025"
-        files_created = ["file1.py", "file2.py", "file3.py"]
-
-        agent_invoker._validate_file_count_constraint(
-            task_id, "standard", files_created
-        )
-
-        assert "constraint violated" in caplog.text.lower()
-        assert "3 files" in caplog.text
-        assert "max allowed 2" in caplog.text
-
-    def test_warning_includes_file_preview(self, agent_invoker, caplog):
-        """Test that warning includes preview of files."""
-        task_id = "TASK-026"
-        files_created = ["file1.py", "file2.py", "file3.py"]
-
-        agent_invoker._validate_file_count_constraint(
-            task_id, "minimal", files_created
-        )
-
-        # Should show first 5 files
-        assert "file1.py" in caplog.text
-
-    def test_warning_shows_ellipsis_for_many_files(self, agent_invoker, caplog):
-        """Test that warning shows ellipsis when more than 5 files."""
-        task_id = "TASK-027"
-        files_created = [f"file{i}.py" for i in range(10)]
-
-        agent_invoker._validate_file_count_constraint(
-            task_id, "minimal", files_created
-        )
-
-        assert "..." in caplog.text
-
-    def test_unknown_level_treated_as_no_limit(self, agent_invoker, caplog):
-        """Test that unknown documentation level has no limit."""
-        task_id = "TASK-028"
-        files_created = [f"file{i}.py" for i in range(50)]
-
-        agent_invoker._validate_file_count_constraint(
-            task_id, "unknown_level", files_created
-        )
-
-        # Should not log a warning
-        assert "constraint violated" not in caplog.text.lower()
-
-    def test_documentation_level_constants_correct(self):
-        """Test that DOCUMENTATION_LEVEL_MAX_FILES has expected values."""
-        assert DOCUMENTATION_LEVEL_MAX_FILES["minimal"] == 2
-        assert DOCUMENTATION_LEVEL_MAX_FILES["standard"] == 2
-        assert DOCUMENTATION_LEVEL_MAX_FILES["comprehensive"] is None
-
-
 # ==================== Tests for Timeout/Partial Results ====================
 
 
@@ -651,8 +542,8 @@ class TestPartialResultsOnTimeout:
         )
 
         results = json.loads(result_path.read_text())
-        assert results["files_created"] == []
-        assert results["files_modified"] == ["src/main.py"]
+        assert results["claimed_files_created"] == []
+        assert results["claimed_files_modified"] == ["src/main.py"]
 
 
 # ==================== Integration Tests ====================
@@ -802,8 +693,8 @@ class TestEdgeCases:
         )
 
         results = json.loads(result_path.read_text())
-        assert len(results["files_created"]) == 500
-        assert len(results["files_modified"]) == 300
+        assert len(results["claimed_files_created"]) == 500
+        assert len(results["claimed_files_modified"]) == 300
 
     def test_handles_special_characters_in_file_paths(self, agent_invoker):
         """Test handling of special characters in file paths."""
@@ -822,7 +713,7 @@ class TestEdgeCases:
         )
 
         results = json.loads(result_path.read_text())
-        assert len(results["files_created"]) == 3
+        assert len(results["claimed_files_created"]) == 3
 
     def test_handles_unicode_in_result_data(self, agent_invoker):
         """Test handling of unicode characters in result data."""
@@ -837,7 +728,7 @@ class TestEdgeCases:
         )
 
         results = json.loads(result_path.read_text())
-        assert "файл.py" in results["files_created"]
+        assert "файл.py" in results["claimed_files_created"]
 
     def test_handles_very_long_coverage_precision(self, agent_invoker):
         """Test handling of coverage with many decimal places."""
@@ -1224,7 +1115,10 @@ class TestWriteFailureResults:
         assert results["error_type"] == "TimeoutError"
         assert results["phases"] == {}
         assert results["quality_gates"]["all_passed"] is False
-        assert results["files_modified"] == ["src/service.py"]
+        # files_modified is the observed git inventory, which this plain
+        # (non-git) folder cannot give; the recovered claim is not promoted.
+        assert results["file_inventory_available"] is False
+        assert results["files_modified"] == []
         assert results["tests_written"] == ["tests/test_service.py"]
         assert results["recovery"]["tests_passed"] is True
         assert results["recovery"]["completion_claimed"] is False
@@ -1298,113 +1192,6 @@ class TestFailureResultsCoachIntegration:
 
         # Both should write to the same path
         assert failure_path == success_path
-
-
-# ==================== Tests for Code Review Field (TASK-FBSDK-018) ====================
-
-
-class TestCodeReviewFieldExtraction:
-    """Test suite for architectural review score extraction to code_review field.
-
-    TASK-FBSDK-018: Extract code_review field from task-work results with
-    architectural review score and optional SOLID/DRY/YAGNI subscores.
-    """
-
-    def test_code_review_extracted_when_architectural_review_present(
-        self, agent_invoker
-    ):
-        """Test that code_review field is created when architectural_review data exists."""
-        task_id = "TASK-046"
-        result_data = {
-            "tests_passed": 10,
-            "tests_failed": 0,
-            "quality_gates_passed": True,
-            "architectural_review": {
-                "score": 85,
-                "solid": 80,
-                "dry": 90,
-                "yagni": 85,
-            },
-        }
-
-        result_path = agent_invoker._write_task_work_results(
-            task_id, result_data, "standard"
-        )
-
-        results = json.loads(result_path.read_text())
-
-        # Verify code_review field is present
-        assert "code_review" in results
-        assert "score" in results["code_review"]
-        assert results["code_review"]["score"] == 85
-
-    def test_code_review_includes_all_subscores(self, agent_invoker):
-        """Test that code_review includes SOLID, DRY, YAGNI subscores when available."""
-        task_id = "TASK-047"
-        result_data = {
-            "tests_passed": 5,
-            "tests_failed": 0,
-            "architectural_review": {
-                "score": 75,
-                "solid": 70,
-                "dry": 75,
-                "yagni": 80,
-            },
-        }
-
-        result_path = agent_invoker._write_task_work_results(
-            task_id, result_data, "standard"
-        )
-
-        results = json.loads(result_path.read_text())
-        code_review = results["code_review"]
-
-        # Verify all subscores are present
-        assert code_review["score"] == 75
-        assert code_review["solid"] == 70
-        assert code_review["dry"] == 75
-        assert code_review["yagni"] == 80
-
-    def test_code_review_handles_partial_subscores(self, agent_invoker):
-        """Test that code_review works with only score (no subscores)."""
-        task_id = "TASK-048"
-        result_data = {
-            "tests_passed": 8,
-            "tests_failed": 0,
-            "architectural_review": {"score": 65},
-        }
-
-        result_path = agent_invoker._write_task_work_results(
-            task_id, result_data, "standard"
-        )
-
-        results = json.loads(result_path.read_text())
-        code_review = results["code_review"]
-
-        # Should have score but no subscores
-        assert code_review["score"] == 65
-        assert "solid" not in code_review
-        assert "dry" not in code_review
-        assert "yagni" not in code_review
-
-    def test_code_review_omitted_when_no_architectural_review(self, agent_invoker):
-        """Test that code_review field is omitted when no architectural_review data."""
-        task_id = "TASK-049"
-        result_data = {
-            "tests_passed": 12,
-            "tests_failed": 0,
-            "quality_gates_passed": True,
-            # No architectural_review key
-        }
-
-        result_path = agent_invoker._write_task_work_results(
-            task_id, result_data, "standard"
-        )
-
-        results = json.loads(result_path.read_text())
-
-        # code_review should not be present if no arch review data
-        assert "code_review" not in results
 
 
 # ==================== Tests for tests_written Field (TASK-FIX-93A1) ====================

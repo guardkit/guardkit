@@ -28,7 +28,6 @@ from generate_feature_yaml import (
     estimate_duration,
     generate_feature_id,
     build_task_file_path,  # Helper function for path construction
-    validate_task_paths,  # Post-creation path validation
     slugify_task_name,  # Re-exported from installer.core.lib.slug_utils
     discover_task_file,  # Disk-based file discovery (TASK-REV-8976)
 )
@@ -630,133 +629,6 @@ class TestBackwardCompatibility:
 
 
 # ============================================================================
-# 9. Post-Creation Path Validation Tests
-# ============================================================================
-
-class TestValidateTaskPaths:
-    """Tests for post-creation path validation."""
-
-    def test_validate_all_paths_exist(self, tmp_path):
-        """Test validation passes when all task files exist."""
-        # Create task files on disk
-        task_dir = tmp_path / "tasks" / "backlog" / "oauth2"
-        task_dir.mkdir(parents=True)
-        (task_dir / "TASK-001-auth-service.md").write_text("# Task 1")
-        (task_dir / "TASK-002-oauth-provider.md").write_text("# Task 2")
-
-        feature = FeatureFile(
-            id="FEAT-TEST",
-            name="Test Feature",
-            description="",
-            tasks=[
-                TaskSpec(
-                    id="TASK-001", name="Auth service", complexity=5,
-                    file_path="tasks/backlog/oauth2/TASK-001-auth-service.md"
-                ),
-                TaskSpec(
-                    id="TASK-002", name="OAuth provider", complexity=6,
-                    file_path="tasks/backlog/oauth2/TASK-002-oauth-provider.md"
-                ),
-            ],
-        )
-
-        errors = validate_task_paths(feature, tmp_path)
-        assert errors == []
-
-    def test_validate_missing_paths(self, tmp_path):
-        """Test validation reports missing task files."""
-        feature = FeatureFile(
-            id="FEAT-TEST",
-            name="Test Feature",
-            description="",
-            tasks=[
-                TaskSpec(
-                    id="TASK-001", name="Auth service", complexity=5,
-                    file_path="tasks/backlog/oauth2/TASK-001-auth-service.md"
-                ),
-            ],
-        )
-
-        errors = validate_task_paths(feature, tmp_path)
-        assert len(errors) == 1
-        assert "TASK-001" in errors[0]
-        assert "file not found" in errors[0]
-
-    def test_validate_partial_missing(self, tmp_path):
-        """Test validation reports only missing files, not existing ones."""
-        task_dir = tmp_path / "tasks" / "backlog" / "oauth2"
-        task_dir.mkdir(parents=True)
-        (task_dir / "TASK-001-auth-service.md").write_text("# Task 1")
-
-        feature = FeatureFile(
-            id="FEAT-TEST",
-            name="Test Feature",
-            description="",
-            tasks=[
-                TaskSpec(
-                    id="TASK-001", name="Auth service", complexity=5,
-                    file_path="tasks/backlog/oauth2/TASK-001-auth-service.md"
-                ),
-                TaskSpec(
-                    id="TASK-002", name="OAuth provider", complexity=6,
-                    file_path="tasks/backlog/oauth2/TASK-002-oauth-provider.md"
-                ),
-            ],
-        )
-
-        errors = validate_task_paths(feature, tmp_path)
-        assert len(errors) == 1
-        assert "TASK-002" in errors[0]
-
-    def test_validate_empty_file_path_skipped(self, tmp_path):
-        """Test that tasks with empty file_path are skipped (no false positive)."""
-        feature = FeatureFile(
-            id="FEAT-TEST",
-            name="Test Feature",
-            description="",
-            tasks=[
-                TaskSpec(
-                    id="TASK-001", name="Auth service", complexity=5,
-                    file_path=""
-                ),
-            ],
-        )
-
-        errors = validate_task_paths(feature, tmp_path)
-        assert errors == []
-
-    def test_validate_no_tasks(self, tmp_path):
-        """Test validation with no tasks returns empty list."""
-        feature = FeatureFile(
-            id="FEAT-TEST",
-            name="Test Feature",
-            description="",
-            tasks=[],
-        )
-
-        errors = validate_task_paths(feature, tmp_path)
-        assert errors == []
-
-    def test_validate_error_message_includes_path(self, tmp_path):
-        """Test error message includes the expected file path."""
-        feature = FeatureFile(
-            id="FEAT-TEST",
-            name="Test Feature",
-            description="",
-            tasks=[
-                TaskSpec(
-                    id="TASK-XYZ", name="Missing task", complexity=3,
-                    file_path="tasks/backlog/my-feature/TASK-XYZ-missing-task.md"
-                ),
-            ],
-        )
-
-        errors = validate_task_paths(feature, tmp_path)
-        assert len(errors) == 1
-        assert "tasks/backlog/my-feature/TASK-XYZ-missing-task.md" in errors[0]
-
-
-# ============================================================================
 # 10. CLI Validation Tests (TASK-FIX-FP04)
 # ============================================================================
 
@@ -811,7 +683,6 @@ class TestFeatureSlugValidation:
             "--task", "TASK-001:Create service:5:",
             "--feature-slug", "my-feature",
             "--base-path", str(tmp_path),
-            "--lenient",
             "--quiet",
         ]
 
@@ -836,7 +707,6 @@ class TestFeatureSlugValidation:
             "--task", "TASK-002:Add tests:3:TASK-001",
             "--feature-slug", "my-feature",
             "--base-path", str(tmp_path),
-            "--lenient",
             "--quiet",
         ]
 
@@ -973,7 +843,7 @@ class TestDiscoverTaskFile:
 
 
 # ============================================================================
-# 12. CLI --discover and --strict/--lenient Tests (TASK-REV-8976)
+# 12. CLI --discover Tests (TASK-REV-8976)
 # ============================================================================
 
 class TestDiscoverCLI:
@@ -1015,48 +885,6 @@ class TestDiscoverCLI:
         assert paths["TASK-001"] == "tasks/backlog/my-feature/TASK-001-setup-auth.md"
         assert paths["TASK-002"] == "tasks/backlog/my-feature/TASK-002-add-tests.md"
 
-    def test_strict_mode_is_default(self, tmp_path, capsys):
-        """Test that --strict is the default and exits on path validation errors."""
-        from generate_feature_yaml import main
-
-        # No task files on disk → path validation fails
-        sys.argv = [
-            "generate_feature_yaml.py",
-            "--name", "Test Feature",
-            "--task", "TASK-001:Create service:5:",
-            "--feature-slug", "my-feature",
-            "--base-path", str(tmp_path),
-            "--quiet",
-        ]
-
-        with pytest.raises(SystemExit) as exc_info:
-            main()
-
-        assert exc_info.value.code == 1
-        captured = capsys.readouterr()
-        assert "Path validation failed" in captured.err
-
-    def test_lenient_flag_downgrades_to_warnings(self, tmp_path, capsys):
-        """Test --lenient makes path validation non-fatal."""
-        from generate_feature_yaml import main
-
-        # No task files on disk → path validation would fail in strict mode
-        sys.argv = [
-            "generate_feature_yaml.py",
-            "--name", "Test Feature",
-            "--task", "TASK-001:Create service:5:",
-            "--feature-slug", "my-feature",
-            "--base-path", str(tmp_path),
-            "--lenient",
-            "--quiet",
-        ]
-
-        # Should NOT exit with error
-        main()
-
-        captured = capsys.readouterr()
-        assert "Path validation warnings" in captured.err
-
     def test_discover_with_missing_files_falls_back(self, tmp_path, capsys):
         """Test --discover falls back to derived path when file not found on disk."""
         from generate_feature_yaml import main
@@ -1076,7 +904,6 @@ class TestDiscoverCLI:
             "--feature-slug", "my-feature",
             "--base-path", str(tmp_path),
             "--discover",
-            "--lenient",
             "--quiet",
         ]
 

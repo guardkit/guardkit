@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import stat
 import subprocess
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
@@ -21,7 +20,6 @@ from guardkit.orchestrator.quality_gates.coach_validator import (
     CoachValidator,
     IndependentTestResult,
 )
-from guardkit.orchestrator.toolchain_declaration import parse_toolchain_block
 
 
 TASK_ID = "TASK-ATTRIBUTION"
@@ -142,7 +140,9 @@ def _served_synthesis_prompt(
                 acceptance_criteria=[{"id": "AC-001", "text": CRITERION}],
             )
         )
-    assert result.success is False
+    # The reviewer's verdict is advice: a failed reviewer call approves.
+    assert result.success is True
+    assert result.report["decision"] == "approve"
     call.assert_awaited_once()
     kwargs = call.await_args.kwargs
     assert kwargs["synthesis"] is True
@@ -163,14 +163,11 @@ def test_mixed_measurements_keep_their_sources_in_served_synthesis_prompt(
     bundle = _gather(tmp_path)
     serialized = bundle.to_dict()
     assert bundle.gathering_status == "complete"
-    assert serialized["tests"]["tests_run"] is None
-    assert serialized["coverage_details"]["line_coverage"] == 96.5
-    assert serialized["coverage_details"]["provenance"] == (
-        "player_task_work_results"
-    )
-    assert serialized["quality_gates"]["coverage_required"] is False
-    assert serialized["quality_gates"]["coverage_met"] is True
-    assert serialized["quality_gates"]["coverage_receipt"] is None
+    # 27 October 2026 cull: the bundle carries only the project's own checks;
+    # the builder's reported counts and coverage are not copied into it.
+    assert "tests" not in serialized
+    assert "coverage_details" not in serialized
+    assert "quality_gates" not in serialized
     assert serialized["independent_tests"]["test_command"].startswith(
         "bash reference/check.sh"
     )
@@ -184,8 +181,6 @@ def test_mixed_measurements_keep_their_sources_in_served_synthesis_prompt(
     flat_prompt = " ".join(prompt.split())
 
     assert '"tests_passed": 125' in prompt
-    assert '"line_coverage": 96.5' in prompt
-    assert '"provenance": "player_task_work_results"' in prompt
     assert "root check has no parts yet" in prompt
     assert "Player-reported test counts and coverage remain Player-reported" in prompt
     assert "independent_tests proves only its recorded command" in prompt
@@ -193,54 +188,3 @@ def test_mixed_measurements_keep_their_sources_in_served_synthesis_prompt(
     assert "exit-zero generic check does not certify" in flat_prompt
     assert "has ALREADY run the tests, coverage" not in prompt
     assert "the orchestrator ran them, not the Player" not in prompt
-
-
-def test_real_coverage_receipt_only_supports_measurements_in_its_output(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _init_worktree(tmp_path)
-    results = _reported_results(task_type="feature")
-    _write_results(tmp_path, results)
-    config = tmp_path / ".guardkit" / "config.yaml"
-    config.parent.mkdir(exist_ok=True)
-    config.write_text(
-        "toolchain:\n  coverage: ./measure-coverage.sh\n",
-        encoding="utf-8",
-    )
-    coverage_script = tmp_path / "measure-coverage.sh"
-    coverage_script.write_text(
-        "#!/bin/sh\necho 'independently measured line coverage: 88.0%'\n",
-        encoding="utf-8",
-    )
-    coverage_script.chmod(coverage_script.stat().st_mode | stat.S_IEXEC)
-
-    toolchain = parse_toolchain_block(
-        {"coverage": "./measure-coverage.sh"}
-    )
-    bundle = _gather(
-        tmp_path, task_type="feature", toolchain=toolchain
-    )
-    serialized = bundle.to_dict()
-    details = serialized["coverage_details"]
-    receipt = details["coverage_receipt"]
-    assert bundle.gathering_status == "complete"
-    assert serialized["quality_gates"]["coverage_required"] is True
-    assert serialized["quality_gates"]["coverage_met"] is True
-    assert details["line_coverage"] == 96.5
-    assert receipt["command"] == "./measure-coverage.sh"
-    assert receipt["exit_code"] == 0
-    assert "independently measured line coverage: 88.0%" in receipt["output_tail"]
-    assert "96.5" not in receipt["output_tail"]
-
-    prompt = _served_synthesis_prompt(
-        tmp_path, bundle, results, monkeypatch
-    )
-    flat_prompt = " ".join(prompt.split())
-    assert "independently measured line coverage: 88.0%" in prompt
-    assert '"line_coverage": 96.5' in prompt
-    assert "only the command, output, and measurements it records" in flat_prompt
-    assert (
-        "tests and coverage_details may contain Player-reported facts"
-        in flat_prompt
-    )

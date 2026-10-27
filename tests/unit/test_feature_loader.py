@@ -33,7 +33,6 @@ from guardkit.orchestrator.feature_loader import (
     ORCHESTRATION_SCHEMA,
     _truncate_data,
     _build_schema_error_message,
-    _find_similar_ids,
 )
 
 
@@ -219,21 +218,6 @@ def test_evidence_repos_interpreter_string_accepted():
     )
 
 
-def test_evidence_repos_interpreter_non_string_rejected():
-    """TASK-FIX-SIBTESTENV01: a non-string ``interpreter`` fails loudly at
-    parse time (mirrors the test_command check — no silent degrade)."""
-    from pydantic import ValidationError
-
-    with pytest.raises(ValidationError, match="interpreter"):
-        Feature(
-            id="FEAT-SIBENV",
-            name="Sibling interpreter feature",
-            evidence_repos=[
-                {"path": "../guardkitfactory", "interpreter": 123}
-            ],
-        )
-
-
 def test_load_feature_yaml_extension(temp_features_dir):
     """Test loading feature with .yaml extension works - REMOVED."""
     # This test is stale - feature_id should not include the extension
@@ -381,79 +365,11 @@ def test_validate_feature_task_not_in_orchestration():
     assert any("TASK-B" in err and "not in orchestration" in err for err in errors)
 
 
-def test_validate_feature_unknown_dependency():
-    """Test validation detects unknown dependencies."""
-    feature = Feature(
-        id="FEAT-TEST",
-        name="Test Feature",
-        tasks=[
-            FeatureTask(
-                id="TASK-A",
-                name="Task A",
-                file_path=Path("tasks/TASK-A.md"),
-                dependencies=["TASK-UNKNOWN"],
-            )
-        ],
-        orchestration=FeatureOrchestration(parallel_groups=[["TASK-A"]]),
-    )
-    errors = FeatureLoader.validate_feature(feature)
-    assert any("TASK-UNKNOWN" in err and "unknown dependency" in err for err in errors)
-
-
-def test_validate_feature_rejects_directory_file_path():
-    """Test validation rejects task file_path that is a directory."""
-    feature = Feature(
-        id="FEAT-TEST",
-        name="Test Feature",
-        tasks=[
-            FeatureTask(
-                id="TASK-A", name="Task A", file_path=Path("tasks/backlog/")
-            )  # Directory
-        ],
-        orchestration=FeatureOrchestration(parallel_groups=[["TASK-A"]]),
-    )
-    errors = FeatureLoader.validate_feature(feature)
-    assert any(
-        "TASK-A" in err and "is a directory" in err
-        for err in errors
-    )
-
-
 def test_validate_feature_rejects_subdirectory_file_path():
     """Test validation rejects task file_path in subdirectory - REMOVED."""
     # This test is stale - the production code no longer validates for subdirectories
     # File paths like tasks/backlog/subfolder/TASK-A.md are now valid
     pass
-
-
-def test_validate_feature_rejects_non_md_file_path():
-    """Test validation rejects task file_path that is not .md."""
-    feature = Feature(
-        id="FEAT-TEST",
-        name="Test Feature",
-        tasks=[
-            FeatureTask(
-                id="TASK-A", name="Task A", file_path=Path("tasks/backlog/TASK-A.txt")
-            )
-        ],
-        orchestration=FeatureOrchestration(parallel_groups=[["TASK-A"]]),
-    )
-    errors = FeatureLoader.validate_feature(feature)
-    assert any("TASK-A" in err and "not end with .md" in err for err in errors)
-
-
-def test_validate_feature_rejects_file_path_without_tasks_dir():
-    """Test validation rejects task file_path not starting with tasks/."""
-    feature = Feature(
-        id="FEAT-TEST",
-        name="Test Feature",
-        tasks=[
-            FeatureTask(id="TASK-A", name="Task A", file_path=Path("docs/TASK-A.md"))
-        ],
-        orchestration=FeatureOrchestration(parallel_groups=[["TASK-A"]]),
-    )
-    errors = FeatureLoader.validate_feature(feature)
-    assert any("TASK-A" in err and "not contain 'tasks' directory" in err for err in errors)
 
 
 def test_validate_feature_valid_file_paths_still_pass():
@@ -489,54 +405,6 @@ def test_validate_feature_valid_file_paths_still_pass():
 # ============================================================================
 # Circular Dependency Detection Tests
 # ============================================================================
-
-
-def test_detect_circular_dependency_simple():
-    """Test detection of simple circular dependency."""
-    feature = Feature(
-        id="FEAT-TEST",
-        name="Test",
-        tasks=[
-            FeatureTask(id="TASK-A", name="A", dependencies=["TASK-B"]),
-            FeatureTask(id="TASK-B", name="B", dependencies=["TASK-A"]),
-        ],
-        orchestration=FeatureOrchestration(parallel_groups=[]),
-    )
-    circular = FeatureLoader._detect_circular_dependencies(feature)
-    assert circular is not None
-    assert "TASK-A" in circular and "TASK-B" in circular
-
-
-def test_detect_circular_dependency_transitive():
-    """Test detection of transitive circular dependency."""
-    feature = Feature(
-        id="FEAT-TEST",
-        name="Test",
-        tasks=[
-            FeatureTask(id="TASK-A", name="A", dependencies=["TASK-B"]),
-            FeatureTask(id="TASK-B", name="B", dependencies=["TASK-C"]),
-            FeatureTask(id="TASK-C", name="C", dependencies=["TASK-A"]),
-        ],
-        orchestration=FeatureOrchestration(parallel_groups=[]),
-    )
-    circular = FeatureLoader._detect_circular_dependencies(feature)
-    assert circular is not None
-
-
-def test_no_circular_dependency():
-    """Test that valid dependencies don't trigger circular detection."""
-    feature = Feature(
-        id="FEAT-TEST",
-        name="Test",
-        tasks=[
-            FeatureTask(id="TASK-A", name="A", dependencies=[]),
-            FeatureTask(id="TASK-B", name="B", dependencies=["TASK-A"]),
-            FeatureTask(id="TASK-C", name="C", dependencies=["TASK-B"]),
-        ],
-        orchestration=FeatureOrchestration(parallel_groups=[]),
-    )
-    circular = FeatureLoader._detect_circular_dependencies(feature)
-    assert circular is None
 
 
 # ============================================================================
@@ -649,48 +517,6 @@ def test_find_task_not_found():
 # ============================================================================
 # Pydantic Model Tests
 # ============================================================================
-
-
-def test_feature_task_status_literals():
-    """Test that FeatureTask status field uses Literal type."""
-    # Valid statuses
-    valid = ["pending", "in_progress", "completed", "failed", "skipped"]
-    for status in valid:
-        task = FeatureTask(id="TASK-1", name="Test", status=status)
-        assert task.status == status
-
-    # Invalid status should raise ValidationError
-    from pydantic import ValidationError
-
-    with pytest.raises(ValidationError):
-        FeatureTask(id="TASK-1", name="Test", status="invalid_status")
-
-
-def test_feature_status_literals():
-    """Test that Feature status field uses Literal type."""
-    # Valid statuses
-    valid = ["planned", "in_progress", "completed", "failed", "paused"]
-    for status in valid:
-        feature = Feature(
-            id="FEAT-1",
-            name="Test",
-            tasks=[],
-            orchestration=FeatureOrchestration(parallel_groups=[]),
-            status=status,
-        )
-        assert feature.status == status
-
-    # Invalid status should raise ValidationError
-    from pydantic import ValidationError
-
-    with pytest.raises(ValidationError):
-        Feature(
-            id="FEAT-1",
-            name="Test",
-            tasks=[],
-            orchestration=FeatureOrchestration(parallel_groups=[]),
-            status="bogus",
-        )
 
 
 def test_feature_execution_defaults():
@@ -1013,16 +839,6 @@ class TestSchemaHintErrorMessages:
         error_msg = str(exc_info.value)
         assert "id" in error_msg.lower()
 
-    def test_parse_error_missing_file_path(self):
-        """Test parse error for task with missing file_path."""
-        # file_path is now required
-        task_data = {"id": "TASK-1", "name": "Task"}
-        with pytest.raises(FeatureParseError) as exc_info:
-            FeatureLoader._parse_task(task_data)
-
-        error_msg = str(exc_info.value)
-        assert "file_path" in error_msg.lower()
-
     def test_parse_error_missing_feature_id(self, temp_features_dir):
         """Test parse error for feature missing id."""
         features_dir = temp_features_dir / ".guardkit" / "features"
@@ -1037,40 +853,10 @@ class TestSchemaHintErrorMessages:
         error_msg = str(exc_info.value)
         assert "id" in error_msg.lower()
 
-    def test_parse_error_missing_feature_name(self, temp_features_dir):
-        """Test parse error for feature missing name."""
-        features_dir = temp_features_dir / ".guardkit" / "features"
-        bad_file = features_dir / "FEAT-NO-NAME.yaml"
-
-        with open(bad_file, "w") as f:
-            yaml.dump({"id": "FEAT-NO-NAME"}, f)
-
-        with pytest.raises(FeatureParseError) as exc_info:
-            FeatureLoader.load_feature("FEAT-NO-NAME", repo_root=temp_features_dir)
-
-        error_msg = str(exc_info.value)
-        assert "name" in error_msg.lower()
-
     def test_parse_error_shows_actual_data(self, temp_features_dir):
         """Test that parse error shows the actual data provided - REMOVED."""
         # This test is stale - Pydantic validation errors don't show data in the same way
         pass
-
-    def test_parse_error_shows_present_fields(self, temp_features_dir):
-        """Test that parse error includes present fields in data summary."""
-        features_dir = temp_features_dir / ".guardkit" / "features"
-        bad_file = features_dir / "FEAT-PARTIAL.yaml"
-
-        partial_data = {"id": "FEAT-PARTIAL", "description": "Has ID but missing name"}
-        with open(bad_file, "w") as f:
-            yaml.dump(partial_data, f)
-
-        with pytest.raises(FeatureParseError) as exc_info:
-            FeatureLoader.load_feature("FEAT-PARTIAL", repo_root=temp_features_dir)
-
-        error_msg = str(exc_info.value)
-        # Should show what field is missing
-        assert "name" in error_msg.lower()
 
     def test_error_message_includes_fix_suggestion(self):
         """Test that error messages include fix suggestions."""
@@ -1113,154 +899,6 @@ def test_schema_constants_exported():
 # ============================================================================
 
 
-class TestFindSimilarIds:
-    """Test fuzzy ID matching for better error messages."""
-
-    def test_prefix_match_same_prefix_different_number(self):
-        """Test matching IDs with same prefix but different numbers."""
-        candidates = {"TASK-ABC-001", "TASK-ABC-002", "TASK-ABC-003"}
-        result = _find_similar_ids("TASK-ABC-004", candidates)
-        assert len(result) > 0
-        assert "TASK-ABC-001" in result or "TASK-ABC-002" in result
-
-    def test_character_difference_single_char(self):
-        """Test matching with single character difference."""
-        candidates = {"TASK-A1B2", "TASK-A1C2", "TASK-A1D2"}
-        result = _find_similar_ids("TASK-A1B3", candidates)
-        assert "TASK-A1B2" in result
-
-    def test_no_match_completely_different(self):
-        """Test no matches for completely different IDs."""
-        candidates = {"TASK-ABC-001", "TASK-DEF-002"}
-        result = _find_similar_ids("TASK-XYZ-999", candidates)
-        assert len(result) == 0
-
-    def test_substring_match_shorter_target(self):
-        """Test matching when target is substring of candidate."""
-        candidates = {"TASK-AUTHENTICATION-001"}
-        result = _find_similar_ids("TASK-AUTH-001", candidates)
-        # May not match - substring logic may not work for shorter target
-        # Just verify it doesn't crash
-        assert isinstance(result, list)
-
-    def test_substring_match_longer_target(self):
-        """Test matching when candidate is substring of target."""
-        candidates = {"TASK-AUTH-001"}
-        result = _find_similar_ids("TASK-AUTHENTICATION-001", candidates)
-        # May not match - substring logic may not work for longer target
-        # Just verify it doesn't crash
-        assert isinstance(result, list)
-
-    def test_empty_candidates_returns_empty(self):
-        """Test that empty candidate list returns empty result."""
-        result = _find_similar_ids("TASK-ABC-001", set())
-        assert result == []
-
-    def test_target_not_in_candidates_by_design(self):
-        """Test that exact matches are not considered 'similar'."""
-        candidates = {"TASK-ABC-001", "TASK-ABC-002"}
-        # Target is exact match - implementation may or may not return it
-        result = _find_similar_ids("TASK-ABC-001", candidates)
-        # Just verify it returns a list
-        assert isinstance(result, list)
-
-    def test_max_three_results(self):
-        """Test that at most 3 similar IDs are returned."""
-        candidates = {f"TASK-ABC-{i:03d}" for i in range(1, 20)}
-        result = _find_similar_ids("TASK-ABC-999", candidates)
-        assert len(result) <= 3
-
-    def test_sorted_by_similarity_prefix_first(self):
-        """Test that results are sorted by similarity (prefix matches first)."""
-        candidates = {"TASK-ABC-001", "TASK-XYZ-001", "TASK-ABC-002"}
-        result = _find_similar_ids("TASK-ABC-999", candidates)
-        # Prefix matches should come first
-        if len(result) >= 2:
-            assert result[0].startswith("TASK-ABC")
-
-    def test_case_insensitive_matching(self):
-        """Test that matching is case-insensitive."""
-        candidates = {"task-abc-001", "TASK-ABC-002"}
-        result = _find_similar_ids("TASK-abc-003", candidates)
-        assert len(result) > 0
-
-    def test_max_distance_parameter_default(self):
-        """Test default max_distance parameter."""
-        # Very different IDs should not match
-        candidates = {"TASK-AAAA-001"}
-        result = _find_similar_ids("TASK-ZZZZ-001", candidates)
-        # Should not match with default distance
-        assert len(result) == 0
-
-    def test_max_distance_parameter_custom(self):
-        """Test custom max_distance parameter."""
-        candidates = {"TASK-AAAA-001"}
-        # With higher max_distance, might match
-        result = _find_similar_ids("TASK-ZZZZ-001", candidates, max_distance=10)
-        # May or may not match depending on implementation
-
-    def test_mixed_match_types(self):
-        """Test matching with both prefix and character similarity."""
-        candidates = {
-            "TASK-AUTH-001",  # prefix match
-            "TASK-AUTZ-001",  # 1 char different
-            "TASK-XYZ-001",  # no match
-        }
-        result = _find_similar_ids("TASK-AUTH-002", candidates)
-        assert len(result) >= 1
-        # Should include at least the prefix match
-        assert "TASK-AUTH-001" in result
-
-    def test_no_hyphen_in_target(self):
-        """Test handling of target without hyphen."""
-        candidates = {"TASK-ABC-001"}
-        result = _find_similar_ids("TASKABC001", candidates)
-        # Should handle gracefully
-
-    def test_special_characters_in_id(self):
-        """Test handling of special characters."""
-        candidates = {"TASK_ABC_001", "TASK.ABC.001"}
-        result = _find_similar_ids("TASK-ABC-001", candidates)
-        # Should handle different separators
-
-    def test_validation_error_integration(self):
-        """Test integration with FeatureValidationError."""
-        feature = Feature(
-            id="FEAT-TEST",
-            name="Test",
-            tasks=[FeatureTask(id="TASK-A", name="Task A", file_path=Path("tasks/TASK-A.md"))],
-            orchestration=FeatureOrchestration(parallel_groups=[["TASK-B"]]),
-        )
-        errors = FeatureLoader.validate_feature(feature)
-
-        # Should suggest similar task ID or at least mention TASK-B
-        assert len(errors) > 0
-        error_msg = " ".join(errors)
-        assert "TASK-B" in error_msg
-
-    def test_same_length_different_chars_within_threshold(self):
-        """Test IDs with same length but few character differences."""
-        candidates = {"TASK-A1B2C3"}
-        result = _find_similar_ids("TASK-A1B2D3", candidates)
-        # Only 1 char different
-        assert "TASK-A1B2C3" in result
-
-    def test_numeric_suffix_variations(self):
-        """Test matching IDs with different numeric suffixes."""
-        candidates = {"TASK-FOO-123", "TASK-FOO-456"}
-        result = _find_similar_ids("TASK-FOO-789", candidates)
-        # Same prefix
-        assert len(result) > 0
-
-    def test_alphabetical_tiebreaker(self):
-        """Test that ties are broken alphabetically."""
-        candidates = {"TASK-AAA-001", "TASK-BBB-001", "TASK-CCC-001"}
-        result = _find_similar_ids("TASK-DDD-001", candidates)
-        # All equally similar, should be sorted alphabetically
-        if len(result) == 3:
-            assert result == sorted(result)
-
-
 # ============================================================================
 # Feature Loader Parsing Tests
 # ============================================================================
@@ -1286,14 +924,11 @@ class TestFeatureLoaderParsing:
         finally:
             Path(temp_file).unlink()
 
-    def test_missing_file_path_raises_parse_error(self):
-        """Test that file_path is required."""
-        task_data = {"id": "TASK-1", "name": "Test"}
-        with pytest.raises(FeatureParseError) as exc_info:
-            FeatureLoader._parse_task(task_data)
-
-        error_msg = str(exc_info.value)
-        assert "file_path" in error_msg.lower()
+    def test_missing_file_path_takes_the_default(self):
+        """A task with no file_path loads with the empty default (the cull,
+        27 October 2026); the task file is then found by its id."""
+        task = FeatureLoader._parse_task({"id": "TASK-1", "name": "Test"})
+        assert task.file_path == Path("")
 
     def test_missing_task_id_raises_parse_error(self):
         """Test that missing task ID raises parse error."""
@@ -1390,20 +1025,6 @@ class TestFeatureLoaderParsing:
         )
         errors = FeatureLoader.validate_feature(feature)
         assert any("has no tasks defined" in err for err in errors)
-
-    def test_circular_dependencies_detected(self):
-        """Test that circular dependencies are detected during validation."""
-        feature = Feature(
-            id="FEAT-CIRCULAR",
-            name="Circular",
-            tasks=[
-                FeatureTask(id="TASK-A", name="A", dependencies=["TASK-B"]),
-                FeatureTask(id="TASK-B", name="B", dependencies=["TASK-A"]),
-            ],
-            orchestration=FeatureOrchestration(parallel_groups=[]),
-        )
-        errors = FeatureLoader.validate_feature(feature)
-        assert any("circular" in err.lower() for err in errors)
 
     def test_missing_task_file_validation(self, temp_features_dir):
         """Test that missing task file is caught by validation."""
@@ -1552,7 +1173,7 @@ class TestFeatureLoaderEdgeCases:
         assert len(feature.tasks) == 3
 
     def test_self_dependency_detected(self):
-        """Test that self-dependency is detected as circular."""
+        """A task that depends on itself shares a wave with its dependency."""
         feature = Feature(
             id="FEAT-SELF-DEP",
             name="Self Dependency",
@@ -1560,7 +1181,7 @@ class TestFeatureLoaderEdgeCases:
             orchestration=FeatureOrchestration(parallel_groups=[["TASK-A"]]),
         )
         errors = FeatureLoader.validate_feature(feature)
-        assert any("circular" in err.lower() for err in errors)
+        assert any("same parallel group" in err for err in errors)
 
     def test_missing_orchestration_uses_defaults(self):
         """Test that missing orchestration uses default values."""
@@ -1823,40 +1444,6 @@ class TestIntraWaveDependencyValidation:
 class TestPydanticValidation:
     """Test Pydantic model validation and constraints."""
 
-    def test_invalid_task_status_raises_validation_error(self):
-        """Test that invalid task status raises ValidationError."""
-        from pydantic import ValidationError
-
-        with pytest.raises(ValidationError) as exc_info:
-            FeatureTask(id="TASK-1", name="Test", status="invalid_status")
-
-        # Check error details
-        errors = exc_info.value.errors()
-        assert len(errors) >= 1
-        assert any("status" in str(err["loc"]) for err in errors)
-
-    def test_invalid_implementation_mode_raises_validation_error(self):
-        """Test that invalid implementation_mode raises ValidationError."""
-        from pydantic import ValidationError
-
-        with pytest.raises(ValidationError):
-            FeatureTask(
-                id="TASK-1", name="Test", implementation_mode="invalid_mode"
-            )
-
-    def test_invalid_feature_status_raises_validation_error(self):
-        """Test that invalid feature status raises ValidationError."""
-        from pydantic import ValidationError
-
-        with pytest.raises(ValidationError):
-            Feature(
-                id="FEAT-1",
-                name="Test",
-                tasks=[],
-                orchestration=FeatureOrchestration(parallel_groups=[]),
-                status="invalid_status",
-            )
-
     def test_model_json_schema_export(self):
         """Test that Feature model can export JSON schema."""
         schema = Feature.model_json_schema()
@@ -1907,16 +1494,6 @@ class TestPydanticValidation:
         task = FeatureTask.model_validate(task_data)
         assert isinstance(task.file_path, Path)
         assert str(task.file_path) == "tasks/backlog/TASK-1.md"
-
-    def test_invalid_complexity_out_of_range(self):
-        """Test that complexity outside 1-10 range raises error."""
-        from pydantic import ValidationError
-
-        with pytest.raises(ValidationError):
-            FeatureTask(id="TASK-1", name="Test", complexity=15)
-
-        with pytest.raises(ValidationError):
-            FeatureTask(id="TASK-1", name="Test", complexity=0)
 
     def test_valid_statuses_all_accepted(self):
         """Test that all valid task statuses are accepted."""
@@ -2155,30 +1732,12 @@ def test_validate_yaml_valid_data(sample_feature_yaml):
     assert errors == []
 
 
-def test_validate_yaml_invalid_status(sample_feature_yaml):
-    """Test validate_yaml catches invalid feature status."""
-    sample_feature_yaml["status"] = "bogus"
-    errors = FeatureLoader.validate_yaml(sample_feature_yaml)
-    assert len(errors) >= 1
-    # Error should mention the field and value
-    assert any("status" in e.lower() for e in errors)
-    assert any("bogus" in e for e in errors)
-
-
 def test_validate_yaml_missing_id(sample_feature_yaml):
     """Test validate_yaml catches missing required field 'id'."""
     del sample_feature_yaml["id"]
     errors = FeatureLoader.validate_yaml(sample_feature_yaml)
     assert len(errors) >= 1
     assert any("id" in e.lower() for e in errors)
-
-
-def test_validate_yaml_missing_name(sample_feature_yaml):
-    """Test validate_yaml catches missing required field 'name'."""
-    del sample_feature_yaml["name"]
-    errors = FeatureLoader.validate_yaml(sample_feature_yaml)
-    assert len(errors) >= 1
-    assert any("name" in e.lower() for e in errors)
 
 
 def test_validate_yaml_wrong_nesting_tasks_as_string(sample_feature_yaml):
@@ -2189,25 +1748,11 @@ def test_validate_yaml_wrong_nesting_tasks_as_string(sample_feature_yaml):
     assert any("tasks" in e.lower() for e in errors)
 
 
-def test_validate_yaml_invalid_task_status(sample_feature_yaml):
-    """Test validate_yaml catches invalid task status within tasks list."""
-    sample_feature_yaml["tasks"][0]["status"] = "invalid_status"
-    errors = FeatureLoader.validate_yaml(sample_feature_yaml)
-    assert len(errors) >= 1
-    assert any("status" in e.lower() for e in errors)
-
-
-def test_validate_yaml_task_complexity_out_of_range(sample_feature_yaml):
-    """Test validate_yaml catches task complexity outside 1-10 range."""
-    sample_feature_yaml["tasks"][0]["complexity"] = 15
-    errors = FeatureLoader.validate_yaml(sample_feature_yaml)
-    assert len(errors) >= 1
-
-
 def test_validate_yaml_empty_dict():
     """Test validate_yaml handles empty dict (missing all required fields)."""
     errors = FeatureLoader.validate_yaml({})
-    assert len(errors) >= 2  # At least id and name missing
+    assert len(errors) == 1  # id is the one required field
+    assert "id" in errors[0]
 
 
 def test_validate_yaml_error_messages_include_field_name(sample_feature_yaml):
@@ -2230,142 +1775,9 @@ def test_save_feature_validates_before_write(temp_features_dir, sample_feature_y
 
     # Now test that invalid data would be caught by validate_yaml
     invalid_data = sample_feature_yaml.copy()
-    invalid_data["status"] = "bogus"
+    del invalid_data["id"]
     errors = FeatureLoader.validate_yaml(invalid_data)
     assert len(errors) >= 1
-
-
-# ============================================================================
-# Task Type Validation Tests (via _validate_task_type_in_file and validate_feature)
-# ============================================================================
-
-
-class TestValidateTaskTypeInFile:
-    """Tests for FeatureLoader._validate_task_type_in_file static method."""
-
-    def test_valid_task_type_enum_value(self, tmp_path):
-        """Valid TaskType enum value passes validation."""
-        task_file = tmp_path / "TASK-OK.md"
-        task_file.write_text("---\nid: TASK-OK\ntask_type: feature\n---\n# Task")
-        result = FeatureLoader._validate_task_type_in_file("TASK-OK", task_file)
-        assert result is None
-
-    def test_valid_task_type_alias(self, tmp_path):
-        """Valid task_type alias passes validation."""
-        task_file = tmp_path / "TASK-ALIAS.md"
-        task_file.write_text("---\nid: TASK-ALIAS\ntask_type: enhancement\n---\n# Task")
-        result = FeatureLoader._validate_task_type_in_file("TASK-ALIAS", task_file)
-        assert result is None
-
-    def test_valid_task_type_bug_fix_alias(self, tmp_path):
-        """Legacy bug-fix alias passes validation."""
-        task_file = tmp_path / "TASK-BF.md"
-        task_file.write_text("---\nid: TASK-BF\ntask_type: bug-fix\n---\n# Task")
-        result = FeatureLoader._validate_task_type_in_file("TASK-BF", task_file)
-        assert result is None
-
-    def test_invalid_task_type_returns_error(self, tmp_path):
-        """Invalid task_type value returns descriptive error message."""
-        task_file = tmp_path / "TASK-BAD.md"
-        task_file.write_text("---\nid: TASK-BAD\ntask_type: bogus_type\n---\n# Task")
-        result = FeatureLoader._validate_task_type_in_file("TASK-BAD", task_file)
-        assert result is not None
-        assert "TASK-BAD" in result
-        assert "bogus_type" in result
-        assert "feature" in result  # valid values listed
-
-    def test_missing_task_type_returns_none(self, tmp_path):
-        """Missing task_type in frontmatter returns None (defaults to feature)."""
-        task_file = tmp_path / "TASK-NT.md"
-        task_file.write_text("---\nid: TASK-NT\n---\n# Task")
-        result = FeatureLoader._validate_task_type_in_file("TASK-NT", task_file)
-        assert result is None
-
-    def test_no_frontmatter_returns_none(self, tmp_path):
-        """File without frontmatter returns None."""
-        task_file = tmp_path / "TASK-NF.md"
-        task_file.write_text("# Task NF\nNo frontmatter here.")
-        result = FeatureLoader._validate_task_type_in_file("TASK-NF", task_file)
-        assert result is None
-
-    def test_all_valid_enum_values_pass(self, tmp_path):
-        """All TaskType enum values are accepted."""
-        from guardkit.models.task_types import TaskType
-
-        for task_type in TaskType:
-            task_file = tmp_path / f"TASK-{task_type.value.upper()}.md"
-            task_file.write_text(
-                f"---\nid: TASK-{task_type.value.upper()}\ntask_type: {task_type.value}\n---\n# Task"
-            )
-            result = FeatureLoader._validate_task_type_in_file(
-                f"TASK-{task_type.value.upper()}", task_file
-            )
-            assert result is None, f"Expected None for valid type '{task_type.value}', got: {result}"
-
-    def test_error_message_lists_valid_values(self, tmp_path):
-        """Error message includes list of valid values and aliases."""
-        task_file = tmp_path / "TASK-ERR.md"
-        task_file.write_text("---\nid: TASK-ERR\ntask_type: notatype\n---\n# Task")
-        result = FeatureLoader._validate_task_type_in_file("TASK-ERR", task_file)
-        assert result is not None
-        # Should mention valid values
-        assert "feature" in result
-        assert "scaffolding" in result
-        # Should mention valid aliases
-        assert "enhancement" in result or "bug-fix" in result
-
-
-class TestValidateFeatureTaskType:
-    """Integration tests: task_type validation surfaced via validate_feature()."""
-
-    def test_validate_feature_catches_invalid_task_type(self, tmp_path):
-        """validate_feature() reports invalid task_type from task file."""
-        tasks_dir = tmp_path / "tasks" / "backlog"
-        tasks_dir.mkdir(parents=True)
-        task_file = tasks_dir / "TASK-BAD.md"
-        task_file.write_text("---\nid: TASK-BAD\ntask_type: nonsense_type\n---\n# Task")
-
-        feature = Feature(
-            id="FEAT-TT",
-            name="Task Type Test",
-            tasks=[
-                FeatureTask(
-                    id="TASK-BAD",
-                    name="Bad Type Task",
-                    file_path=Path("tasks/backlog/TASK-BAD.md"),
-                )
-            ],
-            orchestration=FeatureOrchestration(parallel_groups=[["TASK-BAD"]]),
-        )
-
-        errors = FeatureLoader.validate_feature(feature, repo_root=tmp_path)
-        task_type_errors = [e for e in errors if "nonsense_type" in e]
-        assert len(task_type_errors) == 1
-        assert "TASK-BAD" in task_type_errors[0]
-
-    def test_validate_feature_passes_valid_task_type(self, tmp_path):
-        """validate_feature() accepts valid task_type values in task files."""
-        tasks_dir = tmp_path / "tasks" / "backlog"
-        tasks_dir.mkdir(parents=True)
-        task_file = tasks_dir / "TASK-GOOD.md"
-        task_file.write_text("---\nid: TASK-GOOD\ntask_type: scaffolding\n---\n# Task")
-
-        feature = Feature(
-            id="FEAT-TT",
-            name="Task Type Test",
-            tasks=[
-                FeatureTask(
-                    id="TASK-GOOD",
-                    name="Good Type Task",
-                    file_path=Path("tasks/backlog/TASK-GOOD.md"),
-                )
-            ],
-            orchestration=FeatureOrchestration(parallel_groups=[["TASK-GOOD"]]),
-        )
-
-        errors = FeatureLoader.validate_feature(feature, repo_root=tmp_path)
-        task_type_errors = [e for e in errors if "invalid task_type" in e]
-        assert task_type_errors == []
 
 
 # ============================================================================
@@ -2413,273 +1825,3 @@ class TestDependencyInALaterWave:
         )
 
         assert FeatureLoader.validate_parallel_groups(feature) == []
-
-
-# ============================================================================
-# A task file that names another task needs an order (3 October 2026)
-# ============================================================================
-
-_TASK_REFERENCE_FIXTURES = (
-    Path(__file__).resolve().parents[1] / "fixtures" / "task_references"
-)
-_FFEC_SENTENCE = (
-    "TASK-FFEC-002's task file refers to TASK-FFEC-003, but neither depends on "
-    "the other, so they can run together or in either order. Add TASK-FFEC-003 "
-    "to its dependencies (and put TASK-FFEC-002 in a later wave than "
-    "TASK-FFEC-003), or remove the reference."
-)
-
-
-def _copy_fixture(name: str, dest: Path) -> Path:
-    import shutil
-
-    shutil.copytree(_TASK_REFERENCE_FIXTURES / name, dest, dirs_exist_ok=True)
-    return dest
-
-
-def _order_tasks(repo: Path, feature_id: str, task_id: str, needs: str, waves):
-    """Declare that ``task_id`` needs ``needs`` and lay out the waves again —
-    the correction the refusal asks for."""
-    path = repo / ".guardkit" / "features" / f"{feature_id}.yaml"
-    data = yaml.safe_load(path.read_text(encoding="utf-8"))
-    for task in data["tasks"]:
-        if task["id"] == task_id:
-            task["dependencies"] = [*task.get("dependencies", []), needs]
-    data["orchestration"]["parallel_groups"] = waves
-    path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
-
-
-def _load_and_validate(repo: Path, feature_id: str):
-    feature = FeatureLoader.load_feature(feature_id, repo_root=repo, validate_paths=False)
-    return FeatureLoader.validate_feature(feature, repo_root=repo)
-
-
-def _references(repo: Path, feature_id: str):
-    """The unordered references, which the plan check gives as advice since
-    step 2 (26 October 2026); the planner adds the order itself."""
-    feature = FeatureLoader.load_feature(feature_id, repo_root=repo, validate_paths=False)
-    return FeatureLoader.validate_task_references(feature, repo)
-
-
-_FFEC_CORRECTED_WAVES = [
-    ["TASK-FFEC-001"],
-    ["TASK-FFEC-003"],
-    ["TASK-FFEC-002"],
-    ["TASK-FFEC-004"],
-]
-
-
-class TestTaskReferencesNeedAnOrder:
-    """FEAT-FFEC (3 October 2026): TASK-FFEC-002's task file needed
-    TASK-FFEC-003's schema, but the plan never said so and both ran in wave 2."""
-
-    def test_the_committed_ffec_plan_gets_plain_advice(self, tmp_path):
-        repo = _copy_fixture("ffec_c9c3714c", tmp_path)
-
-        assert _references(repo, "FEAT-FFEC") == [_FFEC_SENTENCE]
-        assert _load_and_validate(repo, "FEAT-FFEC") == []
-
-    def test_the_ffec_plan_passes_once_the_need_is_declared_and_ordered(self, tmp_path):
-        repo = _copy_fixture("ffec_c9c3714c", tmp_path)
-        _order_tasks(repo, "FEAT-FFEC", "TASK-FFEC-002", "TASK-FFEC-003", _FFEC_CORRECTED_WAVES)
-
-        assert _load_and_validate(repo, "FEAT-FFEC") == []
-
-    def test_declaring_the_need_without_moving_the_wave_is_still_refused(self, tmp_path):
-        repo = _copy_fixture("ffec_c9c3714c", tmp_path)
-        _order_tasks(
-            repo,
-            "FEAT-FFEC",
-            "TASK-FFEC-002",
-            "TASK-FFEC-003",
-            [["TASK-FFEC-001"], ["TASK-FFEC-002", "TASK-FFEC-003"], ["TASK-FFEC-004"]],
-        )
-
-        errors = _load_and_validate(repo, "FEAT-FFEC")
-
-        assert len(errors) == 1
-        assert "TASK-FFEC-002 depends on TASK-FFEC-003 but both are in the same" in errors[0]
-
-    def test_a_task_file_moved_along_the_lifecycle_is_still_read(self, tmp_path):
-        """The feature YAML keeps pointing at tasks/backlog/ after the task
-        file has moved on (``design_approved`` here); the check reads it where
-        it is now."""
-        repo = _copy_fixture("ffec_c9c3714c", tmp_path)
-        slug = "get-users-created-per-day"
-        name = "TASK-FFEC-002-add-endpoint-to-router.md"
-        moved = repo / "tasks" / "design_approved" / slug / name
-        moved.parent.mkdir(parents=True)
-        (repo / "tasks" / "backlog" / slug / name).rename(moved)
-
-        assert _references(repo, "FEAT-FFEC") == [_FFEC_SENTENCE]
-
-        _order_tasks(repo, "FEAT-FFEC", "TASK-FFEC-002", "TASK-FFEC-003", _FFEC_CORRECTED_WAVES)
-        assert _references(repo, "FEAT-FFEC") == []
-
-    def test_a_go_project_is_checked_the_same_way(self, tmp_path):
-        repo = _copy_fixture("go_rate_limiter", tmp_path)
-
-        assert _references(repo, "FEAT-G0A7") == [
-            "TASK-G0A7-002's task file refers to TASK-G0A7-003, but neither depends "
-            "on the other, so they can run together or in either order. Add "
-            "TASK-G0A7-003 to its dependencies (and put TASK-G0A7-002 in a later "
-            "wave than TASK-G0A7-003), or remove the reference."
-        ]
-
-        _order_tasks(
-            repo,
-            "FEAT-G0A7",
-            "TASK-G0A7-002",
-            "TASK-G0A7-003",
-            [["TASK-G0A7-001"], ["TASK-G0A7-003"], ["TASK-G0A7-002"]],
-        )
-        assert _load_and_validate(repo, "FEAT-G0A7") == []
-
-    @staticmethod
-    def _feature_with_files(tmp_path, texts, deps, waves):
-        tasks_dir = tmp_path / "tasks" / "backlog"
-        tasks_dir.mkdir(parents=True, exist_ok=True)
-        tasks = []
-        for task_id, text in texts.items():
-            (tasks_dir / f"{task_id}.md").write_text(text, encoding="utf-8")
-            tasks.append(
-                FeatureTask(
-                    id=task_id,
-                    name=task_id,
-                    file_path=Path(f"tasks/backlog/{task_id}.md"),
-                    dependencies=deps.get(task_id, []),
-                )
-            )
-        return Feature(
-            id="FEAT-REF",
-            name="References",
-            tasks=tasks,
-            orchestration=FeatureOrchestration(parallel_groups=waves),
-        )
-
-    def test_a_later_task_that_depends_on_this_one_may_be_named(self, tmp_path):
-        feature = self._feature_with_files(
-            tmp_path,
-            {
-                "TASK-R-001": "Build the parser. TASK-R-004 adds the tests.",
-                "TASK-R-002": "Use the parser from TASK-R-001.",
-                "TASK-R-004": "Test the parser.",
-            },
-            {"TASK-R-002": ["TASK-R-001"], "TASK-R-004": ["TASK-R-002"]},
-            [["TASK-R-001"], ["TASK-R-002"], ["TASK-R-004"]],
-        )
-
-        # 001 names 004, which waits for it through 002: already ordered.
-        assert FeatureLoader.validate_task_references(feature, tmp_path) == []
-
-    def test_a_need_met_through_another_task_passes(self, tmp_path):
-        feature = self._feature_with_files(
-            tmp_path,
-            {
-                "TASK-R-001": "Build the parser.",
-                "TASK-R-002": "Wire the parser in.",
-                "TASK-R-003": "Document the parser written in TASK-R-001.",
-            },
-            {"TASK-R-002": ["TASK-R-001"], "TASK-R-003": ["TASK-R-002"]},
-            [["TASK-R-001"], ["TASK-R-002"], ["TASK-R-003"]],
-        )
-
-        assert FeatureLoader.validate_task_references(feature, tmp_path) == []
-
-    def test_an_id_that_merely_starts_like_another_is_not_a_reference(self, tmp_path):
-        feature = self._feature_with_files(
-            tmp_path,
-            {
-                "TASK-R-001": "Build the parser.",
-                "TASK-R-0010": "Unrelated. Mentions TASK-R-00100 and xTASK-R-001.",
-            },
-            {},
-            [["TASK-R-001", "TASK-R-0010"]],
-        )
-
-        assert FeatureLoader.validate_task_references(feature, tmp_path) == []
-
-    def test_a_task_file_name_counts_as_naming_the_task(self, tmp_path):
-        feature = self._feature_with_files(
-            tmp_path,
-            {
-                "TASK-R-001": "See tasks/backlog/TASK-R-002-schemas.md for the shape.",
-                "TASK-R-002": "Define the schemas.",
-            },
-            {},
-            [["TASK-R-001", "TASK-R-002"]],
-        )
-
-        errors = FeatureLoader.validate_task_references(feature, tmp_path)
-
-        assert len(errors) == 1
-        assert errors[0].startswith("TASK-R-001's task file refers to TASK-R-002,")
-
-    def test_ids_outside_the_feature_and_its_own_id_are_ignored(self, tmp_path):
-        feature = self._feature_with_files(
-            tmp_path,
-            {
-                "TASK-R-001": "TASK-R-001 follows the review TASK-REV-R and TASK-OTHER-009.",
-                "TASK-R-002": "Independent work.",
-            },
-            {},
-            [["TASK-R-001", "TASK-R-002"]],
-        )
-
-        assert FeatureLoader.validate_task_references(feature, tmp_path) == []
-
-    def test_a_missing_task_file_is_left_to_the_missing_file_check(self, tmp_path):
-        feature = Feature(
-            id="FEAT-REF",
-            name="References",
-            tasks=[
-                FeatureTask(id="TASK-R-001", name="a", file_path=Path("tasks/backlog/TASK-R-001.md")),
-                FeatureTask(id="TASK-R-002", name="b", file_path=Path("tasks/backlog/TASK-R-002.md")),
-            ],
-            orchestration=FeatureOrchestration(parallel_groups=[["TASK-R-001", "TASK-R-002"]]),
-        )
-
-        assert FeatureLoader.validate_task_references(feature, tmp_path) == []
-
-    def test_a_reference_kept_apart_only_by_the_waves_is_refused_in_its_own_words(
-        self, tmp_path
-    ):
-        """FEAT-RAG-08 (May 2026): TASK-AIV2-005 used the lock from
-        TASK-AIV2-004 with no declared dependency; only the wave order ran 004
-        first."""
-        feature = self._feature_with_files(
-            tmp_path,
-            {
-                "TASK-R-001": "Add the file lock.",
-                "TASK-R-002": "Set up the command.",
-                "TASK-R-003": "Run under the lock from TASK-R-001.",
-            },
-            {"TASK-R-003": ["TASK-R-002"]},
-            [["TASK-R-001", "TASK-R-002"], ["TASK-R-003"]],
-        )
-
-        assert FeatureLoader.validate_task_references(feature, tmp_path) == [
-            "TASK-R-003's task file refers to TASK-R-001, but neither depends on "
-            "the other; only the wave order runs TASK-R-001 first. Add TASK-R-001 "
-            "to its dependencies, or remove the reference."
-        ]
-
-    def test_a_reference_to_an_unordered_later_task_names_both_fixes(self, tmp_path):
-        feature = self._feature_with_files(
-            tmp_path,
-            {
-                "TASK-R-001": "Build the parser; TASK-R-002 documents it.",
-                "TASK-R-002": "Write the user guide.",
-            },
-            {},
-            [["TASK-R-001"], ["TASK-R-002"]],
-        )
-
-        assert FeatureLoader.validate_task_references(feature, tmp_path) == [
-            "TASK-R-001's task file refers to TASK-R-002, which runs in a later "
-            "wave, but neither depends on the other. If TASK-R-001 needs "
-            "TASK-R-002's work, add TASK-R-002 to its dependencies and move "
-            "TASK-R-001 to a later wave than TASK-R-002; if TASK-R-002 builds on "
-            "TASK-R-001, add TASK-R-001 to TASK-R-002's dependencies; otherwise "
-            "remove the reference."
-        ]

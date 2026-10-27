@@ -38,12 +38,9 @@ import guardkit.orchestrator.agent_invoker as agent_invoker_module
 from guardkit.orchestrator.agent_invoker import AgentInvocationResult, AgentInvoker
 from guardkit.orchestrator.autobuild import AutoBuildOrchestrator, TurnRecord
 from guardkit.orchestrator.exceptions import SDKTimeoutError
-from guardkit.orchestrator.quality_gates.coach_validator import CoachValidator
 from guardkit.orchestrator.state_detection import GitChangesSummary
 from guardkit.orchestrator.state_tracker import MultiLayeredStateTracker, WorkState
 from guardkit.orchestrator.synthetic_report import (
-    PLAYER_NO_OWN_REPORT_CATEGORY,
-    PLAYER_TIMED_OUT_CATEGORY,
     SHARED_WORKING_COPY_CONCERN,
     SHARED_WORKING_COPY_FIELD,
     is_failure_placeholder,
@@ -274,27 +271,6 @@ class TestPlaceholderIsNotThePlayersReport:
         assert state.files_modified == ["docs/widgets.md"]
 
 
-# ---------------------------------------------------------------------------
-# 3. The gate says the turn ran out of time, as a must-fix with a suggestion
-# ---------------------------------------------------------------------------
-
-
-def _direct_results(task_id: str) -> Dict[str, Any]:
-    """The task_work_results the recovery wrote: relaxed gates, no promises."""
-    return {
-        "task_id": task_id,
-        "implementation_mode": "direct",
-        "completed": True,
-        "success": True,
-        "quality_gates": {"all_passed": True, "quality_gates_relaxed": True},
-        "files_created": [],
-        "files_modified": [],
-        "tests_written": [],
-        "completion_promises": [],
-        "requirements_addressed": [],
-    }
-
-
 def _recovered_timeout_report(task_id: str, seconds: int) -> Dict[str, Any]:
     """The report recovery handed the Coach after a timeout."""
     return {
@@ -313,138 +289,6 @@ def _recovered_timeout_report(task_id: str, seconds: int) -> Dict[str, Any]:
             "elapsed_seconds": seconds + 1,
         },
     }
-
-
-class TestTimeoutReachesMustFix:
-    def _gate_feedback(self, worktree: Path, player_report: Dict) -> Any:
-        results_dir = worktree / ".guardkit" / "autobuild" / TASK_A
-        results_dir.mkdir(parents=True, exist_ok=True)
-        (results_dir / "task_work_results.json").write_text(
-            json.dumps(_direct_results(TASK_A))
-        )
-        orch = _orchestrator(worktree)
-        validator = CoachValidator(str(worktree), task_id=TASK_A)
-        return orch._direct_mode_evidence_gate(
-            validator, TASK_A, 1, _FakeWorktree(worktree), 0.0,
-            acceptance_criteria=CRITERIA, task_type="documentation",
-            player_report=player_report,
-        ), orch
-
-    def test_timeout_is_the_first_must_fix_with_a_suggestion(
-        self, worktree: Path
-    ) -> None:
-        result, orch = self._gate_feedback(
-            worktree, _recovered_timeout_report(TASK_A, 2340)
-        )
-        assert result is not None and result.report["decision"] == "feedback"
-        first = result.report["issues"][0]
-        assert first["category"] == PLAYER_TIMED_OUT_CATEGORY
-        assert first["severity"] == "must_fix"
-        assert "ran out of time after 2340 s" in first["description"]
-        assert "player_turn_1.json" in first["description"]
-        assert first["suggestion"]
-
-        # Through the text the Player is given, into the feedback file.
-        text = orch._extract_feedback(result.report)
-        structured = _invoker(worktree)._parse_coach_feedback(text, 2)
-        must_fix = structured["must_fix"]
-        assert must_fix, "the timeout must reach must_fix"
-        assert "ran out of time after 2340 s" in must_fix[0]["issue"]
-        assert "player_turn_1.json" in must_fix[0]["issue"]
-        assert must_fix[0]["suggestion"] == (
-            "Write the report as soon as the work is done, before any long "
-            "test run."
-        )
-        # The criteria block still follows it.
-        assert any("Direct-mode evidence gate" in m["issue"] for m in must_fix)
-
-    def test_no_timeout_issue_when_the_coder_wrote_its_report(
-        self, worktree: Path
-    ) -> None:
-        result, _ = self._gate_feedback(worktree, {"task_id": TASK_A})
-        assert result is not None
-        categories = [i.get("category") for i in result.report["issues"]]
-        assert PLAYER_TIMED_OUT_CATEGORY not in categories
-        assert len(result.report["issues"]) == 1
-
-    def test_shared_copy_without_report_is_explained(self, worktree: Path) -> None:
-        report = {"task_id": TASK_A, "_synthetic": True, SHARED_WORKING_COPY_FIELD: True}
-        result, _ = self._gate_feedback(worktree, report)
-        first = result.report["issues"][0]
-        assert first["category"] == PLAYER_NO_OWN_REPORT_CATEGORY
-        assert first["suggestion"]
-
-
-# ---------------------------------------------------------------------------
-# 4. The final summary says it ran out of time, with no sign-in or SDK hint
-# ---------------------------------------------------------------------------
-
-
-def _turn(turn: int, player_result: AgentInvocationResult) -> TurnRecord:
-    return TurnRecord(
-        turn=turn,
-        player_result=player_result,
-        coach_result=None,
-        decision="feedback",
-        feedback=None,
-        timestamp="2026-10-08T08:40:00Z",
-    )
-
-
-class TestTimeoutSummaryHasNoSignInHint:
-    def test_recovered_timeouts_are_named_with_timings(self, worktree: Path) -> None:
-        # As in the build: every turn ran out of time and was rebuilt from git.
-        history = [
-            _turn(n, AgentInvocationResult(
-                task_id=TASK_A, turn=n, agent_type="player", success=True,
-                report=_recovered_timeout_report(TASK_A, 2340),
-                duration_seconds=0.0,
-            ))
-            for n in (1, 2, 3)
-        ]
-        text = _orchestrator(worktree)._build_summary_details(
-            history, "player_invocation_stall"
-        )
-
-        assert "ran out of time" in text
-        assert "allowed 2340 s" in text and "ran 2341 s" in text
-        assert "turns: 1, 2, 3" in text
-        lowered = text.lower()
-        assert "login" not in lowered and "auth" not in lowered
-        assert "claude-agent-sdk" not in lowered
-        assert "'player_report'" not in text
-
-    def test_unrecovered_timeout_is_named_too(self, worktree: Path) -> None:
-        history = [
-            _turn(n, AgentInvocationResult(
-                task_id=TASK_A, turn=n, agent_type="player", success=False,
-                report={"timed_out": True, "timeout_seconds": 2160,
-                        "elapsed_seconds": 2160},
-                duration_seconds=2160.0,
-                error="SDK timeout after 2160s: Agent invocation exceeded 2160s timeout",
-            ))
-            for n in (1, 2, 3)
-        ]
-        text = _orchestrator(worktree)._build_summary_details(
-            history, "player_invocation_stall"
-        )
-        assert "allowed 2160 s" in text
-        assert "login" not in text.lower()
-
-    def test_other_failures_keep_their_existing_checks(self, worktree: Path) -> None:
-        history = [
-            _turn(n, AgentInvocationResult(
-                task_id=TASK_A, turn=n, agent_type="player", success=False,
-                report={}, duration_seconds=1.0,
-                error="SDK API error in stream: unknown",
-            ))
-            for n in (1, 2, 3)
-        ]
-        text = _orchestrator(worktree)._build_summary_details(
-            history, "player_invocation_stall"
-        )
-        assert "SDK API error in stream" in text
-        assert "ran out of time" not in text
 
 
 # ---------------------------------------------------------------------------
@@ -820,107 +664,6 @@ class TestNothingRecoveredStillSaysWhatHappened:
         assert "ran out of time" in resumed._get_last_feedback()
 
 
-def _stall_history() -> List[TurnRecord]:
-    return [
-        _turn(n, AgentInvocationResult(
-            task_id=TASK_A, turn=n, agent_type="player", success=False,
-            report={}, duration_seconds=1.0,
-            error="SDK API error in stream: unknown",
-        ))
-        for n in (1, 2, 3)
-    ]
-
-
-class TestSignInHintOnlyForAnthropicSdkRuns:
-    @pytest.mark.parametrize(
-        "harness, base_url, expect_hint",
-        [
-            ("langgraph", None, False),                       # the factory's local default
-            ("langgraph", "https://api.anthropic.com", False),  # harness decides
-            ("sdk", "http://localhost:8000", False),           # SDK on a local server
-            ("sdk", "http://10.0.0.5:4000/v1", False),         # SDK on a LAN server
-            ("sdk", None, True),                               # Anthropic through the SDK
-            ("sdk", "https://api.anthropic.com", True),
-        ],
-    )
-    def test_hint_follows_the_configured_provider(
-        self, worktree: Path, monkeypatch: pytest.MonkeyPatch,
-        harness: str, base_url: Optional[str], expect_hint: bool,
-    ) -> None:
-        monkeypatch.setenv("GUARDKIT_HARNESS", harness)
-        if base_url is None:
-            monkeypatch.delenv("ANTHROPIC_BASE_URL", raising=False)
-        else:
-            monkeypatch.setenv("ANTHROPIC_BASE_URL", base_url)
-
-        text = _orchestrator(worktree)._build_summary_details(
-            _stall_history(), "player_invocation_stall"
-        )
-        has_hint = "claude login" in text or "claude-agent-sdk" in text
-        assert has_hint is expect_hint
-        assert "SDK API error in stream" in text
-
-    def test_timeout_stall_never_has_it_even_on_anthropic(
-        self, worktree: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.setenv("GUARDKIT_HARNESS", "sdk")
-        monkeypatch.delenv("ANTHROPIC_BASE_URL", raising=False)
-        history = [
-            _turn(n, AgentInvocationResult(
-                task_id=TASK_A, turn=n, agent_type="player", success=True,
-                report=_recovered_timeout_report(TASK_A, 2340), duration_seconds=0.0,
-            ))
-            for n in (1, 2, 3)
-        ]
-        text = _orchestrator(worktree)._build_summary_details(
-            history, "player_invocation_stall"
-        )
-        assert "claude login" not in text and "claude-agent-sdk" not in text
-
-
-class TestGateItemKeepsItsDetails:
-    def _gate(self, worktree: Path, criteria: List[str]) -> Any:
-        results_dir = worktree / ".guardkit" / "autobuild" / TASK_A
-        results_dir.mkdir(parents=True, exist_ok=True)
-        (results_dir / "task_work_results.json").write_text(
-            json.dumps(_direct_results(TASK_A))
-        )
-        orch = _orchestrator(worktree)
-        validator = CoachValidator(str(worktree), task_id=TASK_A)
-        result = orch._direct_mode_evidence_gate(
-            validator, TASK_A, 2, _FakeWorktree(worktree), 0.0,
-            acceptance_criteria=criteria, task_type="documentation",
-            player_report={"task_id": TASK_A},
-        )
-        return orch, result
-
-    def test_unmet_criteria_and_suggestion_reach_the_coder(self, worktree: Path) -> None:
-        orch, result = self._gate(worktree, CRITERIA)
-        text = orch._extract_feedback(result.report)
-        must_fix = _invoker(worktree)._parse_coach_feedback(text, 3)["must_fix"]
-
-        assert len(must_fix) == 1
-        item = must_fix[0]
-        assert "Direct-mode evidence gate blocked the turn" in item["issue"]
-        # The detail line survives: which criteria are unmet.
-        assert "[direct_mode_ac_unverified]" in item["issue"]
-        assert "AC-001" in item["issue"] and "AC-002" in item["issue"]
-        assert item["suggestion"] == (
-            "List a completion promise for each acceptance criterion "
-            "(criterion_id, status, evidence) in player_turn_3.json."
-        )
-
-    def test_the_unmet_list_is_bounded(self, worktree: Path) -> None:
-        many = [f"AC-{n:03d}: section {n} of docs/widgets.md is written." for n in range(1, 31)]
-        orch, result = self._gate(worktree, many)
-        text = orch._extract_feedback(result.report)
-        item = _invoker(worktree)._parse_coach_feedback(text, 3)["must_fix"][0]
-        assert "AC-010" in item["issue"]
-        assert "AC-011" not in item["issue"]
-        assert "and 20 more" in item["issue"]
-        assert item["suggestion"]
-
-
 # ---------------------------------------------------------------------------
 # Coach finding 2: task-work turns get task-work wording, said once
 # ---------------------------------------------------------------------------
@@ -1088,51 +831,11 @@ class TestReviewerFailureKeepsTheTimeoutNote:
         assert record.feedback is None
 
 
-class TestOverriddenApprovalSaysItOnce:
-    def test_task_work_timeout_explained_once(self, worktree: Path) -> None:
-        """The reviewer approved recovered partial work from a timed-out
-        task-work attempt; the approval is overridden to feedback."""
-        orch, _ = _task_work_orchestrator(worktree)
-        recovered = AgentInvocationResult(
-            task_id=TASK_A, turn=2, agent_type="player", success=True,
-            report={"task_id": TASK_A, "_synthetic": True,
-                    "files_modified": ["docs/widgets.md"], "files_created": [],
-                    "tests_written": []},
-            duration_seconds=0.0,
-        )
-        approval = AgentInvocationResult(
-            task_id=TASK_A, turn=2, agent_type="coach", success=True,
-            report={"decision": "approve", "issues": [],
-                    "rationale": "The criteria are met."},
-            duration_seconds=1.0,
-        )
-        with patch.object(orch, "_attempt_state_recovery", return_value=recovered), \
-                patch.object(orch, "_invoke_coach_safely", return_value=approval):
-            record = orch._execute_turn(
-                turn=2, task_id=TASK_A, requirements="Document the endpoint",
-                worktree=_FakeWorktree(worktree), previous_feedback=None,
-            )
-
-        assert record.decision == "feedback"
-        assert record.feedback.count("timed out") == 1
-        assert record.feedback.count(TASK_WORK_TIMEOUT) == 1
-        must_fix = _invoker(worktree)._parse_coach_feedback(record.feedback, 3)["must_fix"]
-        assert len(must_fix) == 1
-        assert "task-work Player attempt timed out" in must_fix[0]["issue"]
-        assert must_fix[0]["suggestion"]
-
-
 # ---------------------------------------------------------------------------
 # Independent review, round 2 (R3): the early returns before the reviewer
 # ---------------------------------------------------------------------------
 
 import threading  # noqa: E402
-
-REINSTALL_TEXT = (
-    "Dependency reinstall failed after this turn modified pyproject.toml. "
-    "Fix the dependency declaration so the install succeeds."
-)
-
 
 def _recovered_task_work() -> AgentInvocationResult:
     return AgentInvocationResult(
@@ -1161,41 +864,6 @@ def _one_timeout_must_fix(orch, record, worktree: Path) -> Dict[str, str]:
 
 
 class TestEarlyReturnsKeepTheTimeoutNote:
-    def test_direct_timeout_then_reinstall_failure(self, worktree: Path) -> None:
-        orch, invoker = _mocked_orchestrator(worktree)
-        invoker.invoke_player.return_value = _timed_out_player()
-        recovered = AgentInvocationResult(
-            task_id=TASK_A, turn=1, agent_type="player", success=True,
-            report=_recovered_timeout_report(TASK_A, 2340), duration_seconds=0.0,
-        )
-        with patch.object(
-            orch, "_maybe_refresh_venv_for_manifest_change", return_value=REINSTALL_TEXT
-        ):
-            record = _run_turn(orch, worktree, recovered=recovered)
-
-        assert record.decision == "feedback"
-        assert record.feedback.endswith(REINSTALL_TEXT)
-        item = _one_timeout_must_fix(orch, record, worktree)
-        assert "ran out of time after 2340 s" in item["issue"]
-        assert item["suggestion"] == TIMEOUT_SUGGESTION
-
-    def test_task_work_timeout_then_reinstall_failure(self, worktree: Path) -> None:
-        orch, _ = _task_work_orchestrator(worktree)
-        with patch.object(orch, "_attempt_state_recovery", return_value=_recovered_task_work()), \
-                patch.object(
-                    orch, "_maybe_refresh_venv_for_manifest_change",
-                    return_value=REINSTALL_TEXT,
-                ):
-            record = orch._execute_turn(
-                turn=2, task_id=TASK_A, requirements="Document the endpoint",
-                worktree=_FakeWorktree(worktree), previous_feedback=None,
-            )
-
-        assert record.decision == "feedback"
-        assert record.feedback.endswith(REINSTALL_TEXT)
-        item = _one_timeout_must_fix(orch, record, worktree)
-        assert "task-work Player attempt timed out" in item["issue"]
-        assert "player_turn_" not in record.feedback
 
     def test_cancelled_task_work_timeout(self, worktree: Path) -> None:
         orch, _ = _task_work_orchestrator(worktree)
@@ -1211,20 +879,6 @@ class TestEarlyReturnsKeepTheTimeoutNote:
         assert record.coach_result is None
         item = _one_timeout_must_fix(orch, record, worktree)
         assert "task-work Player attempt timed out" in item["issue"]
-
-    def test_no_timeout_leaves_the_reinstall_text_alone(self, worktree: Path) -> None:
-        orch, invoker = _mocked_orchestrator(worktree)
-        invoker.invoke_player.return_value = AgentInvocationResult(
-            task_id=TASK_A, turn=1, agent_type="player", success=True,
-            report={"task_id": TASK_A, "files_modified": ["pyproject.toml"],
-                    "files_created": [], "tests_written": []},
-            duration_seconds=900.0,
-        )
-        with patch.object(
-            orch, "_maybe_refresh_venv_for_manifest_change", return_value=REINSTALL_TEXT
-        ):
-            record = _run_turn(orch, worktree, recovered=None)
-        assert record.feedback == REINSTALL_TEXT
 
 
 # ---------------------------------------------------------------------------
@@ -1345,23 +999,3 @@ class TestFreshStartTurnKeepsTheTimeoutNote:
         assert must_fix[0]["suggestion"] == TIMEOUT_SUGGESTION
         assert "404" not in given[3]
 
-    def test_overridden_task_work_approval_keeps_its_note(self, worktree: Path) -> None:
-        """The reviewer's own timeout issue made the extra note unnecessary
-        on that turn, but the record still keeps it for a reset turn."""
-        orch, _ = _task_work_orchestrator(worktree)
-        approval = AgentInvocationResult(
-            task_id=TASK_A, turn=2, agent_type="coach", success=True,
-            report={"decision": "approve", "issues": [], "rationale": "Met."},
-            duration_seconds=1.0,
-        )
-        with patch.object(orch, "_attempt_state_recovery", return_value=_recovered_task_work()), \
-                patch.object(orch, "_invoke_coach_safely", return_value=approval):
-            record = orch._execute_turn(
-                turn=2, task_id=TASK_A, requirements="Document the endpoint",
-                worktree=_FakeWorktree(worktree), previous_feedback=None,
-            )
-        assert record.timeout_note
-        must_fix = _invoker(worktree)._parse_coach_feedback(record.timeout_note, 3)["must_fix"]
-        assert len(must_fix) == 1
-        assert "task-work Player attempt timed out" in must_fix[0]["issue"]
-        assert must_fix[0]["suggestion"]

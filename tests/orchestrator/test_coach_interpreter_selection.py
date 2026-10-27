@@ -258,47 +258,7 @@ class TestCoachInterpreterSelection:
 
 
 class TestAgentInvokerPlumbing:
-    """Verify :class:`AgentInvoker` threads ``venv_python`` into Coach."""
-
-    def test_agent_invoker_passes_venv_python_to_coach(
-        self, tmp_path: Path
-    ) -> None:
-        """AgentInvoker stores ``venv_python`` and passes it into CoachVerifier."""
-        from guardkit.orchestrator.agent_invoker import AgentInvoker
-
-        fake_venv = tmp_path / "venv" / "bin" / "python"
-        fake_venv.parent.mkdir(parents=True)
-        fake_venv.touch()
-
-        invoker = AgentInvoker(
-            worktree_path=tmp_path,
-            venv_python=str(fake_venv),
-        )
-
-        # Private attribute — the guarantee we're locking in is that the
-        # value is threaded into the CoachVerifier constructor at call
-        # time. We assert that indirectly below.
-        assert invoker._venv_python == str(fake_venv)
-
-        with patch(
-            "guardkit.orchestrator.agent_invoker.CoachVerifier"
-        ) as mock_verifier_cls:
-            mock_verifier_cls.return_value.verify_player_report.return_value = (
-                MagicMock(verified=True, discrepancies=[], honesty_score=1.0)
-            )
-
-            invoker._verify_player_claims({"tests_run": False})
-
-            # WS3-S1 Q1 SPLIT: the agent_invoker honesty verifier runs inside
-            # autobuild, so it constructs CoachVerifier with
-            # in_autobuild_context=True (interpreter-resolution failure is a
-            # hard-abort on the Coach verdict path).
-            mock_verifier_cls.assert_called_once_with(
-                tmp_path,
-                venv_python=str(fake_venv),
-                evidence_repos=[],
-                in_autobuild_context=True,
-            )
+    """Verify :class:`AgentInvoker` stores ``venv_python``."""
 
     def test_agent_invoker_defaults_venv_python_to_none(
         self, tmp_path: Path

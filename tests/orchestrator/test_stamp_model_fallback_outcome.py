@@ -628,7 +628,8 @@ def test_a_decided_outcome_rides_the_result_beside_the_model_stamped_titles(tmp_
 
 def test_the_cli_json_carries_model_outcome(tmp_path: Path, monkeypatch):
     """Through the real command, with the fake wired into the one call that
-    asks: the JSON forge parses carries the outcome, and PARTIAL still exits 3."""
+    asks: the JSON forge parses carries the outcome; titles no rule decided
+    stop nothing, so the exit is 0 (the cull, 27 October 2026)."""
     from guardkit.cli.main import cli
     from guardkit.orchestrator import stamp_normalizer
 
@@ -644,7 +645,7 @@ def test_the_cli_json_carries_model_outcome(tmp_path: Path, monkeypatch):
     out = CliRunner().invoke(
         cli, ["qa", "normalize-stamps", "--feature", "FEAT-CONC", "--repo", str(repo), "--dry-run"]
     )
-    assert out.exit_code == 3, out.output
+    assert out.exit_code == 0, out.output
     payload = json.loads(out.output[out.output.index('{\n  "feature_id"'):])
     assert payload["refused"] == TITLES
     assert payload["model_outcome"]["status"] == "answer_rejected"
@@ -683,7 +684,7 @@ def test_the_real_cli_prints_the_outcome_line_on_stderr_and_the_json_on_stdout(t
         text=True,
         timeout=120,
     )
-    assert proc.returncode == 3, proc.stderr
+    assert proc.returncode == 0, proc.stderr
 
     expected = (
         "STAMP NORMALIZER: feature FEAT-CONC — the model fallback was not asked about "

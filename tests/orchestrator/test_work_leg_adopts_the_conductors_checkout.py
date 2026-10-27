@@ -138,9 +138,9 @@ def test_a_step_in_the_same_process_after_a_failed_step_still_runs(prepared, rea
     assert outcome.status not in ("failed", "refused"), _orchestration_error(outcome)
 
 
-def test_a_task_declaring_sibling_repositories_is_refused_not_half_leased(prepared, real_orchestrator, tmp_path):
-    """Review R1: the adopted lease covers the conductor's checkout only, so a
-    declared sibling must refuse the step rather than be written unlocked."""
+def test_a_task_declaring_sibling_repositories_still_runs(prepared, real_orchestrator, tmp_path):
+    """Cull (27 October 2026): a repair step whose task declares sibling
+    repositories is no longer refused; it runs in the conductor's checkout."""
     sibling = tmp_path / "sibling"
     sibling.mkdir()
     _git(sibling, "init", "-b", "main")
@@ -154,5 +154,4 @@ def test_a_task_declaring_sibling_repositories_is_refused_not_half_leased(prepar
 
     outcome = run_work_leg(task_id=FIX_TASK_ID, repo_root=prepared)
 
-    assert outcome.status == "failed"
-    assert "sibling repositories" in _orchestration_error(outcome)
+    assert outcome.status not in ("failed", "refused"), _orchestration_error(outcome)

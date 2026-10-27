@@ -155,27 +155,12 @@ def _output_human_success(feature_id: str) -> None:
     console.print(f"[green]\u2713[/green] Feature {feature_id} is valid")
 
 
-_SMOKE_GATE_PATH_ERROR_PREFIX = (
-    "smoke_gates.command references non-existent path"
-)
-
-
 def _output_human_errors(
     feature_id: str,
     schema_errors: List[str],
     structural_errors: List[str],
 ) -> None:
-    """Print validation errors with red crosses.
-
-    Smoke-gate path errors (TASK-FPSG-004 / L3d) are emitted through
-    plain ``click.echo`` rather than Rich's ``console.print`` so the
-    formatted message stays byte-identical with what
-    ``generate-feature-yaml --validate-smoke-gates`` (L3b) writes to
-    stderr. Rich wraps long lines (e.g. tmp_path repo roots) at the
-    terminal width, which would otherwise break byte-equality across
-    the two defense layers \u2014 agents comparing wording would see two
-    different messages.
-    """
+    """Print validation errors with red crosses."""
     console.print(f"[red]\u2717[/red] Feature {feature_id} has validation errors:\n")
 
     if schema_errors:
@@ -188,11 +173,7 @@ def _output_human_errors(
             console.print()
         console.print("[bold]Structural errors:[/bold]")
         for error in structural_errors:
-            if error.startswith(_SMOKE_GATE_PATH_ERROR_PREFIX):
-                # Verbatim emission keeps L3d byte-identical with L3b.
-                click.echo(error)
-            else:
-                console.print(f"  [red]\u2717[/red] {error}")
+            console.print(f"  [red]\u2717[/red] {error}")
 
 
 # Incomplete validate definition removed
@@ -299,6 +280,8 @@ def audit(fix: bool) -> None:
     Feature | Declared | Inferred | Tasks (completed/total) | Stale?
     Stale rows are marked with a ⚠. A summary line reports the count of stale features.
     With ``--fix`` the status field of each stale feature YAML is updated to the inferred status.
+    Exits 0 either way (the cull, 27 October 2026: stale statuses no longer
+    fail a CI step).
     """
     repo_root = Path.cwd()
     rows: List[FeatureAuditRow] = audit_features(repo_root)
@@ -339,12 +322,7 @@ def audit(fix: bool) -> None:
                 console.print(f"Updated {r.feature_id}: status set to {r.inferred_status}")
             except Exception as e:
                 console.print(f"[red]Error fixing {yaml_path.name}: {e}[/red]")
-        # Reconciled the stale statuses; exit success so CI proceeds.
-        sys.exit(0)
-
-    # AC-004: non-zero exit when stale features remain and --fix was not used,
-    # so `guardkit feature audit` can gate CI. Clean (no stale) => exit 0.
-    sys.exit(1 if stale_count else 0)
+    sys.exit(0)
 
 
 # Register subcommands

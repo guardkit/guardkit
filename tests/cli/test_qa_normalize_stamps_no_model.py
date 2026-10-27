@@ -4,11 +4,10 @@ rewrite-on-refusal lane).
 On a run's first stamping forge wants the routing law applied by rule only: a
 refusal is the signal its rewrite round needs, and the model fallback (which
 cannot see the schema) must not decide the refused titles away. ``--no-model``
-switches the fallback off for that one stamping. Everything else about the
-command is unchanged: the refused titles are named on stderr and in the JSON,
-the JSON is the same shape, exit 3 is still "partial" and exit 0 still "all
-decided"; the only new thing is ``model_outcome.status == "switched_off"``
-with the reason in plain words, and one INFO line on stderr saying the same.
+switches the fallback off for that one stamping. The titles no rule decided
+are named in the JSON, and since the cull (27 October 2026) the command exits
+0 either way; with the flag ``model_outcome.status == "switched_off"`` with
+the reason in plain words, and one INFO line on stderr saying the same.
 
 Network-free by construction: the in-process tests replace ``urlopen`` with a
 call that fails the test; the subprocess tests point the endpoint at a socket
@@ -62,9 +61,8 @@ DECIDED_STEPS = (
 
 #: The flag's help, word for word.
 HELP_TEXT = (
-    "Classify by rule only; never ask the model fallback about refused titles. "
-    "forge passes this on a run's first stamping so a refusal reaches the "
-    "machine's rewrite round; the model is asked on the second stamping."
+    "Classify by rule only; never ask the model fallback about titles no "
+    "rule decides."
 )
 
 #: What the JSON carries under ``model_outcome`` — the contract with forge.
@@ -213,8 +211,8 @@ def test_no_model_is_offered_with_its_words():
 
 def test_no_model_names_the_refused_titles_and_says_switched_off(tmp_path: Path, monkeypatch, caplog):
     """An endpoint is configured and the network is a trap; with the flag the
-    command never goes near it. The refusal path is otherwise as today: the
-    PARTIAL echo names the titles, the JSON lists them, exit 3."""
+    command never goes near it. The JSON lists the titles no rule decided;
+    since the cull (27 October 2026) that is exit 0."""
     monkeypatch.setenv(MODEL_URL_ENV, "http://127.0.0.1:9/v1")
     monkeypatch.setattr(urllib.request, "urlopen", _never)
     repo = _repo(tmp_path, TITLES)
@@ -222,14 +220,11 @@ def test_no_model_names_the_refused_titles_and_says_switched_off(tmp_path: Path,
     with caplog.at_level(logging.INFO, logger=LOGGER):
         out = _invoke(repo, "--no-model")
 
-    assert out.exit_code == 3, out.output
+    assert out.exit_code == 0, out.output
     payload = _payload(out.output)
     assert payload["refused"] == TITLES
     assert payload["stamped"] == {} and payload["model_stamped"] == []
     assert payload["model_outcome"] == SWITCHED_OFF_OUTCOME
-    assert "normalize-stamps PARTIAL: 2 scenario(s)" in out.output
-    for title in TITLES:
-        assert f"  - {title}" in out.output
     records = [(r.levelno, r.getMessage()) for r in caplog.records if r.name == LOGGER]
     assert records == [(logging.INFO, SWITCHED_OFF_LINE)]
 
@@ -251,7 +246,7 @@ def test_without_no_model_the_same_run_asks_the_endpoint(tmp_path: Path, monkeyp
 
     out = _invoke(repo)
 
-    assert out.exit_code == 3, out.output
+    assert out.exit_code == 0, out.output
     assert calls == ["http://127.0.0.1:9/v1/chat/completions"]
     payload = _payload(out.output)
     assert payload["refused"] == TITLES
@@ -281,7 +276,7 @@ def test_the_real_cli_with_no_model_makes_no_network_attempt_and_prints_the_line
     """The endpoint is a socket this test owns. With ``--no-model`` it is never
     connected to; the INFO line lands on stderr behind the logger prefix, the
     JSON on stdout carries ``switched_off``, and the refused titles are named
-    both places, exit 3 — the same partial as today."""
+    in the JSON, exit 0."""
     repo = _repo(tmp_path, TITLES)
     with _Listener() as model:
         env = dict(os.environ)
@@ -291,7 +286,7 @@ def test_the_real_cli_with_no_model_makes_no_network_attempt_and_prints_the_line
         proc = _run_real_cli(repo, env, "--no-model")
         connections = model.connections
 
-    assert proc.returncode == 3, proc.stderr
+    assert proc.returncode == 0, proc.stderr
     assert connections == 0
 
     stderr_lines = proc.stderr.splitlines()
@@ -300,7 +295,6 @@ def test_the_real_cli_with_no_model_makes_no_network_attempt_and_prints_the_line
     assert len(about_the_model) == 1
     assert "could not answer" not in proc.stderr
     assert "no model endpoint is configured" not in proc.stderr
-    assert "normalize-stamps PARTIAL: 2 scenario(s)" in proc.stderr
 
     payload = json.loads(proc.stdout[proc.stdout.index("{") :])
     assert payload["model_outcome"] == SWITCHED_OFF_OUTCOME
@@ -321,7 +315,7 @@ def test_the_real_cli_without_no_model_does_connect(tmp_path: Path):
         proc = _run_real_cli(repo, env)
         connections = model.connections
 
-    assert proc.returncode == 3, proc.stderr
+    assert proc.returncode == 0, proc.stderr
     assert connections >= 1
     payload = json.loads(proc.stdout[proc.stdout.index("{") :])
     assert payload["model_outcome"]["status"] == "asked_and_failed"
@@ -344,7 +338,7 @@ def test_the_real_cli_without_a_model_name_makes_no_network_attempt(tmp_path: Pa
         proc = _run_real_cli(repo, env)
         connections = model.connections
 
-    assert proc.returncode == 3, proc.stderr
+    assert proc.returncode == 0, proc.stderr
     assert connections == 0
     payload = json.loads(proc.stdout[proc.stdout.index("{") :])
     assert payload["model_outcome"] == {

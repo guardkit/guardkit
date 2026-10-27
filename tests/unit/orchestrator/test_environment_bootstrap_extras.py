@@ -465,18 +465,6 @@ class TestBootstrapExtrasFieldValidation:
         feature = Feature(id="FEAT-X", name="X")
         assert feature.bootstrap_extras == []
 
-    def test_invalid_name_with_space_rejected(self) -> None:
-        """Names with spaces are not valid PEP 621 → rejected at parse time."""
-        with pytest.raises(Exception) as exc_info:
-            Feature(id="FEAT-X", name="X", bootstrap_extras=["dev things"])
-        assert "invalid PEP 621 extra name" in str(exc_info.value)
-
-    def test_invalid_name_with_bracket_rejected(self) -> None:
-        """Brackets in the name (likely a copy-paste error) → rejected."""
-        with pytest.raises(Exception) as exc_info:
-            Feature(id="FEAT-X", name="X", bootstrap_extras=["[dev]"])
-        assert "invalid PEP 621 extra name" in str(exc_info.value)
-
     def test_non_string_entry_rejected(self) -> None:
         """Non-string entries in the list → rejected."""
         with pytest.raises(Exception):

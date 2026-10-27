@@ -344,7 +344,6 @@ class TestInvokePlayerSessionPropagation:
                 "_load_agent_report",
                 return_value={"tests_passed": True, "tests_run": 5},
             ),
-            patch.object(agent_invoker, "_validate_player_report"),
         ):
             result = await agent_invoker.invoke_player(
                 task_id="TASK-TEST-001",
@@ -477,7 +476,6 @@ class TestInvokePlayerSessionPropagation:
                 "_load_agent_report",
                 return_value={"tests_passed": True},
             ),
-            patch.object(agent_invoker, "_validate_player_report"),
         ):
             result = await agent_invoker.invoke_player(
                 task_id="TASK-TEST-001",

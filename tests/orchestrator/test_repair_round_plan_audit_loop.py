@@ -19,13 +19,18 @@ files and reports through the real ``AgentInvoker._write_task_work_results``
 (so the real plan audit runs), and the Coach is the real primary path and the
 real ``invoke_coach`` guards; only the model's answer is a stand-in. The prompt
 the model would have read is captured. Every file name and content is invented.
+
+27 October 2026 cull: the reviewer's verdict is advice, the plan audit is no
+longer written into the task's results, a repair round whose record cannot be
+read no longer refuses the turn, and the legacy Coach is gone. What still
+sends a repair-round turn back is a protected file it made, changed or
+deleted. The tests of the deleted parts went with them.
 """
 
 from __future__ import annotations
 
 import asyncio
 import json
-import os
 import subprocess
 from copy import deepcopy
 from pathlib import Path
@@ -427,16 +432,6 @@ def reopen_and_repair(
     return outcome
 
 
-def _plan_audit(repo: Path) -> Dict[str, Any]:
-    path = repo / ".guardkit" / "autobuild" / TASK_ID / "task_work_results.json"
-    return json.loads(path.read_text())["plan_audit"]
-
-
-def _plan_audit_issues(history: List[Any]) -> List[Dict[str, Any]]:
-    report = history[-1].coach_result.report or {}
-    return [i for i in report.get("issues", []) if i.get("category") == "plan_audit"]
-
-
 def _protected_issues(history: List[Any]) -> List[Dict[str, Any]]:
     """Step 1 (24 October 2026): the plan audit is advice (GKT-141), so a
     repair round's protected file is refused by the repair-round guard."""
@@ -501,21 +496,12 @@ class TestARepairRoundCanDoItsJob:
         assert "check-feature: FAIL exit=1" in section
 
         assert outcome["decision"] == "approved", outcome["history"][-1].coach_result.report
-        block = _plan_audit(repo)
-        assert block["status"] == "passed", block
-        # The accepted repair-scope policy does not recount round-one work as
-        # this repair's changes.  The still-declared App modification is now
-        # retained as a medium advisory rather than being silently satisfied
-        # by the earlier scope; it does not override the reviewer's approval.
-        assert block["severity"] == "medium"
-        assert block["repair_round"]["start_commit"] == outcome["head_at_re_open"]
 
     def test_the_same_files_on_an_ordinary_turn_are_audited_as_ordinary(
         self, approved_round_one: Path
     ) -> None:
-        """Control: without the re-open the audit is an ordinary one, and a
-        repair-round file on disk (the old design's record) changes nothing.
-        Since step 1 (24 October 2026, GKT-141) its findings are advice."""
+        """Control: without the re-open the turn is an ordinary one, and a
+        repair-round file on disk (the old design's record) changes nothing."""
         repo = approved_round_one
         private = TaskArtifactPaths.task_private_dir(TASK_ID, repo)
         (private / "round-1").mkdir(parents=True, exist_ok=True)
@@ -525,16 +511,15 @@ class TestARepairRoundCanDoItsJob:
             "implicated_paths": ["tests/e2e/shelf.spec.ts"],
         }))
         outcome = run_round(repo, REPAIR_NEAR_THE_FAILURE)
-        block = _plan_audit(repo)
-        assert block["status"] == "violation"
-        assert block["severity"] == "high"
-        assert "repair_round" not in block
+        assert outcome["decision"] == "approved", outcome["history"][-1].coach_result.report
         assert not _protected_issues(outcome["history"])
         assert all("## This is a repair round" not in p for p in outcome["prompts"])
 
 
-class TestARepairRoundThatWandersIsRefused:
-    def test_the_reviewer_refuses_unrelated_product_code(self, approved_round_one: Path) -> None:
+class TestARepairRoundThatWanders:
+    def test_the_reviewer_sees_unrelated_product_code_and_its_verdict_is_advice(
+        self, approved_round_one: Path
+    ) -> None:
         repo = approved_round_one
         outcome = reopen_and_repair(
             repo,
@@ -545,13 +530,12 @@ class TestARepairRoundThatWandersIsRefused:
         section = _repair_section(outcome["prompts"])
         for path in REPAIR_THAT_WANDERS:
             assert f"- `{path}`" in section
-        assert outcome["decision"] != "approved"
+        # The reviewer's refusal is kept as advice; it no longer sends the
+        # turn back (nothing protected was touched).
+        assert outcome["decision"] == "approved"
         report = outcome["history"][-1].coach_result.report
-        assert report["decision"] == "feedback"
-        assert any(
-            "apps/api/src/billing/invoice.ts" in issue.get("description", "")
-            for issue in report.get("issues", [])
-        )
+        assert report["decision"] == "approve"
+        assert report["reviewer_decision"] == "feedback"
 
     def test_a_protected_file_is_refused_whatever_the_reviewer_says(
         self, approved_round_one: Path
@@ -567,54 +551,17 @@ class TestARepairRoundThatWandersIsRefused:
         )
 
         assert outcome["decision"] != "approved"
-        block = _plan_audit(repo)
-        assert block["severity"] == "high"
         issues = _protected_issues(outcome["history"])
         assert issues and issues[0]["severity"] == "must_fix"
         assert "db/migrations/0003_seed_books.sql" in issues[0]["description"]
-
-
-class TestTheLegacyCoachHasNoReviewer:
-    """With ``GUARDKIT_COACH_LEGACY=1`` no LLM reviewer judges the extra files,
-    so a repair round is audited exactly as an ordinary turn, and the log says
-    so."""
-
-    def test_a_repair_round_is_audited_by_count_and_the_log_says_why(
-        self,
-        approved_round_one: Path,
-        monkeypatch: pytest.MonkeyPatch,
-        caplog: pytest.LogCaptureFixture,
-    ) -> None:
-        repo = approved_round_one
-        monkeypatch.setenv("GUARDKIT_COACH_LEGACY", "1")
-        with caplog.at_level("WARNING", logger="guardkit.orchestrator.autobuild"):
-            outcome = reopen_and_repair(repo, REPAIR_NEAR_THE_FAILURE)
-
-        # The re-open still started the round; the loop did not use it. The
-        # count-based audit is advice since step 1 (24 October 2026).
-        assert isinstance(outcome["repair_round"], RepairRound)
-        block = _plan_audit(repo)
-        assert block["status"] == "violation"
-        assert block["severity"] == "high"
-        assert "repair_round" not in block
-        assert block["extra_files_for_the_reviewer"] == []
-        # No model Coach was asked, and nothing carried a repair section.
-        assert not any(p.startswith("You are the Coach agent") for p in outcome["prompts"])
-        assert all("## This is a repair round" not in p for p in outcome["prompts"])
-        assert any(
-            "audited as an ordinary turn" in record.getMessage()
-            and "GUARDKIT_COACH_LEGACY=1" in record.getMessage()
-            for record in caplog.records
-        )
 
 
 class TestTheReviewerSeesEveryChange:
     def test_an_unplanned_edit_reaches_the_reviewer_without_a_modify_section(
         self, tmp_path: Path
     ) -> None:
-        """The task declares only files to create, so the ordinary audit says
-        nothing about edits; the unrelated edit still reaches the reviewer,
-        and its refusal blocks the approval."""
+        """The task declares only files to create; the unrelated edit still
+        reaches the reviewer (whose refusal is advice)."""
         repo = make_project(tmp_path, declare_modify=False)
         assert run_round(repo, ROUND_ONE)["decision"] == "approved"
         refuse = deepcopy(REFUSE_UNRELATED)
@@ -633,8 +580,9 @@ class TestTheReviewerSeesEveryChange:
 
         section = _repair_section(outcome["prompts"])
         assert "- `apps/api/src/server.ts`" in section
-        assert _plan_audit(repo)["extra_modifications"] == []  # ordinary audit silent
-        assert outcome["decision"] != "approved"
+        assert outcome["decision"] == "approved"
+        report = outcome["history"][-1].coach_result.report
+        assert report["reviewer_decision"] == "feedback"
 
 
 class TestSequentialReEntries:
@@ -658,50 +606,11 @@ class TestSequentialReEntries:
             "tests/e2e/sign-in.ts", "apps/web/src/test-render.tsx",
         } <= second["repair_round"].approved_by_earlier_repairs
         assert second["decision"] == "approved", second["history"][-1].coach_result.report
-        block = _plan_audit(repo)
-        assert block["status"] == "passed"
-        # Earlier repair approval remains in the new round's retained input
-        # above, but the current audit is scoped to this new admission and
-        # must not recount the earlier repair's raw diff as current work.
-        assert block["extra_files_approved_by_a_repair"] == []
 
 
-class TestTheReviewSectionMustReachTheModel:
-    """In a repair round the audit leaves the extra files to the reviewer, so
-    the Coach is not run unless the whole section reaches the model."""
-
-    REFUSED = "review section could not be kept whole"
-
-    def _coach_error(self, outcome: Dict[str, Any]) -> str:
-        return str(getattr(outcome["history"][-1].coach_result, "error", "") or "")
-
-    def test_an_oversized_section_refuses_the_turn(
-        self, approved_round_one: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        repo = approved_round_one
-        monkeypatch.setattr(AgentInvoker, "_COACH_SYNTHESIS_MAX_CHARS", 5000)
-        many = {
-            f"tests/e2e/fixtures/generated-fixture-number-{n:04d}.json": "{}\n"
-            for n in range(300)
-        }
-        outcome = reopen_and_repair(repo, many)
-
-        assert outcome["decision"] != "approved"
-        assert not any(p.startswith("You are the Coach agent") for p in outcome["prompts"])
-        assert self.REFUSED in self._coach_error(outcome)
-
-    def test_an_oversized_prefix_refuses_the_turn(
-        self, approved_round_one: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        repo = approved_round_one
-        monkeypatch.setattr(AgentInvoker, "_COACH_SYNTHESIS_MAX_CHARS", 20000)
-        outcome = reopen_and_repair(
-            repo, REPAIR_NEAR_THE_FAILURE, requirements="Show the shelf. " * 3000
-        )
-
-        assert outcome["decision"] != "approved"
-        assert not any(p.startswith("You are the Coach agent") for p in outcome["prompts"])
-        assert self.REFUSED in self._coach_error(outcome)
+class TestTheReviewSectionReachesTheModel:
+    """A long gate output is cut so the review section fits; every file the
+    round changed is still listed."""
 
     def test_a_long_gate_output_is_cut_and_every_file_is_still_listed(
         self, approved_round_one: Path, monkeypatch: pytest.MonkeyPatch
@@ -798,18 +707,6 @@ class TestCarriedApprovalsAreThisTasksOwn:
         issues = _protected_issues(second["history"])
         assert issues and "deploy/Dockerfile" in issues[0]["description"]
 
-    def test_an_unapproved_repair_round_carries_nothing(self, approved_round_one: Path) -> None:
-        repo = approved_round_one
-        outcome = reopen_and_repair(
-            repo,
-            {**REPAIR_THAT_WANDERS, "tests/e2e/shelf.spec.ts": "test('x', () => {});\n"},
-            model_verdict=REFUSE_UNRELATED,
-        )
-        assert outcome["decision"] != "approved"
-        assert outcome["fo"]._repair_approvals.get(TASK_ID) is None
-
-
-
 class TestARenameIsSeen:
     def test_moving_the_dockerfile_away_is_refused_and_the_old_path_is_listed(
         self, tmp_path: Path
@@ -834,9 +731,6 @@ class TestARenameIsSeen:
         )
 
         assert outcome["decision"] != "approved"
-        block = _plan_audit(repo)
-        assert "deploy/Dockerfile" in block["repair_round"]["files_changed_this_round"]
-        assert "scripts/image-build" in block["repair_round"]["files_made_this_round"]
         issues = _protected_issues(outcome["history"])
         assert issues and "deploy/Dockerfile" in issues[0]["description"]
         # The reviewer was shown the path the file left, too.
@@ -904,18 +798,11 @@ class TestEveryAuditPathGetsTheReview:
         assert outcome["fo"]._repair_approvals[TASK_ID] == {"tests/e2e/sign-in.ts"}
 
 
-class TestAnUnreadableRecordIsNeverApproved:
-    """Live scope is authority; an unreadable live audit still fails closed.
-
-    ``checkpoints.json`` is now diagnostic only. Deleting or corrupting it
-    cannot erase the retained in-memory checkpoints or create resume
-    authority. A failure reading the scope-aware audit itself still refuses.
+class TestTheCheckpointRecordIsDiagnosticOnly:
+    """Live scope is authority. ``checkpoints.json`` is diagnostic only:
+    deleting or corrupting it cannot erase the retained in-memory checkpoints
+    or hide a protected change.
     """
-
-    REFUSAL = (
-        "The repair round's record of what changed could not be read, so this "
-        "turn cannot be approved."
-    )
 
     def _approved_round_one(self, tmp_path: Path, direct_mode: bool) -> Path:
         repo = make_project(
@@ -924,21 +811,6 @@ class TestAnUnreadableRecordIsNeverApproved:
         first = run_round(repo, {"apps/web/src/App.tsx": "export const App = () => 1;\n"})
         assert first["decision"] == "approved", first["history"][-1].coach_result.report
         return repo
-
-    def _assert_refused(self, repo: Path, outcome: Dict[str, Any]) -> None:
-        assert outcome["decision"] != "approved"
-        report = outcome["history"][-1].coach_result.report
-        assert report["decision"] == "feedback"
-        refusals = [
-            i for i in report.get("issues", []) if i.get("category") == "repair_round_unreadable"
-        ]
-        assert refusals and refusals[0]["severity"] == "must_fix"
-        assert refusals[0]["description"] == self.REFUSAL
-        private = TaskArtifactPaths.task_private_dir(TASK_ID, repo)
-        saved = json.loads((private / "coach_turn_1.json").read_text())
-        assert saved["decision"] == "feedback"
-        assert any(i.get("category") == "repair_round_unreadable" for i in saved["issues"])
-        assert outcome["fo"]._repair_approvals.get(TASK_ID) is None
 
     @staticmethod
     def _checkpoints(repo: Path) -> Path:
@@ -960,7 +832,6 @@ class TestAnUnreadableRecordIsNeverApproved:
         issues = outcome["history"][-1].coach_result.report.get("issues", [])
         protected = [i for i in issues if i.get("category") == "repair_round_protected"]
         assert protected and "db/migrations/0003_seed_books.sql" in protected[0]["description"]
-        assert not any(i.get("category") == "repair_round_unreadable" for i in issues)
         assert outcome["fo"]._repair_approvals.get(TASK_ID) is None
 
     @pytest.mark.parametrize("direct_mode", [False, True], ids=["no-declarations", "direct-mode"])
@@ -978,26 +849,6 @@ class TestAnUnreadableRecordIsNeverApproved:
         # override the retained scope/checkpoint lineage.
         assert outcome["decision"] == "approved"
         assert outcome["fo"]._repair_approvals[TASK_ID] == {"tests/e2e/sign-in.ts"}
-        issues = outcome["history"][-1].coach_result.report.get("issues", [])
-        assert not any(i.get("category") == "repair_round_unreadable" for i in issues)
-
-    @pytest.mark.parametrize("direct_mode", [False, True], ids=["no-declarations", "direct-mode"])
-    def test_a_read_that_raises_refuses_the_turn(
-        self, tmp_path: Path, direct_mode: bool, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        repo = self._approved_round_one(tmp_path, direct_mode)
-        from installer.core.commands.lib.plan_audit import PlanAuditor
-
-        def _raise(self: Any, task_id: Any) -> Any:
-            raise OSError("invented read failure")
-
-        monkeypatch.setattr(PlanAuditor, "_repair_round_facts", _raise)
-        outcome = reopen_and_repair(
-            repo,
-            {"tests/e2e/sign-in.ts": "export const signIn = 1;\n"},
-            model_verdict=APPROVE,
-        )
-        self._assert_refused(repo, outcome)
 
     @pytest.mark.parametrize("direct_mode", [False, True], ids=["no-declarations", "direct-mode"])
     def test_a_readable_record_still_approves(self, tmp_path: Path, direct_mode: bool) -> None:
@@ -1019,10 +870,6 @@ class TestAnUnreadableRecordIsNeverApproved:
             shell_step=lambda root: self._checkpoints(root).unlink(),
         )
         assert outcome["decision"] == "approved", outcome["history"][-1].coach_result.report
-        report = outcome["history"][-1].coach_result.report
-        assert not any(
-            i.get("category") == "repair_round_unreadable" for i in report.get("issues", [])
-        )
 
 
 SECRET = "INVENTED_SECRET_VALUE_31f7"
@@ -1129,36 +976,8 @@ class TestIgnoredProtectedFiles:
         )
         assert outcome["decision"] == "approved", outcome["history"][-1].coach_result.report
 
-    @pytest.mark.parametrize("direct_mode", [False, True], ids=["no-declarations", "direct-mode"])
-    def test_no_listing_refuses_the_turn(
-        self, tmp_path: Path, direct_mode: bool, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        repo = self._round_one(tmp_path, direct_mode, env=None)
-        from guardkit.orchestrator import repair_round as rr
-
-        real = rr.protected_files
-        calls = {"n": 0}
-
-        def _second_listing_fails(worktree_path: Path) -> Any:
-            calls["n"] += 1
-            return real(worktree_path) if calls["n"] == 1 else None
-
-        monkeypatch.setattr(rr, "protected_files", _second_listing_fails)
-        outcome = reopen_and_repair(repo, self.HELPER, model_verdict=APPROVE)
-        assert outcome["decision"] != "approved"
-        report = outcome["history"][-1].coach_result.report
-        assert any(
-            i.get("category") == "repair_round_unreadable" for i in report.get("issues", [])
-        )
-
-
-@pytest.mark.skipif(
-    hasattr(os, "geteuid") and os.geteuid() == 0, reason="root reads unreadable files"
-)
-class TestEveryFailurePathFailsClosed:
-    """A repair round whose facts cannot be established is still a repair
-    round, and every one of its turns is refused (no stand-in value, no
-    fallback to an ordinary turn)."""
+class TestAReadableProtectedFile:
+    """A readable, unchanged protected file leaves the reviewer's approval."""
 
     def _round_one(self, tmp_path: Path, direct_mode: bool, env: Optional[str]) -> Path:
         repo = make_project(
@@ -1170,85 +989,7 @@ class TestEveryFailurePathFailsClosed:
         assert first["decision"] == "approved", first["history"][-1].coach_result.report
         return repo
 
-    def _refused_as_unreadable(self, repo: Path, outcome: Dict[str, Any]) -> None:
-        assert outcome["decision"] != "approved"
-        report = outcome["history"][-1].coach_result.report
-        assert report["decision"] == "feedback"
-        assert any(
-            i.get("category") == "repair_round_unreadable" for i in report.get("issues", [])
-        ), report.get("issues")
-        private = TaskArtifactPaths.task_private_dir(TASK_ID, repo)
-        assert json.loads((private / "coach_turn_1.json").read_text())["decision"] == "feedback"
-        assert outcome["fo"]._repair_approvals.get(TASK_ID) is None
-
     HELPER = {"tests/e2e/sign-in.ts": "export const signIn = 1;\n"}
-
-    @pytest.mark.parametrize("direct_mode", [False, True], ids=["no-declarations", "direct-mode"])
-    def test_a_one_shot_head_failure_at_the_re_open_is_refused(
-        self, tmp_path: Path, direct_mode: bool, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        repo = self._round_one(tmp_path, direct_mode, env=None)
-        from guardkit.orchestrator import repair_round as rr
-
-        real = rr.git_head
-        calls = {"n": 0}
-
-        def _first_call_fails(worktree_path: Path) -> str:
-            calls["n"] += 1
-            if calls["n"] == 1:
-                raise rr.RepairFactsUnavailable("HEAD could not be read")
-            return real(worktree_path)
-
-        monkeypatch.setattr(rr, "git_head", _first_call_fails)
-        outcome = reopen_and_repair(repo, self.HELPER, model_verdict=APPROVE)
-
-        assert outcome["repair_round"] is not None  # never dropped
-        assert outcome["repair_round"].unavailable
-        self._refused_as_unreadable(repo, outcome)
-
-    @pytest.mark.parametrize("direct_mode", [False, True], ids=["no-declarations", "direct-mode"])
-    def test_a_protected_file_unreadable_at_the_baseline_only_is_refused(
-        self, tmp_path: Path, direct_mode: bool
-    ) -> None:
-        repo = self._round_one(tmp_path, direct_mode, env="A=1\n")
-        os.chmod(repo / ".env", 0)
-        outcome = reopen_and_repair(
-            repo, self.HELPER, model_verdict=APPROVE,
-            shell_step=lambda root: os.chmod(root / ".env", 0o600),
-        )
-        assert outcome["repair_round"].unavailable
-        self._refused_as_unreadable(repo, outcome)
-
-    @pytest.mark.parametrize("direct_mode", [False, True], ids=["no-declarations", "direct-mode"])
-    def test_a_protected_file_unreadable_at_the_current_read_only_is_refused(
-        self, tmp_path: Path, direct_mode: bool
-    ) -> None:
-        repo = self._round_one(tmp_path, direct_mode, env="A=1\n")
-        outcome = reopen_and_repair(
-            repo, self.HELPER, model_verdict=APPROVE,
-            shell_step=lambda root: os.chmod(root / ".env", 0),
-        )
-        assert not outcome["repair_round"].unavailable
-        os.chmod(repo / ".env", 0o600)
-        self._refused_as_unreadable(repo, outcome)
-
-    @pytest.mark.parametrize("direct_mode", [False, True], ids=["no-declarations", "direct-mode"])
-    def test_a_protected_file_unreadable_at_both_reads_and_changed_between_is_refused(
-        self, tmp_path: Path, direct_mode: bool
-    ) -> None:
-        repo = self._round_one(tmp_path, direct_mode, env="A=1\n")
-        os.chmod(repo / ".env", 0)
-
-        def _change_while_unreadable(root: Path) -> None:
-            os.chmod(root / ".env", 0o600)
-            (root / ".env").write_text("A=2\n")
-            os.chmod(root / ".env", 0)
-
-        outcome = reopen_and_repair(
-            repo, self.HELPER, model_verdict=APPROVE, shell_step=_change_while_unreadable
-        )
-        os.chmod(repo / ".env", 0o600)
-        self._refused_as_unreadable(repo, outcome)
 
     @pytest.mark.parametrize("direct_mode", [False, True], ids=["no-declarations", "direct-mode"])
     def test_a_readable_unchanged_protected_file_approves(
@@ -1260,14 +1001,10 @@ class TestEveryFailurePathFailsClosed:
         assert outcome["decision"] == "approved", outcome["history"][-1].coach_result.report
 
 
-@pytest.mark.skipif(
-    hasattr(os, "geteuid") and os.geteuid() == 0, reason="root reads unreadable files"
-)
 class TestASymlinkedProtectedFile:
     """A protected ignored file that is a symlink is fingerprinted by its link
     text, the path the chain resolves to and the target's contents, so a
-    write through it or a retarget is seen; a target that cannot be read
-    refuses the turn."""
+    write through it or a retarget is seen."""
 
     HELPER = {"tests/e2e/sign-in.ts": "export const signIn = 1;\n"}
 
@@ -1320,32 +1057,6 @@ class TestASymlinkedProtectedFile:
         outcome = reopen_and_repair(repo, self.HELPER, model_verdict=APPROVE, shell_step=_retarget)
         self._refused(repo, outcome, "repair_round_protected")
 
-    @pytest.mark.parametrize("direct_mode", [False, True], ids=["no-declarations", "direct-mode"])
-    def test_a_dangling_link_is_refused_as_unreadable(self, tmp_path: Path, direct_mode: bool) -> None:
-        repo = self._round_one(tmp_path, direct_mode)
-        outcome = reopen_and_repair(
-            repo, self.HELPER, model_verdict=APPROVE,
-            shell_step=lambda root: (root / "build" / "out.txt").unlink(),
-        )
-        self._refused(repo, outcome, "repair_round_unreadable")
-
-    @pytest.mark.parametrize("direct_mode", [False, True], ids=["no-declarations", "direct-mode"])
-    def test_an_unreadable_target_is_refused_as_unreadable(
-        self, tmp_path: Path, direct_mode: bool
-    ) -> None:
-        repo = self._round_one(tmp_path, direct_mode)
-        outcome = reopen_and_repair(
-            repo, self.HELPER, model_verdict=APPROVE,
-            shell_step=lambda root: os.chmod(root / "build" / "out.txt", 0),
-        )
-        os.chmod(repo / "build" / "out.txt", 0o600)
-        self._refused(repo, outcome, "repair_round_unreadable")
-
-
-
-@pytest.mark.skipif(
-    hasattr(os, "geteuid") and os.geteuid() == 0, reason="root reads unreadable files"
-)
 class TestATrackedProtectedSymlink:
     """Every protected path is fingerprinted whatever git thinks of it: a
     committed protected symlink to an ignored target is followed too."""
@@ -1398,18 +1109,6 @@ class TestATrackedProtectedSymlink:
         assert outcome["decision"] == "approved", outcome["history"][-1].coach_result.report
 
     @pytest.mark.parametrize("direct_mode", [False, True], ids=["no-declarations", "direct-mode"])
-    def test_a_tracked_link_with_an_unreadable_target_is_refused_as_unreadable(
-        self, tmp_path: Path, direct_mode: bool
-    ) -> None:
-        repo = self._round_one(tmp_path, direct_mode)
-        outcome = reopen_and_repair(
-            repo, self.HELPER, model_verdict=APPROVE,
-            shell_step=lambda root: os.chmod(root / "build" / "out.txt", 0),
-        )
-        os.chmod(repo / "build" / "out.txt", 0o600)
-        self._refused(repo, outcome, "repair_round_unreadable")
-
-    @pytest.mark.parametrize("direct_mode", [False, True], ids=["no-declarations", "direct-mode"])
     def test_a_deleted_tracked_protected_file_is_a_protected_change(
         self, tmp_path: Path, direct_mode: bool
     ) -> None:
@@ -1421,15 +1120,8 @@ class TestATrackedProtectedSymlink:
             shell_step=lambda root: (root / "deploy" / "Dockerfile").unlink(),
         )
         self._refused(repo, outcome, "repair_round_protected")
-        report = outcome["history"][-1].coach_result.report
-        assert not any(
-            i.get("category") == "repair_round_unreadable" for i in report.get("issues", [])
-        )
 
 
-@pytest.mark.skipif(
-    hasattr(os, "geteuid") and os.geteuid() == 0, reason="root reads unreadable files"
-)
 class TestANestedRepository:
     """git lists an untracked nested repository as one entry; the walk of the
     filesystem goes inside it, so a protected file there is fingerprinted."""
@@ -1494,26 +1186,6 @@ class TestANestedRepository:
         outcome = reopen_and_repair(repo, self.HELPER, model_verdict=APPROVE)
         assert outcome["decision"] == "approved", outcome["history"][-1].coach_result.report
         assert self.ENV in dict(outcome["repair_round"].protected_fingerprints)
-
-    @pytest.mark.parametrize("direct_mode", [False, True], ids=["no-declarations", "direct-mode"])
-    def test_an_unreadable_env_inside_is_refused(self, tmp_path: Path, direct_mode: bool) -> None:
-        repo = self._round_one(tmp_path, direct_mode, env="A=1\n")
-        outcome = reopen_and_repair(
-            repo, self.HELPER, model_verdict=APPROVE,
-            shell_step=lambda root: os.chmod(root / self.ENV, 0),
-        )
-        os.chmod(repo / self.ENV, 0o600)
-        self._refused(repo, outcome, "repair_round_unreadable")
-
-    @pytest.mark.parametrize("direct_mode", [False, True], ids=["no-declarations", "direct-mode"])
-    def test_an_unreadable_folder_is_refused(self, tmp_path: Path, direct_mode: bool) -> None:
-        repo = self._round_one(tmp_path, direct_mode, env="A=1\n")
-        outcome = reopen_and_repair(
-            repo, self.HELPER, model_verdict=APPROVE,
-            shell_step=lambda root: os.chmod(root / "build" / "local", 0),
-        )
-        os.chmod(repo / "build" / "local", 0o755)
-        self._refused(repo, outcome, "repair_round_unreadable")
 
     def test_a_folder_symlink_loop_is_not_followed(self, tmp_path: Path) -> None:
         from guardkit.orchestrator.repair_round import protected_fingerprints

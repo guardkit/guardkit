@@ -523,7 +523,6 @@ def test_a_bogus_answer_leaves_every_title_refused(tmp_path: Path, caplog, answe
     assert result.stamped == {} and result.model_stamped == []
     assert result.written is False
     assert "the model fallback was asked about 4 title(s) and its answer was rejected:" in caplog.text
-    assert "UNDECIDABLE" in caplog.text  # the law's own loud refusal, unchanged
     assert "scenarios" not in (yaml.safe_load(_yaml_path(repo).read_text()) or {})
 
 
@@ -588,8 +587,6 @@ def test_a_model_that_cannot_answer_leaves_the_refusal_exactly_as_it_was(
     assert "the model fallback was asked about 4 title(s) and could not answer:" in caplog.text
     assert "the model could not be asked" not in caplog.text
     assert "nothing was stamped" in caplog.text
-    for title in REFUSED_THIS_WEEK:
-        assert title in caplog.text  # the law still names every refused title
 
 
 def test_no_endpoint_configured_means_the_model_is_never_asked(tmp_path: Path, caplog, monkeypatch):

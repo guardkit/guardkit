@@ -1,12 +1,11 @@
 """Pre-flight feature validation for AutoBuild feature execution.
 
-Validates task file frontmatter before any SDK invocations, catching
-issues like invalid task_type values or missing required fields early.
-
-This module complements FeatureLoader.validate_feature() which handles
-structural validation (file existence, dependency graph, orchestration
-consistency). Pre-flight validation focuses on task file *content*
-(frontmatter field completeness and value correctness).
+Since the cull (27 October 2026, GKT-057 and GKT-058) the task file
+frontmatter is not checked: a missing field takes the default the runtime
+already uses and a ``task_type`` value is kept as written.
+``validate_feature_preflight``, ``REQUIRED_FRONTMATTER_FIELDS`` and
+``_extract_frontmatter`` stay because specialist-agent imports them, and the
+result types stay for the callers in ``feature_orchestrator``.
 """
 
 import logging
@@ -16,22 +15,13 @@ from typing import Dict, List, Optional
 
 import yaml
 
-from guardkit.models.task_types import TASK_TYPE_ALIASES
 from guardkit.orchestrator.feature_loader import Feature
 
 logger = logging.getLogger(__name__)
 
-# Required frontmatter fields for pre-flight validation
+# The frontmatter fields a task file normally carries. Read by
+# specialist-agent's planner; GuardKit no longer checks them.
 REQUIRED_FRONTMATTER_FIELDS = ("id", "title", "task_type", "complexity")
-
-# GKT-057, step 1 (24 October 2026): a missing field is advice, not a refusal.
-# The build runs on the default the runtime already uses for that field.
-MISSING_FIELD_DEFAULTS = {
-    "id": "the task id from the feature file",
-    "title": "the task id",
-    "task_type": "feature",
-    "complexity": "5",
-}
 
 
 @dataclass
@@ -133,74 +123,11 @@ def validate_feature_preflight(
     feature: Feature,
     repo_root: Path,
 ) -> PreFlightValidationResult:
-    """Validate all task frontmatter in a feature before execution.
-
-    Iterates all tasks, loads each task file, parses YAML frontmatter,
-    and validates required fields and task_type values. Collects ALL
-    issues (batch, not fail-fast).
-
-    Parameters
-    ----------
-    feature : Feature
-        Loaded feature to validate
-    repo_root : Path
-        Repository root directory
-
-    Returns
-    -------
-    PreFlightValidationResult
-        Collected errors and warnings
+    """Kept for callers (feature_orchestrator, specialist-agent); returns an
+    empty result. The frontmatter checks were deleted in the cull (27
+    October 2026, GKT-057 and GKT-058).
     """
-    result = PreFlightValidationResult()
-
-    for task in feature.tasks:
-        task_file = repo_root / task.file_path
-        if not task_file.exists() or task_file.is_dir():
-            # Structural validator already handles missing/invalid files
-            continue
-
-        frontmatter = _extract_frontmatter(task_file)
-        if frontmatter is None:
-            # No parseable frontmatter - skip gracefully
-            continue
-
-        # Missing fields take their defaults, with advice (GKT-057).
-        for field_name in REQUIRED_FRONTMATTER_FIELDS:
-            if field_name not in frontmatter or frontmatter[field_name] is None:
-                result.warnings.append(
-                    ValidationIssue(
-                        task_id=task.id,
-                        field=field_name,
-                        severity="warning",
-                        message=(
-                            f"Missing field '{field_name}'; using the default "
-                            f"({MISSING_FIELD_DEFAULTS[field_name]})"
-                        ),
-                    )
-                )
-
-        # Validate task_type value (if present)
-        task_type_str = frontmatter.get("task_type")
-        if task_type_str is not None:
-            # Check if it's an alias (valid but not canonical)
-            if task_type_str in TASK_TYPE_ALIASES:
-                canonical = TASK_TYPE_ALIASES[task_type_str].value
-                result.warnings.append(
-                    ValidationIssue(
-                        task_id=task.id,
-                        field="task_type",
-                        severity="warning",
-                        message=f"task_type '{task_type_str}' is a legacy alias",
-                        suggestion=(
-                            f"Change to '{canonical}' (canonical value)"
-                        ),
-                    )
-                )
-            # Step 2 (26 October 2026): an invalid value is refused once, by
-            # FeatureLoader.validate_feature (the plan check, also run at
-            # build start); this copy is gone.
-
-    return result
+    return PreFlightValidationResult()
 
 
 def validate_feature_environment(

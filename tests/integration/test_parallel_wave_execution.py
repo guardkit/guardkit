@@ -101,6 +101,9 @@ def mock_worktree_manager(tmp_repo_root):
     manager = MagicMock(spec=WorktreeManager)
     worktree_path = tmp_repo_root / ".guardkit" / "worktrees" / "FEAT-TEST"
     worktree_path.mkdir(parents=True, exist_ok=True)
+    from tests.task_scope_fixtures import init_checkout
+
+    init_checkout(worktree_path)  # the writer lock reads its git identity
 
     # Create a worktree instance to return
     test_worktree = Worktree(
@@ -310,7 +313,7 @@ class TestParallelWaveExecution:
 
     def test_wave_executes_in_parallel(self, tmp_repo_root, mock_worktree_manager):
         """
-        Verify wave tasks execute in parallel, not serially.
+        Verify every task of a wave executes (one writer at a time).
 
         Test Flow:
         1. Create feature with 3 tasks in same wave, each takes 1 second
@@ -363,14 +366,10 @@ class TestParallelWaveExecution:
         assert result.tasks_completed == 3
         assert result.tasks_failed == 0
 
-        # Verify parallel execution (should be ~1s, not ~3s)
-        # Allow tolerance for thread scheduling overhead
-        assert (
-            elapsed_time < 2.0
-        ), f"Expected ~1s (parallel), got {elapsed_time:.2f}s (serial would be ~3s)"
-        assert (
-            elapsed_time >= 1.0
-        ), f"Expected at least 1s work, got {elapsed_time:.2f}s"
+        # Every task of the wave ran. Since step 2 (26 October 2026) the
+        # checkout's one writer lock runs them one at a time, so the wave takes
+        # about the sum of its tasks.
+        assert elapsed_time >= 3.0, f"Expected ~3s of work, got {elapsed_time:.2f}s"
 
     def test_wave_error_isolation(self, tmp_repo_root, mock_worktree_manager):
         """

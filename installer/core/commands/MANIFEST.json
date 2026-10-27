@@ -42,16 +42,16 @@
       "source_commit": "af20596c"
     },
     "feature-build.md": {
-      "sha256": "28c64632308b04637f0419ea6520342d17a6da6528e901eae9f9c9a3dbc025a9",
-      "source_commit": "91e58cc5"
+      "sha256": "f2d75e2d6ca2d2f0f960b6cffdfcc5897f16da7cb99beb8498b6494a2b52f2bc",
+      "source_commit": "7e5ddef1"
     },
     "feature-complete.md": {
       "sha256": "81ee67e73d05c638263f8770f2f8c367e3b224468e1a557bf4397d264e577beb",
       "source_commit": "27d273c1"
     },
     "feature-plan.md": {
-      "sha256": "0cf5bf8515f9cd5aa9ee620d3d95a27a7d789a2bfbf5e6fa42038e8fb596c51c",
-      "source_commit": "ab7bd7ad"
+      "sha256": "a029fbffa5a9531b2656882f59ddfd5b572b75cb4f7e3ab0188fc6fc27e2690f",
+      "source_commit": "5c350010"
     },
     "feature-spec.md": {
       "sha256": "32c1b7fecf14913927cd6d950edb04c332a3821b1538e48e3f5da9ab77c56aec",

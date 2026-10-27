@@ -518,8 +518,11 @@ class TestGP5ExecuteTask:
         """Create a minimal Worktree."""
         from guardkit.worktrees.manager import Worktree
 
+        from tests.task_scope_fixtures import init_checkout
+
         wt_path = tmp_path / "worktree"
-        wt_path.mkdir(exist_ok=True)
+        # The task runs as the checkout's writer, which reads its git identity.
+        init_checkout(wt_path)
         return Worktree(
             task_id="TASK-CEF-002",
             branch_name="autobuild/TASK-CEF-002",

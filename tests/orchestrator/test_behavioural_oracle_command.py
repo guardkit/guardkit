@@ -9,7 +9,6 @@ Outcome branches exercised:
   - command exits non-zero → ran+failed with output_tail (AC-002)
   - command exceeds timeout → timed_out=True, subprocess killed (AC-003)
   - precedence: roundtrip.py exists → command is NOT used (AC-004)
-  - command is operator policy: never downgraded to not_independent (AC-005)
 """
 
 from __future__ import annotations
@@ -82,9 +81,7 @@ class TestCommandExitZero:
         worktree_path.mkdir()
         validator = _make_validator(worktree_path)
         task = _task_with_command(command="true")
-        result = validator._produce_behavioural_oracle(
-            authored_files=[], task=task,
-        )
+        result = validator._produce_behavioural_oracle(task=task)
         assert result is not None
         assert result["status"] == "ran"
         assert result["passed"] is True
@@ -103,9 +100,7 @@ class TestCommandExitZero:
         worktree_path.mkdir()
         validator = _make_validator(worktree_path)
         task = _task_with_command(command="echo 'hello world'")
-        result = validator._produce_behavioural_oracle(
-            authored_files=[], task=task,
-        )
+        result = validator._produce_behavioural_oracle(task=task)
         assert result is not None
         assert result["passed"] is True
         assert result["output_tail"] is not None
@@ -117,9 +112,7 @@ class TestCommandExitZero:
         worktree_path.mkdir()
         validator = _make_validator(worktree_path)
         task = _task_with_command_string(command="true")
-        result = validator._produce_behavioural_oracle(
-            authored_files=[], task=task,
-        )
+        result = validator._produce_behavioural_oracle(task=task)
         assert result is not None
         assert result["passed"] is True
 
@@ -139,9 +132,7 @@ class TestCommandExitNonZero:
         worktree_path.mkdir()
         validator = _make_validator(worktree_path)
         task = _task_with_command(command="false")
-        result = validator._produce_behavioural_oracle(
-            authored_files=[], task=task,
-        )
+        result = validator._produce_behavioural_oracle(task=task)
         assert result is not None
         assert result["status"] == "ran"
         assert result["passed"] is False
@@ -155,9 +146,7 @@ class TestCommandExitNonZero:
         worktree_path.mkdir()
         validator = _make_validator(worktree_path)
         task = _task_with_command(command="echo 'failure details'; exit 42")
-        result = validator._produce_behavioural_oracle(
-            authored_files=[], task=task,
-        )
+        result = validator._produce_behavioural_oracle(task=task)
         assert result is not None
         assert result["passed"] is False
         assert result["exit_code"] == 42
@@ -185,9 +174,7 @@ class TestCommandTimeout:
         old_timeout = os.environ.get("GUARDKIT_ORACLE_TIMEOUT")
         os.environ["GUARDKIT_ORACLE_TIMEOUT"] = "0.1"
         try:
-            result = validator._produce_behavioural_oracle(
-                authored_files=[], task=task,
-            )
+            result = validator._produce_behavioural_oracle(task=task)
             assert result is not None
             assert result["status"] == "ran"
             assert result["passed"] is False
@@ -210,9 +197,7 @@ class TestCommandTimeout:
         old_timeout = os.environ.get("GUARDKIT_ORACLE_TIMEOUT")
         os.environ["GUARDKIT_ORACLE_TIMEOUT"] = "0.1"
         try:
-            result = validator._produce_behavioural_oracle(
-                authored_files=[], task=task,
-            )
+            result = validator._produce_behavioural_oracle(task=task)
             # The subprocess should have been killed by subprocess.run
             # (it raises TimeoutExpired which we catch internally)
             assert result is not None
@@ -247,9 +232,7 @@ class TestPrecedence:
         )
         validator = _make_validator(worktree_path)
         task = _task_with_command(command="false")
-        result = validator._produce_behavioural_oracle(
-            authored_files=[], task=task,
-        )
+        result = validator._produce_behavioural_oracle(task=task)
         assert result is not None
         assert result["status"] == "ran"
         assert result["passed"] is True
@@ -273,56 +256,11 @@ class TestPrecedence:
         )
         validator = _make_validator(worktree_path)
         task = _task_with_command(command="true")
-        result = validator._produce_behavioural_oracle(
-            authored_files=[], task=task,
-        )
+        result = validator._produce_behavioural_oracle(task=task)
         assert result is not None
         assert result["passed"] is False
         assert "oracle_path" in result
         assert "command" not in result
-
-
-# ============================================================================
-# AC-005: command is operator policy — never downgraded to not_independent
-# ============================================================================
-
-
-class TestOperatorPolicy:
-    """AC-005: A YAML-declared command is operator policy: the result is
-    never downgraded to not_independent."""
-
-    def test_command_not_downgraded_when_authored(self, tmp_path: Path) -> None:
-        """Even if the command is in authored_files, it runs as policy."""
-        worktree_path = tmp_path / "worktree-policy"
-        worktree_path.mkdir()
-        validator = _make_validator(worktree_path)
-        task = _task_with_command(command="true")
-        # Pass the command string as if it were an authored file
-        result = validator._produce_behavioural_oracle(
-            authored_files=["true"], task=task,
-        )
-        assert result is not None
-        assert result["status"] == "ran"
-        assert result["passed"] is True
-        # Should NOT be not_independent
-        assert result.get("provenance") != "player_authored"
-        assert result["status"] != "not_independent"
-
-    def test_command_no_independence_check(self, tmp_path: Path) -> None:
-        """Shell commands bypass the independence check entirely."""
-        worktree_path = tmp_path / "worktree-no-indep"
-        worktree_path.mkdir()
-        validator = _make_validator(worktree_path)
-        task = _task_with_command(command="echo policy")
-        # Pass an empty authored_files list
-        result = validator._produce_behavioural_oracle(
-            authored_files=[], task=task,
-        )
-        assert result is not None
-        assert result["status"] == "ran"
-        assert result["passed"] is True
-        # Provenance should reference the command, not "player_authored"
-        assert "player_authored" not in result.get("provenance", "")
 
 
 # ============================================================================
@@ -339,9 +277,7 @@ class TestAbsent:
         worktree_path.mkdir()
         validator = _make_validator(worktree_path)
         task: Dict[str, Any] = {"id": "TASK-001"}
-        result = validator._produce_behavioural_oracle(
-            authored_files=[], task=task,
-        )
+        result = validator._produce_behavioural_oracle(task=task)
         assert result is None
 
     def test_none_task_returns_none(self, tmp_path: Path) -> None:
@@ -349,9 +285,7 @@ class TestAbsent:
         worktree_path = tmp_path / "worktree-none-task"
         worktree_path.mkdir()
         validator = _make_validator(worktree_path)
-        result = validator._produce_behavioural_oracle(
-            authored_files=[], task=None,
-        )
+        result = validator._produce_behavioural_oracle(task=None)
         assert result is None
 
 

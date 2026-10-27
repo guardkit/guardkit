@@ -80,264 +80,40 @@ class TaskType(Enum):
 
 @dataclass
 class QualityGateProfile:
-    """Quality gate configuration for a task type.
-
-    Defines which quality gates are enforced and their thresholds for a specific
-    task type. This allows different validation rules for different task categories.
+    """What a task type asks of the build.
 
     Attributes:
-        arch_review_required: Whether architectural review (Phase 2.5) is required.
-            Recommended for: FEATURE tasks
-            Skipped for: SCAFFOLDING, INFRASTRUCTURE, DOCUMENTATION
-        arch_review_threshold: Minimum architectural review score (0-100).
-            Default for features: 60
-            Ignored if arch_review_required is False
-        coverage_required: Whether code coverage validation is required.
-            Recommended for: FEATURE tasks with testable code
-            Skipped for: SCAFFOLDING, INFRASTRUCTURE, DOCUMENTATION
-        coverage_threshold: Minimum line coverage percentage (0-100).
-            Default for features: 80
-            Ignored if coverage_required is False
-        tests_required: Whether test execution is required.
-            Required for: FEATURE, INFRASTRUCTURE, TESTING (TASK-ABFIX-012 — a
-                TESTING task's deliverable IS passing tests)
-            Optional for: SCAFFOLDING (e.g., validation scripts)
-            Skipped for: DOCUMENTATION
-        plan_audit_required: Whether plan audit (Phase 5.5) is required.
-            Scope creep detection and implementation completeness check.
-            Required for: FEATURE, INFRASTRUCTURE, SCAFFOLDING
-            Skipped for: DOCUMENTATION
-        zero_test_blocking: Whether zero-test anomaly blocks approval (default: False).
-            When True and tests_required is True, a zero-test anomaly returns
-            an error that blocks Coach approval instead of a warning.
-            Enabled for: FEATURE, REFACTOR, TESTING (TASK-ABFIX-012 — a TESTING
-                task with zero runnable tests is itself suspect)
-            Disabled for: SCAFFOLDING, INFRASTRUCTURE, DOCUMENTATION
-        seam_tests_recommended: Whether seam tests are recommended for this task type.
-            When True, Coach validation will note if cross-boundary features
-            lack seam tests (soft gate, not blocking in first iteration).
-            Enabled for: FEATURE, REFACTOR (tasks that cross technology boundaries)
-            Disabled for: SCAFFOLDING, DOCUMENTATION, TESTING, INFRASTRUCTURE, INTEGRATION
+        tests_required: Whether the project's tests are run for this task type
+            and a run that fails sends the turn back. False for SCAFFOLDING,
+            DOCUMENTATION and OPERATOR_HANDOFF.
 
-    Example:
-        Feature task profile (maximum validation):
-        >>> feature_profile = QualityGateProfile(
-        ...     arch_review_required=True,
-        ...     arch_review_threshold=60,
-        ...     coverage_required=True,
-        ...     coverage_threshold=80,
-        ...     tests_required=True,
-        ...     plan_audit_required=True,
-        ... )
-
-        Documentation task profile (minimal validation):
-        >>> doc_profile = QualityGateProfile(
-        ...     arch_review_required=False,
-        ...     arch_review_threshold=0,
-        ...     coverage_required=False,
-        ...     coverage_threshold=0,
-        ...     tests_required=False,
-        ...     plan_audit_required=False,
-        ... )
+    (27 October 2026: the architecture-review, coverage, plan-audit,
+    zero-test and seam-test settings went with the checks they configured.)
     """
 
-    arch_review_required: bool
-    arch_review_threshold: int
-    coverage_required: bool
-    coverage_threshold: float
     tests_required: bool
-    plan_audit_required: bool
-    zero_test_blocking: bool = False
-    seam_tests_recommended: bool = False
-
-    def __post_init__(self) -> None:
-        """Validate quality gate profile configuration.
-
-        Ensures that thresholds are valid and required constraints are met.
-
-        Raises:
-            ValueError: If arch_review_threshold is outside 0-100 range or
-                       if coverage_threshold is outside 0-100 range, or
-                       if thresholds are set when corresponding gate is not required.
-        """
-        # Validate arch_review_threshold
-        if not (0 <= self.arch_review_threshold <= 100):
-            raise ValueError(
-                f"arch_review_threshold must be 0-100, got {self.arch_review_threshold}"
-            )
-
-        if not self.arch_review_required and self.arch_review_threshold > 0:
-            raise ValueError(
-                "arch_review_threshold should be 0 when arch_review_required is False"
-            )
-
-        # Validate coverage_threshold
-        if not (0 <= self.coverage_threshold <= 100):
-            raise ValueError(
-                f"coverage_threshold must be 0-100, got {self.coverage_threshold}"
-            )
-
-        if not self.coverage_required and self.coverage_threshold > 0:
-            raise ValueError(
-                "coverage_threshold should be 0 when coverage_required is False"
-            )
 
     @classmethod
     def for_type(cls, task_type: TaskType) -> "QualityGateProfile":
-        """Get the default profile for a task type.
-
-        Convenience method to retrieve the default quality gate profile
-        from the DEFAULT_PROFILES registry for a given task type.
-
-        Args:
-            task_type: The TaskType to get the profile for.
-
-        Returns:
-            QualityGateProfile: The default profile for the given task type.
-
-        Raises:
-            KeyError: If task_type is not in DEFAULT_PROFILES (should not occur
-                     if DEFAULT_PROFILES contains all TaskType values).
-
-        Example:
-            >>> feature_profile = QualityGateProfile.for_type(TaskType.FEATURE)
-            >>> feature_profile.arch_review_required
-            True
-            >>> doc_profile = QualityGateProfile.for_type(TaskType.DOCUMENTATION)
-            >>> doc_profile.tests_required
-            False
-        """
+        """The default profile for a task type."""
         return DEFAULT_PROFILES[task_type]
 
 
 # Default profiles per task type
 DEFAULT_PROFILES: Dict[TaskType, QualityGateProfile] = {
-    TaskType.SCAFFOLDING: QualityGateProfile(
-        arch_review_required=False,
-        arch_review_threshold=0,
-        coverage_required=False,
-        coverage_threshold=0.0,
-        tests_required=False,  # Optional - may include validation scripts
-        plan_audit_required=True,  # Ensure configuration is complete
-    ),
-    TaskType.FEATURE: QualityGateProfile(
-        arch_review_required=True,
-        arch_review_threshold=60,
-        coverage_required=True,
-        coverage_threshold=80.0,
-        tests_required=True,
-        plan_audit_required=True,
-        zero_test_blocking=True,
-        seam_tests_recommended=True,
-    ),
-    TaskType.INFRASTRUCTURE: QualityGateProfile(
-        arch_review_required=False,  # Infrastructure design is different paradigm
-        arch_review_threshold=0,
-        coverage_required=False,  # Infrastructure code coverage less meaningful
-        coverage_threshold=0.0,
-        tests_required=True,  # Deployment must be tested
-        plan_audit_required=True,  # Ensure deployment is complete
-    ),
-    TaskType.INTEGRATION: QualityGateProfile(
-        arch_review_required=False,   # Wiring tasks don't need arch review
-        arch_review_threshold=0,
-        coverage_required=False,      # Integration testing is separate concern
-        coverage_threshold=0.0,
-        tests_required=True,          # Integration tests should pass if they exist
-        plan_audit_required=True,     # Ensure integration is complete
-        zero_test_blocking=False,     # Integration tasks may not have task-specific tests
-    ),
-    TaskType.DOCUMENTATION: QualityGateProfile(
-        arch_review_required=False,
-        arch_review_threshold=0,
-        coverage_required=False,
-        coverage_threshold=0.0,
-        tests_required=False,
-        plan_audit_required=False,
-    ),
-    TaskType.TESTING: QualityGateProfile(
-        arch_review_required=False,
-        arch_review_threshold=0,
-        coverage_required=False,
-        coverage_threshold=0.0,
-        # TASK-ABFIX-012: a TESTING task's deliverable IS passing tests, so the
-        # Coach MUST run them independently (was False, which let the LLM Coach
-        # reason a 5/9-red run away as "substrate" and false-approve FMDR-004).
-        # Safe only because this ships WITH the substrate-vs-code classifier
-        # (a substrate gap → signal_absent → feedback, not a false-red) and the
-        # deterministic _apply_independent_test_code_failure_guard (a red
-        # required suite → block, for every type that requires tests since
-        # reliability repair 1). Do not flip this back without those guards.
-        tests_required=True,
-        plan_audit_required=True,
-        # TASK-ABFIX-012: a TESTING task that produced zero runnable tests is
-        # itself suspect — block rather than silently UNKNOWN-pass. A genuinely
-        # passing independent run is exempt (_check_zero_test_anomaly skips when
-        # independent_tests.tests_passed and test_command != "skipped").
-        zero_test_blocking=True,
-    ),
-    TaskType.REFACTOR: QualityGateProfile(
-        arch_review_required=True,
-        arch_review_threshold=60,
-        coverage_required=True,
-        coverage_threshold=80.0,
-        tests_required=True,
-        plan_audit_required=True,
-        zero_test_blocking=True,
-        seam_tests_recommended=True,
-    ),
-    TaskType.DECLARATIVE: QualityGateProfile(
-        arch_review_required=False,
-        arch_review_threshold=0,
-        coverage_required=False,
-        coverage_threshold=0.0,
-        tests_required=True,  # Catch import errors
-        plan_audit_required=True,  # Verify completeness
-        zero_test_blocking=False,
-        seam_tests_recommended=False,
-    ),
-    # DF-016 §6(a) / clause 5: the glue-authoring task is the *highest-risk*
-    # task class, so its profile is the strictest available — every gate on,
-    # seam tests recommended (glue exists to bind seams), zero-test blocking
-    # (a glue task with no tests binds nothing verifiably). Deliberately
-    # stricter than INTEGRATION, whose relaxed gates are exactly what let the
-    # glue-class escapes through (POC-006, SMP-002). GLUE and WIRING share this
-    # one posture — the DF-016 "glue/wiring" class named twice, not two classes.
-    # (This encodes the *numeric* gates; the "no honesty-abort bypass around the
-    # wiring oracle" Coach posture keys off the enum identity in WS3-S3.)
-    TaskType.GLUE: QualityGateProfile(
-        arch_review_required=True,
-        arch_review_threshold=60,
-        coverage_required=True,
-        coverage_threshold=80.0,
-        tests_required=True,
-        plan_audit_required=True,
-        zero_test_blocking=True,
-        seam_tests_recommended=True,
-    ),
-    TaskType.WIRING: QualityGateProfile(
-        arch_review_required=True,
-        arch_review_threshold=60,
-        coverage_required=True,
-        coverage_threshold=80.0,
-        tests_required=True,
-        plan_audit_required=True,
-        zero_test_blocking=True,
-        seam_tests_recommended=True,
-    ),
-    # Skip-everything profile: orchestrator branches on the enum value to
-    # skip the task entirely; gate values exist so any code path that
-    # mistakenly evaluates the profile still short-circuits.
-    TaskType.OPERATOR_HANDOFF: QualityGateProfile(
-        arch_review_required=False,
-        arch_review_threshold=0,
-        coverage_required=False,
-        coverage_threshold=0.0,
-        tests_required=False,
-        plan_audit_required=False,
-        zero_test_blocking=False,
-        seam_tests_recommended=False,
-    ),
+    TaskType.SCAFFOLDING: QualityGateProfile(tests_required=False),
+    TaskType.FEATURE: QualityGateProfile(tests_required=True),
+    TaskType.INFRASTRUCTURE: QualityGateProfile(tests_required=True),
+    TaskType.INTEGRATION: QualityGateProfile(tests_required=True),
+    TaskType.DOCUMENTATION: QualityGateProfile(tests_required=False),
+    # TASK-ABFIX-012: a TESTING task's deliverable IS passing tests.
+    TaskType.TESTING: QualityGateProfile(tests_required=True),
+    TaskType.REFACTOR: QualityGateProfile(tests_required=True),
+    TaskType.DECLARATIVE: QualityGateProfile(tests_required=True),
+    TaskType.GLUE: QualityGateProfile(tests_required=True),
+    TaskType.WIRING: QualityGateProfile(tests_required=True),
+    # The orchestrator skips the task entirely.
+    TaskType.OPERATOR_HANDOFF: QualityGateProfile(tests_required=False),
 }
 
 
@@ -410,12 +186,12 @@ def get_profile(
     Example:
         Backward compatible usage (task_type not specified):
         >>> profile = get_profile()  # Returns FEATURE profile
-        >>> profile.arch_review_required
+        >>> profile.tests_required
         True
 
         Explicit task type:
         >>> scaffolding_profile = get_profile(TaskType.SCAFFOLDING)
-        >>> scaffolding_profile.arch_review_required
+        >>> scaffolding_profile.tests_required
         False
 
         None explicitly passed (same as default):

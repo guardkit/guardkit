@@ -249,16 +249,6 @@ class TestValidFeature:
 class TestSchemaErrors:
     """Test detection of schema validation errors."""
 
-    def test_validate_invalid_status(
-        self, runner, invalid_status_feature_dir, monkeypatch
-    ):
-        """Invalid status field causes validation error, exit code 1."""
-        monkeypatch.chdir(invalid_status_feature_dir)
-        result = runner.invoke(feature, ["validate", "FEAT-BAD"])
-        assert result.exit_code == 1
-        assert "validation errors" in result.output
-        assert "Schema errors" in result.output
-
     def test_validate_missing_required_field(
         self, runner, missing_field_feature_dir, monkeypatch
     ):
@@ -267,19 +257,6 @@ class TestSchemaErrors:
         result = runner.invoke(feature, ["validate", "FEAT-NONAME"])
         assert result.exit_code == 1
         assert "validation errors" in result.output
-
-    def test_validate_invalid_status_json(
-        self, runner, invalid_status_feature_dir, monkeypatch
-    ):
-        """Invalid status with --json outputs errors in JSON format."""
-        monkeypatch.chdir(invalid_status_feature_dir)
-        result = runner.invoke(feature, ["validate", "FEAT-BAD", "--json"])
-        assert result.exit_code == 1
-        data = json.loads(result.output)
-        assert data["valid"] is False
-        assert len(data["schema_errors"]) > 0
-        assert data["feature_id"] == "FEAT-BAD"
-
 
 # ============================================================================
 # Structural Validation Error Tests (exit code 1)
@@ -496,9 +473,9 @@ class TestIntraWaveDependencies:
 class TestTaskReferencesThroughTheCommand:
     """``guardkit feature validate <id> --json`` is the command forge's plan
     check runs (the deploy sidecar's ``feature-validate`` pre-commit check).
-    Step 2 (26 October 2026): the committed FEAT-FFEC plan passes with the
-    plain sentence as advice (the planner adds the order itself); the same
-    plan with the need declared and the waves reordered passes too."""
+    The committed FEAT-FFEC plan passes (the task-reference check was deleted
+    in the cull, 27 October 2026); the same plan with the need declared and
+    the waves reordered passes too."""
 
     _FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "task_references" / "ffec_c9c3714c"
 
@@ -509,18 +486,14 @@ class TestTaskReferencesThroughTheCommand:
         monkeypatch.chdir(tmp_path)
         return tmp_path
 
-    def test_the_committed_ffec_plan_passes_with_advice(
-        self, runner, tmp_path, monkeypatch, caplog
-    ):
+    def test_the_committed_ffec_plan_passes(self, runner, tmp_path, monkeypatch):
         self._repo(tmp_path, monkeypatch)
 
-        with caplog.at_level("WARNING"):
-            result = runner.invoke(feature, ["validate", "FEAT-FFEC", "--json"])
+        result = runner.invoke(feature, ["validate", "FEAT-FFEC", "--json"])
 
         assert result.exit_code == 0, result.output
         data = json.loads(result.output[result.output.index("{"):])
         assert data["valid"] is True
-        assert "TASK-FFEC-002's task file refers to TASK-FFEC-003" in caplog.text
 
     def test_the_corrected_ffec_plan_passes(self, runner, tmp_path, monkeypatch):
         repo = self._repo(tmp_path, monkeypatch)
@@ -546,7 +519,7 @@ class TestTaskReferencesThroughTheCommand:
 
 
 class TestTaskTypeValidation:
-    """Test detection of invalid task_type in task file frontmatter."""
+    """task_type in task file frontmatter is not checked."""
 
     def _make_feature_dir(self, tmp_path, task_type_value):
         """Helper to create a feature dir with a task of given task_type."""
@@ -574,19 +547,18 @@ class TestTaskTypeValidation:
         with open(features_dir / "FEAT-TT.yaml", "w") as f:
             yaml.dump(feature_data, f)
 
-    def test_validate_invalid_task_type(self, runner, tmp_path, monkeypatch):
-        """Task with invalid task_type in frontmatter causes structural error."""
-        monkeypatch.chdir(tmp_path)
-        self._make_feature_dir(tmp_path, "invalid_type")
-        result = runner.invoke(feature, ["validate", "FEAT-TT"])
-        assert result.exit_code == 1
-        assert "invalid_type" in result.output
-        assert "TASK-TT" in result.output
-
     def test_validate_valid_task_type(self, runner, tmp_path, monkeypatch):
         """Task with valid task_type passes validation."""
         monkeypatch.chdir(tmp_path)
         self._make_feature_dir(tmp_path, "feature")
+        result = runner.invoke(feature, ["validate", "FEAT-TT"])
+        assert result.exit_code == 0
+        assert "is valid" in result.output
+
+    def test_validate_unknown_task_type_passes(self, runner, tmp_path, monkeypatch):
+        """An unknown task_type is kept as written (the cull, 27 October 2026)."""
+        monkeypatch.chdir(tmp_path)
+        self._make_feature_dir(tmp_path, "invalid_type")
         result = runner.invoke(feature, ["validate", "FEAT-TT"])
         assert result.exit_code == 0
         assert "is valid" in result.output
@@ -598,16 +570,6 @@ class TestTaskTypeValidation:
         result = runner.invoke(feature, ["validate", "FEAT-TT"])
         assert result.exit_code == 0
         assert "is valid" in result.output
-
-    def test_validate_invalid_task_type_json(self, runner, tmp_path, monkeypatch):
-        """Invalid task_type with --json outputs error in JSON format."""
-        monkeypatch.chdir(tmp_path)
-        self._make_feature_dir(tmp_path, "bogus_type")
-        result = runner.invoke(feature, ["validate", "FEAT-TT", "--json"])
-        assert result.exit_code == 1
-        data = json.loads(result.output)
-        assert data["valid"] is False
-        assert any("bogus_type" in e for e in data["structural_errors"])
 
     def test_validate_missing_task_type_passes(self, runner, tmp_path, monkeypatch):
         """Task without task_type in frontmatter passes (defaults to feature)."""

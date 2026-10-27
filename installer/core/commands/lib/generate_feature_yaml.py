@@ -31,34 +31,6 @@ import hashlib
 import time
 
 try:
-    from guardkit.orchestrator.feature_loader import FeatureLoader
-    FEATURELOADER_AVAILABLE = True
-except ImportError:
-    FEATURELOADER_AVAILABLE = False
-
-try:
-    from guardkit.orchestrator.quality_gates.ac_linter import (
-        format_warning_summary,
-        lint_plan_warnings,
-    )
-    AC_LINTER_AVAILABLE = True
-except ImportError:
-    AC_LINTER_AVAILABLE = False
-
-# R1 DE-WIRE (Rich 08-14): the bdd_oracle_nudge import/callsite (TASK-FIX-RWOP1.2 /
-# TASK-FP-NDG1) is removed — the nudge armed the retired BDD oracle by pushing
-# authors toward @task: tags. bdd_oracle_nudge.py stays on disk unreferenced
-# until R2 deletes it.
-
-try:
-    from installer.core.commands.lib.smoke_gates_nudge import (
-        check_smoke_gates_activation,
-    )
-    SMOKE_GATES_NUDGE_AVAILABLE = True
-except ImportError:
-    SMOKE_GATES_NUDGE_AVAILABLE = False
-
-try:
     from installer.core.commands.lib.wave_overlap_detector import (
         compute_wave_overlaps,
         format_overlap_warning_summary,
@@ -355,149 +327,6 @@ def build_parallel_groups(tasks: List[TaskSpec]) -> List[List[str]]:
     return groups
 
 
-def validate_task_paths(feature: FeatureFile, base_dir: Path) -> List[str]:
-    """
-    Validate that all task file_path values resolve to actual files on disk.
-
-    Called after YAML generation to catch path errors early, before
-    feature-build runs.
-
-    Args:
-        feature: The generated feature file with task specs
-        base_dir: Project root directory to resolve relative paths against
-
-    Returns:
-        List of error strings (empty if all paths are valid)
-    """
-    errors = []
-    for task in feature.tasks:
-        if task.file_path:
-            full_path = base_dir / task.file_path
-            if not full_path.exists():
-                errors.append(
-                    f"Task {task.id}: file not found at {task.file_path}"
-                )
-    return errors
-
-
-def validate_smoke_gates_paths(
-    feature_id: str,
-    base_path: Path,
-    quiet: bool = False,
-) -> int:
-    """Validate hand-injected ``smoke_gates.command`` paths exist on disk.
-
-    Loads ``<base_path>/.guardkit/features/<feature_id>.yaml`` and, if it
-    declares a ``smoke_gates.command`` that invokes pytest, resolves every
-    positional pytest argv path against ``base_path``. Used by
-    ``generate-feature-yaml --validate-smoke-gates`` (Step 8.6 of
-    ``/feature-plan``) so a stale ``tests/cli`` path injected after
-    generation surfaces immediately, not 17 minutes into autobuild.
-
-    Path-existence delegates to the shared
-    ``guardkit.lib.pytest_argv`` helpers so this validator emits the same
-    error wording as ``FeatureLoader._parse_feature`` pre-flight
-    (TASK-FPSG-005) and ``guardkit feature validate`` (TASK-FPSG-004).
-
-    Args:
-        feature_id: Feature ID to validate (e.g. ``FEAT-DEA8``). The
-            corresponding YAML must exist under
-            ``<base_path>/.guardkit/features/``.
-        base_path: Repo root used both to locate the YAML and to resolve
-            ``smoke_gates.command`` paths.
-        quiet: When True, suppress success messages on stdout but still
-            emit error messages on stderr (so CI surfaces failures even
-            in quiet mode).
-
-    Returns:
-        ``0`` on success — including when there is nothing to validate
-        (no ``smoke_gates`` block, no ``command``, or non-pytest command).
-        Non-zero only when the YAML is missing or malformed; a path that
-        does not exist is printed as advice (step 2) and still returns 0.
-    """
-    yaml_path = base_path / ".guardkit" / "features" / f"{feature_id}.yaml"
-
-    if not yaml_path.is_file():
-        print(
-            f"❌ Feature YAML not found: {yaml_path}",
-            file=sys.stderr,
-        )
-        return 1
-
-    try:
-        import yaml
-    except ImportError:
-        print(
-            "❌ PyYAML is required for --validate-smoke-gates",
-            file=sys.stderr,
-        )
-        return 1
-
-    try:
-        text = yaml_path.read_text(encoding="utf-8")
-    except OSError as exc:
-        print(f"❌ Cannot read {yaml_path}: {exc}", file=sys.stderr)
-        return 1
-
-    try:
-        data = yaml.safe_load(text)
-    except yaml.YAMLError as exc:
-        print(f"❌ Cannot parse {yaml_path}: {exc}", file=sys.stderr)
-        return 1
-
-    if not isinstance(data, dict):
-        print(
-            f"❌ {yaml_path} root is not a YAML mapping",
-            file=sys.stderr,
-        )
-        return 1
-
-    smoke_gates = data.get("smoke_gates")
-    if not isinstance(smoke_gates, dict):
-        if not quiet:
-            print("✓ No smoke_gates block — nothing to validate")
-        return 0
-
-    command = smoke_gates.get("command")
-    if not isinstance(command, str) or not command.strip():
-        if not quiet:
-            print("✓ No smoke_gates.command — nothing to validate")
-        return 0
-
-    # Lazy imports keep this module loadable even when guardkit is not
-    # on sys.path (e.g. legacy callers that exec the script in isolation).
-    from guardkit.lib.pytest_argv import (
-        format_smoke_gate_path_error,
-        parse_positional_paths,
-    )
-    from installer.core.commands.lib.smoke_gates_nudge import (
-        discover_test_roots,
-    )
-
-    paths = parse_positional_paths(command)
-    if not paths:
-        if not quiet:
-            print(
-                "✓ smoke_gates.command does not invoke pytest — nothing to validate"
-            )
-        return 0
-
-    missing = [p for p in paths if not (base_path / p).exists()]
-    if not missing:
-        if not quiet:
-            print("✓ smoke_gates.command paths OK")
-        return 0
-
-    # Step 2 (26 October 2026, GKT-040): advice, never a refusal; the
-    # smoke command itself says at run time whether its paths work.
-    available_roots = discover_test_roots(base_path)
-    print(
-        "Advice: " + format_smoke_gate_path_error(missing, base_path, available_roots),
-        file=sys.stderr,
-    )
-    return 0
-
-
 def write_yaml(feature: FeatureFile, output_path: Path) -> None:
     """Write feature to YAML file."""
     try:
@@ -543,7 +372,7 @@ def main():
     parser.add_argument(
         "--name", "-n",
         required=False,
-        help="Feature name (required for generation; ignored by --validate-smoke-gates)"
+        help="Feature name (required)"
     )
 
     parser.add_argument(
@@ -606,19 +435,6 @@ def main():
     )
 
     parser.add_argument(
-        "--strict",
-        action="store_true",
-        default=True,
-        help="Make path validation errors fatal (default: True). Use --lenient to override."
-    )
-
-    parser.add_argument(
-        "--lenient",
-        action="store_true",
-        help="Make path validation errors non-fatal (overrides --strict default)."
-    )
-
-    parser.add_argument(
         "--discover",
         action="store_true",
         help="Discover actual task files on disk instead of deriving paths from names. "
@@ -647,51 +463,14 @@ def main():
              "overlapping file edits are detected within a wave."
     )
 
-    parser.add_argument(
-        "--validate-smoke-gates",
-        action="store_true",
-        help="Validation-only mode: load .guardkit/features/<--feature-id>.yaml and "
-             "verify that every positional pytest path inside smoke_gates.command "
-             "exists under --base-path. Skips feature generation entirely. "
-             "Exits non-zero on any missing path. See TASK-FPSG-002 / "
-             "feature-plan.md Step 8.6."
-    )
-
     args = parser.parse_args()
 
-    # --validate-smoke-gates short-circuits everything else.
-    if args.validate_smoke_gates:
-        if not args.feature_id:
-            print(
-                "Error: --validate-smoke-gates requires --feature-id FEAT-XXXX",
-                file=sys.stderr,
-            )
-            sys.exit(2)
-        sys.exit(
-            validate_smoke_gates_paths(
-                feature_id=args.feature_id,
-                base_path=Path(args.base_path),
-                quiet=args.quiet,
-            )
-        )
-
-    # Generation mode — --name becomes mandatory now that we know we're
-    # not validating.
     if not args.name:
         print("Error: --name is required for feature generation", file=sys.stderr)
         sys.exit(2)
 
-    # --lenient overrides --strict default
-    if args.lenient:
-        args.strict = False
-
     # Parse tasks
     task_specs = []
-
-    # Collect (id, acceptance_criteria) pairs for the AC-quality linter.
-    # The --task string form does not carry ACs; the --tasks-json form does.
-    # Linter input is plan-wide, so we accumulate across both sources.
-    linter_tasks: List[Dict[str, object]] = []
 
     # Collect per-task prose for the wave-overlap detector (TASK-FIX-A7B3).
     # The detector's inference reads name + description + ACs to infer
@@ -707,7 +486,6 @@ def main():
                 task_base_path=args.task_base_path
             )
             task_specs.append(spec)
-            linter_tasks.append({"id": spec.id, "acceptance_criteria": []})
             overlap_tasks.append({
                 "id": spec.id,
                 "name": spec.name,
@@ -731,10 +509,6 @@ def main():
                 acceptance_criteria = t.get("acceptance_criteria", []) or []
                 ac_count = len(acceptance_criteria)
                 mode = "direct" if complexity <= 3 and ac_count < 2 else "task-work"
-                linter_tasks.append({
-                    "id": task_id,
-                    "acceptance_criteria": acceptance_criteria,
-                })
                 overlap_tasks.append({
                     "id": task_id,
                     "name": task_name,
@@ -868,22 +642,7 @@ def main():
         ext = ".json" if args.json else ".yaml"
         output_path = base_path / ".guardkit" / "features" / f"{feature_id}{ext}"
 
-    # Validate feature data before writing (TASK-YSC-004)
     feature_dict = feature.to_dict()
-    if FEATURELOADER_AVAILABLE:
-        validation_errors = FeatureLoader.validate_yaml(feature_dict)
-        if validation_errors:
-            print(f"\n⚠️  YAML validation errors ({len(validation_errors)}):", file=sys.stderr)
-            for err in validation_errors:
-                print(f"   {err}", file=sys.stderr)
-            print(file=sys.stderr)
-
-            if args.strict:
-                print("Error: Validation failed and --strict mode enabled. Exiting.", file=sys.stderr)
-                sys.exit(1)
-            else:
-                print("Warning: Validation errors found but continuing (use --strict to fail).", file=sys.stderr)
-                print(file=sys.stderr)
 
     # Write file
     if args.json:
@@ -892,33 +651,6 @@ def main():
             json.dump(feature_dict, f, indent=2, default=str)
     else:
         write_yaml(feature, output_path)
-
-    # Validate task paths against disk
-    base_dir = Path(args.base_path)
-    path_errors = validate_task_paths(feature, base_dir)
-    if path_errors:
-        if args.strict:
-            print(f"\n❌ Path validation failed ({len(path_errors)} errors):", file=sys.stderr)
-            for err in path_errors:
-                print(f"   {err}", file=sys.stderr)
-            print(
-                "\n   Use --discover to resolve paths from actual files on disk.",
-                file=sys.stderr,
-            )
-            print(
-                "   Use --lenient to downgrade to warnings.",
-                file=sys.stderr,
-            )
-            sys.exit(1)
-        else:
-            print(f"\n⚠️  Path validation warnings ({len(path_errors)}):", file=sys.stderr)
-            for err in path_errors:
-                print(f"   {err}", file=sys.stderr)
-            print(
-                "\n   Task files may not exist yet if they will be created later.",
-                file=sys.stderr,
-            )
-            print()
 
     # Output summary
     if not args.quiet:
@@ -938,15 +670,6 @@ def main():
         # Quiet mode - just output the feature ID and path
         print(f"{feature_id}:{output_path}")
 
-    # AC-quality review (warn-mode v1) — imperative callsite for R1.
-    # This is the deterministic runtime home of the AC linter; feature-plan.md
-    # invokes this script as step 8, so the header is guaranteed to appear
-    # whenever tasks flow through this producer. See TASK-FIX-3C9D.
-    if AC_LINTER_AVAILABLE and not args.quiet:
-        warnings = lint_plan_warnings(linter_tasks)
-        print()
-        print(format_warning_summary(warnings))
-
     # Wave-overlap warning banner — imperative callsite for TASK-FIX-A7B3.
     # Always fires when overlaps were detected above; mode (warn vs auto-
     # serialise) is reflected in the banner copy. Auto-serialise also prints
@@ -961,25 +684,6 @@ def main():
             print()
             for note in auto_serialise_notes:
                 print(f"   {note}")
-
-    # R1 DE-WIRE (Rich 08-14): the R2 BDD-oracle activation nudge callsite
-    # (TASK-FIX-RWOP1.2 / TASK-FP-NDG1, feature-plan.md Step 10.6) is removed —
-    # it pushed authors toward @task: tags that armed the retired oracle.
-
-    # R3 feature-level smoke-gates activation nudge — imperative callsite
-    # (TASK-FIX-RWOP1.2). Fires when the just-written feature YAML has >=2
-    # waves but no top-level `smoke_gates:` key. Twin to the BDD-oracle nudge
-    # above; same producer-runs-nudge shape. See feature-plan.md Step 10.7
-    # and TASK-FP-NDG2.
-    if SMOKE_GATES_NUDGE_AVAILABLE and not args.quiet:
-        smoke_gates_notice = check_smoke_gates_activation(
-            feature_yaml_path=output_path,
-            quiet=args.quiet,
-            repo_root=Path(args.base_path),
-        )
-        if smoke_gates_notice:
-            print()
-            print(smoke_gates_notice)
 
 
 if __name__ == "__main__":

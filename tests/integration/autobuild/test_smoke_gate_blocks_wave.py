@@ -33,6 +33,15 @@ def _make_orchestrator(tmp_path: Path) -> FeatureOrchestrator:
 
 
 def _make_worktree(path: Path) -> Worktree:
+    """A real git checkout: the smoke gate runs as the checkout's one writer,
+    and the writer lock reads the checkout's git identity."""
+    import subprocess
+
+    if not (path / ".git").exists():
+        for args in (["init", "-q", "-b", "autobuild/FEAT-TEST"],
+                     ["-c", "user.name=T", "-c", "user.email=t@example.invalid",
+                      "commit", "-q", "--allow-empty", "-m", "seed"]):
+            subprocess.run(["git", *args], cwd=path, check=True, capture_output=True)
     return Worktree(
         task_id="FEAT-TEST",
         branch_name="autobuild/FEAT-TEST",
@@ -104,7 +113,6 @@ def _smoke(passed: bool, *, gate_not_wired: bool = False) -> SmokeGateResult:
 def _common_patches(orchestrator):
     """The side-effecting deps every wave-phase test must stub."""
     return (
-        patch.object(orchestrator, "_preflight_check"),
         patch.object(orchestrator, "_bootstrap_environment"),
         # The wave-0 baseline probe (b503bd16, 9 July 2026) measures the base
         # once before wave 1, and with no declared test command it does so
@@ -336,7 +344,6 @@ def test_failing_smoke_stops_feature_build(tmp_path: Path) -> None:
     )
 
     with (
-        patch.object(orchestrator, "_preflight_check"),
         patch.object(orchestrator, "_bootstrap_environment"),
         patch.object(orchestrator, "_run_baseline_probe"),  # see _common_patches
         patch.object(orchestrator, "_mark_wave_completed"),
@@ -469,6 +476,9 @@ def test_bare_object_direct_finalization_of_a_partial_run_is_paused(
         ],
         all_succeeded=True,
     )
+    # The finaliser counts each task's own latest status: the first wave's
+    # task was approved, the second wave never ran.
+    feature.tasks[0].status = "completed"
 
     with (
         patch.object(orchestrator, "_display_summary"),

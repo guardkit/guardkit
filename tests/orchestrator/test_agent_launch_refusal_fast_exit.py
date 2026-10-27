@@ -32,6 +32,7 @@ from guardkit.orchestrator.exceptions import (
 )
 from guardkit.orchestrator.harness import HarnessAdapter
 from guardkit.worktrees import Worktree
+from tests.task_scope_fixtures import admitted_task, init_checkout
 
 _TASK = "TASK-LAUNCH-001"
 _REASON = "DEEPAGENTS_CODE_OFFLINE is not set to 1"
@@ -78,8 +79,9 @@ def _routine_fleet_route(m0_routine_fleet_route):
 def worktree(tmp_path: Path) -> Mock:
     wt = Mock(spec=Worktree)
     wt.task_id = _TASK
-    wt.path = tmp_path / "worktree"
-    wt.path.mkdir(parents=True)
+    # A real checkout: the Player records its baseline from the admitted
+    # task scope, which needs a real Git boundary.
+    wt.path = init_checkout(tmp_path / "worktree")
     wt.branch_name = f"autobuild/{_TASK}"
     wt.base_branch = "main"
     return wt
@@ -162,7 +164,7 @@ def _run_loop(tmp_path, worktree, display, mode: str, error: BaseException):
     harness = _RaisingHarness(error)
     orchestrator = _orchestrator(tmp_path, worktree, display, invoker)
     coach = AsyncMock(side_effect=AssertionError("the Coach must not run"))
-    with patch(
+    with admitted_task(worktree.path, _TASK) as (_lease, scope), patch(
         "guardkit.orchestrator.agent_invoker.select_harness", return_value=harness
     ), patch.object(
         invoker, "_get_implementation_mode", return_value=mode
@@ -175,6 +177,8 @@ def _run_loop(tmp_path, worktree, display, mode: str, error: BaseException):
     ) as recovery, patch.object(
         orchestrator, "_invoke_coach_safely", side_effect=_coach_feedback
     ) as coach_safely:
+        invoker.task_work_scope = scope
+        orchestrator.task_work_scope = scope
         turns, decision = orchestrator._loop_phase(
             task_id=_TASK,
             requirements="Add the endpoint",
@@ -197,7 +201,8 @@ def test_one_launch_refusal_stops_the_task(tmp_path, worktree, display, mode):
     turn = turns[0]
     assert turn.decision == "error"
     assert turn.coach_result is None
-    assert turn.feedback is None
+    # The turn's record names the refusal (no Coach feedback asking for code).
+    assert turn.feedback is not None and _REASON in turn.feedback
     recovery.assert_not_called()
     coach_safely.assert_not_called()
     coach.assert_not_called()

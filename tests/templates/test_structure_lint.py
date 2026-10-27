@@ -225,7 +225,10 @@ def test_real_feature_plan_flags_four_integration_contract_anchors():
     to choose the home" block, a second hurl example row, and the
     `test_ref` REQUIRED wording were added above the anchors
     (:1891/:1952/:1959/:1982 → :1917/:1978/:1985/:2008); anchor bytes again
-    unchanged."""
+    unchanged. Shifted -2 by the operator-handoff wording change (commit
+    5c350010, 24 October 2026), which shortened the Detection Rules text above
+    the anchors (:1917/:1978/:1985/:2008 → :1915/:1976/:1983/:2006); anchor
+    bytes again unchanged."""
     results = lint_command_templates()
     assert "feature-plan.md" in results
     ic = [
@@ -235,7 +238,7 @@ def test_real_feature_plan_flags_four_integration_contract_anchors():
         and "integration contracts" in f.message.lower()
     ]
     lines = {f.line for f in ic}
-    assert {1917, 1978, 1985, 2008} <= lines, (
+    assert {1915, 1976, 1983, 2006} <= lines, (
         f"expected the 4 Integration-Contracts anchors flagged, got lines {lines}"
     )
 

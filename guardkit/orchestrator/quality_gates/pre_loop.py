@@ -42,7 +42,6 @@ from guardkit.orchestrator.quality_gates.task_work_interface import (
     DesignPhaseResult,
 )
 from guardkit.orchestrator.quality_gates.exceptions import (
-    QualityGateBlocked,
     CheckpointRejectedError,
 )
 
@@ -196,8 +195,6 @@ class PreLoopQualityGates:
 
         Raises
         ------
-        QualityGateBlocked
-            If architectural review score is below threshold
         CheckpointRejectedError
             If human checkpoint rejects the design
 
@@ -242,12 +239,9 @@ class PreLoopQualityGates:
         Returns
         -------
         PreLoopResult
-            Extracted and formatted results
-
-        Raises
-        ------
-        QualityGateBlocked
-            If plan_path is None or the plan file doesn't exist
+            Extracted and formatted results. ``plan_path`` is ``None`` when
+            the design phase saved no plan file; the loop carries on with
+            the task file (the cull, 27 October 2026, GKT-019).
         """
         # Import TaskArtifactPaths for fallback search
         from guardkit.orchestrator.paths import TaskArtifactPaths
@@ -274,32 +268,8 @@ class PreLoopQualityGates:
                 plan_path = str(found_plan)
                 logger.info(f"Found plan at fallback location: {plan_path}")
 
-        # Validate plan path was returned
-        if not plan_path:
-            raise QualityGateBlocked(
-                reason=(
-                    f"Design phase did not return plan path for {task_id}. "
-                    "The task-work --design-only execution may have failed. "
-                    "Run `/task-work {task_id} --design-only` manually to debug."
-                ),
-                gate_name="plan_generation",
-                details={"task_id": task_id, "plan_path": None},
-            )
-
-        # Validate plan file exists on disk
-        plan_file = Path(plan_path)
-        if not plan_file.exists():
-            raise QualityGateBlocked(
-                reason=(
-                    f"Implementation plan not found at {plan_path} for {task_id}. "
-                    "The design phase may have completed but failed to save the plan. "
-                    "Run `/task-work {task_id} --design-only` manually to debug."
-                ),
-                gate_name="plan_validation",
-                details={"task_id": task_id, "plan_path": plan_path},
-            )
-
-        logger.info(f"Pre-loop validated plan exists at: {plan_path}")
+        if plan_path and not Path(plan_path).exists():
+            plan_path = None
 
         complexity_score = result.complexity.get("score", 5)
         max_turns = self._determine_max_turns(complexity_score)

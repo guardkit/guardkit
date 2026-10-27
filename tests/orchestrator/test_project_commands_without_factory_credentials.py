@@ -21,7 +21,6 @@ one of the factory's own programs (section 5 of the design).
 from __future__ import annotations
 
 import ast
-import hashlib
 import json
 import os
 import socket
@@ -321,56 +320,17 @@ def _run_checker_isolated(p: Project) -> Dict[str, str]:
     return p.read("checker-isolated")
 
 
-def _run_checker_coverage(p: Project) -> Dict[str, str]:
-    validator = _validator(p)
-    validator._declared_coverage_command = lambda: p.sh("checker-coverage")  # type: ignore[method-assign]
-    validator.run_declared_coverage()
-    return p.read("checker-coverage")
-
 
 def _run_runtime_parity(p: Project) -> Dict[str, str]:
     _validator(p, smoke_command=p.sh("runtime-parity"))._gather_runtime_parity()
     return p.read("runtime-parity")
 
 
-def _run_receipt_oracle(p: Project) -> Dict[str, str]:
-    checker = p.repo / "checker.sh"
-    checker.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
-    (p.repo / "src.txt").write_text("x\n", encoding="utf-8")
-    declaration = {
-        "command": p.sh("oracle-receipt"),
-        "expected_exit": 0,
-        "expected_checks": 1,
-        "checker_path": "checker.sh",
-        "checker_sha256": hashlib.sha256(checker.read_bytes()).hexdigest(),
-        "source_paths": ["src.txt"],
-    }
-    _validator(p)._run_required_shell_command(declaration, task_id=TASK, turn=1)
-    return p.read("oracle-receipt")
-
 
 def _run_yaml_oracle(p: Project) -> Dict[str, str]:
     _validator(p)._run_shell_command(p.sh("oracle-yaml"), None)
     return p.read("oracle-yaml")
 
-
-def _feature_worktree(p: Project) -> Path:
-    """A linked feature worktree, where the checker's criteria commands run."""
-    worktree = p.repo / ".guardkit" / "worktrees" / "FEAT-CREDS"
-    if not worktree.exists():
-        _git(p.repo, "worktree", "add", "-q", "-b", "autobuild/FEAT-CREDS", str(worktree))
-        snapshot_task_launch(TASK, worktree, p.repo)
-    return worktree
-
-
-def _run_criteria(p: Project) -> Dict[str, str]:
-    from guardkit.orchestrator.quality_gates.coach_validator import CoachValidator
-
-    worktree = _feature_worktree(p)
-    CoachValidator(str(worktree), task_id=TASK).verify_command_criteria(
-        [f"`{p.sh('criteria')}` runs successfully"]
-    )
-    return p.read("criteria")
 
 
 def _run_feature_check(p: Project) -> Dict[str, str]:
@@ -409,112 +369,6 @@ def _run_inventory(p: Project) -> Dict[str, str]:
     return p.read("inventory")
 
 
-def _run_machine_verify(p: Project, monkeypatch: pytest.MonkeyPatch) -> Dict[str, str]:
-    from guardkit.orchestrator import baseline
-    from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
-
-    monkeypatch.setattr(
-        baseline, "read_baseline_from_worktree", lambda path: SimpleNamespace(command=p.sh("machine-verify"))
-    )
-    AutoBuildOrchestrator._observed_reds_in_worktree(None, SimpleNamespace(path=p.repo))  # type: ignore[arg-type]
-    return p.read("machine-verify")
-
-
-def _run_bin_entry_probe(p: Project) -> Dict[str, str]:
-    from guardkit.orchestrator.autobuild import _check_direct_mode_bin_entries
-
-    manifest = p.repo / "installer" / "core" / "commands" / "bin-entries.txt"
-    manifest.parent.mkdir(parents=True)
-    manifest.write_text("probe.py\n", encoding="utf-8")
-    (p.repo / "probe.py").write_text(
-        p.dump_py.read_text(encoding="utf-8").replace(
-            'sys.argv[1] if len(sys.argv) > 1 else "python"', '"bin-entry"'
-        ),
-        encoding="utf-8",
-    )
-    _check_direct_mode_bin_entries(p.repo, ["probe.py"], sys.executable)
-    return p.read("bin-entry")
-
-
-def _boot_config(entries: List[Dict[str, Any]]):
-    import yaml
-
-    from guardkit.orchestrator.seam_checks import _parse_config
-
-    return _parse_config(yaml.safe_dump({"version": 1, "boot_smoke": entries}))
-
-
-def _plant_module(p: Project, name: str, label: str) -> None:
-    (p.repo / f"{name}.py").write_text(
-        p.dump_py.read_text(encoding="utf-8").replace(
-            'sys.argv[1] if len(sys.argv) > 1 else "python"', repr(label)
-        )
-        + "\ndef make():\n    return object()\n",
-        encoding="utf-8",
-    )
-
-
-def _run_boot_import(p: Project) -> Dict[str, str]:
-    from guardkit.orchestrator.boot_smoke import run_boot_smoke
-
-    _plant_module(p, "standin_boot", "boot-import")
-    run_boot_smoke(_boot_config([{"id": "i", "kind": "import", "target": "standin_boot"}]), p.repo)
-    return p.read("boot-import")
-
-
-def _run_boot_construct(p: Project) -> Dict[str, str]:
-    from guardkit.orchestrator.boot_smoke import run_boot_smoke
-
-    _plant_module(p, "standin_make", "boot-construct")
-    run_boot_smoke(
-        _boot_config([{"id": "c", "kind": "construct", "target": "standin_make:make"}]), p.repo
-    )
-    return p.read("boot-construct")
-
-
-def _run_boot_serve(p: Project) -> Dict[str, str]:
-    from guardkit.orchestrator.boot_smoke import run_boot_smoke
-
-    _plant_module(p, "standin_serve", "boot-serve")
-    run_boot_smoke(
-        _boot_config([{"id": "s", "kind": "serve", "target": "standin_serve",
-                       "readiness": {"kind": "exit_zero"}}]),
-        p.repo,
-    )
-    return p.read("boot-serve")
-
-
-def _run_boot_command(p: Project) -> Dict[str, str]:
-    from guardkit.orchestrator.boot_smoke import run_boot_smoke
-
-    run_boot_smoke(
-        _boot_config([{"id": "k", "kind": "command", "target": f"sh {p.dump_sh} boot-command"}]),
-        p.repo,
-    )
-    return p.read("boot-command")
-
-
-def _run_boot_reachable(p: Project) -> Dict[str, str]:
-    from guardkit.orchestrator.boot_smoke import run_boot_smoke
-
-    run_boot_smoke(
-        _boot_config([{"id": "r", "kind": "command", "target": "true",
-                       "env_required": [{"reachable": p.sh("boot-reachable")}]}]),
-        p.repo,
-    )
-    return p.read("boot-reachable")
-
-
-def _run_assert_command(p: Project) -> Dict[str, str]:
-    from guardkit.orchestrator.quality_gates.spec_conformance import (
-        AssertCommandRule,
-        _evaluate_assert_command,
-    )
-
-    _evaluate_assert_command(
-        AssertCommandRule(id="a", type="assert_command", command=p.sh("assert-command")), p.repo
-    )
-    return p.read("assert-command")
 
 
 def _run_evidence_repo(p: Project) -> Dict[str, str]:
@@ -591,12 +445,6 @@ def _run_live_gate(p: Project) -> Dict[str, str]:
     return seen
 
 
-def _run_mutation(p: Project) -> Dict[str, str]:
-    from guardkit.orchestrator.qa_stages.mutation import make_pytest_runner
-
-    make_pytest_runner(["sh", str(p.dump_sh), "mutation"], work_folder=p.repo)(p.repo)
-    return p.read("mutation")
-
 
 def _run_qa_seed(p: Project) -> Dict[str, str]:
     from guardkit.templates.qa_seed import _default_suite_runner
@@ -612,26 +460,14 @@ GENERIC_SITES: List[Tuple[str, Callable[..., Dict[str, str]]]] = [
     ("3 single dependency install", _run_single_dependency),
     ("4 checker's declared test", _run_checker_test),
     ("6 checker's run in an isolated copy", _run_checker_isolated),
-    ("7 checker's declared coverage", _run_checker_coverage),
     ("8 runtime-parity smoke", _run_runtime_parity),
-    ("10 oracle with a receipt", _run_receipt_oracle),
     ("11 oracle command from YAML", _run_yaml_oracle),
-    ("12 acceptance-criteria command", _run_criteria),
     ("15 whole-feature check", _run_feature_check),
     ("16 smoke gate and baseline probe", _run_smoke_gate),
     ("17 check after a merge / autobuild --verify", _run_completion_verification),
     ("19 environment inventory", _run_inventory),
-    ("20 machine verify re-run", _run_machine_verify),
-    ("21 bin-entry probe", _run_bin_entry_probe),
-    ("22 boot smoke: import", _run_boot_import),
-    ("22 boot smoke: construct", _run_boot_construct),
-    ("22 boot smoke: serve", _run_boot_serve),
-    ("23 boot smoke: command", _run_boot_command),
-    ("23 boot smoke: reachable probe", _run_boot_reachable),
-    ("28 spec-conformance assert_command", _run_assert_command),
     ("29 sibling evidence repository", _run_evidence_repo),
     ("30 live-gate scripts", _run_live_gate),
-    ("31 QA mutation stage", _run_mutation),
     ("32 QA seed suite", _run_qa_seed),
 ]
 
@@ -677,7 +513,7 @@ def _capture_python_oracle(p: Project, monkeypatch) -> Recorder:
     oracle.parent.mkdir()
     oracle.write_text("def test_x():\n    assert True\n", encoding="utf-8")
     recorder = _record_run(monkeypatch)
-    _validator(p)._produce_python_oracle([oracle], [], None)
+    _validator(p)._produce_python_oracle([oracle])
     return recorder
 
 
@@ -690,16 +526,6 @@ def _capture_timeout_probe(p: Project, monkeypatch) -> Recorder:
     return recorder
 
 
-def _capture_coverage_gate(p: Project, monkeypatch) -> Recorder:
-    from guardkit.orchestrator.quality_gates.coverage_gate import _run_coverage
-
-    (p.repo / "pkg").mkdir()
-    (p.repo / "pkg" / "__init__.py").write_text("", encoding="utf-8")
-    (p.repo / "pyproject.toml").write_text("[project]\nname='x'\n", encoding="utf-8")
-    recorder = _record_run(monkeypatch)
-    _run_coverage(p.repo, ["pkg/__init__.py"])
-    return recorder
-
 
 def _capture_honesty_verifier(p: Project, monkeypatch) -> Recorder:
     from guardkit.orchestrator.coach_verification import CoachVerifier
@@ -708,13 +534,6 @@ def _capture_honesty_verifier(p: Project, monkeypatch) -> Recorder:
     CoachVerifier(p.repo, venv_python=sys.executable)._run_tests()
     return recorder
 
-
-def _capture_env_parity(p: Project, monkeypatch) -> Recorder:
-    from guardkit.orchestrator.env_parity import _run_resolution_probe
-
-    recorder = _record_run(monkeypatch)
-    _run_resolution_probe(["json"], sys.executable, p.repo)
-    return recorder
 
 
 def _capture_bdd_run(p: Project, monkeypatch) -> Recorder:
@@ -759,11 +578,9 @@ CAPTURED_SITES: List[Tuple[str, Callable[..., Recorder]]] = [
     ("5 checker's pytest-path test", _capture_pytest_path),
     ("9 behavioural oracle (Python file)", _capture_python_oracle),
     ("13 pytest-timeout probe", _capture_timeout_probe),
-    ("24 environment-parity probe", _capture_env_parity),
     ("25 BDD runs", _capture_bdd_run),
     ("25a pytest-bdd probe via run_bdd_for_task", _capture_bdd_probe_for_task),
     ("25a pytest-bdd probe via run_bdd_authoring_sweep", _capture_bdd_probe_for_sweep),
-    ("26 coverage gate", _capture_coverage_gate),
     ("27 honesty verifier's pytest runs", _capture_honesty_verifier),
 ]
 
@@ -834,10 +651,6 @@ def test_additions_still_arrive(project: Project, monkeypatch: pytest.MonkeyPatc
     validator._fixture_env["DATABASE_URL"] = "postgresql://127.0.0.1:5999/test"
     validator.run_independent_tests()
     assert project.read("fixture-url")["DATABASE_URL"] == "postgresql://127.0.0.1:5999/test"
-
-    _run_receipt_oracle(project)
-    receipt = project.read("oracle-receipt")
-    assert receipt["GUARDKIT_BEHAVIOURAL_ORACLE_RECEIPT"].endswith("receipt.json")
 
     venv = project.repo / ".venv"
     env = EnvironmentBootstrapper(project.repo)._isolated_env(venv)
@@ -967,76 +780,10 @@ def test_a_declared_setting_that_is_not_set_is_said_plainly(
 # ---------------------------------------------------------------------------
 
 
-def _serve_module(p: Project) -> None:
-    (p.repo / "standin_owner.py").write_text(
-        textwrap.dedent(
-            f"""\
-            import os, socket, time
-            with open("/proc/self/environ", "rb") as fh:
-                raw = fh.read()
-            with open(os.path.join({str(p.out)!r}, "serve-proc.env"), "w") as out:
-                out.write("\\n".join(x.decode() for x in raw.split(b"\\0") if x))
-            s = socket.socket()
-            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            s.bind(("127.0.0.1", int(os.environ["PORT"])))
-            s.listen(5)
-            time.sleep(30)
-            """
-        ),
-        encoding="utf-8",
-    )
 
-
-@pytest.mark.skipif(not Path("/proc/self/environ").exists(), reason="needs /proc")
-def test_boot_smoke_keeps_the_owner_marker(project: Project) -> None:
-    from guardkit.orchestrator.boot_smoke import run_boot_smoke
-
-    _serve_module(project)
-    result = run_boot_smoke(
-        _boot_config([{"id": "s", "kind": "serve", "target": "standin_owner",
-                       "readiness": {"kind": "port", "timeout_s": 20},
-                       "worktree_env": {"FOO": "1"}}]),
-        project.repo,
-    )
-    assert result.entries[0].verdict == "pass", result.entries[0].detail
-    seen = project.read("serve-proc")
-    assert seen.get("GUARDKIT_RUN_OWNER") == "build-x"
-    assert seen.get("FOO") == "1"
-    _assert_no_sentinel(seen, "the serve probe")
-
-
-def test_boot_smoke_refuses_an_overlay_owner_marker(project: Project) -> None:
-    from guardkit.orchestrator.boot_smoke import run_boot_smoke
-
-    _plant_module(project, "standin_conflict", "conflict")
-    result = run_boot_smoke(
-        _boot_config([{"id": "s", "kind": "serve", "target": "standin_conflict",
-                       "readiness": {"kind": "exit_zero"},
-                       "worktree_env": {"GUARDKIT_RUN_OWNER": "other"}}]),
-        project.repo,
-    )
-    entry = result.entries[0]
-    assert "could not run" in entry.detail and "GUARDKIT_RUN_OWNER" in entry.detail
-    assert not (project.out / "conflict.env").exists()
+def test_an_overlay_cannot_set_the_owner_marker() -> None:
     with pytest.raises(LaunchEnvironmentError):
         pce.finish_project_environment({}, overlay={"GUARDKIT_RUN_OWNER": "other"})
-
-
-def test_boot_smoke_with_no_parent_marker_has_none(
-    project: Project, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    from guardkit.orchestrator.boot_smoke import run_boot_smoke
-
-    monkeypatch.delenv("GUARDKIT_RUN_OWNER")
-    _plant_module(project, "standin_nomark", "no-marker")
-    run_boot_smoke(
-        _boot_config([{"id": "s", "kind": "serve", "target": "standin_nomark",
-                       "readiness": {"kind": "exit_zero"}, "worktree_env": {"FOO": "1"}}]),
-        project.repo,
-    )
-    seen = project.read("no-marker")
-    assert "GUARDKIT_RUN_OWNER" not in seen
-    assert seen.get("FOO") == "1"
 
 
 def test_an_addition_cannot_set_the_owner_marker(project: Project) -> None:
@@ -1095,24 +842,6 @@ def test_a_credentialed_proxy_in_guardkits_own_environment_does_not_break_import
     assert MARK not in run.stdout + run.stderr
 
 
-def test_a_reachability_probe_that_cannot_be_given_its_environment_could_not_run(
-    project: Project, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    from guardkit.orchestrator.boot_smoke import run_boot_smoke
-
-    monkeypatch.setenv("HTTPS_PROXY", f"http://user:{MARK}@proxy:3128")
-    result = run_boot_smoke(
-        _boot_config([{"id": "r", "kind": "command", "target": "true",
-                       "env_required": [{"reachable": project.sh("never")}]}]),
-        project.repo,
-    )
-    entry = result.entries[0]
-    assert entry.finding_kind == "BOOT_SMOKE_COULD_NOT_RUN", entry
-    assert "could not run" in entry.detail and "HTTPS_PROXY" in entry.detail
-    assert entry.detail.count("could not run") == 1, entry.detail
-    assert MARK not in entry.detail
-    assert not (project.out / "never.env").exists()
-
 
 def _nothing_under_qa_holds(project: Project, mark: str) -> None:
     for path in (project.repo / "qa").rglob("*"):
@@ -1153,27 +882,6 @@ def test_a_gate_address_with_a_login_is_refused_before_preflight(
     _nothing_under_qa_holds(project, MARK)
 
 
-@pytest.mark.parametrize("handed_in", [False, True], ids=["inherited", "supplied"])
-@pytest.mark.parametrize("address", ["ftp://127.0.0.1:9/", "127.0.0.1:9", "http:///no-host"])
-def test_a_gate_address_that_is_not_http_is_refused_by_name(
-    project: Project, monkeypatch: pytest.MonkeyPatch, handed_in: bool, address: str
-) -> None:
-    from guardkit.orchestrator.live_gate.errors import LiveGateError
-    from guardkit.orchestrator.live_gate.runner import LiveGateRunner
-
-    _live_gate_repo(project)
-    if handed_in:
-        runner = LiveGateRunner(project.repo, gate_env={"STANDIN_BASE_URL": address})
-    else:
-        monkeypatch.setenv("STANDIN_BASE_URL", address)
-        runner = LiveGateRunner(project.repo)
-    with pytest.raises(LiveGateError) as caught:
-        runner.run("PILOT", "local")
-    assert "the gate address in STANDIN_BASE_URL is not an http(s) address" in str(caught.value)
-    assert address not in str(caught.value)
-    assert not (project.out / "live-gate.env").exists()
-
-
 def test_the_reachability_check_never_echoes_a_refused_address() -> None:
     """The pre-flight provider applies the same rule on its own."""
     from guardkit.orchestrator.live_gate.preflight import DefaultF16ChecklistProvider
@@ -1190,13 +898,6 @@ def test_the_reachability_check_never_echoes_a_refused_address() -> None:
         assert result.ok is False and "STANDIN_BASE_URL" in result.detail
         assert MARK not in result.detail
 
-
-def test_the_shadow_probe_note_never_records_a_login() -> None:
-    from guardkit.qa.qav_shadow import _probe_unreachable_note
-
-    for url in (f"http://user:{MARK}@probe:9/running", f"user:{MARK}@probe:9"):
-        assert MARK not in _probe_unreachable_note(url)
-    assert "http://probe:9/running" in _probe_unreachable_note("http://probe:9/running")
 
 
 def test_a_gate_address_read_from_a_reserved_setting_is_refused_before_preflight(
@@ -1328,32 +1029,6 @@ def test_a_timed_out_bdd_run_leaves_nothing_running(project: Project) -> None:
     _nothing_left(pid)
 
 
-@pytest.mark.skipif(not Path("/proc/self/stat").exists(), reason="needs /proc")
-def test_a_serve_probe_that_never_gets_ready_leaves_no_stubborn_worker(project: Project) -> None:
-    """The leader exits on SIGTERM; its worker ignores SIGTERM. The group,
-    not the leader, decides when cleanup is finished."""
-    from guardkit.orchestrator.boot_smoke import run_boot_smoke
-
-    pid = project.out / "stubborn-serve.pid"
-    (project.repo / "standin_stubborn.py").write_text(
-        textwrap.dedent(
-            f"""\
-            import subprocess, time
-            child = subprocess.Popen(["sh", "-c", 'trap "" TERM; exec sleep 300'])
-            open({str(pid)!r}, "w").write(str(child.pid))
-            time.sleep(300)
-            """
-        ),
-        encoding="utf-8",
-    )
-    result = run_boot_smoke(
-        _boot_config([{"id": "s", "kind": "serve", "target": "standin_stubborn",
-                       "readiness": {"kind": "port", "timeout_s": 2}}]),
-        project.repo,
-    )
-    assert result.entries[0].verdict == "ran_and_failed", result.entries[0]
-    _nothing_left(pid)
-
 
 @pytest.mark.skipif(not Path("/proc/self/stat").exists(), reason="needs /proc")
 def test_a_timed_out_command_leaves_no_stubborn_worker(project: Project) -> None:
@@ -1397,7 +1072,6 @@ ALLOWED: Dict[Tuple[str, str], str] = {
     ("orchestrator/browser_verifier.py", "close"): "agent-browser, the factory's own program",
     ("orchestrator/review_runner.py", "attempt_fleet_memory_cli"): "guardkit memory search, the factory's own program",
     ("orchestrator/quality_gates/task_work_interface.py", "_execute_via_subprocess"): "guardkit task-work, the factory's own program",
-    ("orchestrator/merge_executor.py", "run_feature_validate"): "guardkit feature validate, the factory's own program",
     ("orchestrator/quality_gates/coach_validator.py", "_start_infrastructure_containers"): "the container engine through a variable (the fixture recipes)",
     ("orchestrator/run_evidence.py", "docker_events_between"): "the container engine through a variable (docker events)",
     ("orchestrator/security_check.py", "_run_scanner"): (
@@ -1573,10 +1247,6 @@ MODULE_USE_ALLOWED: Dict[Tuple[str, str], str] = {
         "(guardkit, click, rich, yaml, frontmatter, the agent SDK, "
         "guardkitfactory) by name to report whether it is installed and its "
         "version; the name differs per check, so it cannot be a static import"
-    ),
-    ("orchestrator/qa_stages/assembly.py", "resolve_probe_target"): (
-        "imports the boundary-probe target the operator names with --target "
-        "module.path:attr; it runs no project command"
     ),
 }
 

@@ -105,7 +105,6 @@ def test_uncommitted_work_a_task_left_is_the_next_tasks_starting_point(tmp_path)
     with checkout_lease(root) as lease:  # no refusal: the next writer is admitted
         scope = lease.admit("TASK-B")
         assert scope.task_id == "TASK-B"
-        assert any("half-done.py" in note for note in lease.notes)
     assert (root / "half-done.py").exists()
 
 

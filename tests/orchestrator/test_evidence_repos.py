@@ -11,12 +11,18 @@ loop widen its boundary to declared sibling repos:
 
 from __future__ import annotations
 
+import shlex
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
 from guardkit.orchestrator import evidence_repos as ev
+
+# An absolute interpreter: a machine need not have a bare ``python`` on PATH
+# (this one has only ``python3``), and these tests are about exit codes.
+_PY = shlex.quote(sys.executable)
 
 
 # ---------------------------------------------------------------------------
@@ -257,7 +263,7 @@ class TestRunRepoTests:
 
     def test_passing_command(self, tmp_path):
         repo = ev.EvidenceRepo(
-            name="r", root=tmp_path, test_command="python -c 'import sys; sys.exit(0)'"
+            name="r", root=tmp_path, test_command=f"{_PY} -c 'import sys; sys.exit(0)'"
         )
         result = ev.run_repo_tests(repo)
         assert result.ran is True
@@ -266,7 +272,7 @@ class TestRunRepoTests:
 
     def test_failing_command(self, tmp_path):
         repo = ev.EvidenceRepo(
-            name="r", root=tmp_path, test_command="python -c 'import sys; sys.exit(1)'"
+            name="r", root=tmp_path, test_command=f"{_PY} -c 'import sys; sys.exit(1)'"
         )
         result = ev.run_repo_tests(repo)
         assert result.ran is True
@@ -439,7 +445,7 @@ class TestCollectionImportErrorAbsent:
             "sys.exit(2)\n"
         )
         repo = ev.EvidenceRepo(
-            name="r", root=tmp_path, test_command="python fail_collect.py"
+            name="r", root=tmp_path, test_command=f"{_PY} fail_collect.py"
         )
         result = ev.run_repo_tests(repo)
         assert result.ran is False
@@ -457,7 +463,7 @@ class TestCollectionImportErrorAbsent:
             "import sys\nsys.stderr.write('something broke\\n')\nsys.exit(2)\n"
         )
         repo = ev.EvidenceRepo(
-            name="r", root=tmp_path, test_command="python fail_plain.py"
+            name="r", root=tmp_path, test_command=f"{_PY} fail_plain.py"
         )
         result = ev.run_repo_tests(repo)
         assert result.ran is True
@@ -479,25 +485,6 @@ class TestCollectionImportErrorAbsent:
         # ImportError in the output it is a genuine failure.
         output = "ModuleNotFoundError: No module named 'x'\n"
         assert ev._is_collection_import_error(1, output) is False
-
-    def test_absent_collection_error_still_blocks(self):
-        # AC-3 gate outcome unchanged: absent still blocks the turn (it is
-        # feedback / unverified, never a silent pass).
-        result = ev.EvidenceTestResult(
-            repo_name="r",
-            command="python -m pytest tests/wiring -q",
-            ran=False,
-            passed=False,
-            returncode=2,
-            output_summary=(
-                "Evidence-repo test collection failed with an import error "
-                "(exit 2) -- the suite NEVER ran, so sibling-repo work is "
-                "UNVERIFIED (absent signal, not a test failure)."
-            ),
-        )
-        reason = ev.evidence_repo_tests_blocking_reason([result])
-        assert reason is not None
-        assert "could NOT run" in reason
 
 
 # ---------------------------------------------------------------------------
@@ -525,14 +512,12 @@ class TestBlockingReason:
         assert "FAILED" in reason
         assert "r:" in reason
 
-    def test_declared_but_unrunnable_blocks(self):
-        # absence-of-failure: a declared command that could not run is NOT a
-        # silent pass.
+    def test_declared_but_unrunnable_does_not_block(self):
+        # 27 October 2026 cull: only a suite that ran and failed sends the
+        # turn back; a declared command that could not run does not.
         results = [self._result(ran=False, passed=False, returncode=None,
                                  output_summary="boom")]
-        reason = ev.evidence_repo_tests_blocking_reason(results)
-        assert reason is not None
-        assert "could NOT run" in reason
+        assert ev.evidence_repo_tests_blocking_reason(results) is None
 
     def test_no_command_does_not_block(self):
         # A repo with no declared command is out of scope, not a failure.

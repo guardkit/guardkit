@@ -689,48 +689,6 @@ def test_sibling_selection_admits_what_earlier_work_or_bookkeeping_left(tmp_path
         assert (sibling / "preserved").read_text() == "unapproved input"
 
 
-@pytest.mark.parametrize("bad", ["missing", "malformed"])
-def test_sibling_initial_selection_refuses_entire_invalid_footprint(tmp_path, bad):
-    from guardkit.orchestrator.task_work_scope import (
-        bind_fresh_footprint,
-        identity,
-        _selected,
-    )
-
-    sibling, source, record, wt, expected = _sibling_case(tmp_path, bad)
-    with pytest.raises(ScopeUnavailable):
-        repos = bind_fresh_footprint(
-            wt.path, source, record, kind="feature", expected=expected
-        )
-        with checkout_lease(wt.path, repos):
-            pass
-    assert str(identity(wt.path)[1]) not in _selected
-
-
-def test_selected_sibling_footprint_cannot_be_dropped_and_a_restart_is_admitted(tmp_path):
-    from guardkit.orchestrator import task_work_scope as m
-
-    sibling = repository(tmp_path / "sibling")
-    root, repos = fresh_with_sibling(tmp_path / "source", sibling, "BOUND")
-    with checkout_lease(root, repos) as lease:
-        lease.admit("TASK-A")
-    # The lock covers the declared siblings: a writer without them is refused.
-    with pytest.raises(ScopeUnavailable, match="footprint differs"):
-        with checkout_lease(root):
-            pass
-    # A simulated process restart (no in-memory state) is admitted (step 2).
-    gd = str(m.identity(root)[1])
-    for registry in (m._fresh, m._selected, m._bindings):
-        registry.pop(gd, None)
-    again = m.bind_fresh_footprint(
-        root, tmp_path / "source", tmp_path / "source/.guardkit/features/FEAT-BOUND.yaml",
-        kind="feature",
-    )
-    assert again == repos
-    with checkout_lease(root, again) as lease:
-        lease.admit("TASK-B")
-
-
 def test_original_failed_task_result_survives_ownership_teardown(tmp_path):
     root = repository(tmp_path / "checkout")
     runner = FeatureOrchestrator.__new__(FeatureOrchestrator)
@@ -864,36 +822,6 @@ def test_real_feature_command_timeout_ends_child_before_releasing_gate(tmp_path)
     # failure can reach the existing repair/new-task path.
     with checkout_lease(root) as lease:
         lease.admit("TASK-AFTER-CLEAN-GATE")
-
-
-def test_declared_sibling_alias_movement_refuses_without_adopting_new_repo(tmp_path):
-
-    old = repository(tmp_path / "old")
-    new = repository(tmp_path / "new")
-    alias = tmp_path / "alias"
-    alias.symlink_to(old, target_is_directory=True)
-    root, repos = fresh_with_sibling(
-        tmp_path / "source", old, "BOUND", declared=[str(alias)]
-    )
-    alias.unlink()
-    alias.symlink_to(new, target_is_directory=True)
-    with pytest.raises(ScopeUnavailable, match="alias/identity moved"):
-        with checkout_lease(root, repos):
-            pass
-    assert git(new, "log", "--oneline").endswith("immutable source")
-
-
-def test_primary_alias_movement_inside_owner_refuses_inventory(tmp_path):
-    first = repository(tmp_path / "first")
-    other = repository(tmp_path / "other")
-    alias = tmp_path / "alias"
-    alias.symlink_to(first, target_is_directory=True)
-    with pytest.raises(ScopeUnavailable, match="alias/identity moved"):
-        with checkout_lease(alias) as lease:
-            scope = lease.admit("TASK-A")
-            alias.unlink()
-            alias.symlink_to(other, target_is_directory=True)
-            collect_changes(scope)
 
 
 def test_bootstrap_runs_once_per_wave_under_contention_before_player(tmp_path):

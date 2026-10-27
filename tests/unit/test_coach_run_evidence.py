@@ -130,16 +130,15 @@ def test_parallel_path_records_the_copy_and_the_origin_at_copy_time(worktree, tm
     assert record["environment_inventory"] == {"status": run_evidence.NOT_DECLARED}
     assert record["container_events"]["status"].startswith("not recorded: switched off")
 
-    # The Coach's turn receipt carries it, as plain JSON.
+    # The Coach's evidence bundle (what coach_turn_N.json is written from)
+    # carries it, as plain JSON.
     v = _validator(worktree, cmd)
     v_result = v.run_independent_tests()
-    from guardkit.orchestrator.quality_gates.coach_validator import CoachValidationResult
+    from guardkit.orchestrator.quality_gates.coach_evidence import CoachEvidenceBundle
 
-    payload = CoachValidationResult(
-        task_id="TASK-R7-001", turn=1, decision="feedback", independent_tests=v_result
-    ).to_dict()
+    payload = CoachEvidenceBundle(independent_tests=v_result).to_dict()
     json.dumps(payload)
-    assert payload["validation_results"]["independent_tests"]["run_evidence"]["runs"]
+    assert payload["independent_tests"]["run_evidence"]["runs"]
 
 
 def test_fallback_to_the_worktree_records_both_runs_in_order(worktree):
@@ -211,12 +210,10 @@ def test_a_capture_failure_never_changes_the_outcome(worktree, monkeypatch, wave
 
 def test_the_record_stays_out_of_the_coach_prompt_but_in_the_bundle(worktree):
     from guardkit.orchestrator.agent_invoker import AgentInvoker
-    from guardkit.orchestrator.coach_verification import HonestyVerification
     from guardkit.orchestrator.quality_gates.coach_evidence import CoachEvidenceBundle
 
     result = _validator(worktree, "true", wave_size=1).run_independent_tests()
     bundle = CoachEvidenceBundle(
-        honesty=HonestyVerification(verified=True, discrepancies=[], honesty_score=1.0),
         independent_tests=result,
     )
 
@@ -343,7 +340,7 @@ def test_a_declared_oracle_command_carries_its_run_record(worktree, monkeypatch,
     v = CoachValidator(worktree_path=worktree, task_id="TASK-R7-001")
     task = {"id": "TASK-R7-001", "task_type": "feature", "behavioural_oracle": {"command": command}}
 
-    result = v._produce_behavioural_oracle(authored_files=[], task=task)
+    result = v._produce_behavioural_oracle(task=task)
 
     assert result["status"] == "ran"
     assert result["passed"] is passed and result["timed_out"] is timed_out
@@ -369,57 +366,22 @@ def test_a_python_oracle_carries_its_run_record(worktree):
     v = CoachValidator(worktree_path=worktree, task_id="TASK-R7-001")
     v._pytest_interpreter = lambda: sys.executable  # type: ignore[method-assign]
 
-    result = v._produce_behavioural_oracle(authored_files=[], task={"id": "TASK-R7-001"})
+    result = v._produce_behavioural_oracle(task={"id": "TASK-R7-001"})
 
     assert result["oracle_path"] == "tests/acceptance/x_roundtrip.py"
     assert result["run_evidence"]["command_kind"] == "behavioural oracle"
     assert isinstance(result["run_evidence"]["command"], list)
 
 
-def test_a_required_oracle_carries_its_run_record_and_keeps_its_verdict(worktree, tmp_path):
-    import hashlib
-    import sys
-
-    checker = tmp_path / "checker.py"
-    checker.write_text(
-        "from pathlib import Path\nimport json, os\n"
-        "Path(os.environ['GUARDKIT_BEHAVIOURAL_ORACLE_RECEIPT']).write_text("
-        "json.dumps({'run': 1, 'failures': 0, 'errors': 0, 'skipped': 0}))\n"
-    )
-    task = {
-        "behavioural_oracle": {
-            "command": f"{sys.executable} -B {checker}",
-            "expected_exit": 0,
-            "timeout": 20,
-            "required": True,
-            "expected_checks": 1,
-            "checker_path": str(checker),
-            "checker_sha256": hashlib.sha256(checker.read_bytes()).hexdigest(),
-            "source_paths": ["src.txt"],
-        }
-    }
-    v = CoachValidator(worktree_path=worktree, task_id="TASK-REQ")
-
-    result = v._produce_behavioural_oracle(
-        authored_files=[], task=task, task_id="TASK-REQ", turn=2
-    )
-
-    assert result["passed"] is True and result["receipt_validation"]["valid"] is True
-    assert result["run_evidence"]["command_kind"] == "behavioural oracle"
-    assert result["run_evidence"]["source"]["before"]["status"] == "recorded"
-
-
 def test_the_oracle_record_stays_out_of_the_prompt(worktree):
     from guardkit.orchestrator.agent_invoker import AgentInvoker
-    from guardkit.orchestrator.coach_verification import HonestyVerification
     from guardkit.orchestrator.quality_gates.coach_evidence import CoachEvidenceBundle
 
     v = CoachValidator(worktree_path=worktree, task_id="TASK-R7-001")
     oracle = v._produce_behavioural_oracle(
-        authored_files=[], task={"behavioural_oracle": {"command": "true"}}
+        task={"behavioural_oracle": {"command": "true"}}
     )
     bundle = CoachEvidenceBundle(
-        honesty=HonestyVerification(verified=True, discrepancies=[], honesty_score=1.0),
         behavioural_oracle=oracle,
     )
     text = AgentInvoker._render_evidence_bundle_section(AgentInvoker.__new__(AgentInvoker), bundle)

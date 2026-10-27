@@ -442,7 +442,7 @@ class TestFeatureOrchestratorPropagation:
             fo.enable_context = False
             fo._resolve_enable_pre_loop = Mock(return_value=False)
 
-            fo._execute_task(task=task, feature=feature, worktree=worktree)
+            fo._execute_task_owned(task=task, feature=feature, worktree=worktree)
 
         assert len(orchestrate_calls) == 1
         assert orchestrate_calls[0]["requires_infrastructure"] == ["postgresql", "redis"]
@@ -503,7 +503,7 @@ class TestFeatureOrchestratorPropagation:
             fo.enable_context = False
             fo._resolve_enable_pre_loop = Mock(return_value=False)
 
-            fo._execute_task(task=task, feature=feature, worktree=worktree)
+            fo._execute_task_owned(task=task, feature=feature, worktree=worktree)
 
         assert len(orchestrate_calls) == 1
         assert orchestrate_calls[0]["requires_infrastructure"] == []

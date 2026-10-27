@@ -16,9 +16,9 @@ Four properties are pinned here:
    whole-model validate, so nesting costs zero snapshot changes. Proved by
    round-trip AND by the attack: a Player rewriting a COMPONENT's test command
    mid-build changes nothing.
-3. **The selector is explicit and loud** — a task naming an undeclared
-   component is a task-load FAILURE, never a quiet fall-back to the root
-   block.
+3. **The selector is explicit** — a task names its component; a name the
+   repository does not declare means the root component, with a warning
+   (27 October 2026 cull: no longer a task-load failure).
 4. **Absence is a no-op** — a flat declaration, and a repo with none at all,
    are byte-unchanged.
 
@@ -377,29 +377,28 @@ class TestComponentSelector:
             _orchestrator(tmp_path)._resolve_task_component(_TASK_ID, "app") == "app"
         )
 
-    def test_an_undeclared_component_is_a_loud_task_load_failure(self, tmp_path):
+    # 27 October 2026 cull: a selector the repository does not declare, or
+    # one that is not a name, is not a reason to stop the task. It means the
+    # root component, and the warning names it.
+    def test_an_undeclared_component_means_the_root_component(
+        self, tmp_path, caplog
+    ):
         _write_config(tmp_path, STUDY_TUTOR_SHAPE)
-        with pytest.raises(ValueError) as exc:
-            _orchestrator(tmp_path)._resolve_task_component(_TASK_ID, "api")
-        message = str(exc.value)
-        assert "api" in message
-        assert "declared: app" in message
-        assert "NOT used as a fallback" in message
+        assert _orchestrator(tmp_path)._resolve_task_component(_TASK_ID, "api") is None
+        assert "component: api" in caplog.text
+        assert "root component is used" in caplog.text
 
-    def test_a_component_on_a_repo_with_no_declaration_is_loud(self, tmp_path):
-        with pytest.raises(ValueError, match="declares no such component"):
-            _orchestrator(tmp_path)._resolve_task_component(_TASK_ID, "app")
+    def test_a_component_on_a_repo_with_no_declaration_means_the_root(self, tmp_path):
+        assert _orchestrator(tmp_path)._resolve_task_component(_TASK_ID, "app") is None
 
-    def test_a_component_on_a_flat_declaration_is_loud(self, tmp_path):
+    def test_a_component_on_a_flat_declaration_means_the_root(self, tmp_path):
         _write_config(tmp_path, {"test": "pytest -q"})
-        with pytest.raises(ValueError, match="<none>"):
-            _orchestrator(tmp_path)._resolve_task_component(_TASK_ID, "app")
+        assert _orchestrator(tmp_path)._resolve_task_component(_TASK_ID, "app") is None
 
     @pytest.mark.parametrize("bad", ["", "   ", 7, ["app"], {"name": "app"}])
-    def test_a_non_name_selector_is_loud(self, tmp_path, bad):
+    def test_a_non_name_selector_means_the_root(self, tmp_path, bad):
         _write_config(tmp_path, STUDY_TUTOR_SHAPE)
-        with pytest.raises(ValueError, match="Invalid `component:`"):
-            _orchestrator(tmp_path)._resolve_task_component(_TASK_ID, bad)
+        assert _orchestrator(tmp_path)._resolve_task_component(_TASK_ID, bad) is None
 
     def test_the_selector_is_whitespace_trimmed(self, tmp_path):
         _write_config(tmp_path, STUDY_TUTOR_SHAPE)
@@ -408,23 +407,13 @@ class TestComponentSelector:
         )
 
 
-class TestSelectorLiftIsOutsideTheMetadataSwallow:
-    """The D.1a cure's precedent: a verdict-bearing declaration's schema error
-    must NEVER be swallowed by the broad metadata ``except``."""
-
-    def test_the_lift_is_raw_and_the_validation_sits_after_the_try(self):
-        from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
-
-        source = inspect.getsource(AutoBuildOrchestrator.orchestrate)
-        lift = source.index('_component_raw = frontmatter.get("component")')
-        swallow = source.index("Failed to load task metadata from task file")
-        validate = source.index("self._resolve_task_component(task_id, _component_raw)")
-        assert lift < swallow < validate
+class TestTheSelectorIsThreaded:
+    """The task's ``component:`` key reaches the CoachValidator."""
 
     def test_the_frontmatter_key_is_component(self):
         from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
 
-        source = inspect.getsource(AutoBuildOrchestrator.orchestrate)
+        source = inspect.getsource(AutoBuildOrchestrator._orchestrate_owned)
         assert 'frontmatter.get("component")' in source
 
     def test_the_selector_reaches_the_validator_constructor(self):
@@ -437,7 +426,6 @@ class TestSelectorLiftIsOutsideTheMetadataSwallow:
             AutoBuildOrchestrator._execute_turn,
             AutoBuildOrchestrator._invoke_coach_safely,
             AutoBuildOrchestrator._invoke_coach_primary,
-            AutoBuildOrchestrator._invoke_coach_legacy,
         ):
             assert "component" in inspect.signature(method).parameters
         primary = inspect.getsource(AutoBuildOrchestrator._invoke_coach_primary)

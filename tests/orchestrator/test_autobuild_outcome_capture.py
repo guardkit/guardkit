@@ -58,8 +58,11 @@ def _published(
 
 @pytest.fixture
 def repo_root(tmp_path: Path) -> Path:
-    """Minimal repo root (no git operations are performed)."""
-    (tmp_path / ".git").mkdir()
+    """A real git checkout: orchestrate() runs the task under the checkout's
+    writer lease, which reads the checkout's git identity."""
+    from tests.task_scope_fixtures import init_checkout
+
+    init_checkout(tmp_path)
     (tmp_path / ".guardkit").mkdir()
     return tmp_path
 
@@ -69,10 +72,21 @@ def orchestrator(repo_root: Path):
     """AutoBuildOrchestrator with every outside dependency mocked."""
     from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
 
+    from guardkit.worktrees import Worktree
+
+    worktree_manager = MagicMock()
+    # orchestrate() takes the lease on the worktree it creates, so the
+    # created worktree is the real checkout.
+    worktree_manager.create.return_value = Worktree(
+        task_id="TASK-CAP-100",
+        branch_name="autobuild/TASK-CAP-100",
+        path=repo_root,
+        base_branch="main",
+    )
     return AutoBuildOrchestrator(
         repo_root=repo_root,
         max_turns=3,
-        worktree_manager=MagicMock(),
+        worktree_manager=worktree_manager,
         enable_pre_loop=False,
     )
 
@@ -766,9 +780,7 @@ def _drive_orchestrate(orchestrator, **phase_overrides):
     defaults = {
         "_setup_phase": {"return_value": mock_worktree},
         "_finalize_phase": {},
-        "_snapshot_spec_conformance": {},
         "_snapshot_toolchain_declaration": {},
-        "_check_qa_pass_bar_precondition": {"return_value": None},
         "_loop_phase": {"return_value": ([], "approved")},
     }
 
@@ -791,35 +803,8 @@ def _drive_orchestrate(orchestrator, **phase_overrides):
         )
 
 
-def _blocked_pass_bar():
-    """A QA pass-bar precondition that refuses the task start."""
-    precondition = MagicMock()
-    precondition.passed = False
-    precondition.detail = "no pinned pass bar for this task"
-    return precondition
-
-
 class TestEveryEarlyTerminalFiresCapture:
     """Each early exit records its outcome without any operator action."""
-
-    def test_qa_precondition_blocked_fires_capture(self, orchestrator):
-        writer = AsyncMock(return_value=_published("OUT-QA"))
-
-        with patch(f"{AUTOBUILD_LOGGER}.get_memory_client", return_value=_memory_on()), \
-             patch(f"{AUTOBUILD_LOGGER}.capture_task_outcome_verified", writer):
-            result = _drive_orchestrate(
-                orchestrator,
-                _check_qa_pass_bar_precondition={
-                    "return_value": _blocked_pass_bar()
-                },
-            )
-
-        assert result.final_decision == "qa_precondition_blocked"
-        writer.assert_awaited_once()
-        kwargs = writer.await_args.kwargs
-        assert kwargs["outcome_type"] is OutcomeType.TASK_FAILED
-        assert kwargs["task_id"] == "TASK-CAP-100"
-        assert "qa_precondition_blocked" in kwargs["summary"]
 
     def test_pre_loop_checkpoint_rejection_fires_capture(self, orchestrator):
         orchestrator.enable_pre_loop = True
@@ -946,10 +931,10 @@ class TestEveryEarlyTerminalFiresCapture:
 # A crash that follows a terminal says which terminal it supersedes
 # ============================================================================
 #
-# The real shape: an early terminal (the QA pass-bar refusal) records its
+# The real shape: an early terminal (the pre-loop refusal) records its
 # outcome, and the finalize that follows it throws. Memory then holds TWO
 # records for ONE build. Read cold months later they look like two unrelated
-# builds — and the first one, the tidy "blocked by the pass bar" record, is the
+# builds — and the first one, the tidy "blocked before the loop" record, is the
 # one a gate is most likely to believe. The crash record has to carry its own
 # predecessor's name or the pair is a small lie told twice.
 
@@ -962,6 +947,7 @@ class TestACrashNamesTheTerminalItSupersedes:
         return [c.kwargs for c in writer.await_args_list]
 
     def test_crash_after_an_early_terminal_names_that_terminal(self, orchestrator):
+        orchestrator.enable_pre_loop = True
         from guardkit.orchestrator import autobuild as autobuild_module
 
         writer = AsyncMock(return_value=_published("OUT-SUP"))
@@ -971,7 +957,7 @@ class TestACrashNamesTheTerminalItSupersedes:
              pytest.raises(autobuild_module.OrchestrationError):
             _drive_orchestrate(
                 orchestrator,
-                _check_qa_pass_bar_precondition={"return_value": _blocked_pass_bar()},
+                _pre_loop_phase={"return_value": {"checkpoint_passed": False}},
                 _finalize_phase={"side_effect": RuntimeError("finalize blew up")},
             )
 
@@ -979,17 +965,18 @@ class TestACrashNamesTheTerminalItSupersedes:
         assert len(captures) == 2, captures
         first, second = captures
 
-        assert "qa_precondition_blocked" in first["summary"]
+        assert "pre_loop_blocked" in first["summary"]
         # The crash record: still a crash, and now it says what it overtook.
         assert "crashed" in second["summary"]
         assert "finalize blew up" in second["summary"]
-        assert "qa_precondition_blocked" in second["summary"]
+        assert "pre_loop_blocked" in second["summary"]
         assert "supersedes" in second["summary"]
 
     def test_the_naming_rides_the_field_the_store_actually_keeps(
         self, orchestrator
     ):
         """``summary`` is dropped by the writer's payload; ``lessons`` is kept."""
+        orchestrator.enable_pre_loop = True
         from guardkit.orchestrator import autobuild as autobuild_module
 
         writer = AsyncMock(return_value=_published("OUT-SUP2"))
@@ -999,15 +986,15 @@ class TestACrashNamesTheTerminalItSupersedes:
              pytest.raises(autobuild_module.OrchestrationError):
             _drive_orchestrate(
                 orchestrator,
-                _check_qa_pass_bar_precondition={"return_value": _blocked_pass_bar()},
+                _pre_loop_phase={"return_value": {"checkpoint_passed": False}},
                 _finalize_phase={"side_effect": RuntimeError("finalize blew up")},
             )
 
         crash = self._captures(writer)[1]
         assert crash["lessons_learned"] == [crash["summary"]]
-        assert "qa_precondition_blocked" in crash["lessons_learned"][0]
+        assert "pre_loop_blocked" in crash["lessons_learned"][0]
         assert any(
-            "qa_precondition_blocked" in problem
+            "pre_loop_blocked" in problem
             for problem in crash["problems_encountered"]
         )
 
@@ -1039,6 +1026,7 @@ class TestACrashNamesTheTerminalItSupersedes:
         self, orchestrator
     ):
         """One orchestrator can be driven twice; run two supersedes nothing."""
+        orchestrator.enable_pre_loop = True
         from guardkit.orchestrator import autobuild as autobuild_module
 
         writer = AsyncMock(return_value=_published("OUT-RUN"))
@@ -1048,7 +1036,7 @@ class TestACrashNamesTheTerminalItSupersedes:
             # Run one reaches a real terminal and records it.
             _drive_orchestrate(
                 orchestrator,
-                _check_qa_pass_bar_precondition={"return_value": _blocked_pass_bar()},
+                _pre_loop_phase={"return_value": {"checkpoint_passed": False}},
             )
 
             # Run two crashes with nothing of its own recorded first.
@@ -1060,7 +1048,7 @@ class TestACrashNamesTheTerminalItSupersedes:
 
         crash = self._captures(writer)[-1]
         assert "crashed" in crash["summary"]
-        assert "qa_precondition_blocked" not in crash["summary"]
+        assert "pre_loop_blocked" not in crash["summary"]
 
 
 # ============================================================================

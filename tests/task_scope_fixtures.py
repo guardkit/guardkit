@@ -28,6 +28,22 @@ def git(root: Path, *args: str) -> str:
     ).stdout.strip()
 
 
+def init_checkout(root: Path, branch: str = "main") -> Path:
+    """Make ``root`` a real Git checkout on ``branch`` with one empty commit.
+
+    A feature build's tasks and checks run as the checkout's one writer, and
+    the writer lock reads the checkout's Git identity, so a stand-in worktree
+    must be a real checkout. Already a checkout: left as it is.
+    """
+    root = Path(root)
+    root.mkdir(parents=True, exist_ok=True)
+    if not (root / ".git").exists():
+        git(root, "init", "-q", "-b", branch)
+        git(root, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
+            "commit", "-q", "--allow-empty", "-m", "fixture seed")
+    return root
+
+
 def register_clean_fresh_checkout(root: Path) -> str:
     """Register one genuinely fresh, clean fixture checkout at its real HEAD."""
     root = Path(root)

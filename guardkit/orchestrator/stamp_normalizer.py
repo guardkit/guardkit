@@ -9,14 +9,12 @@ CONDITIONS:
    YAML on the planning branch — it is not a checker. Only titles that LACK a
    stamp are written; an existing stamp is NEVER overwritten (a human's or a
    plan-writer's stamp outranks a rule's).
-2. **NO MODEL IN THE LOOP (v1).** Rules stamp what they can. Anything the
-   rules cannot decide REFUSES LOUD — every undecidable title is named, with
-   the closed vocabulary, in the same voice as the enforced-unstamped
-   rejection in ``feature_loader._enforce_routing_law`` — and the run stops.
-   Nothing is written on a refusal. There is NO fallback home; in particular
-   ``operator`` is minted ONLY on an explicit human-work match (R10), never
-   as the place unclassified scenarios land (that would convert every
-   unclassified scenario into a hidden chore for Rich).
+2. **NO MODEL IN THE LOOP (v1).** Rules stamp what they can. A title the
+   rules cannot decide is left unstamped and named in the result's
+   ``refused`` list (since the cull, 27 October 2026, that stops nothing).
+   There is NO fallback home; in particular ``operator`` is minted ONLY on
+   an explicit human-work match (R10), never as the place unclassified
+   scenarios land.
 
 Condition 2 as it now stands — THE MODEL FALLBACK (RULED, Rich 2026-08-31,
 repair item 11). Condition 2's "no model in the loop" was a v1 condition and
@@ -45,20 +43,6 @@ and the very next runs still refused "Concurrent requests return the same
 the spec seat's vocabulary outruns a hand-maintained synonym list. The
 machinery lives in ``stamp_model_fallback.py``; it attaches at ONE place, the
 refusal point in :func:`normalize_feature`.
-
-Condition 1's shadow — ADVISORY DISAGREEMENTS (RULED, Rich 2026-08-18,
-drive-19 datum): planning run c585e146 stamped three plain-HTTP scenarios
-``verifier: toolchain`` with no ``test_ref`` — legal vocabulary, WRONG home;
-the law accepted the vocabulary and, by condition 1, the normalizer skipped
-the stamped titles, so the wrong home rode through untouched. Now the
-normalizer classifies EVERY title, stamped or not: for an already-stamped
-title whose rule-home DIFFERS from the stamp it RECORDS a disagreement
-(``NormalizeResult.disagreements`` — title, stamped, rule_home, rule,
-evidence), logs a WARNING per title, and the CLI echoes each on stderr ahead
-of the JSON. It NEVER overwrites, and the exit code is UNCHANGED (a
-disagreement is advisory). A title the rules cannot decide has nothing to
-compare — no disagreement. The other half of the same ruling — (3) a bare
-``verifier: toolchain`` is REFUSED at load — lives in ``verifier_stamp``.
 
 Why a rule and not a prompt: the first live drive under the routing-law
 templates (planning run d5f2e13b) showed the plan-writer READ the closed
@@ -224,10 +208,8 @@ from guardkit.orchestrator.stamp_model_fallback import (
     decide_refused_titles_with_outcome,
 )
 from guardkit.orchestrator.verifier_stamp import (
-    VERIFIER_HOMES,
     _SCENARIO_LINE_RE,
     extract_scenario_titles,
-    parse_scenario_stamp,
 )
 
 logger = logging.getLogger(__name__)
@@ -241,41 +223,8 @@ RULES_DOC = "ai-transition/docs/routing-law-stamp-normalizer-rules-2026-08-15.md
 
 
 class StampNormalizerError(ValueError):
-    """The normalizer cannot RUN (no feature files, unreadable input, a
-    write that failed verification). Loud, never a silent no-op."""
-
-
-class StampNormalizerRefusal(StampNormalizerError):
-    """The rules could not decide one or more titles — REFUSE LOUD.
-
-    ``refused`` names every undecidable title; the message carries them all
-    plus the closed vocabulary. Nothing was written.
-    """
-
-    def __init__(self, feature_id: str, refused: Sequence[str]):
-        self.feature_id = feature_id
-        self.refused = list(refused)
-        super().__init__(_refusal_message(feature_id, self.refused))
-
-
-def _vocabulary() -> str:
-    return ", ".join(VERIFIER_HOMES)
-
-
-def _refusal_message(feature_id: str, refused: Sequence[str]) -> str:
-    listed = "\n".join(f"  - {t}" for t in refused)
-    return (
-        f"STAMP NORMALIZER: feature {feature_id} has {len(refused)} "
-        f"UNDECIDABLE scenario(s) — no rule (R1–R10, {RULES_DOC}) matched "
-        f"and there is NO fallback home (card Q8/A.2: a scenario silently "
-        f"routed to a home it does not belong to is an unverified green). "
-        f"The run stops here; nothing was written.\n"
-        f"Undecidable:\n{listed}\n"
-        f"FIX: stamp each title by hand in this feature's `scenarios:` map "
-        f"with a `verifier:` from the closed list ({_vocabulary()}) — "
-        f"`operator` ONLY for attended human work, never as a default — or "
-        f"set `routing_law: off` on this feature."
-    )
+    """The normalizer cannot RUN: the feature YAML cannot be read, or a
+    write failed its re-read check."""
 
 
 # ---------------------------------------------------------------------------
@@ -1681,11 +1630,6 @@ class NormalizeResult:
     # prints it; before this the card could not tell "no endpoint set" from
     # "the router answered 500".
     model_outcome: Optional[Dict[str, str]] = None
-    # (2) RULED 2026-08-18: ADVISORY disagreements — already-stamped titles
-    # the rules would home DIFFERENTLY. Each entry: {title, stamped,
-    # rule_home, rule, evidence}. Recorded, warned, echoed — NEVER written
-    # (condition 1 stands) and never an exit code (advisory).
-    disagreements: List[Dict[str, str]] = field(default_factory=list)
     written: bool = False
     dry_run: bool = False
     repo_has_http_surface: bool = False
@@ -1705,7 +1649,6 @@ class NormalizeResult:
             "operator_stamped": list(self.operator_stamped),
             "model_stamped": list(self.model_stamped),
             "model_outcome": dict(self.model_outcome) if self.model_outcome else None,
-            "disagreements": [dict(d) for d in self.disagreements],
             "written": self.written,
             "dry_run": self.dry_run,
             "repo_has_http_surface": self.repo_has_http_surface,
@@ -1746,8 +1689,8 @@ def normalize_feature(
         The feature YAML (``.guardkit/features/FEAT-X.yaml``).
     feature_files
         Repo-relative Gherkin paths. ``None`` = the YAML's own
-        ``feature_files:``; the universe is explicit, never inferred — with
-        neither, this raises :class:`StampNormalizerError`.
+        ``feature_files:``; with neither, there is nothing to stamp and an
+        empty result is returned.
     repo_root
         Root the feature files / task docs / manifests resolve against
         (default: the YAML's grand-grandparent, i.e. ``.guardkit/features/..``).
@@ -1778,11 +1721,9 @@ def normalize_feature(
 
     Raises
     ------
-    StampNormalizerRefusal
-        One or more titles are undecidable — every one named; nothing written.
     StampNormalizerError
-        The normalizer cannot run (no feature files, missing/unreadable file,
-        malformed existing stamp, or a write that failed re-verification).
+        The feature YAML cannot be read, or a write failed its re-read check.
+        A declared feature file that is missing or unreadable is skipped.
     """
     yaml_path = Path(feature_yaml_path)
     if repo_root is None:
@@ -1797,57 +1738,31 @@ def normalize_feature(
     data = _load_feature_yaml(yaml_path)
     feature_id = str(data.get("id") or yaml_path.stem)
 
-    files: List[str] = list(feature_files) if feature_files else list(data.get("feature_files") or [])
-    if not files:
-        raise StampNormalizerError(
-            f"stamp normalizer: feature {feature_id} declares no `feature_files:` "
-            "and none were given — the scenario universe must be explicit, "
-            "never inferred (routing law). FIX: list the feature's Gherkin "
-            "`.feature` path(s) under `feature_files:` in the YAML."
-        )
-    if not isinstance(files, list) or not all(isinstance(f, str) and f.strip() for f in files):
-        raise StampNormalizerError(
-            f"stamp normalizer: feature {feature_id}: `feature_files:` must be a "
-            f"list of non-empty repo-relative paths, got {files!r}."
-        )
+    declared = feature_files if feature_files else data.get("feature_files")
+    files: List[str] = [
+        f for f in (declared if isinstance(declared, list) else [])
+        if isinstance(f, str) and f.strip()
+    ]
 
-    # Existing stamps — validated (a bogus stamp is loud here, same voice as
-    # the loader), never overwritten.
-    raw_existing = data.get("scenarios") or {}
-    if not isinstance(raw_existing, dict):
-        raise StampNormalizerError(
-            f"stamp normalizer: feature {feature_id}: `scenarios:` must be a "
-            f"mapping of title -> stamp, got {type(raw_existing).__name__}."
-        )
-    existing_stamps: Dict[str, str] = {}  # title -> stamped verifier
-    for title, raw in raw_existing.items():
-        try:
-            existing_stamps[str(title)] = parse_scenario_stamp(
-                raw, scenario=str(title)
-            ).verifier
-        except ValueError as exc:
-            raise StampNormalizerError(
-                f"stamp normalizer: feature {feature_id} carries an invalid "
-                f"existing stamp — fix it before normalizing.\n{exc}"
-            ) from exc
-    existing_titles = set() if ignore_existing else set(existing_stamps)
+    # Titles already stamped are never overwritten (condition 1); their
+    # stamps are not read.
+    raw_existing = data.get("scenarios")
+    existing_titles = (
+        set()
+        if ignore_existing or not isinstance(raw_existing, dict)
+        else {str(title) for title in raw_existing}
+    )
 
     # The scenario universe: titles + own steps + own annotations, from the
-    # declared files.
+    # declared files. A declared file that is missing or unreadable is
+    # skipped.
     scenarios: List[ScenarioBlock] = []
     for rel in files:
         path = root / rel
-        if not path.exists():
-            raise StampNormalizerError(
-                f"stamp normalizer: feature {feature_id} declares feature file "
-                f"{rel!r}, which does not exist under {root}."
-            )
         try:
             text = path.read_text(encoding="utf-8", errors="replace")
-        except OSError as exc:
-            raise StampNormalizerError(
-                f"stamp normalizer: feature {feature_id}: {rel!r} is unreadable ({exc})."
-            ) from exc
+        except OSError:
+            continue
         scenarios.extend(extract_scenario_blocks(text))
 
     # Context.
@@ -1888,35 +1803,6 @@ def normalize_feature(
         steps_by_title[title] = block.steps_text
         if title in existing_titles:
             result.already_stamped.append(title)
-            # (2) RULED 2026-08-18: still CLASSIFY the stamped title; a
-            # rule-home that DIFFERS is recorded as an ADVISORY disagreement.
-            # Never overwritten (condition 1); undecidable = nothing to
-            # compare = no disagreement.
-            rule_home = classify_scenario(
-                title, block.steps_text, ctx, annotations=block.annotations
-            )
-            stamped = existing_stamps[title]
-            if rule_home is not None and rule_home.verifier != stamped:
-                result.disagreements.append(
-                    {
-                        "title": title,
-                        "stamped": stamped,
-                        "rule_home": rule_home.verifier,
-                        "rule": rule_home.rule,
-                        "evidence": rule_home.evidence,
-                    }
-                )
-                logger.warning(
-                    "STAMP NORMALIZER: feature %s — stamp DISAGREEMENT "
-                    "(advisory, not overwritten): %r is stamped %s but the "
-                    "rules say %s (%s: %s)",
-                    feature_id,
-                    title,
-                    stamped,
-                    rule_home.verifier,
-                    rule_home.rule,
-                    rule_home.evidence,
-                )
             continue
         home = classify_scenario(title, block.steps_text, ctx, annotations=block.annotations)
         if home is None:
@@ -2000,24 +1886,8 @@ def normalize_feature(
             ),
         )
 
-    # Coordinator review 2026-08-16 (pairs with the forge hook's condition 5):
-    # the normalizer's law is ONLY "never invent a home, never overwrite,
-    # refuse the undecidable BY NAME". It WRITES every DECIDED stamp (a
-    # correctly stamped subset is strictly more truth than an empty map; each
-    # written stamp carries its rule in the receipt, so nothing is silent) and
-    # RETURNS the refused list. The DECISION to stop or proceed on a partial
-    # result belongs to the CALLER (forge hook: enforced → stop with the card;
-    # not enforced → proceed with a plain line). Refusals are still LOUD:
-    # logged here by name, and surfaced by the CLI as a distinct exit code.
-    if result.refused:
-        logger.warning(
-            "STAMP NORMALIZER: feature %s — %d scenario(s) UNDECIDABLE by rule "
-            "(no home invented, none written for these): %s",
-            feature_id,
-            len(result.refused),
-            "; ".join(result.refused),
-        )
-
+    # Every DECIDED stamp is written; the titles no rule decided are returned
+    # in ``refused`` and stop nothing (the cull, 27 October 2026, GKT-014).
     if dry_run or not result.stamped:
         return result
 
@@ -2040,11 +1910,10 @@ def normalize_feature(
     result.written = True
     logger.info(
         "STAMP NORMALIZER: feature %s — %d scenario(s) stamped by rule, "
-        "%d already stamped (untouched; %d advisory disagreement(s)); wrote %s",
+        "%d already stamped (untouched); wrote %s",
         feature_id,
         len(result.stamped),
         len(result.already_stamped),
-        len(result.disagreements),
         yaml_path,
     )
     return result
@@ -2167,14 +2036,6 @@ def write_stamps(
             "stamp normalizer: refusing to overwrite existing stamp(s) for: "
             + ", ".join(repr(t) for t in collisions)
         )
-    for title, stamp in stamps.items():
-        try:
-            parse_scenario_stamp(dict(stamp), scenario=title)  # closed vocabulary, loud
-        except ValueError as exc:
-            raise StampNormalizerError(
-                f"stamp normalizer: refusing to write an invalid stamp for "
-                f"{title!r} — nothing written.\n{exc}"
-            ) from exc
 
     new_text = _splice_scenarios(original, stamps, feature_files, comments)
 
@@ -2232,7 +2093,6 @@ __all__ = [
     "NormalizeContext",
     "NormalizeResult",
     "StampNormalizerError",
-    "StampNormalizerRefusal",
     "classify_scenario",
     "then_clause",
     "given_when_clause",

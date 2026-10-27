@@ -2,8 +2,8 @@
 
 Covers TASK-SMK-F703A acceptance criteria:
 - feature YAML without ``smoke_gates`` loads unchanged
-- malformed ``smoke_gates`` raises ``SchemaValidationError`` before
-  ``/feature-build`` starts
+- since the cull (27 October 2026, GKT-034) the values are kept as written
+  and a ``smoke_gates`` block that cannot be read is skipped
 """
 
 from __future__ import annotations
@@ -16,8 +16,6 @@ import pytest
 from guardkit.orchestrator.feature_loader import (
     Feature,
     FeatureLoader,
-    FeatureParseError,
-    SchemaValidationError,
     SmokeGates,
 )
 
@@ -75,94 +73,51 @@ def test_smoke_gates_optional(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# AC: malformed smoke_gates raises SchemaValidationError
+# The cull: values are kept; a block that cannot be read is skipped
 # ---------------------------------------------------------------------------
 
 
-_MALFORMED_CASES = [
-    pytest.param(
-        """
-        smoke_gates:
-          after_wave: -1
-          command: pytest
-        """,
-        id="negative-after-wave",
-    ),
-    pytest.param(
-        """
-        smoke_gates:
-          after_wave: 1
-          command: ""
-        """,
-        id="empty-command",
-    ),
-    pytest.param(
-        """
-        smoke_gates:
-          after_wave: 1
-          command: pytest
-          timeout: 0
-        """,
-        id="timeout-below-floor",
-    ),
-    pytest.param(
-        """
-        smoke_gates:
-          after_wave: 1
-          command: pytest
-          timeout: 700
-        """,
-        id="timeout-above-cap",
-    ),
-    pytest.param(
-        """
-        smoke_gates:
-          after_wave: "sometimes"
-          command: pytest
-        """,
-        id="after-wave-invalid-string",
-    ),
-    pytest.param(
-        """
-        smoke_gates:
-          after_wave: []
-          command: pytest
-        """,
-        id="after-wave-empty-list",
-    ),
-    pytest.param(
-        """
-        smoke_gates:
-          after_wave: 1
-          command: pytest
-          unknown_key: oops
-        """,
-        id="unknown-key-forbidden",
-    ),
-]
-
-
-@pytest.mark.parametrize("yaml_fragment", _MALFORMED_CASES)
-def test_smoke_gates_malformed_raises(tmp_path: Path, yaml_fragment: str) -> None:
-    """Malformed smoke_gates raises SchemaValidationError before /feature-build."""
+def _load(tmp_path: Path, fragment: str) -> Feature:
     features_dir = tmp_path / ".guardkit" / "features"
-    body = _BASE_FEATURE + textwrap.dedent(yaml_fragment)
-    _write_feature_yaml(features_dir, "FEAT-TEST", body)
+    _write_feature_yaml(
+        features_dir, "FEAT-TEST", _BASE_FEATURE + textwrap.dedent(fragment)
+    )
+    return FeatureLoader.load_feature(
+        "FEAT-TEST", repo_root=tmp_path, features_dir=features_dir
+    )
 
-    with pytest.raises(SchemaValidationError):
-        FeatureLoader.load_feature(
-            "FEAT-TEST", repo_root=tmp_path, features_dir=features_dir
-        )
+
+@pytest.mark.parametrize(
+    "fragment, field, value",
+    [
+        ("smoke_gates:\n  after_wave: -1\n  command: pytest\n", "after_wave", -1),
+        ("smoke_gates:\n  after_wave: 1\n  command: pytest\n  timeout: 0\n", "timeout", 0),
+        ("smoke_gates:\n  after_wave: 1\n  command: pytest\n  timeout: 700\n", "timeout", 700),
+        ("smoke_gates:\n  after_wave: []\n  command: pytest\n", "after_wave", []),
+        ("smoke_gates:\n  after_wave: 1\n  command: pytest\n  unknown_key: oops\n", "command", "pytest"),
+    ],
+)
+def test_smoke_gates_values_are_kept(tmp_path: Path, fragment, field, value) -> None:
+    feature = _load(tmp_path, fragment)
+    assert feature.smoke_gates is not None
+    assert getattr(feature.smoke_gates, field) == value
 
 
-def test_schema_validation_error_is_feature_parse_error() -> None:
-    """SchemaValidationError must be a FeatureParseError subclass.
-
-    Existing code that catches FeatureParseError (the broader schema-parse
-    exception) should continue to work unchanged when smoke_gates validation
-    fails. Otherwise the failure escapes the existing error-handling layer.
-    """
-    assert issubclass(SchemaValidationError, FeatureParseError)
+@pytest.mark.parametrize(
+    "fragment",
+    [
+        "smoke_gates:\n  after_wave: 1\n  command: \"\"\n",
+        "smoke_gates:\n  after_wave: \"sometimes\"\n  command: pytest\n",
+        "smoke_gates:\n  after_wave: 1\n",
+    ],
+    ids=["empty-command", "after-wave-invalid-string", "no-command"],
+)
+def test_smoke_gates_block_that_cannot_be_read_is_skipped(
+    tmp_path: Path, fragment: str
+) -> None:
+    feature = _load(tmp_path, fragment)
+    assert feature.smoke_gates is None
+    assert [t.id for t in feature.tasks] == ["TASK-T1", "TASK-T2"]
 
 
 # ---------------------------------------------------------------------------

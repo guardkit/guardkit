@@ -706,6 +706,9 @@ def mock_worktree_manager(tmp_path):
 
     worktree_path = tmp_path / ".guardkit" / "worktrees" / "FEAT-AREA"
     worktree_path.mkdir(parents=True, exist_ok=True)
+    from tests.task_scope_fixtures import init_checkout
+
+    init_checkout(worktree_path)  # the writer lock reads its git identity
     worktree = Worktree(
         task_id="FEAT-AREA",
         branch_name="autobuild/FEAT-AREA",
@@ -934,7 +937,10 @@ def _real_feature_and_worktree(tmp_path, mock_worktree_manager, task_frontmatter
     """A loaded feature and a worktree pointing at the repository itself."""
     from guardkit.orchestrator.feature_loader import FeatureLoader
 
+    from tests.task_scope_fixtures import init_checkout
+
     _write_feature_repo(tmp_path, task_frontmatter)
+    init_checkout(tmp_path)  # the smoke gate runs as the checkout's writer
     feature = FeatureLoader.load_feature("FEAT-AREA", repo_root=tmp_path)
     template = mock_worktree_manager.create.return_value
     worktree = type(template)(

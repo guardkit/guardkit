@@ -17,8 +17,6 @@ Coverage Target: >=85%
 import itertools
 
 import pytest
-from pathlib import Path
-from unittest.mock import patch
 
 from guardkit.orchestrator.quality_gates import (
     QualityGateBlocked,
@@ -441,7 +439,6 @@ class TestArchitecturalReviewFailures:
             - Final decision = "pre_loop_blocked"
             - Error mentions architectural review failure
         """
-        from guardkit.orchestrator.quality_gates.pre_loop import PreLoopResult
 
         # Configure pre-loop to raise QualityGateBlocked.
         #

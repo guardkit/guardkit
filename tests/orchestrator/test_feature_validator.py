@@ -1,10 +1,9 @@
 """Tests for pre-flight feature validation.
 
 Coverage Target: >=85%
-Test Count: 17 tests
+
 """
 
-import pytest
 from pathlib import Path
 
 from guardkit.orchestrator.feature_validator import (
@@ -13,7 +12,6 @@ from guardkit.orchestrator.feature_validator import (
     PreFlightValidationResult,
     ValidationIssue,
     _extract_frontmatter,
-    REQUIRED_FRONTMATTER_FIELDS,
 )
 from guardkit.orchestrator.feature_loader import (
     Feature,
@@ -113,217 +111,30 @@ class TestExtractFrontmatter:
 
 
 class TestValidateFeaturePreflight:
-    """Tests for pre-flight feature validation."""
+    """The frontmatter checks were deleted in the cull (27 October 2026):
+    a missing field, an alias and an unknown task_type all pass."""
 
-    def test_valid_feature_passes(self, tmp_path):
-        """Feature with all valid canonical task_type and required fields passes."""
+    def test_frontmatter_is_not_checked(self, tmp_path):
         _create_task_file(
             tmp_path,
             "tasks/backlog/TASK-001.md",
-            "id: TASK-001\ntitle: Task One\ntask_type: feature\ncomplexity: 5",
+            "title: Task One\ntask_type: foobar",
         )
-        task = _make_task("TASK-001", "tasks/backlog/TASK-001.md")
-        feature = _make_feature([task])
-
-        result = validate_feature_preflight(feature, tmp_path)
-
-        assert result.is_valid
-        assert not result.has_errors
-        assert not result.has_warnings
-
-    def test_invalid_task_type_is_left_to_the_plan_check(self, tmp_path):
-        """One rule, one place (step 2): FeatureLoader.validate_feature
-        refuses an invalid task_type; the pre-flight copy is gone."""
         _create_task_file(
             tmp_path,
-            "tasks/backlog/TASK-001.md",
-            "id: TASK-001\ntitle: Task One\ntask_type: foobar\ncomplexity: 5",
+            "tasks/backlog/TASK-002.md",
+            "id: TASK-002\ntask_type: implementation",
         )
-        task = _make_task("TASK-001", "tasks/backlog/TASK-001.md")
-        feature = _make_feature([task])
+        feature = _make_feature([
+            _make_task("TASK-001", "tasks/backlog/TASK-001.md"),
+            _make_task("TASK-002", "tasks/backlog/TASK-002.md"),
+        ])
 
         result = validate_feature_preflight(feature, tmp_path)
 
         assert result.is_valid
         assert result.errors == []
-
-    def test_alias_task_type_produces_warning(self, tmp_path):
-        """Alias task_type produces a warning, not an error."""
-        _create_task_file(
-            tmp_path,
-            "tasks/backlog/TASK-001.md",
-            "id: TASK-001\ntitle: Task One\ntask_type: enhancement\ncomplexity: 5",
-        )
-        task = _make_task("TASK-001", "tasks/backlog/TASK-001.md")
-        feature = _make_feature([task])
-
-        result = validate_feature_preflight(feature, tmp_path)
-
-        assert result.is_valid  # Aliases don't block execution
-        assert not result.has_errors
-        assert result.has_warnings
-        assert len(result.warnings) == 1
-        assert result.warnings[0].task_id == "TASK-001"
-        assert "enhancement" in result.warnings[0].message
-        assert "feature" in result.warnings[0].suggestion
-
-    @pytest.mark.parametrize("task_type", ["glue", "wiring"])
-    def test_glue_wiring_task_type_accepted_clean(self, tmp_path, task_type):
-        """JOIN-1 / DF-016 §6(a): the oracle accepts glue/wiring end-to-end.
-
-        Canonical (not aliases) → is_valid with NO error and NO warning. This is
-        the acceptance side of FEAT-DF12 DFEM-013's oracle-green `glue` cutover.
-        """
-        _create_task_file(
-            tmp_path,
-            "tasks/backlog/TASK-001.md",
-            f"id: TASK-001\ntitle: Task One\ntask_type: {task_type}\ncomplexity: 5",
-        )
-        task = _make_task("TASK-001", "tasks/backlog/TASK-001.md")
-        feature = _make_feature([task])
-
-        result = validate_feature_preflight(feature, tmp_path)
-
-        assert result.is_valid
-        assert not result.has_errors
-        assert not result.has_warnings
-
-    def test_missing_required_field_complexity(self, tmp_path):
-        """Missing 'complexity' field is advice with its default (step 1)."""
-        _create_task_file(
-            tmp_path,
-            "tasks/backlog/TASK-001.md",
-            "id: TASK-001\ntitle: Task One\ntask_type: feature",
-        )
-        task = _make_task("TASK-001", "tasks/backlog/TASK-001.md")
-        feature = _make_feature([task])
-
-        result = validate_feature_preflight(feature, tmp_path)
-
-        assert result.is_valid
-        assert any(
-            issue.field == "complexity" and "using the default" in issue.message
-            for issue in result.warnings
-        )
-
-    def test_missing_required_field_title(self, tmp_path):
-        """Missing 'title' field is advice (step 1)."""
-        _create_task_file(
-            tmp_path,
-            "tasks/backlog/TASK-001.md",
-            "id: TASK-001\ntask_type: feature\ncomplexity: 5",
-        )
-        task = _make_task("TASK-001", "tasks/backlog/TASK-001.md")
-        feature = _make_feature([task])
-
-        result = validate_feature_preflight(feature, tmp_path)
-
-        assert result.is_valid
-        assert any(
-            issue.field == "title" for issue in result.warnings
-        )
-
-    def test_missing_required_field_task_type(self, tmp_path):
-        """Missing 'task_type' field is advice (step 1)."""
-        _create_task_file(
-            tmp_path,
-            "tasks/backlog/TASK-001.md",
-            "id: TASK-001\ntitle: Task One\ncomplexity: 5",
-        )
-        task = _make_task("TASK-001", "tasks/backlog/TASK-001.md")
-        feature = _make_feature([task])
-
-        result = validate_feature_preflight(feature, tmp_path)
-
-        assert result.is_valid
-        assert any(
-            issue.field == "task_type" for issue in result.warnings
-        )
-
-    def test_missing_required_field_id(self, tmp_path):
-        """Missing 'id' field is advice (step 1)."""
-        _create_task_file(
-            tmp_path,
-            "tasks/backlog/TASK-001.md",
-            "title: Task One\ntask_type: feature\ncomplexity: 5",
-        )
-        task = _make_task("TASK-001", "tasks/backlog/TASK-001.md")
-        feature = _make_feature([task])
-
-        result = validate_feature_preflight(feature, tmp_path)
-
-        assert result.is_valid
-        assert any(
-            issue.field == "id" for issue in result.warnings
-        )
-
-    def test_multiple_errors_reported_at_once(self, tmp_path):
-        """Multiple tasks with different errors are all collected (batch)."""
-        _create_task_file(
-            tmp_path,
-            "tasks/backlog/TASK-001.md",
-            "id: TASK-001\ntitle: Task One\ntask_type: foobar\ncomplexity: 5",
-        )
-        _create_task_file(
-            tmp_path,
-            "tasks/backlog/TASK-002.md",
-            "id: TASK-002\ntitle: Task Two\ntask_type: feature",
-        )
-        task1 = _make_task("TASK-001", "tasks/backlog/TASK-001.md")
-        task2 = _make_task("TASK-002", "tasks/backlog/TASK-002.md")
-        feature = _make_feature([task1, task2])
-
-        result = validate_feature_preflight(feature, tmp_path)
-
-        # The invalid task_type is the plan check's (step 2, one copy).
-        assert result.is_valid
-        # Missing complexity is advice since step 1 (24 October 2026).
-        assert "TASK-002" in {issue.task_id for issue in result.warnings}
-
-    def test_missing_file_skipped(self, tmp_path):
-        """Task whose file does not exist is skipped (structural validator handles it)."""
-        task = _make_task("TASK-001", "tasks/backlog/TASK-001.md")
-        feature = _make_feature([task])
-        # Don't create the file
-
-        result = validate_feature_preflight(feature, tmp_path)
-
-        assert result.is_valid
-        assert not result.has_errors
-        assert not result.has_warnings
-
-    def test_no_frontmatter_skipped(self, tmp_path):
-        """Task file with no frontmatter is skipped gracefully."""
-        file_path = tmp_path / "tasks" / "backlog" / "TASK-001.md"
-        file_path.parent.mkdir(parents=True, exist_ok=True)
-        file_path.write_text("# Just a markdown file\nNo frontmatter here.")
-        task = _make_task("TASK-001", "tasks/backlog/TASK-001.md")
-        feature = _make_feature([task])
-
-        result = validate_feature_preflight(feature, tmp_path)
-
-        assert result.is_valid
-
-    def test_all_canonical_task_types_pass(self, tmp_path):
-        """All canonical TaskType enum values pass validation."""
-        from guardkit.models.task_types import TaskType
-
-        tasks = []
-        for i, task_type in enumerate(TaskType):
-            task_id = f"TASK-{i:03d}"
-            file_path = f"tasks/backlog/{task_id}.md"
-            _create_task_file(
-                tmp_path,
-                file_path,
-                f"id: {task_id}\ntitle: Task {i}\ntask_type: {task_type.value}\ncomplexity: 5",
-            )
-            tasks.append(_make_task(task_id, file_path))
-
-        feature = _make_feature(tasks)
-        result = validate_feature_preflight(feature, tmp_path)
-
-        assert result.is_valid
-        assert not result.has_warnings
+        assert result.warnings == []
 
 
 # ============================================================================

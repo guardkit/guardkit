@@ -35,7 +35,6 @@ from guardkit.orchestrator.autobuild import (
     FinalizePhaseError,
 )
 from guardkit.orchestrator.agent_invoker import AgentInvocationResult, AgentInvoker
-from guardkit.orchestrator.paths import TaskArtifactPaths
 from guardkit.orchestrator.exceptions import (
     AgentInvocationError,
     CoachDecisionInvalidError,
@@ -989,7 +988,11 @@ class TestUnrecoverableErrors:
         mock_agent_invoker,
         tmp_path,
     ):
-        """Recovered partial tests preserve the real failure receipt and feedback."""
+        """Recovered partial tests preserve the real failure receipt.
+
+        Since the 27 October 2026 cull the reviewer's approval of recovered
+        work stands (no forced feedback); the receipt still records the
+        timeout."""
         raw_timeout_error = "task-work execution exceeded 2700s timeout"
         timeout_error = f"Recoverable: {raw_timeout_error}"
         receipt_invoker = AgentInvoker(
@@ -1000,11 +1003,6 @@ class TestUnrecoverableErrors:
         )
         original_receipt = json.loads(receipt_path.read_text())
         mock_worktree.path = tmp_path
-        coach_path = TaskArtifactPaths.private_artifact_path(
-            "TASK-AB-001", "coach_turn_1.json", tmp_path
-        )
-        coach_path.parent.mkdir(parents=True, exist_ok=True)
-        coach_path.write_text(json.dumps({"decision": "approve"}))
         mock_agent_invoker.invoke_player.return_value = make_player_result(
             success=False,
             error=timeout_error,
@@ -1021,9 +1019,6 @@ class TestUnrecoverableErrors:
         mock_agent_invoker.invoke_coach.return_value = coach_result
         mock_agent_invoker._write_recovered_task_work_failure.side_effect = (
             receipt_invoker._write_recovered_task_work_failure
-        )
-        mock_agent_invoker._persist_coach_decision.side_effect = (
-            receipt_invoker._persist_coach_decision
         )
 
         with patch.object(
@@ -1051,10 +1046,7 @@ class TestUnrecoverableErrors:
         mock_agent_invoker._write_direct_mode_results.assert_not_called()
         assert turn_record.player_result.success is False
         assert turn_record.player_result.error == timeout_error
-        assert turn_record.decision == "feedback"
-        assert turn_record.coach_result.report["decision"] == "feedback"
-        assert timeout_error in turn_record.feedback
-        assert "complete the missing workflow phases" in turn_record.feedback
+        assert turn_record.decision == "approve"
 
         persisted = json.loads(receipt_path.read_text())
         assert persisted["timestamp"] == original_receipt["timestamp"]
@@ -1065,10 +1057,6 @@ class TestUnrecoverableErrors:
         assert persisted["success"] is False
         assert persisted["phases"] == {}
         assert persisted["recovery"]["tests_passed"] is True
-        persisted_coach = json.loads(coach_path.read_text())
-        assert persisted_coach["decision"] == "feedback"
-        assert timeout_error in persisted_coach["rationale"]
-        assert persisted_coach["issues"][0]["category"] == "task_work_timeout"
 
 
 # ============================================================================
@@ -1311,8 +1299,15 @@ class TestIntegration:
         self,
         orchestrator_with_mocks,
         mock_agent_invoker,
+        mock_worktree,
+        tmp_path,
     ):
         """Test orchestration handles errors gracefully."""
+        from tests.task_scope_fixtures import init_checkout
+
+        # ``orchestrate`` admits the task's checkout, which reads its Git
+        # identity, so the stand-in worktree is a real checkout.
+        mock_worktree.path = init_checkout(tmp_path / "worktree")
         # Mock Player failure
         mock_agent_invoker.invoke_player.return_value = make_player_result(
             success=False,
@@ -1338,14 +1333,17 @@ class TestIntegration:
         orchestrator_with_mocks,
         mock_worktree_manager,
     ):
-        """Test orchestration raises SetupPhaseError on worktree creation failure."""
+        """Worktree creation failure reaches the caller as WorktreeCreationError.
+
+        ``orchestrate`` creates the worktree before it admits the task's
+        checkout, outside the setup phase; the CLI maps this error to exit 2."""
         # Mock worktree creation failure
         mock_worktree_manager.create.side_effect = WorktreeCreationError(
             "Git worktree add failed"
         )
 
         # Execute and verify exception
-        with pytest.raises(SetupPhaseError, match="Failed to create worktree"):
+        with pytest.raises(WorktreeCreationError, match="Git worktree add failed"):
             orchestrator_with_mocks.orchestrate(
                 task_id="TASK-AB-005",
                 requirements="Implement OAuth2",
@@ -1419,47 +1417,6 @@ Requirements here.
         task_file.write_text(content)
         return task_file
 
-    @pytest.fixture
-    def temp_task_file_with_state(self, tmp_path):
-        """Create a task file with existing autobuild state."""
-        task_file = tmp_path / "TASK-AB-002.md"
-        worktree_path = tmp_path / "worktrees" / "TASK-AB-002"
-        worktree_path.mkdir(parents=True)
-
-        content = f"""---
-id: TASK-AB-002
-title: Test Task with State
-status: in_progress
-autobuild_state:
-  current_turn: 2
-  max_turns: 5
-  worktree_path: {worktree_path}
-  base_branch: main
-  started_at: '2025-12-24T10:00:00'
-  last_updated: '2025-12-24T10:10:00'
-  turns:
-  - turn: 1
-    decision: feedback
-    feedback: Add more tests
-    timestamp: '2025-12-24T10:05:00'
-    player_summary: Implemented initial feature
-    player_success: true
-    coach_success: true
-  - turn: 2
-    decision: feedback
-    feedback: Fix edge cases
-    timestamp: '2025-12-24T10:10:00'
-    player_summary: Added test coverage
-    player_success: true
-    coach_success: true
----
-
-# Test Task with State
-
-Requirements here.
-"""
-        task_file.write_text(content)
-        return task_file, worktree_path
 
     def test_save_state_creates_autobuild_state(
         self,
@@ -1506,106 +1463,50 @@ Requirements here.
         assert "worktree_path:" in content
         assert "status: in_progress" in content
 
-    def test_resume_from_state_restores_turn_history(
-        self,
-        temp_task_file_with_state,
-        mock_worktree_manager,
-        mock_agent_invoker,
-        mock_progress_display,
-    ):
-        """Test _resume_from_state restores turn history correctly."""
-        task_file, worktree_path = temp_task_file_with_state
 
-        orchestrator = AutoBuildOrchestrator(
-            repo_root=Path("/tmp/test"),
-            max_turns=5,
-            resume=True,
-            worktree_manager=mock_worktree_manager,
-            agent_invoker=mock_agent_invoker,
-            progress_display=mock_progress_display,
-        )
-
-        # Resume from state
-        worktree, start_turn = orchestrator._resume_from_state(
-            "TASK-AB-002",
-            task_file,
-        )
-
-        # Verify turn history restored
-        assert len(orchestrator._turn_history) == 2
-        assert orchestrator._turn_history[0].turn == 1
-        assert orchestrator._turn_history[0].decision == "feedback"
-        assert orchestrator._turn_history[0].feedback == "Add more tests"
-        assert orchestrator._turn_history[1].turn == 2
-        assert orchestrator._turn_history[1].feedback == "Fix edge cases"
-
-        # Verify start turn
-        assert start_turn == 3  # Continue from turn 3
-
-        # Verify worktree
-        assert worktree.task_id == "TASK-AB-002"
-        assert worktree.path == worktree_path
-
-    def test_resume_from_state_no_state_raises_error(
-        self,
-        temp_task_file,
-        mock_worktree_manager,
-        mock_agent_invoker,
-        mock_progress_display,
-    ):
-        """Test _resume_from_state raises error when no state exists."""
-        orchestrator = AutoBuildOrchestrator(
-            repo_root=Path("/tmp/test"),
-            max_turns=5,
-            resume=True,
-            worktree_manager=mock_worktree_manager,
-            agent_invoker=mock_agent_invoker,
-            progress_display=mock_progress_display,
-        )
-
-        with pytest.raises(SetupPhaseError, match="No saved state found"):
-            orchestrator._resume_from_state("TASK-AB-001", temp_task_file)
-
-    def test_resume_from_state_missing_worktree_raises_error(
+    def test_resume_from_state_continues_in_the_admitted_checkout(
         self,
         tmp_path,
         mock_worktree_manager,
         mock_agent_invoker,
         mock_progress_display,
     ):
-        """Test _resume_from_state raises error when worktree doesn't exist."""
-        task_file = tmp_path / "TASK-AB-003.md"
-        content = """---
-id: TASK-AB-003
-title: Test Task
-status: in_progress
-autobuild_state:
-  current_turn: 1
-  worktree_path: /nonexistent/path
-  turns:
-  - turn: 1
-    decision: feedback
-    feedback: Test feedback
-    timestamp: '2025-12-24T10:00:00'
-    player_success: true
-    coach_success: true
----
+        """Resume goes on in the admitted checkout, after the turns this
+        run already holds; saved frontmatter is diagnostic only (24 October
+        2026)."""
+        from tests.task_scope_fixtures import admitted_task, init_checkout
 
-# Test Task
-"""
-        task_file.write_text(content)
-
+        checkout = init_checkout(tmp_path / "worktree")
         orchestrator = AutoBuildOrchestrator(
-            repo_root=Path("/tmp/test"),
+            repo_root=checkout,
             max_turns=5,
             resume=True,
             worktree_manager=mock_worktree_manager,
             agent_invoker=mock_agent_invoker,
             progress_display=mock_progress_display,
         )
+        orchestrator._turn_history = [
+            TurnRecord(
+                turn=n,
+                player_result=make_player_result(turn=n),
+                coach_result=make_coach_result(turn=n, decision="feedback"),
+                decision="feedback",
+                feedback=f"feedback {n}",
+                timestamp="2026-10-27T00:00:00Z",
+            )
+            for n in (1, 2)
+        ]
+        with admitted_task(checkout, "TASK-AB-002") as (_lease, scope):
+            orchestrator.task_work_scope = scope
+            worktree, start_turn = orchestrator._resume_from_state(
+                "TASK-AB-002", tmp_path / "TASK-AB-002.md"
+            )
 
-        with pytest.raises(SetupPhaseError, match="Worktree not found"):
-            orchestrator._resume_from_state("TASK-AB-003", task_file)
+        assert start_turn == 3
+        assert worktree.task_id == "TASK-AB-002"
+        assert worktree.path == Path(scope.repositories[0].root)
+        assert worktree.branch_name == "main"
+        assert worktree.base_branch == scope.baseline_commit
 
     def test_get_last_feedback_returns_last_turn_feedback(
         self,
@@ -4289,14 +4190,13 @@ class TestAcceptanceCriteriaWiring:
             orchestrator._checkpoint_manager = mock_checkpoint_mgr
 
             with patch.object(orchestrator, "_capture_turn_state"):
-                with patch.object(orchestrator, "_record_honesty"):
-                    with patch.object(orchestrator, "_display_criteria_progress"):
-                        turn_history, exit_reason = orchestrator._loop_phase(
-                            task_id="TASK-CRIT-001",
-                            requirements="Test requirements",
-                            worktree=mock_worktree_for_criteria,
-                            acceptance_criteria=criteria,
-                        )
+                with patch.object(orchestrator, "_display_criteria_progress"):
+                    turn_history, exit_reason = orchestrator._loop_phase(
+                        task_id="TASK-CRIT-001",
+                        requirements="Test requirements",
+                        worktree=mock_worktree_for_criteria,
+                        acceptance_criteria=criteria,
+                    )
 
             mock_execute.assert_called_once()
             call_kwargs = mock_execute.call_args[1]
@@ -4342,14 +4242,13 @@ class TestCooperativeCancellation:
         orchestrator._checkpoint_manager = mock_checkpoint_mgr
 
         with patch.object(orchestrator, "_capture_turn_state"):
-            with patch.object(orchestrator, "_record_honesty"):
-                with patch.object(orchestrator, "_display_criteria_progress"):
-                    turn_history, exit_reason = orchestrator._loop_phase(
-                        task_id="TASK-CANCEL-001",
-                        requirements="Test requirements",
-                        acceptance_criteria=["AC1"],
-                        worktree=mock_worktree,
-                    )
+            with patch.object(orchestrator, "_display_criteria_progress"):
+                turn_history, exit_reason = orchestrator._loop_phase(
+                    task_id="TASK-CANCEL-001",
+                    requirements="Test requirements",
+                    acceptance_criteria=["AC1"],
+                    worktree=mock_worktree,
+                )
 
         assert exit_reason == "cancelled"
         assert len(turn_history) == 0  # No turns executed
@@ -4414,14 +4313,13 @@ class TestCooperativeCancellation:
 
         with patch.object(orchestrator, "_execute_turn", side_effect=mock_execute_turn):
             with patch.object(orchestrator, "_capture_turn_state"):
-                with patch.object(orchestrator, "_record_honesty"):
-                    with patch.object(orchestrator, "_display_criteria_progress"):
-                        turn_history, exit_reason = orchestrator._loop_phase(
-                            task_id="TASK-CANCEL-001",
-                            requirements="Test requirements",
-                            acceptance_criteria=["AC1"],
-                            worktree=mock_worktree,
-                        )
+                with patch.object(orchestrator, "_display_criteria_progress"):
+                    turn_history, exit_reason = orchestrator._loop_phase(
+                        task_id="TASK-CANCEL-001",
+                        requirements="Test requirements",
+                        acceptance_criteria=["AC1"],
+                        worktree=mock_worktree,
+                    )
 
         assert exit_reason == "cancelled"
         assert len(turn_history) == 1  # Only one turn executed
@@ -4479,14 +4377,13 @@ class TestCooperativeCancellation:
         mock_agent_invoker.invoke_coach = AsyncMock(return_value=coach_result)
 
         with patch.object(orchestrator, "_capture_turn_state"):
-            with patch.object(orchestrator, "_record_honesty"):
-                with patch.object(orchestrator, "_display_criteria_progress"):
-                    turn_history, exit_reason = orchestrator._loop_phase(
-                        task_id="TASK-CANCEL-002",
-                        requirements="Test requirements",
-                        acceptance_criteria=["AC1"],
-                        worktree=mock_worktree,
-                    )
+            with patch.object(orchestrator, "_display_criteria_progress"):
+                turn_history, exit_reason = orchestrator._loop_phase(
+                    task_id="TASK-CANCEL-002",
+                    requirements="Test requirements",
+                    acceptance_criteria=["AC1"],
+                    worktree=mock_worktree,
+                )
 
         # Loop exits as cancelled (post-turn check, after Coach gave feedback)
         assert exit_reason == "cancelled"
@@ -4546,14 +4443,13 @@ class TestCooperativeCancellation:
 
         with patch.object(orchestrator, "_execute_turn", return_value=approval_turn):
             with patch.object(orchestrator, "_capture_turn_state"):
-                with patch.object(orchestrator, "_record_honesty"):
-                    with patch.object(orchestrator, "_display_criteria_progress"):
-                        turn_history, exit_reason = orchestrator._loop_phase(
-                            task_id="TASK-AB-001",
-                            requirements="Test requirements",
-                            acceptance_criteria=["AC1"],
-                            worktree=mock_worktree,
-                        )
+                with patch.object(orchestrator, "_display_criteria_progress"):
+                    turn_history, exit_reason = orchestrator._loop_phase(
+                        task_id="TASK-AB-001",
+                        requirements="Test requirements",
+                        acceptance_criteria=["AC1"],
+                        worktree=mock_worktree,
+                    )
 
         assert exit_reason == "approved"
         assert len(turn_history) == 1
@@ -4607,14 +4503,13 @@ class TestCooperativeCancellation:
 
         with patch.object(orchestrator, "_execute_turn", return_value=approval_turn):
             with patch.object(orchestrator, "_capture_turn_state"):
-                with patch.object(orchestrator, "_record_honesty"):
-                    with patch.object(orchestrator, "_display_criteria_progress"):
-                        turn_history, exit_reason = orchestrator._loop_phase(
-                            task_id="TASK-AB-001",
-                            requirements="Test requirements",
-                            acceptance_criteria=["AC1"],
-                            worktree=mock_worktree,
-                        )
+                with patch.object(orchestrator, "_display_criteria_progress"):
+                    turn_history, exit_reason = orchestrator._loop_phase(
+                        task_id="TASK-AB-001",
+                        requirements="Test requirements",
+                        acceptance_criteria=["AC1"],
+                        worktree=mock_worktree,
+                    )
 
         assert exit_reason == "approved"
         assert len(turn_history) == 1

@@ -14,6 +14,7 @@ import os
 import shutil
 import subprocess
 import threading
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Dict, List
 from unittest.mock import MagicMock, Mock, patch
@@ -23,7 +24,6 @@ import pytest
 from guardkit.orchestrator import protected_paths
 from guardkit.orchestrator.agent_invoker import AgentInvocationResult
 from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
-from guardkit.orchestrator.exceptions import AgentInvocationError
 from guardkit.orchestrator.harness.selector import _parse_player_project_inputs
 from guardkit.orchestrator.protected_paths import (
     ProtectedPathsError,
@@ -275,10 +275,16 @@ def test_the_declaration_is_read_from_the_source_commit(repo: Path) -> None:
 
 
 @pytest.mark.parametrize("value", [".", "./", "reference/..", "../outside"])
-def test_the_whole_repository_or_outside_it_is_refused(value: str) -> None:
-    text = f"autobuild:\n  player:\n    protected_paths:\n      - '{value}'\n"
-    with pytest.raises(AgentInvocationError, match="whole repository or outside it"):
-        _parse_player_project_inputs(text, config_path="config.yaml", has_file=lambda _r: False)
+def test_the_whole_repository_or_outside_it_is_left_out(value: str) -> None:
+    """The cull (27 October 2026): such an entry is ignored, never refused."""
+    text = (
+        "autobuild:\n  player:\n    protected_paths:\n"
+        f"      - '{value}'\n      - reference\n"
+    )
+    parsed = _parse_player_project_inputs(
+        text, config_path="config.yaml", has_file=lambda _r: False
+    )
+    assert parsed["protected_paths"] == ("reference",)
 
 
 def test_a_path_missing_from_the_source_commit_protects_nothing(repo: Path) -> None:
@@ -348,6 +354,20 @@ def _orchestrator(repo: Path, **kwargs: Any) -> AutoBuildOrchestrator:
         agent_invoker=invoker, progress_display=display,
         pre_loop_gates=MagicMock(), enable_context=False, **kwargs,
     )
+
+
+@contextmanager
+def _admitted(orch: AutoBuildOrchestrator, repo: Path):
+    """``orchestrate()`` runs a task as the checkout's admitted writer and
+    every checkpoint needs that scope; tests that call ``_loop_phase``
+    directly take the same real lease."""
+    from tests.task_scope_fixtures import admitted_task
+
+    with admitted_task(repo, "TASK-PP-001") as (_lease, scope):
+        orch.task_work_scope = scope
+        if orch._checkpoint_manager is not None:
+            orch._checkpoint_manager.task_work_scope = scope
+        yield scope
 
 
 def _result(agent: str, success: bool = True, **report: Any) -> AgentInvocationResult:
@@ -429,7 +449,6 @@ def test_a_failed_restore_stops_the_task_and_is_never_recovered(repo: Path) -> N
                 patch.object(orch, "_attempt_state_recovery") as recovery, \
                 patch.object(orch, "_invoke_coach_safely") as coach, \
                 patch.object(orch, "_capture_turn_state"), \
-                patch.object(orch, "_record_honesty"), \
                 patch.object(orch, "_display_criteria_progress"):
             history, final = orch._loop_phase(
                 task_id="TASK-PP-001", requirements="r", acceptance_criteria=["AC-001: x"],
@@ -458,10 +477,10 @@ def test_the_checkpoint_commit_never_carries_the_change_and_the_next_turn_is_tol
         (repo / "app.txt").write_text(f"turn {len(feedback_seen)}\n")
         return _result("player")
 
-    with patch.object(orch, "_invoke_player_safely", side_effect=player), \
+    with _admitted(orch, repo), \
+            patch.object(orch, "_invoke_player_safely", side_effect=player), \
             patch.object(orch, "_invoke_coach_safely", side_effect=coach), \
             patch.object(orch, "_capture_turn_state"), \
-            patch.object(orch, "_record_honesty"), \
             patch.object(orch, "_display_criteria_progress"):
         history, final = orch._loop_phase(
             task_id="TASK-PP-001", requirements="r", acceptance_criteria=["AC-001: x"],
@@ -494,10 +513,10 @@ def test_a_change_made_after_the_coach_check_is_put_back_before_the_commit(
         (repo / "qa" / "check.sh").write_text("changed after the check\n")
         return result
 
-    with patch.object(orch, "_invoke_player_safely", return_value=_result("player")), \
+    with _admitted(orch, repo), \
+            patch.object(orch, "_invoke_player_safely", return_value=_result("player")), \
             patch.object(orch, "_invoke_coach_safely", side_effect=coach_then_parallel_change), \
             patch.object(orch, "_capture_turn_state"), \
-            patch.object(orch, "_record_honesty"), \
             patch.object(orch, "_display_criteria_progress"):
         _history, final = orch._loop_phase(
             task_id="TASK-PP-001", requirements="r", acceptance_criteria=["AC-001: x"],
@@ -643,10 +662,10 @@ def test_a_shell_commit_then_a_normal_turn_never_reaches_the_build_branch(
         _git(repo, "commit", "-qam", "a shell commit")
         return _result("player")
 
-    with patch.object(orch, "_invoke_player_safely", side_effect=player), \
+    with _admitted(orch, repo), \
+            patch.object(orch, "_invoke_player_safely", side_effect=player), \
             patch.object(orch, "_invoke_coach_safely", side_effect=coach), \
             patch.object(orch, "_capture_turn_state"), \
-            patch.object(orch, "_record_honesty"), \
             patch.object(orch, "_display_criteria_progress"):
         _history, final = orch._loop_phase(
             task_id="TASK-PP-001", requirements="r", acceptance_criteria=["AC-001: x"],
@@ -716,10 +735,10 @@ def test_a_checkpoint_is_refused_when_head_is_not_on_the_build_branch(repo: Path
         _git(repo, "checkout", "-q", "--detach", "HEAD")
         return result
 
-    with patch.object(orch, "_invoke_player_safely", return_value=_result("player")), \
+    with _admitted(orch, repo), \
+            patch.object(orch, "_invoke_player_safely", return_value=_result("player")), \
             patch.object(orch, "_invoke_coach_safely", side_effect=coach_then_detach), \
             patch.object(orch, "_capture_turn_state"), \
-            patch.object(orch, "_record_honesty"), \
             patch.object(orch, "_display_criteria_progress"):
         history, final = orch._loop_phase(
             task_id="TASK-PP-001", requirements="r", acceptance_criteria=["AC-001: x"],
@@ -759,11 +778,10 @@ def test_every_checkpoint_keeps_the_committed_blob_despite_attribute_conversion(
         (repo / "app.txt").write_text("work\n")
         return _result("player")
 
-    with caplog.at_level("WARNING"), \
+    with _admitted(orch, repo), caplog.at_level("WARNING"), \
             patch.object(orch, "_invoke_player_safely", side_effect=player), \
             patch.object(orch, "_invoke_coach_safely", side_effect=coach), \
             patch.object(orch, "_capture_turn_state"), \
-            patch.object(orch, "_record_honesty"), \
             patch.object(orch, "_display_criteria_progress"):
         _history, final = orch._loop_phase(
             task_id="TASK-PP-001", requirements="r", acceptance_criteria=["AC-001: x"],

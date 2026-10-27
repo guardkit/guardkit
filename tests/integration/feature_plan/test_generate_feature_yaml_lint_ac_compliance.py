@@ -15,8 +15,8 @@ test's three assertions are still live policy against **every**
 The live producer is ``generate_feature_yaml.py`` (post-RWOP1.2), which
 consumes ``--tasks-json`` and writes feature YAML. Its current
 ``TaskSpec.to_dict()`` serialiser **does not emit** ``acceptance_criteria``
-into the YAML — ACs enter via ``--tasks-json`` and are consumed in-process
-by the AC linter (``lint_plan_warnings``), whose summary goes to stdout.
+into the YAML — ACs enter via ``--tasks-json`` and are used in-process (the
+AC linter that read them was deleted in the cull, 27 October 2026).
 
 Given that schema reality, this test asserts the two properties at the
 boundaries where they are observable:
@@ -148,9 +148,8 @@ def _make_workspace(tmp_path: Path, tasks: List[dict]) -> Tuple[Path, Path]:
     """Set up a throwaway project workspace under ``tmp_path``.
 
     Creates stub task markdown files at the paths the producer will derive
-    from ``--feature-slug=probe`` + task name. ``--lenient`` would downgrade
-    path mismatches to stderr warnings, but creating the files keeps stderr
-    clean and focuses subsequent failures on the property under test.
+    from ``--feature-slug=probe`` + task name, which keeps stderr clean and
+    focuses subsequent failures on the property under test.
     """
     feature_dir = tmp_path / "tasks" / "backlog" / "probe"
     feature_dir.mkdir(parents=True)
@@ -166,7 +165,7 @@ def _make_workspace(tmp_path: Path, tasks: List[dict]) -> Tuple[Path, Path]:
 def _run_script(
     project_dir: Path, tasks_json: Path
 ) -> subprocess.CompletedProcess:
-    """Invoke ``generate_feature_yaml.py`` as a subprocess, lenient mode."""
+    """Invoke ``generate_feature_yaml.py`` as a subprocess."""
     cmd = [
         sys.executable,
         str(SCRIPT),
@@ -175,7 +174,6 @@ def _run_script(
         "--feature-slug", "probe",
         "--base-path", str(project_dir),
         "--tasks-json", str(tasks_json),
-        "--lenient",
     ]
     return subprocess.run(
         cmd,

@@ -45,7 +45,6 @@ import yaml
 from guardkit.orchestrator.feature_loader import (
     Feature,
     FeatureLoader,
-    FeatureValidationError,
 )
 from guardkit.orchestrator.stamp_normalizer import write_stamps
 
@@ -110,23 +109,6 @@ class TestTheModelCarriesTheKey:
         feature = Feature(id="FEAT-X", name="X")
         assert feature.scenario_owners == {}
 
-    def test_a_non_mapping_is_refused_loudly(self) -> None:
-        """NEGATIVE CONTROL: extra="ignore" would otherwise swallow it."""
-        with pytest.raises(Exception) as exc:
-            Feature(id="FEAT-X", name="X", scenario_owners=["TASK-X-001"])
-        assert "scenario_owners" in str(exc.value)
-
-    def test_an_empty_owner_value_is_refused(self) -> None:
-        with pytest.raises(Exception) as exc:
-            Feature(id="FEAT-X", name="X", scenario_owners={_TITLE: ""})
-        assert "scenario_owners" in str(exc.value)
-
-    def test_a_non_string_owner_value_is_refused(self) -> None:
-        with pytest.raises(Exception) as exc:
-            Feature(id="FEAT-X", name="X", scenario_owners={_TITLE: 3})
-        assert "scenario_owners" in str(exc.value)
-
-
 # ---------------------------------------------------------------------------
 # 2. Loading
 # ---------------------------------------------------------------------------
@@ -150,21 +132,6 @@ class TestFeatureLoaderAndTheOwnershipMap:
             "FEAT-DBE3", repo_root=tmp_path, features_dir=features_dir
         )
         assert feature.scenario_owners == {}
-
-    def test_an_owner_that_is_not_a_task_fails_the_load(self, tmp_path: Path) -> None:
-        """NEGATIVE CONTROL: a typo'd owner leaves the scenario unowned behind a
-        map that looks complete."""
-        features_dir = _write_feature(
-            tmp_path, scenario_owners={_TITLE: "TASK-DBE3-009"}
-        )
-        with pytest.raises(FeatureValidationError) as exc:
-            FeatureLoader.load_feature(
-                "FEAT-DBE3", repo_root=tmp_path, features_dir=features_dir
-            )
-        message = str(exc.value)
-        assert "TASK-DBE3-009" in message
-        assert _TITLE in message
-        assert "TASK-DBE3-003" in message  # the tasks it could have named
 
     def test_a_title_the_feature_file_does_not_stamp_is_not_a_load_error(
         self, tmp_path: Path
@@ -303,25 +270,3 @@ class TestTheValidateCommand:
         result = CliRunner().invoke(validate, ["FEAT-DBE3", "--json"])
         assert result.exit_code == 0, result.output
         assert '"valid": true' in result.output
-
-    def test_feature_validate_refuses_an_owner_that_is_not_a_task(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """NEGATIVE CONTROL through the SAME oracle forge's pre-commit runs.
-
-        The command does not exit 0. It surfaces a load-time
-        ``FeatureValidationError`` as an exception rather than a formatted
-        error list — which is what it already does for a routing-law rejection
-        and for an unknown ``owner_task``; this test pins the existing shape
-        rather than changing it.
-        """
-        from click.testing import CliRunner
-
-        from guardkit.cli.feature import validate
-
-        _write_feature(tmp_path, scenario_owners={_TITLE: "TASK-DBE3-009"})
-        monkeypatch.chdir(tmp_path)
-        result = CliRunner().invoke(validate, ["FEAT-DBE3", "--json"])
-        assert result.exit_code != 0
-        assert isinstance(result.exception, FeatureValidationError)
-        assert "TASK-DBE3-009" in str(result.exception)

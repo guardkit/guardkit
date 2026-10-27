@@ -1,9 +1,9 @@
 """FeatureLoader awareness of the OPERATOR_HANDOFF task_type (TASK-FPTC-002).
 
-Pins AC-FPTC-002-04 and AC-FPTC-002-05: a fixture task file with
-``task_type: operator_handoff`` in its YAML frontmatter must pass
-``FeatureLoader._validate_task_type_in_file`` and surface no
-task_type-related error from ``FeatureLoader.validate_feature``.
+Pins AC-FPTC-002-05: a fixture task file with ``task_type: operator_handoff``
+in its YAML frontmatter surfaces no task_type-related error from
+``FeatureLoader.validate_feature`` (which no longer checks task_type at all
+since the cull, 27 October 2026).
 
 Coverage Target: >=85%
 """
@@ -12,8 +12,6 @@ from __future__ import annotations
 
 from pathlib import Path
 from textwrap import dedent
-
-import pytest
 
 from guardkit.orchestrator.feature_loader import (
     Feature,
@@ -47,46 +45,6 @@ def _write_task_md(
         )
     )
     return task_file
-
-
-class TestValidateTaskTypeInFileOperatorHandoff:
-    """AC-FPTC-002-04: ``_validate_task_type_in_file`` accepts operator_handoff."""
-
-    def test_operator_handoff_returns_none(self, tmp_path: Path) -> None:
-        """A task file with ``task_type: operator_handoff`` returns None (no error)."""
-        task_file = _write_task_md(
-            tmp_path,
-            "tasks/in_progress/TASK-FPTC-OP1.md",
-            "TASK-FPTC-OP1",
-            "operator_handoff",
-        )
-
-        result = FeatureLoader._validate_task_type_in_file(
-            "TASK-FPTC-OP1", task_file
-        )
-
-        assert result is None
-
-    def test_unknown_task_type_still_errors(self, tmp_path: Path) -> None:
-        """Sanity: the validator still rejects truly unknown values.
-
-        Pins that adding OPERATOR_HANDOFF didn't accidentally relax the
-        validator into accepting arbitrary strings.
-        """
-        task_file = _write_task_md(
-            tmp_path,
-            "tasks/in_progress/TASK-FPTC-OP2.md",
-            "TASK-FPTC-OP2",
-            "banana",
-        )
-
-        result = FeatureLoader._validate_task_type_in_file(
-            "TASK-FPTC-OP2", task_file
-        )
-
-        assert result is not None
-        assert "banana" in result
-        assert "operator_handoff" in result  # listed in valid values
 
 
 class TestValidateFeatureOperatorHandoff:

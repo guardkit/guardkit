@@ -339,6 +339,9 @@ def mock_worktree_manager(tmp_path):
 
     worktree_path = tmp_path / ".guardkit" / "worktrees" / "FEAT-WCTL"
     worktree_path.mkdir(parents=True, exist_ok=True)
+    from tests.task_scope_fixtures import init_checkout
+
+    init_checkout(worktree_path)  # the writer lock reads its git identity
     worktree = Worktree(
         task_id="FEAT-WCTL",
         branch_name="autobuild/FEAT-WCTL",
@@ -591,92 +594,3 @@ def _feature_with_gate(after_wave, n_waves=3, smoke_gates=True) -> Feature:
         ),
     )
 
-
-class TestSmokeGateFinalWaveCoverage:
-    """AC-004: warn (never error) when after_wave misses the final wave."""
-
-    def test_list_missing_final_wave_warns(self):
-        feature = _feature_with_gate([1, 2], n_waves=3)
-        msg = FeatureLoader.check_smoke_gate_final_wave_coverage(feature)
-        assert msg is not None
-        assert "wave 3" in msg
-        assert 'after_wave: "all"' in msg
-
-    def test_int_missing_final_wave_warns(self):
-        feature = _feature_with_gate(1, n_waves=2)
-        msg = FeatureLoader.check_smoke_gate_final_wave_coverage(feature)
-        assert msg is not None
-        assert "wave 2" in msg
-
-    def test_all_is_silent(self):
-        feature = _feature_with_gate("all", n_waves=3)
-        assert FeatureLoader.check_smoke_gate_final_wave_coverage(feature) is None
-
-    def test_covering_list_is_silent(self):
-        feature = _feature_with_gate([2, 3], n_waves=3)
-        assert FeatureLoader.check_smoke_gate_final_wave_coverage(feature) is None
-
-    def test_int_equal_to_final_wave_is_silent(self):
-        feature = _feature_with_gate(2, n_waves=2)
-        assert FeatureLoader.check_smoke_gate_final_wave_coverage(feature) is None
-
-    def test_no_smoke_gates_is_silent(self):
-        feature = _feature_with_gate(1, n_waves=2, smoke_gates=False)
-        assert FeatureLoader.check_smoke_gate_final_wave_coverage(feature) is None
-
-    def test_empty_parallel_groups_is_silent(self):
-        """No wave layout → absent signal: neither warn nor block."""
-        feature = Feature(
-            id="FEAT-GATE",
-            name="No waves",
-            tasks=[],
-            orchestration=FeatureOrchestration(parallel_groups=[]),
-            smoke_gates=SmokeGates(after_wave=1, command="pytest tests/ -q"),
-        )
-        assert FeatureLoader.check_smoke_gate_final_wave_coverage(feature) is None
-
-    def test_load_feature_emits_warning_via_logger(self, tmp_path, caplog):
-        """load_feature logs the coverage gap as a WARNING, not an error."""
-        _write_feature_repo(tmp_path)
-        # Rewrite the YAML with a two-wave layout and a gate that misses
-        # wave 2. (smoke_gates command paths must exist for the L4
-        # pre-flight — point it at an existing dir.)
-        (tmp_path / "tests").mkdir(exist_ok=True)
-        feature_file = tmp_path / ".guardkit" / "features" / "FEAT-WCTL.yaml"
-        data = yaml.safe_load(feature_file.read_text())
-        data["orchestration"]["parallel_groups"] = [
-            ["TASK-W-001"],
-            ["TASK-W-002"],
-        ]
-        data["smoke_gates"] = {
-            "after_wave": 1,
-            "command": "pytest tests/ -q",
-        }
-        feature_file.write_text(yaml.dump(data, sort_keys=False))
-
-        with caplog.at_level(
-            logging.WARNING, logger="guardkit.orchestrator.feature_loader"
-        ):
-            feature = FeatureLoader.load_feature("FEAT-WCTL", repo_root=tmp_path)
-
-        assert feature.smoke_gates is not None
-        assert "does not cover the final wave" in caplog.text
-        assert "wave 2" in caplog.text
-
-    def test_load_feature_silent_for_all(self, tmp_path, caplog):
-        _write_feature_repo(tmp_path)
-        (tmp_path / "tests").mkdir(exist_ok=True)
-        feature_file = tmp_path / ".guardkit" / "features" / "FEAT-WCTL.yaml"
-        data = yaml.safe_load(feature_file.read_text())
-        data["smoke_gates"] = {
-            "after_wave": "all",
-            "command": "pytest tests/ -q",
-        }
-        feature_file.write_text(yaml.dump(data, sort_keys=False))
-
-        with caplog.at_level(
-            logging.WARNING, logger="guardkit.orchestrator.feature_loader"
-        ):
-            FeatureLoader.load_feature("FEAT-WCTL", repo_root=tmp_path)
-
-        assert "does not cover the final wave" not in caplog.text
