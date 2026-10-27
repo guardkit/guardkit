@@ -300,5 +300,3 @@ def test_build_smoke_feedback_attribution_fails_open(tmp_path):
     assert "STALE-TEST ATTRIBUTION" not in fb
     # The red signal itself is untouched in every fail-open case.
     assert "SMOKE-SUITE TEST FAILURE" in fb
-
-
