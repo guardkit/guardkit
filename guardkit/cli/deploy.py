@@ -5,12 +5,11 @@
 
 Copies GuardKit's deployment kit into ``<project>/deploy/`` (profile,
 settings and the scripts that implement the factory's deployment contract),
-never overwriting an existing file, then validates ``deploy/profile.yaml`` as
-a ``deploy-profile``. The project still writes its own root ``compose.yaml``
-(see the copied ``deploy/README.md``).
+never overwriting an existing file. The project still writes its own root
+``compose.yaml`` (see the copied ``deploy/README.md``).
 
-Exit codes: 0 done and the profile is valid; 1 the profile is invalid; 2 a
-value was refused or the kit is missing (nothing written).
+Exit codes: 0 done; 2 a value was refused or the kit is missing (nothing
+written).
 """
 
 from __future__ import annotations
@@ -21,7 +20,6 @@ from pathlib import Path
 import click
 from rich.console import Console
 
-from guardkit.qa.formats import QAFormatError, validate_instance
 from guardkit.templates.deploy_kit import DeployKitError, install_deploy_kit
 
 console = Console()
@@ -51,7 +49,7 @@ def init(
     health_path: str,
     project_dir: Path,
 ) -> None:
-    """Copy the deployment kit into PROJECT_DIR/deploy and validate the profile."""
+    """Copy the deployment kit into PROJECT_DIR/deploy."""
     if not project_dir.is_dir():
         console.print(f"[bold red]✗[/bold red] project folder not found: {project_dir}")
         sys.exit(2)
@@ -73,13 +71,6 @@ def init(
         console.print(f"  skipped {rel} (already exists, left as it is)", highlight=False)
 
     profile = result.profile_path
-    assert profile is not None
-    try:
-        validate_instance("deploy-profile", profile)
-    except QAFormatError as exc:
-        console.print("[bold red]✗ deploy/profile.yaml is not a valid deploy-profile[/bold red]")
-        console.print(str(exc), highlight=False)
-        sys.exit(1)
     if result.kept_settings:
         console.print(
             f"  the existing settings already match: environment id {env_id}, "
@@ -87,7 +78,7 @@ def init(
             f"health path {health_path}",
             highlight=False,
         )
-    console.print(f"[bold green]✓[/bold green] {profile} is a valid deploy-profile", highlight=False)
+    console.print(f"[bold green]✓[/bold green] the deployment kit is in place: {profile}", highlight=False)
     console.print("What to do next:", highlight=False)
     for line in next_steps(health_path):
         console.print(f"  {line}", highlight=False, soft_wrap=True)

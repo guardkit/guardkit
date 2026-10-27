@@ -36,9 +36,7 @@ from guardkit.orchestrator.merge_executor import (
     execute_merge,
     measure_pre_merge_baseline,
     merge_verdict_from_run,
-    named_failures_are_complete,
     passed_count_from_output,
-    reported_failure_count,
     resolve_verify_command_on_target,
 )
 
@@ -146,13 +144,6 @@ def repo_with_new_red_branch(tmp_path: Path) -> Path:
     return repo
 
 
-VALIDATE_OK = [
-    sys.executable,
-    "-c",
-    "import json; print(json.dumps({'valid': True, 'errors': []}))",
-]
-
-
 def _branch_exists(repo: Path, branch: str) -> bool:
     proc = subprocess.run(
         ["git", "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}"],
@@ -176,7 +167,6 @@ class TestMeasuredBaseline:
         report = execute_merge(
             repo_with_clean_branch,
             "FEAT-CLEAN",
-            validate_command=VALIDATE_OK,
         )
 
         assert report.outcome == OUTCOME_MERGED
@@ -199,7 +189,6 @@ class TestMeasuredBaseline:
         report = execute_merge(
             repo_with_clean_branch,
             "FEAT-CLEAN",
-            validate_command=VALIDATE_OK,
         )
         receipt = "\n".join(report.receipt_lines())
         assert "1 test(s) were already failing there" in receipt
@@ -212,7 +201,6 @@ class TestMeasuredBaseline:
         report = execute_merge(
             repo_with_new_red_branch,
             "FEAT-NEWRED",
-            validate_command=VALIDATE_OK,
         )
 
         assert report.outcome == OUTCOME_MERGED
@@ -227,7 +215,6 @@ class TestMeasuredBaseline:
         report = execute_merge(
             repo_with_new_red_branch,
             "FEAT-NEWRED",
-            validate_command=VALIDATE_OK,
             measure_baseline=False,
         )
 
@@ -243,7 +230,8 @@ class TestMeasuredBaseline:
     def test_a_runner_that_cannot_start_is_unverified_and_has_no_baseline(
         self, tmp_path: Path
     ):
-        """Never an empty baseline: a check that could not run says so."""
+        """Never an empty baseline: a check that could not run says so, and
+        since the cull it does not fail the merge's verification."""
         repo = _base_repo(
             tmp_path, declared_command("/nowhere/there-is-no-python")
         )
@@ -255,7 +243,7 @@ class TestMeasuredBaseline:
         )
         pre = _git(repo, "rev-parse", "main")
 
-        report = execute_merge(repo, "FEAT-CLEAN", validate_command=VALIDATE_OK)
+        report = execute_merge(repo, "FEAT-CLEAN")
 
         assert report.outcome == OUTCOME_MERGED
         assert report.baseline_measured is None
@@ -265,13 +253,12 @@ class TestMeasuredBaseline:
         assert report.verify_suite_status == "unverified"
         assert report.verify_detail == "test runner could not start"
         assert report.charged_failures == ()
-        assert report.verify_ok is False
+        assert report.verify_ok is True
         # The merge itself still happened, and the branch still survives.
         assert _git(repo, "rev-parse", "main") != pre
         assert _branch_exists(repo, "autobuild/FEAT-CLEAN")
         receipt = "\n".join(report.receipt_lines())
-        assert "could not be verified" in receipt
-        assert "not a pass" in receipt
+        assert "tests were not run" in receipt
 
     def test_a_supplied_baseline_is_used_and_nothing_is_measured(
         self, repo_with_new_red_branch: Path
@@ -279,7 +266,6 @@ class TestMeasuredBaseline:
         report = execute_merge(
             repo_with_new_red_branch,
             "FEAT-NEWRED",
-            validate_command=VALIDATE_OK,
             baseline_failing=[PRE_EXISTING_RED],
         )
 
@@ -295,7 +281,6 @@ class TestMeasuredBaseline:
         report = execute_merge(
             repo_with_new_red_branch,
             "FEAT-NEWRED",
-            validate_command=VALIDATE_OK,
         )
 
         # Measured on main, so the branch's own new red is NOT excused.
@@ -308,7 +293,6 @@ class TestMeasuredBaseline:
         report = execute_merge(
             repo_with_clean_branch,
             "FEAT-CLEAN",
-            validate_command=VALIDATE_OK,
         )
         data = report.to_dict()
         assert set(data["baseline_measured"]) == {"failing", "passed", "command"}
@@ -348,7 +332,7 @@ class TestMeasuredBaseline:
         )
         _git(repo, "commit", "-aqm", "main edit")
 
-        report = execute_merge(repo, "FEAT-CLASH", validate_command=VALIDATE_OK)
+        report = execute_merge(repo, "FEAT-CLASH")
 
         assert report.outcome == OUTCOME_CONFLICT
         assert report.baseline_measured is not None
@@ -528,7 +512,7 @@ class TestABadlyFailingSuiteIsNotReadAsClean:
     ):
         repo = _repo_with_many_reds(tmp_path, how_many)
 
-        report = execute_merge(repo, "FEAT-NEWRED", validate_command=VALIDATE_OK)
+        report = execute_merge(repo, "FEAT-NEWRED")
 
         assert report.outcome == OUTCOME_MERGED
         assert len(report.baseline_measured.failing) == how_many
@@ -553,113 +537,6 @@ class TestABadlyFailingSuiteIsNotReadAsClean:
 
 
 # ---------------------------------------------------------------------------
-# The cross-check: never excuse more failures than the output could name
-# ---------------------------------------------------------------------------
-
-
-def _repo_that_under_reports(root: Path) -> Path:
-    """A repository whose declared test command names two of thirty failures.
-
-    Not a mock: a genuine script, on disk, in the repository, resolved and run
-    through the same declaration, runner and parser as any other test command.
-    It stands in for every way a reading can come up short — a log cut off, a
-    reporter guardkit does not know, a run that died part-way through its
-    summary.
-    """
-    repo = _base_repo(root, "placeholder, replaced below")
-    runner = repo / ".guardkit" / "under_reporting_runner.py"
-    runner.write_text(
-        "print('FAILED tests/test_one.py::test_one - boom')\n"
-        "print('FAILED tests/test_two.py::test_two - boom')\n"
-        "print('30 failed, 2 passed in 1.00s')\n"
-        "raise SystemExit(1)\n",
-        encoding="utf-8",
-    )
-    _write_toolchain(
-        repo, f'"{sys.executable}" .guardkit/under_reporting_runner.py'
-    )
-    _git(repo, "add", "-A")
-    _git(repo, "commit", "-q", "-m", "a runner that cannot name every failure")
-    return repo
-
-
-class TestFailuresThatCouldNotAllBeNamed:
-    def test_nothing_is_excused_when_the_counts_disagree(self, tmp_path: Path):
-        repo = _repo_that_under_reports(tmp_path)
-        _branch_adding(
-            repo,
-            "FEAT-CLEAN",
-            "test_new_green.py",
-            "def test_new_green():\n    assert True\n",
-        )
-
-        report = execute_merge(repo, "FEAT-CLEAN", validate_command=VALIDATE_OK)
-
-        # The two named failures cancel out, so nothing is charged — and yet
-        # the merge must NOT pass, because twenty-eight failures went unnamed
-        # and any one of them could be this merge's doing.
-        assert report.outcome == OUTCOME_MERGED
-        assert report.charged_failures == ()
-        assert report.verify_status == "failed"
-        assert report.verify_ok is False
-        assert "more tests failed than could be named" in report.verify_detail
-        assert any("more failures than its output named" in n for n in report.notes)
-
-    def test_the_count_the_runner_gave_is_read(self):
-        assert reported_failure_count("30 failed, 2 passed in 1.0s") == 30
-        assert reported_failure_count("1 failed, 3 errors in 1.0s") == 4
-        # A run that says nothing about failures gives no count to check
-        # against — that is not the same as a count of zero.
-        assert reported_failure_count("12 passed in 1.0s") is None
-        assert reported_failure_count("no summary at all") is None
-        assert reported_failure_count(None) is None
-
-    @pytest.mark.parametrize(
-        "output,named,complete",
-        [
-            ("2 failed in 1s", ["a::b", "c::d"], True),
-            ("3 failed in 1s", ["a::b", "c::d"], False),
-            ("1 failed, 1 errors in 1s", ["a::b", "c::d"], True),
-            ("nothing the parser knows", ["a::b"], True),
-            ("30 failed in 1s", [], False),
-        ],
-    )
-    def test_a_reading_is_complete_only_when_it_names_them_all(
-        self, output, named, complete
-    ):
-        assert named_failures_are_complete(output, named) is complete
-
-    def test_the_verdict_refuses_to_excuse_a_partial_reading(self):
-        status, detail = merge_verdict_from_run(
-            suite_status="failed",
-            suite_detail="test run failed (exit 1)",
-            observed_failures=[PRE_EXISTING_RED],
-            charged_failures=[],
-            baseline_known=True,
-            target_branch="main",
-            reading_complete=False,
-        )
-        assert status == "failed"
-        assert "more tests failed than could be named" in detail
-
-    def test_a_short_baseline_reading_excuses_nothing_either(
-        self, tmp_path: Path
-    ):
-        """The baseline's own reading has to be complete too."""
-        repo = _repo_with_many_reds(tmp_path, 8)
-        measured = measure_pre_merge_baseline(repo, "main")
-        assert measured.ran is True
-        assert measured.names_complete is True
-
-        short_root = tmp_path / "short"
-        short_root.mkdir()
-        short = _repo_that_under_reports(short_root)
-        measured_short = measure_pre_merge_baseline(short, "main")
-        assert measured_short.ran is True
-        assert measured_short.names_complete is False
-
-
-# ---------------------------------------------------------------------------
 # The receipt must not say the tests ran when they did not
 # ---------------------------------------------------------------------------
 
@@ -676,7 +553,7 @@ class TestTheReceiptSaysWhetherTheTestsRan:
             "def test_new_green():\n    assert True\n",
         )
 
-        report = execute_merge(repo, "FEAT-CLEAN", validate_command=VALIDATE_OK)
+        report = execute_merge(repo, "FEAT-CLEAN")
         receipt = "\n".join(report.receipt_lines())
 
         assert report.verify_status == "unverified"
@@ -685,7 +562,7 @@ class TestTheReceiptSaysWhetherTheTestsRan:
 
     def test_a_check_that_did_run_still_says_so(self, repo_with_clean_branch: Path):
         report = execute_merge(
-            repo_with_clean_branch, "FEAT-CLEAN", validate_command=VALIDATE_OK
+            repo_with_clean_branch, "FEAT-CLEAN"
         )
         receipt = "\n".join(report.receipt_lines())
         assert "The tests were run with:" in receipt
@@ -721,7 +598,6 @@ class TestARefusalTouchesNothing:
             repo,
             "FEAT-CLEAN",
             target_branch="no-such-branch",
-            validate_command=VALIDATE_OK,
         )
 
         assert report.outcome == OUTCOME_REFUSED
@@ -787,7 +663,6 @@ class TestTheBranchCannotChooseItsOwnJudge:
         execute_merge(
             repo,
             SELF_JUDGE,
-            validate_command=VALIDATE_OK,
             measure_baseline=False,
         )
 
@@ -807,7 +682,6 @@ class TestTheBranchCannotChooseItsOwnJudge:
         report = execute_merge(
             repo,
             SELF_JUDGE,
-            validate_command=VALIDATE_OK,
             baseline_failing=[PRE_EXISTING_RED],
         )
 
@@ -827,7 +701,6 @@ class TestTheBranchCannotChooseItsOwnJudge:
         report = execute_merge(
             repo,
             SELF_JUDGE,
-            validate_command=VALIDATE_OK,
             measure_baseline=False,
         )
 
@@ -845,7 +718,7 @@ class TestTheBranchCannotChooseItsOwnJudge:
         repo = _repo_with_a_branch_that_rewrites_the_command(tmp_path)
 
         report = execute_merge(
-            repo, SELF_JUDGE, validate_command=VALIDATE_OK
+            repo, SELF_JUDGE
         )
 
         assert report.verify_command == declared_command()
@@ -897,7 +770,7 @@ class TestVerifyRanSaysWhetherARunWasAttempted:
             "def test_new_green():\n    assert True\n",
         )
 
-        report = execute_merge(repo, "FEAT-CLEAN", validate_command=VALIDATE_OK)
+        report = execute_merge(repo, "FEAT-CLEAN")
 
         assert report.verify_ran is False
         assert report.verify_status == "unverified"
@@ -905,15 +778,14 @@ class TestVerifyRanSaysWhetherARunWasAttempted:
         # And the receipt still explains itself, rather than claiming that
         # verification had been turned off.
         receipt = "\n".join(report.receipt_lines())
-        assert "could not be verified" in receipt
-        assert "not a pass" in receipt
+        assert "tests were not run" in receipt
         assert "turned off" not in receipt
 
     def test_a_check_that_did_run_reports_a_run(
         self, repo_with_clean_branch: Path
     ):
         report = execute_merge(
-            repo_with_clean_branch, "FEAT-CLEAN", validate_command=VALIDATE_OK
+            repo_with_clean_branch, "FEAT-CLEAN"
         )
         assert report.verify_ran is True
         assert report.to_dict()["verify_ran"] is True

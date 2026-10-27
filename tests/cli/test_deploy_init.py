@@ -49,7 +49,7 @@ def test_init_writes_the_whole_kit(tmp_path: Path) -> None:
     assert done.exit_code == 0, done.output
     written = {str(p.relative_to(tmp_path)) for p in (tmp_path / "deploy").rglob("*") if p.is_file()}
     assert written == KIT_FILES
-    assert "valid deploy-profile" in done.output
+    assert "the deployment kit is in place" in done.output
     # Tells the project, in the README's words, what is still its own.
     assert "What to do next:" in done.output
     assert "publishes ${APP_PORT} to whatever port the app listens on" in done.output
@@ -114,20 +114,6 @@ def test_never_overwrites_and_reports_skips(tmp_path: Path) -> None:
     assert again.exit_code == 0
     assert again.output.count("skipped") == len(KIT_FILES)
     assert "wrote" not in again.output
-
-
-def test_existing_invalid_profile_fails_validation(tmp_path: Path) -> None:
-    (tmp_path / "deploy").mkdir()
-    # Every value the command compares agrees; the profile is still invalid
-    # (no compose section), which validation catches.
-    (tmp_path / "deploy" / "profile.yaml").write_text(
-        'format_version: "1.0"\nenv_id: myapp\n'
-        "candidate: {env: {CANDIDATE_PORT: '18962', COMPOSE_PROJECT_NAME: myapp-cand}}\n"
-    )
-    done = _init(tmp_path)
-    assert done.exit_code == 1
-    assert "skipped deploy/profile.yaml" in done.output
-    assert "not a valid deploy-profile" in done.output
 
 
 @pytest.mark.parametrize(

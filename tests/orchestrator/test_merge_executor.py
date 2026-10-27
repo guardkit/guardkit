@@ -14,14 +14,12 @@ The load-bearing assertions:
 * the merge commit message is the exact template, filled only from records;
 * refusals happen before anything is touched;
 * a conflict aborts and leaves the tree clean;
-* verification never invents a clean.
+* only tests that ran and failed fail the merge's verification.
 """
 
 from __future__ import annotations
 
-import json
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
@@ -36,14 +34,12 @@ from guardkit.orchestrator.merge_executor import (
     conflicted_files_from_status,
     execute_merge,
     merge_commit_message,
-    parse_validate_stdout,
     preflight_refusal,
-    run_feature_validate,
 )
 
 
 # ---------------------------------------------------------------------------
-# git fixture repos (real git in tmp_path — the machine_verify pattern)
+# git fixture repos (real git in tmp_path)
 # ---------------------------------------------------------------------------
 
 
@@ -372,58 +368,6 @@ class TestConflict:
 
 
 # ---------------------------------------------------------------------------
-# validate: stdout-only parse
-# ---------------------------------------------------------------------------
-
-
-class TestValidateStdoutParse:
-    def test_valid_true_parses(self):
-        stdout = json.dumps(
-            {"feature_id": "FEAT-X", "valid": True, "errors": []}
-        )
-        assert parse_validate_stdout(stdout) == (True, "")
-
-    def test_valid_false_carries_errors(self):
-        stdout = json.dumps(
-            {"feature_id": "FEAT-X", "valid": False, "errors": ["task missing"]}
-        )
-        valid, detail = parse_validate_stdout(stdout)
-        assert valid is False
-        assert "task missing" in detail
-
-    def test_non_json_gives_no_verdict(self):
-        valid, detail = parse_validate_stdout("INFO: something\nnot json")
-        assert valid is None
-        assert "not JSON" in detail
-
-    def test_empty_stdout_gives_no_verdict(self):
-        valid, _ = parse_validate_stdout("")
-        assert valid is None
-
-    def test_json_without_valid_field_gives_no_verdict(self):
-        valid, _ = parse_validate_stdout(json.dumps({"feature_id": "F"}))
-        assert valid is None
-
-    def test_subprocess_stderr_noise_never_reaches_the_parser(
-        self, tmp_path: Path
-    ):
-        """An INFO line on stderr must not corrupt the stdout-only parse."""
-        script = (
-            "import sys, json\n"
-            "sys.stderr.write('INFO: worktree state loaded\\n')\n"
-            "print(json.dumps({'feature_id': 'FEAT-X', 'valid': True,"
-            " 'errors': []}))\n"
-        )
-        valid, detail = run_feature_validate(
-            tmp_path,
-            "FEAT-X",
-            validate_command=[sys.executable, "-c", script],
-        )
-        assert valid is True
-        assert detail == ""
-
-
-# ---------------------------------------------------------------------------
 # charged failures — with and without a baseline
 # ---------------------------------------------------------------------------
 
@@ -490,31 +434,20 @@ class TestChargedFailures:
 
 
 class TestExecuteMergeWithVerify:
-    def test_merged_but_unverified_is_never_a_pass(self, merge_repo: Path):
-        # The fixture repo has no pyproject/tests -> no runner is detected;
-        # the injected validate command answers valid=true on stdout.
-        script = (
-            "import json\n"
-            "print(json.dumps({'feature_id': 'FEAT-X', 'valid': True,"
-            " 'errors': []}))\n"
-        )
-        report = execute_merge(
-            merge_repo,
-            "FEAT-X",
-            verify=True,
-            validate_command=[sys.executable, "-c", script],
-        )
+    def test_tests_not_run_do_not_fail_the_merge(self, merge_repo: Path):
+        # The fixture repo has no pyproject/tests -> no runner is detected.
+        report = execute_merge(merge_repo, "FEAT-X", verify=True)
         assert report.outcome == OUTCOME_MERGED
         # No runner could be found, so no post-merge run was attempted
-        # (2026-09-06 spec, rule 12) — and absence is still not a pass.
+        # (2026-09-06 spec, rule 12); since the cull that is reported, not
+        # failed.
         assert report.verify_ran is False
-        assert report.validate_valid is True
         assert report.verify_status == "unverified"
-        assert report.verify_ok is False  # absence of evidence is not a pass
+        assert report.verify_ok is True
+        assert "validate_valid" not in report.to_dict()
         assert _branch_exists(merge_repo, "autobuild/FEAT-X")
         receipt = "\n".join(report.receipt_lines())
-        assert "could not be verified" in receipt
-        assert "not a pass" in receipt
+        assert "tests were not run" in receipt
 
 
 # ---------------------------------------------------------------------------
@@ -534,7 +467,6 @@ class TestReportShape:
             verify_ran=True,
             verify_status="passed",
             verify_detail="12 passed",
-            validate_valid=True,
             charged_failures=(),
             notes=("a note",),
         )
@@ -550,17 +482,16 @@ class TestReportShape:
         assert isinstance(d["charged_failures"], list)
 
     @pytest.mark.parametrize(
-        "kwargs",
+        "kwargs, ok",
         [
-            {"verify_status": "failed"},
-            {"verify_status": "unverified"},
-            {"validate_valid": False},
-            {"validate_valid": None},
-            {"charged_failures": ("tests/a.py::test_x",)},
-            {"verify_ran": False},
+            ({"verify_status": "failed"}, False),
+            ({"charged_failures": ("tests/a.py::test_x",)}, False),
+            ({"verify_status": None, "verify_ran": False}, False),
+            ({"verify_status": "unverified", "verify_ran": False}, True),
+            ({}, True),
         ],
     )
-    def test_verify_ok_requires_every_positive(self, kwargs):
+    def test_verify_ok_is_false_only_for_tests_that_failed(self, kwargs, ok):
         base = dict(
             outcome=OUTCOME_MERGED,
             feature_id="FEAT-X",
@@ -568,10 +499,9 @@ class TestReportShape:
             branch="autobuild/FEAT-X",
             verify_ran=True,
             verify_status="passed",
-            validate_valid=True,
         )
         base.update(kwargs)
-        assert MergeReport(**base).verify_ok is False
+        assert MergeReport(**base).verify_ok is ok
 
     def test_refused_receipt_names_the_reason(self):
         report = MergeReport(

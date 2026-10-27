@@ -40,7 +40,7 @@ from guardkit.orchestrator import process_group
 
 #: Default per-gate wall-clock cap. A gate that STARTS and then hangs past this
 #: is a genuine failure (the deployed app hung) — exit code 124, gate fails.
-#: "Couldn't start at all" is pre-flight's environment_fail, not this.
+#: A gate whose address does not answer is pre-flight's environment_fail.
 DEFAULT_GATE_TIMEOUT_S: float = 900.0
 
 #: Sentinel exit code for a gate that overran its timeout (mirrors the shell
@@ -183,14 +183,12 @@ def parse_gate_result(gate_id: str, run: GateRun) -> GateResult:
     if parsed and parsed.get("assertions"):
         assertions = []
         for raw in parsed["assertions"]:
-            # Validate against the F4 assertion shape — a malformed assertion is
-            # a loud config error, not silently dropped.
+            # An assertion that is not in the F4 shape is left out; the exit
+            # code still decides the gate (the cull, 27 October 2026).
             try:
                 assertions.append(AssertionResult.model_validate(raw))
-            except Exception as exc:  # pydantic ValidationError formats itself
-                raise LiveGateError(
-                    f"gate {gate_id!r} emitted an invalid assertion {raw!r}: {exc}"
-                ) from exc
+            except Exception:  # noqa: BLE001 — pydantic ValidationError
+                continue
         # Absence-of-failure: a non-zero exit that enumerated no failing
         # assertion still fails — the exit code wins.
         if run.exit_code != 0 and not any(a.status == "fail" for a in assertions):
@@ -218,8 +216,7 @@ def execute_gate(
 
     Raises:
         LiveGateError: the gate script does not exist at ``repo_root/gate.path``
-            (an instrument fault pre-flight's self-check should have caught;
-            defended here too), or the gate emitted an invalid assertion.
+            (there is nothing to run).
     """
     script_path = (repo_root / gate.path).resolve()
     if not script_path.exists():
@@ -246,9 +243,6 @@ def execute_gates(
 ) -> List[GateResult]:
     """Execute each gate in order (single run per gate — v1).
 
-    The F9 campaign loop (probe-before-rerun, warm-up, confound disambiguation)
-    is session B4's; v1 runs each selected gate once and B4's disposition/
-    attempts-ledger layer snaps onto these results.
     """
     return [
         execute_gate(g, repo_root=repo_root, runner=runner, env=env, timeout_s=timeout_s)

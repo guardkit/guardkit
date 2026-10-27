@@ -1,15 +1,11 @@
-"""F5 evidence emitter/index + the loud read-the-image seam (WS2 B3)."""
+"""F5 evidence emitter/index (WS2 B3)."""
 
 from __future__ import annotations
 
-
-import pytest
 import yaml
 
-from guardkit.orchestrator.live_gate.errors import LiveGateStubError
 from guardkit.orchestrator.live_gate.evidence import (
     EvidenceCollector,
-    UnconfiguredImageVerifier,
     ensure_evidence_dir,
 )
 from guardkit.qa.formats import validate_instance
@@ -54,9 +50,3 @@ class TestCollector:
         # and round-trips as yaml
         data = yaml.safe_load(out.read_text())
         assert data["format_version"] == "1.0"
-
-
-class TestImageVerifierSeam:
-    def test_unconfigured_raises(self, tmp_path):
-        with pytest.raises(LiveGateStubError, match="ImageVerifier is not configured"):
-            UnconfiguredImageVerifier().inspect(tmp_path / "x.png", "should show real name")

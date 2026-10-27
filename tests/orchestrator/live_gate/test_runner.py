@@ -8,16 +8,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from guardkit.orchestrator.live_gate.executor import GateRun, GateScriptRunner
-from guardkit.orchestrator.live_gate.preflight import (
-    BrokerDiffProvider,
-    F16ChecklistProvider,
-    ReservationBroker,
-    SeamResult,
-)
+from guardkit.orchestrator.live_gate.preflight import F16ChecklistProvider, SeamResult
 from guardkit.orchestrator.live_gate.runner import LiveGateRunner, derive_verdict
-from guardkit.orchestrator.live_gate.sweep import PageTextFetcher
 from guardkit.qa.formats import validate_instance
-from guardkit.qa.formats.gate_registry import AssertionResult, GateResult, SweepResult
+from guardkit.qa.formats.gate_registry import AssertionResult, GateResult
 
 _FIXED = datetime(2026, 7, 8, 12, 0, 0, tzinfo=timezone.utc)
 
@@ -35,20 +29,13 @@ class TestDeriveVerdict:
         return GateResult(gate_id="g", exit_code=1, assertions=[AssertionResult(id="a", status="fail")])
 
     def test_preflight_shortcircuit_wins(self):
-        assert derive_verdict("environment_fail", [self._pass_gate()], None) == "environment_fail"
-        assert derive_verdict("instrument_fail", [], None) == "instrument_fail"
+        assert derive_verdict("environment_fail", [self._pass_gate()]) == "environment_fail"
 
     def test_all_pass_is_pass(self):
-        assert derive_verdict(None, [self._pass_gate()], SweepResult(surfaces_checked=2, leaks=[])) == "pass"
+        assert derive_verdict(None, [self._pass_gate()]) == "pass"
 
     def test_failed_gate_is_fail(self):
-        assert derive_verdict(None, [self._pass_gate(), self._fail_gate()], None) == "fail"
-
-    def test_sweep_leak_is_fail(self):
-        assert derive_verdict(None, [self._pass_gate()], SweepResult(surfaces_checked=1, leaks=["x"])) == "fail"
-
-    def test_sweep_unavailable_is_environment_fail(self):
-        assert derive_verdict(None, [self._pass_gate()], None, sweep_unavailable=True) == "environment_fail"
+        assert derive_verdict(None, [self._pass_gate(), self._fail_gate()]) == "fail"
 
 
 # ---------------------------------------------------------------------------
@@ -67,24 +54,9 @@ class _CannedRunner(GateScriptRunner):
         return GateRun(0, json.dumps({"assertions": [{"id": "a", "status": "pass"}]}), "")
 
 
-class _GreenRes(ReservationBroker):
-    def check(self, resource):
-        return SeamResult(ok=True, detail="ok")
-
-
-class _GreenBroker(BrokerDiffProvider):
-    def diff(self, ref):
-        return SeamResult(ok=True, detail="ok")
-
-
 class _GreenF16(F16ChecklistProvider):
     def checklist(self):
         return [SeamResult(ok=True, detail="ok")]
-
-
-class _FetcherClean(PageTextFetcher):
-    def fetch(self, persona, surface):
-        return "Donald Donor real data"
 
 
 _PASS_BAR = textwrap.dedent(
@@ -144,11 +116,10 @@ def _build_repo(tmp_path: Path, *, with_sweep_gate: bool = False, gate_stdout: s
 
 
 class TestRunnerEnvironmentFail:
-    def test_unconfigured_seams_short_circuit_environment_fail(self, tmp_path):
+    def test_unset_address_short_circuits_environment_fail(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("BASE", raising=False)
         repo = _build_repo(tmp_path)
-        runner = LiveGateRunner(
-            repo, reservation_resource="gb10-gpu", now_fn=lambda: _FIXED,
-        )
+        runner = LiveGateRunner(repo, now_fn=lambda: _FIXED)
         env = runner.run("FEAT-X", "gb10")
         assert env.verdict == "environment_fail"
         assert env.gates == []  # no gate ran on the short-circuit
@@ -171,8 +142,7 @@ class TestRunnerPass:
             gate_runner=_CannedRunner({"g1.py": GateRun(0, json.dumps(
                 {"assertions": [{"id": "C1", "status": "pass", "evidence_ref": "shots-g1/c1.png"}]}
             ), "")}),
-            reservation_broker=_GreenRes(), broker_diff=_GreenBroker(), f16_provider=_GreenF16(),
-            reservation_resource="gb10-gpu", broker_contract_ref="qa/broker.yaml",
+            f16_provider=_GreenF16(),
             now_fn=lambda: _FIXED,
         )
         env = runner.run("FEAT-X", "gb10")
@@ -188,37 +158,25 @@ class TestRunnerPass:
         runner = LiveGateRunner(
             repo,
             gate_runner=_CannedRunner({"g1.py": GateRun(1, "GATE FAILED", "boom")}),
-            reservation_broker=_GreenRes(), broker_diff=_GreenBroker(), f16_provider=_GreenF16(),
-            reservation_resource="gb10-gpu",
+            f16_provider=_GreenF16(),
             now_fn=lambda: _FIXED,
         )
         env = runner.run("FEAT-X", "gb10")
         assert env.verdict == "fail"
 
 
-class TestRunnerSweep:
-    def test_surface_gate_clean_sweep_passes(self, tmp_path):
+class TestRunnerSurfaceGate:
+    def test_surface_gate_verdict_follows_its_gates(self, tmp_path):
+        """A gate that names a leak-sweep manifest is run like any other gate:
+        the sweep was removed in the cull, so the verdict is the gates' own."""
         repo = _build_repo(tmp_path, with_sweep_gate=True)
         runner = LiveGateRunner(
             repo,
             gate_runner=_CannedRunner({}),
-            page_text_fetcher=_FetcherClean(),
-            reservation_broker=_GreenRes(), broker_diff=_GreenBroker(), f16_provider=_GreenF16(),
+            f16_provider=_GreenF16(),
             now_fn=lambda: _FIXED,
         )
         env = runner.run("FEAT-X", "gb10")
-        assert env.sweep is not None
-        assert env.sweep.leaks == []
+        assert env.sweep is None
+        assert len(env.gates) == 2
         assert env.verdict == "pass"
-
-    def test_surface_gate_without_fetcher_is_environment_fail(self, tmp_path):
-        repo = _build_repo(tmp_path, with_sweep_gate=True)
-        runner = LiveGateRunner(
-            repo,
-            gate_runner=_CannedRunner({}),
-            # no page_text_fetcher → sweep un-runnable
-            reservation_broker=_GreenRes(), broker_diff=_GreenBroker(), f16_provider=_GreenF16(),
-            now_fn=lambda: _FIXED,
-        )
-        env = runner.run("FEAT-X", "gb10")
-        assert env.verdict == "environment_fail"

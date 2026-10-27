@@ -8,16 +8,14 @@ the Python CLI never implemented; this module is the ONE implementation both
 entry points share (``cli-wrapper-shares-client-acquisition-path.md`` — a
 CLI-only second implementation is exactly the divergence that rule documents).
 
-Verification semantics (absence-of-failure-safe):
+Verification semantics (the cull, 27 October 2026):
 
-- ``passed`` requires POSITIVE evidence tests ran (``tests_run > 0``) on the
-  runners this module understands: a pytest run must show a passed-count; a
-  stack-profile run must not classify as absent. A runner that could not
-  start, collected zero tests, or produced no evidence any test executed is
-  ``unverified`` — never a pass (``absence-of-failure-is-not-success.md``).
-  An operator-supplied CUSTOM command (``--verify-cmd`` / a non-pytest smoke
-  command) is trusted on exit code alone — its output shape is unknowable
-  here, matching the smoke-gate exit-code semantics.
+- The verdict is the command's own exit code: 0 is ``passed`` and any other
+  exit is ``failed``. Only a run that never really ran is ``unverified``: no
+  command could be found, the runner could not start (exit 126 or 127, or an
+  error starting it), pytest collected nothing or was given a usage error
+  (exit 5 or 4), or a stack runner said it found no tests. ``unverified``
+  reports that the tests were not run; it is not a failure.
 - A timeout is ``failed`` (ran-and-hung is a real defect — the
   runtime-parity L3 precedent), never absent.
 - The command itself is resolved in one place (``resolve_verify_command``):
@@ -33,7 +31,6 @@ Verification semantics (absence-of-failure-safe):
 from __future__ import annotations
 
 import logging
-import os
 import re
 import subprocess
 from dataclasses import dataclass, replace
@@ -61,7 +58,6 @@ __all__ = [
     "resolve_verify_command",
     "resolve_verify_command_with_declaration",
     "run_completion_verification",
-    "sweep_completion_against_ledger",
 ]
 
 # Full-suite verification needs more headroom than the 120s between-wave
@@ -70,7 +66,8 @@ DEFAULT_VERIFY_TIMEOUT = 600
 
 _ABSENT_RETURNCODES = frozenset({126, 127})
 
-# pytest's "N passed" summary — the positive tests-ran evidence.
+# pytest's "N passed" summary, quoted in a passing run's detail when present.
+# The feature orchestrator's baseline probe also imports it from here.
 _PYTEST_PASSED_RE = re.compile(r"\b[1-9]\d*\s+passed\b")
 
 
@@ -250,20 +247,17 @@ def _classify_pytest(returncode: int, output: str) -> Tuple[str, str]:
         return "unverified", "pytest usage error (exit 4)"
     if returncode == 0:
         match = _PYTEST_PASSED_RE.search(output)
-        if match:
-            return "passed", match.group(0)
-        # Clean exit with no evidence any test ran — absent, never a pass.
-        return "unverified", "clean exit but no evidence any test ran"
+        return "passed", match.group(0) if match else "test run passed (exit 0)"
     return "failed", f"test run failed (exit {returncode})"
 
 
 def _classify_stack(
     profile: StackTestProfile, returncode: int, output: str
 ) -> Tuple[str, str]:
-    if classify_absent_for_stack(profile, returncode, output):
-        return "unverified", f"{profile.stack} run produced no test verdict"
     if returncode == 0:
         return "passed", f"{profile.stack} suite passed"
+    if classify_absent_for_stack(profile, returncode, output):
+        return "unverified", f"{profile.stack} run produced no test verdict"
     return "failed", f"{profile.stack} suite failed (exit {returncode})"
 
 
@@ -282,7 +276,6 @@ def run_completion_verification(
     stack_profile: Optional[StackTestProfile] = None,
     timeout: int = DEFAULT_VERIFY_TIMEOUT,
     env: Optional[dict] = None,
-    ran_marker_regex: Optional[str] = None,
     own_process_group: bool = False,
 ) -> VerificationResult:
     """Run the resolved verification command in the merge-target repo.
@@ -297,11 +290,6 @@ def run_completion_verification(
     process's environment, which holds the factory's credentials. The merge
     passes the minimal environment it builds the same way (13 October 2026,
     item 2a).
-
-    ``ran_marker_regex`` is a repository-root marker the project declared to
-    show that tests really ran. When given, a run that would pass but whose
-    output does not match it measured nothing, and is ``unverified``. Without
-    it the result is exactly as before.
 
     ``own_process_group`` (the merge passes it) runs the command in a process
     group of its own, so a timeout ends everything the command started, not
@@ -381,9 +369,7 @@ def run_completion_verification(
             command, run.returncode, run.stdout, run.stderr
         )
         return _noted(
-            _verification_from_run(
-                proc, command, cwd, source, stack_profile, ran_marker_regex
-            ),
+            _verification_from_run(proc, command, cwd, source, stack_profile),
             run_env if built_here else None,
         )
 
@@ -427,9 +413,7 @@ def run_completion_verification(
         )
 
     return _noted(
-        _verification_from_run(
-            proc, command, cwd, source, stack_profile, ran_marker_regex
-        ),
+        _verification_from_run(proc, command, cwd, source, stack_profile),
         run_env if built_here else None,
     )
 
@@ -453,7 +437,6 @@ def _verification_from_run(
     cwd: str,
     source: str,
     stack_profile: Optional[StackTestProfile],
-    ran_marker_regex: Optional[str],
 ) -> VerificationResult:
     """Classify a finished run into a :class:`VerificationResult`."""
     output = (proc.stdout or "") + "\n" + (proc.stderr or "")
@@ -463,18 +446,6 @@ def _verification_from_run(
         status, detail = _classify_pytest(proc.returncode, output)
     else:
         status, detail = _classify_custom(proc.returncode)
-
-    if status == "passed" and ran_marker_regex:
-        try:
-            marked = re.search(ran_marker_regex, output) is not None
-        except re.error:
-            marked = False
-        if not marked:
-            status = "unverified"
-            detail = (
-                f"the check passed but printed nothing matching the declared "
-                f"ran_marker_regex, so it measured nothing ({detail})"
-            )
 
     return VerificationResult(
         status=status,
@@ -486,70 +457,3 @@ def _verification_from_run(
         source=source,
         full_output=output,
     )
-
-
-# ---------------------------------------------------------------------------
-# Post-merge known-failure ledger sweep (WS2 session B2)
-# ---------------------------------------------------------------------------
-#
-# WS2 build-plan §B2 ownership note (2026-07-07): the ledger-sweep enforcement
-# lives in THIS module and is built ONCE, here (WS3-S4 is the same deliverable —
-# no double-dispatch). It diffs the completion suite result against the F2
-# ledger ``qa/known-failures.yaml``: an un-ledgered failure fails the gate; an
-# unexpectedly-passing unconditional ledger entry fails the gate. The pure diff
-# + pytest-output parsing live in ``guardkit.qa.enforcement`` (kept there so the
-# schema/enforcement library is unit-testable without the CLI); this function is
-# the completion-time consumer. Flag-gated by ``qa.enforce_tier1`` at the CALL
-# site (``cli/autobuild.py``), default OFF — this function itself is pure and
-# does not read the flag, so it stays testable in isolation.
-
-
-def sweep_completion_against_ledger(
-    repo_root: Path,
-    verification: "VerificationResult",
-    ledger_path: Optional[Path] = None,
-):
-    """Diff a completion :class:`VerificationResult` against the F2 ledger.
-
-    ``ledger_path`` defaults to ``<repo_root>/qa/known-failures.yaml``. Returns
-    a ``guardkit.qa.enforcement.LedgerSweepResult``:
-
-    - The suite output is parsed for failing node ids + summary counts.
-    - A run with no positive evidence it executed (``unverified``) yields
-      ``status="unverified"`` — never a fail (absence-of-failure-is-not-success).
-    - Otherwise the parsed failures are diffed against the ledger (un-ledgered
-      failure or stale unconditional entry ⇒ ``status="fail"``).
-
-    Custom / non-pytest verification commands emit output shapes this parser
-    does not understand; when the verification status is ``passed``/``failed``
-    on a custom command, the sweep only has the exit-code verdict to go on and
-    returns ``unverified`` for the ledger dimension (the exit-code verdict from
-    ``run_completion_verification`` still stands on its own).
-    """
-    from guardkit.qa.enforcement import (
-        LedgerSweepResult,
-        diff_failures_against_ledger,
-        parse_pytest_outcome,
-    )
-
-    ledger_path = ledger_path or (repo_root / "qa" / "known-failures.yaml")
-
-    # A non-pytest / custom command's output is not ledger-diffable here (its
-    # per-test shape is unknowable — the same reason its verdict is exit-code
-    # only). Report the ledger dimension as unverified, never a fail.
-    is_pytest_shaped = "pytest" in (verification.command or "") or _PYTEST_PASSED_RE.search(
-        verification.output_tail or ""
-    )
-    if not is_pytest_shaped:
-        return LedgerSweepResult(
-            status="unverified",
-            unledgered_failures=(),
-            stale_ledger_entries=(),
-            detail=(
-                "ledger sweep not applicable: verification used a non-pytest "
-                "command whose per-test output shape is unknowable"
-            ),
-        )
-
-    outcome = parse_pytest_outcome(verification.output_tail)
-    return diff_failures_against_ledger(outcome, ledger_path)

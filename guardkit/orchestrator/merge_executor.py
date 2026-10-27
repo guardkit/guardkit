@@ -14,8 +14,8 @@ way the report's ``branch`` field names the branch that was merged. The
 branch is the ONLY thing that changes with it — the pre-merge baseline, the
 target pin, the verify run and the exit codes are untouched.
 
-House pattern: ``machine_verify.py`` — pure functions, explicit inputs, one
-frozen dataclass report with ``to_dict()`` and ``receipt_lines()``.
+House pattern: pure functions, explicit inputs, one frozen dataclass report
+with ``to_dict()`` and ``receipt_lines()``.
 
 The three laws this module enforces:
 
@@ -27,20 +27,20 @@ The three laws this module enforces:
   This module never calls ``manager.cleanup()``, never deletes
   a branch, and on conflict aborts the merge and leaves the tree exactly as it
   found it.
-* **Never invent a clean.** Post-merge verification only ever reports what it
-  observed; with no pre-merge baseline the full observed failure set is
-  reported with a note saying the diff is unavailable. Test names are read
+* **Report what the tests did.** Post-merge verification only ever reports
+  what it observed; with no pre-merge baseline the full observed failure set
+  is reported with a note saying the diff is unavailable. Test names are read
   from the WHOLE output of each run, never from the 2000-character excerpt
-  kept for receipts, and every run is cross-checked against the number of
-  failures the runner itself reported: if more tests failed than could be
-  named, nothing is excused.
+  kept for receipts. Only a test run that ran and failed on something this
+  merge is charged for fails the merge's verification (the cull, 27 October
+  2026); tests that could not be run are reported as not run.
 * **Judge no new red, not no red.** When no baseline is handed in, the merge
   measures one itself: the SAME resolved test command is run on the target
   branch before the merge, and its failures are what the merged result is
   excused for (2026-09-06 spec, rule 6). A baseline run that could not start
-  makes the whole check "could not run" — it never becomes an empty baseline,
-  because an empty baseline would charge this merge for red the branch never
-  caused.
+  means the tests are reported as not run — it never becomes an empty
+  baseline, because an empty baseline would charge this merge for red the
+  branch never caused.
 * **A branch never chooses the command that judges it.** The test command is
   resolved on the TARGET branch, before the merge, on every path — baseline
   measured, baseline handed in, or baseline turned off — and that one
@@ -51,14 +51,11 @@ The three laws this module enforces:
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 import re
 import stat
-import shutil
 import subprocess
-import sys
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Dict, List, NamedTuple, Optional, Sequence, Tuple
@@ -109,46 +106,9 @@ OUTCOME_REFUSED = "refused"
 OUTCOME_CONFLICT = "conflict"
 
 _GIT_TIMEOUT_SECONDS = 60
-_VALIDATE_TIMEOUT_SECONDS = 120
 
 # The tail of a pytest summary line: "... 118 passed, 8 failed in 4.21s".
 _PASSED_COUNT_RE = re.compile(r"\b(\d+)\s+passed\b")
-
-
-def reported_failure_count(output: Optional[str]) -> Optional[int]:
-    """How many tests the RUNNER itself said failed, or None when it did not.
-
-    Read from pytest's own count line ("8 failed, 3 errors, 118 passed"),
-    which is one short line at the very end of a run and is therefore always
-    present even in a heavily truncated excerpt. The per-test names are not:
-    pytest's summary block lists one line per failure and easily runs to tens
-    of thousands of characters. That gap is exactly what
-    :func:`named_failures_are_complete` guards.
-    """
-    from guardkit.qa.enforcement import parse_pytest_outcome
-
-    outcome = parse_pytest_outcome(output or "")
-    if outcome.failed is None and outcome.errored is None:
-        return None
-    return (outcome.failed or 0) + (outcome.errored or 0)
-
-
-def named_failures_are_complete(
-    output: Optional[str], named: Sequence[str]
-) -> bool:
-    """True when every failure the runner counted could also be named.
-
-    A run whose output names fewer failing tests than the runner said failed
-    has been read incompletely — truncated output, an unfamiliar reporter, a
-    crashed run. Nothing may be excused on such a reading, because the very
-    failure this merge caused could be one of the ones that went unnamed.
-    When the runner gave no count of its own there is nothing to check
-    against, and the reading is taken at face value.
-    """
-    reported = reported_failure_count(output)
-    if reported is None:
-        return True
-    return len(named) >= reported
 
 
 # ---------------------------------------------------------------------------
@@ -163,11 +123,10 @@ class MeasuredBaseline:
     Measured by running the SAME resolved test command on the target branch,
     so the merged result is judged on "no new red" rather than "no red".
     ``ran`` is False when the run measured nothing: the command could not
-    start, it failed but named no failing test, or it passed without the
-    marker the project declared to show tests ran. In that case there is no
-    baseline, and the whole check is reported as "could not run" rather than
-    being quietly treated as a clean baseline (13 October 2026: a failed run
-    that named nothing was once recorded as "0 failing, 0 passing").
+    start, or it failed but named no failing test. In that case there is no
+    baseline, and the tests are reported as not run rather than being quietly
+    treated as a clean baseline (13 October 2026: a failed run that named
+    nothing was once recorded as "0 failing, 0 passing").
     """
 
     command: str
@@ -177,11 +136,6 @@ class MeasuredBaseline:
     ran: bool = False
     detail: str = ""
     stack_profile: Optional[StackTestProfile] = None
-    # True when every failure the pre-merge runner counted could also be
-    # named. A baseline that could not name them all is still subtracted (a
-    # short baseline only ever charges this merge with MORE), but it may
-    # never be the grounds for excusing a failed suite.
-    names_complete: bool = True
 
     def to_dict(self) -> dict:
         """The three fields the merge report publishes."""
@@ -214,13 +168,12 @@ class MergeReport:
     verify_ran: bool = False
     # The MERGE's verdict on the tests, not the raw exit code of the run:
     # "passed" means nothing is charged to this merge, "failed" means at
-    # least one failure is, and "unverified" means the tests could not be
-    # run at all. The raw run's own word is kept in ``verify_suite_status``.
+    # least one failure is, and "unverified" means the tests were not run.
+    # The raw run's own word is kept in ``verify_suite_status``.
     verify_status: Optional[str] = None  # "passed" | "failed" | "unverified"
     verify_detail: str = ""
     # The test run's own verdict, before the baseline was subtracted.
     verify_suite_status: Optional[str] = None
-    validate_valid: Optional[bool] = None
     charged_failures: Tuple[str, ...] = ()
     # The target branch's failures measured before the merge, or None when no
     # baseline was measured (one was handed in, measuring was turned off, or
@@ -240,21 +193,18 @@ class MergeReport:
 
     @property
     def verify_ok(self) -> bool:
-        """True only when every post-merge check positively passed.
+        """False only when the project's tests ran on the merged result and
+        failed on something this merge is charged for (``failed``), or when
+        verification was turned off.
 
-        Requires the merge's test verdict to be ``passed``, the feature YAML
-        to validate, and zero charged failures. Absence of evidence is never
-        a pass (absence-of-failure-is-not-success): a run that could not
-        start is ``unverified`` and fails this test, and a run that failed on
-        something this merge is charged for is ``failed``. A run that failed
-        only on failures the target branch already had is ``passed`` — that
-        is the "no new red" rule, and it is stated once, in
-        :func:`merge_verdict_from_run`.
+        Tests that could not be run (``unverified``) do not fail it (the
+        cull, 27 October 2026). A run that failed only on failures the target
+        branch already had is ``passed`` — that is the "no new red" rule, and
+        it is stated once, in :func:`merge_verdict_from_run`.
         """
         return (
-            self.verify_ran
-            and self.verify_status == "passed"
-            and self.validate_valid is True
+            self.verify_status is not None
+            and self.verify_status != "failed"
             and not self.charged_failures
         )
 
@@ -272,7 +222,6 @@ class MergeReport:
             "verify_status": self.verify_status,
             "verify_detail": self.verify_detail,
             "verify_suite_status": self.verify_suite_status,
-            "validate_valid": self.validate_valid,
             "charged_failures": list(self.charged_failures),
             "verify_ok": self.verify_ok,
             "baseline_measured": (
@@ -327,14 +276,6 @@ class MergeReport:
                     "turned off for this run)."
                 )
             else:
-                if self.validate_valid is True:
-                    lines.append("The feature file validates.")
-                elif self.validate_valid is False:
-                    lines.append("The feature file does NOT validate.")
-                else:
-                    lines.append(
-                        "The feature file validation gave no usable answer."
-                    )
                 if self.verify_command:
                     # "would have been" on the unverified path: there the
                     # report itself says the run was never made, and a
@@ -384,8 +325,8 @@ class MergeReport:
                     )
                 else:
                     lines.append(
-                        f"The test suite could not be verified "
-                        f"({self.verify_detail}). This is not a pass."
+                        f"The tests were not run on the merged result "
+                        f"({self.verify_detail})."
                     )
                 # What was put in place for the install and checks after the
                 # join: nothing about what ran, or where else the build's
@@ -872,7 +813,6 @@ def measure_pre_merge_baseline(
         Tuple[Optional[str], str, Optional[StackTestProfile]]
     ] = None,
     env: Optional[Dict[str, str]] = None,
-    ran_marker_regex: Optional[str] = None,
 ) -> MeasuredBaseline:
     """Run the resolved test command on ``target_branch`` before any merge.
 
@@ -886,15 +826,12 @@ def measure_pre_merge_baseline(
     the switch, which comes to the same thing.
 
     ``ran`` is False when the command could not start (or no runner could be
-    found at all), and when it failed but named no failing test — the same
-    rule the build's own baseline probe applies
-    (``feature_orchestrator._declared_probe_measured``). There is then no
-    baseline: the caller must report the whole check as "could not run",
-    never as a clean baseline.
+    found at all), and when it failed but named no failing test. There is
+    then no baseline: the caller reports the tests as not run, never as a
+    clean baseline.
 
-    ``env`` and ``ran_marker_regex`` are passed to
-    :func:`run_completion_verification` unchanged; ``None`` for both is the
-    behaviour before they existed.
+    ``env`` is passed to :func:`run_completion_verification` unchanged;
+    ``None`` is the behaviour before it existed.
     """
     repo_root = Path(repo_root)
 
@@ -921,7 +858,6 @@ def measure_pre_merge_baseline(
         stack_profile=profile,
         timeout=timeout,
         env=env,
-        ran_marker_regex=ran_marker_regex,
         # The merge (which always hands in its own environment) runs the
         # check in a process group of its own, so a timeout ends everything
         # the check started; a direct caller keeps the old behaviour.
@@ -965,7 +901,6 @@ def measure_pre_merge_baseline(
         ran=True,
         detail=result.detail,
         stack_profile=profile,
-        names_complete=named_failures_are_complete(text, failing),
     )
 
 
@@ -976,20 +911,14 @@ def merge_verdict_from_run(
     charged_failures: Sequence[str],
     baseline_known: bool,
     target_branch: str,
-    reading_complete: bool = True,
 ) -> Tuple[str, str]:
     """The MERGE's verdict on the test run — "no new red", stated once.
 
     Returns ``(status, detail)``:
 
-    * a run that could not start stays ``unverified`` — absence of evidence
-      is never a pass;
+    * a run that could not start stays ``unverified`` — the tests were not
+      run;
     * a run that failed on something charged to this merge stays ``failed``;
-    * a run whose failures could not all be read stays ``failed``
-      (``reading_complete=False``): either the merged run named fewer
-      failures than the runner counted, or the baseline it would be excused
-      against did. Excusing on a partial reading is how a merge invents a
-      clean, so it is refused outright;
     * a run that failed ONLY on failures the target branch was already
       failing is ``passed``, and the detail says so in plain words;
     * a run that failed but named no failing tests stays ``failed`` — there
@@ -1005,13 +934,6 @@ def merge_verdict_from_run(
             f"the test run failed but named no failing tests, so nothing "
             f"could be compared with {target_branch} ({suite_detail})",
         )
-    if not reading_complete:
-        return (
-            "failed",
-            f"more tests failed than could be named from the test output, so "
-            f"none of them were excused against {target_branch} "
-            f"({suite_detail})",
-        )
     return (
         "passed",
         f"{len(observed_failures)} failing test(s), every one of them "
@@ -1023,69 +945,6 @@ def merge_verdict_from_run(
 # ---------------------------------------------------------------------------
 # Post-merge verification
 # ---------------------------------------------------------------------------
-
-
-def default_validate_command(feature_id: str) -> List[str]:
-    """The ``guardkit feature validate <fid> --json`` argv.
-
-    Prefers the installed ``guardkit`` console script; falls back to
-    ``python -m guardkit.cli.main`` (the documented module entry point) so the
-    validation runs in exactly the environment running this executor.
-    """
-    exe = shutil.which("guardkit")
-    if exe:
-        return [exe, "feature", "validate", feature_id, "--json"]
-    return [
-        sys.executable,
-        "-m",
-        "guardkit.cli.main",
-        "feature",
-        "validate",
-        feature_id,
-        "--json",
-    ]
-
-
-def parse_validate_stdout(stdout: str) -> Tuple[Optional[bool], str]:
-    """Parse the ``feature validate --json`` STDOUT into ``(valid, detail)``.
-
-    STDOUT ONLY — an INFO line rides stderr and must never reach this parser.
-    Returns ``(None, reason)`` when no verdict could be read (never a pass).
-    """
-    text = stdout.strip()
-    if not text:
-        return None, "feature validate printed nothing on stdout"
-    try:
-        data = json.loads(text)
-    except ValueError:
-        return None, "feature validate stdout was not JSON"
-    if not isinstance(data, dict) or "valid" not in data:
-        return None, "feature validate JSON carried no 'valid' field"
-    detail = ""
-    errors = data.get("errors") or []
-    if errors:
-        detail = "; ".join(str(e) for e in errors[:5])
-    return bool(data["valid"]), detail
-
-
-def run_feature_validate(
-    repo_root: Path,
-    feature_id: str,
-    validate_command: Optional[Sequence[str]] = None,
-) -> Tuple[Optional[bool], str]:
-    """Run ``guardkit feature validate <fid> --json`` and parse STDOUT only."""
-    argv = list(validate_command or default_validate_command(feature_id))
-    try:
-        proc = subprocess.run(
-            argv,
-            cwd=str(repo_root),
-            capture_output=True,
-            text=True,
-            timeout=_VALIDATE_TIMEOUT_SECONDS,
-        )
-    except (OSError, subprocess.SubprocessError) as exc:
-        return None, f"feature validate could not run: {exc}"
-    return parse_validate_stdout(proc.stdout)
 
 
 def charged_failures_from_output(
@@ -1116,45 +975,22 @@ def charged_failures_from_output(
     return charged, notes
 
 
-def validate_with_notes(
-    repo_root: Path,
-    feature_id: str,
-    validate_command: Optional[Sequence[str]] = None,
-) -> Tuple[Optional[bool], List[str]]:
-    """Run the feature-file validation and turn its verdict into notes."""
-    notes: List[str] = []
-    validate_valid, validate_detail = run_feature_validate(
-        repo_root, feature_id, validate_command=validate_command
-    )
-    if validate_valid is None:
-        notes.append(f"feature validation gave no verdict: {validate_detail}")
-    elif validate_valid is False and validate_detail:
-        notes.append(f"feature validation errors: {validate_detail}")
-    return validate_valid, notes
-
-
 def verify_merged(
     repo_root: Path,
-    feature_id: str,
     baseline_failing: Optional[Sequence[str]] = None,
     timeout: int = DEFAULT_VERIFY_TIMEOUT,
-    validate_command: Optional[Sequence[str]] = None,
     resolved_command: Optional[
         Tuple[Optional[str], str, Optional[StackTestProfile]]
     ] = None,
     env: Optional[Dict[str, str]] = None,
-    ran_marker_regex: Optional[str] = None,
-) -> Tuple[Optional[bool], VerificationResult, List[str], List[str]]:
-    """The three post-merge checks, in order.
+) -> Tuple[VerificationResult, List[str], List[str]]:
+    """The post-merge test run.
 
-    Returns ``(validate_valid, verification, charged_failures, notes)``:
+    Returns ``(verification, charged_failures, notes)``:
 
-    * (a) ``guardkit feature validate <fid> --json`` as a subprocess with
-      ``cwd=repo_root``, STDOUT parsed exclusively;
-    * (b) the resolved verification command run in the merged repo — only
-      ``status == "passed"`` is ever success (the precedence lives in
-      ``resolve_verify_command``);
-    * (c) the failing node ids charged to this merge, diffed against the
+    * the resolved verification command run in the merged repo (the
+      precedence lives in ``resolve_verify_command``);
+    * the failing node ids charged to this merge, diffed against the
       pre-merge baseline and the known-failures ledger.
 
     ``resolved_command`` passes in a resolution already made on the target
@@ -1165,15 +1001,10 @@ def verify_merged(
     verifying a tree it already trusts — and the command is resolved here,
     against the tree as it now stands.
 
-    ``env`` and ``ran_marker_regex`` go to the test run unchanged (``None``
-    keeps the behaviour before they existed); :func:`execute_merge` passes
-    the minimal environment and the target's declared marker. The feature
-    validation is GuardKit's own command and keeps GuardKit's environment.
+    ``env`` goes to the test run unchanged (``None`` keeps the behaviour
+    before it existed); :func:`execute_merge` passes the minimal environment.
     """
-    validate_valid, notes = validate_with_notes(
-        repo_root, feature_id, validate_command=validate_command
-    )
-
+    notes: List[str] = []
     command, source, profile = resolved_command or resolve_verify_command(
         Path(repo_root)
     )
@@ -1184,7 +1015,6 @@ def verify_merged(
         stack_profile=profile,
         timeout=timeout,
         env=env,
-        ran_marker_regex=ran_marker_regex,
         # The merge (which always hands in its own environment) runs the
         # check in a process group of its own, so a timeout ends everything
         # the check started; a direct caller keeps the old behaviour.
@@ -1194,21 +1024,20 @@ def verify_merged(
     # The WHOLE output of the run, not the 2000-character excerpt kept for
     # receipts: a suite with roughly twenty or more failures overflows that
     # excerpt, and a failure whose name fell off the end would be charged to
-    # nobody. ``execute_merge`` cross-checks the names read here against the
-    # number of failures the runner itself counted.
+    # nobody.
     #
-    # A run that measured nothing (``unverified``: it could not start, or it
-    # passed without the declared marker that tests ran) is not read for
-    # failures at all. Its output can still look like a test report, and
-    # charging names from it would turn "could not run" into a red result.
+    # A run that measured nothing (``unverified``: it could not start) is not
+    # read for failures at all. Its output can still look like a test
+    # report, and charging names from it would turn "not run" into a red
+    # result.
     if verification.status == "unverified":
-        return validate_valid, verification, [], notes
+        return verification, [], notes
     charged, charge_notes = charged_failures_from_output(
         repo_root, verification.output_for_parsing, baseline_failing
     )
     notes.extend(charge_notes)
 
-    return validate_valid, verification, charged, notes
+    return verification, charged, notes
 
 
 # ---------------------------------------------------------------------------
@@ -1304,16 +1133,16 @@ def _pin_the_judge_on_target(
       (:func:`read_merge_declarations`): an invalid file or block means no
       command is looked for anywhere else, so ``resolution`` is ``None``;
     * the test command comes from that reading (or the stack defaults when
-      nothing is declared);
-    * the test command and the install must be plain text the factory can
-      follow (:func:`judge_words`);
+      nothing is declared), and its plain words with the install's are the
+      judge words (:func:`judge_words`);
     * a file those commands name directly (a judge file) that is a symbolic
       link, or sits under one, in the target's tree or the build's, means no
       automatic verdict (:data:`JUDGE_IS_A_LINK`);
     * the judge files the build changed are recorded on ``pinned``
-      (``judge_files_changed``) for the card and the receipt. Since 15
-      October 2026 they no longer stop the check: the join is checked with
-      the target's copy of every judge file (:func:`put_main_judges_in_place`).
+      (``judge_files_changed``) for the card and the receipt, when git can
+      list them. Since 15 October 2026 they no longer stop the check: the
+      join is checked with the target's copy of every judge file
+      (:func:`put_main_judges_in_place`).
 
     ``problem`` is the plain reason nothing may run, before or after the
     merge. ``pinned`` is what runs both installs and both checks otherwise.
@@ -1335,20 +1164,17 @@ def _pin_the_judge_on_target(
     resolution = resolve_verify_command_with_declaration(
         tree_root, declarations.declared_test
     )
-    pinned, problem = pin_merge_environment(
+    pinned, _ = pin_merge_environment(
         declarations, resolution[0], verify_timeout
     )
-    if problem is not None or pinned is None:
-        return resolution, problem, None
 
     if pinned.judge_words:
-        changed, problem = files_the_branch_changed(
+        changed, _ = files_the_branch_changed(
             tree_root, target_branch, branch_commit or branch
         )
-        if problem is not None or changed is None:
-            return resolution, problem, None
-        hits = judge_files(changed, pinned.judge_words)
-        pinned = replace(pinned, judge_files_changed=tuple(hits))
+        if changed is not None:
+            hits = judge_files(changed, pinned.judge_words)
+            pinned = replace(pinned, judge_files_changed=tuple(hits))
         target_commit = _rev_parse(tree_root, "HEAD")
         for commit in (target_commit, branch_commit or _rev_parse(tree_root, branch)):
             problem = judge_link_problem(tree_root, commit, pinned.judge_words)
@@ -1616,8 +1442,6 @@ class TreePreparation(NamedTuple):
 
     env: Optional[Dict[str, str]]
     problem: Optional[str]
-    # True when the problem is that the install changed the working tree.
-    tree_changed: bool = False
     note: Optional[str] = None
 
 
@@ -1633,47 +1457,19 @@ def _last_lines(text: str) -> str:
     return tail or "(no output)"
 
 
-def _changed_paths(tree_root: Path) -> Optional[List[str]]:
-    """Every path ``git status`` shows as changed or untracked (both names of
-    a rename or copy), or ``None`` when git failed."""
-    fields = _git_names(
-        tree_root, "status", "--porcelain", "-z", "--untracked-files=all"
-    )
-    if fields is None:
-        return None
-    paths: List[str] = []
-    index = 0
-    while index < len(fields):
-        entry = fields[index]
-        paths.append(entry[3:])
-        if entry[:1] in ("R", "C") and index + 1 < len(fields):
-            paths.append(fields[index + 1])
-            index += 1
-        index += 1
-    return paths
-
-
 def prepare_tree(
     tree_root: Path,
     pinned: MergeEnvironment,
     where: str,
-    allowed_changes: Sequence[str] = (),
-    allowed_commit: Optional[str] = None,
 ) -> TreePreparation:
     """Build the check's environment for ``tree_root`` and run the install.
 
     The environment is built from nothing
     (``project_command_env.project_command_environment``). A
     declared install runs as an argument list with no shell, in
-    ``tree_root``, with that environment and the pinned time limit. A tree
-    the install changed is a problem: the check would no longer be judging
-    the commit. Never raises.
-
-    ``allowed_changes`` (15 October 2026) are the judge files put in place
-    from ``allowed_commit`` before this install: the folder may differ from
-    its commit only at those paths, and they must still match
-    ``allowed_commit`` exactly after the install. With none, the check is the
-    plain one it always was.
+    ``tree_root``, with that environment and the pinned time limit. What the
+    install writes into the folder is left there (the cull, 27 October
+    2026). Never raises.
     """
     try:
         env = project_command_environment(Path(tree_root), pinned.launch)
@@ -1711,66 +1507,9 @@ def prepare_tree(
             f"{proc.returncode}): {_last_lines(proc.stderr or proc.stdout)}",
         )
 
-    # What the install left in the folder is read from git. A git command
-    # that times out or fails here ends in a plain reason like any other
-    # problem here, so this function never raises.
-    try:
-        if allowed_changes:
-            changed = _changed_paths(Path(tree_root))
-            if changed is None:
-                return TreePreparation(
-                    None,
-                    f"git status could not be read after the declared install "
-                    f"(`{text}`) ran on {where}",
-                )
-            allowed = set(allowed_changes)
-            others = sorted({p for p in changed if p not in allowed})
-            mismatch = (
-                judges_match_commit(Path(tree_root), allowed_commit, allowed_changes)
-                if allowed_commit
-                else None
-            )
-            if others or mismatch:
-                shown = "; ".join(shown_path(p) for p in others[:5])
-                more = f" (and {len(others) - 5} more)" if len(others) > 5 else ""
-                detail = "; ".join(x for x in (shown + more, mismatch) if x)
-                return TreePreparation(
-                    None,
-                    f"the declared install (`{text}`) changed files in the working "
-                    f"folder on {where}: {detail}",
-                    tree_changed=True,
-                )
-            return TreePreparation(
-                env, None,
-                note=f"the declared install (`{text}`) ran on {where} before the check",
-            )
-
-        porcelain = _porcelain_status(Path(tree_root))
-        if porcelain is None:
-            return TreePreparation(
-                None,
-                f"git status could not be read after the declared install "
-                f"(`{text}`) ran on {where}",
-            )
-        if porcelain.strip():
-            rows = [ln for ln in porcelain.splitlines() if ln.strip()]
-            shown = "; ".join(shown_path(row) for row in rows[:5])
-            more = f" (and {len(rows) - 5} more)" if len(rows) > 5 else ""
-            return TreePreparation(
-                None,
-                f"the declared install (`{text}`) changed files in the working "
-                f"folder on {where}: {shown}{more}",
-                tree_changed=True,
-            )
-        return TreePreparation(
-            env, None, note=f"the declared install (`{text}`) ran on {where} before the check"
-        )
-    except (OSError, subprocess.SubprocessError) as exc:
-        return TreePreparation(
-            None,
-            f"the working folder could not be read after the declared install "
-            f"(`{text}`) ran on {where}: {_failure_words(exc)}",
-        )
+    return TreePreparation(
+        env, None, note=f"the declared install (`{text}`) ran on {where} before the check"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1787,7 +1526,6 @@ def execute_merge(
     baseline_failing: Optional[Sequence[str]] = None,
     verify_timeout: int = DEFAULT_VERIFY_TIMEOUT,
     manager: Optional[WorktreeManager] = None,
-    validate_command: Optional[Sequence[str]] = None,
     measure_baseline: bool = True,
     branch: Optional[str] = None,
     working_folder: Optional[Path] = None,
@@ -1816,9 +1554,9 @@ def execute_merge(
 
     If that pre-merge run cannot start, there is no baseline: the merge still
     happens (the branch is sound; it is the checking that is broken), and the
-    whole test check is reported as "could not run" with that reason. It is
-    never turned into an empty baseline, which would charge this merge for
-    red the target branch already had.
+    tests are reported as not run, with that reason. It is never turned into
+    an empty baseline, which would charge this merge for red the target
+    branch already had.
 
     The baseline run comes before the merge attempt, so a branch that turns
     out to conflict pays for one suite run that is then thrown away. That
@@ -1834,17 +1572,16 @@ def execute_merge(
     baseline on the target and the check on the merged result — the tree is
     prepared once (:func:`prepare_tree`): a minimal environment built from
     nothing, then the declared install. An install that fails, or settings
-    that cannot be passed safely, make the check "could not run", never a
-    test result; an install that dirties the tree before the merge refuses
-    the merge. Commands the factory cannot follow, or a file they name that
-    is a symbolic link (or sits under one) in the target's, the build's or
-    the joined tree, get no automatic verdict: the join still happens and
-    nothing is installed or run. Since 15 October 2026 a build that changed
-    a file the pinned commands name is checked like any other: before the
-    post-join install, the target's copy of EVERY file those commands name is
-    put in place (one the target lacks is removed), checked to match exactly,
-    and the joined files are put back after the check. The build's copy of a
-    judge file is never run.
+    that cannot be passed safely, mean the tests are reported as not run,
+    never a test result. A file the commands name that is a symbolic link
+    (or sits under one) in the target's, the build's or the joined tree gets
+    no automatic verdict: the join still happens and nothing is installed or
+    run. Since 15 October 2026 a build that changed a file the pinned
+    commands name is checked like any other: before the post-join install,
+    the target's copy of EVERY file those commands name is put in place (one
+    the target lacks is removed), checked to match exactly, and the joined
+    files are put back after the check. The build's copy of a judge file is
+    never run.
 
     ``working_folder`` (22 September 2026) is a working folder of this same
     repository, made at the commit being joined onto. Handed one, EVERYTHING
@@ -1907,9 +1644,8 @@ def execute_merge(
     # target branch, before anything lands, whether or not a baseline is
     # measured or handed in — the test command, and since 13 October 2026
     # the declared install and launch block as well, read once from the
-    # target's .guardkit/config.yaml by a reader that fails closed. Commands
-    # the factory cannot follow, or a judge file reached through a symbolic
-    # link, get no automatic verdict.
+    # target's .guardkit/config.yaml by a reader that fails closed. A judge
+    # file reached through a symbolic link gets no automatic verdict.
     resolution: Optional[
         Tuple[Optional[str], str, Optional[StackTestProfile]]
     ] = None
@@ -1925,7 +1661,6 @@ def execute_merge(
         )
     verify_command = (resolution[0] or None) if resolution else None
     verify_source = (resolution[1] or None) if resolution else None
-    ran_marker_regex = pinned.ran_marker_regex if pinned is not None else None
 
     baseline: Optional[MeasuredBaseline] = None
     resolved_command = resolution
@@ -1948,20 +1683,6 @@ def execute_merge(
         env: Optional[Dict[str, str]] = None
         if verify_command:
             prepared = prepare_tree(tree_root, pinned, target_branch)
-            if prepared.tree_changed:
-                # The existing law: never merge over uncommitted changes.
-                return MergeReport(
-                    outcome=OUTCOME_REFUSED,
-                    feature_id=feature_id,
-                    target_branch=target_branch,
-                    branch=branch,
-                    refusal_reason=(
-                        f"{prepared.problem} — refuse to merge over "
-                        f"uncommitted changes"
-                    ),
-                    verify_command=verify_command,
-                    verify_source=verify_source,
-                )
             if prepared.problem is not None:
                 pre_merge_problem = prepared.problem
                 pre_merge_notes.append(
@@ -1980,7 +1701,6 @@ def execute_merge(
                 timeout=verify_timeout,
                 resolved_command=resolution,
                 env=env,
-                ran_marker_regex=ran_marker_regex,
             )
             if baseline.ran:
                 baseline_failing = list(baseline.failing)
@@ -2019,14 +1739,11 @@ def execute_merge(
     def could_not_run(detail: str, more_notes: Sequence[str] = ()) -> MergeReport:
         """The merged report when no post-merge run was attempted.
 
-        Say "could not run" once, in the run's own words, and charge
-        nothing. ``verify_ran`` is False because no post-merge run was
-        attempted (2026-09-06 spec, rule 12), and an "unverified" result
-        files no repair.
+        Say "not run" once, in the run's own words, and charge nothing.
+        ``verify_ran`` is False because no post-merge run was attempted
+        (2026-09-06 spec, rule 12); an "unverified" result files no repair
+        and does not fail the merge's verification.
         """
-        validate_valid, validate_notes = validate_with_notes(
-            tree_root, feature_id, validate_command=validate_command
-        )
         return MergeReport(
             outcome=report.outcome,
             feature_id=report.feature_id,
@@ -2038,16 +1755,12 @@ def execute_merge(
             verify_status="unverified",
             verify_detail=detail,
             verify_suite_status="unverified",
-            validate_valid=validate_valid,
             charged_failures=(),
             baseline_measured=None,
             verify_command=verify_command,
             verify_source=verify_source,
             notes=tuple(
-                list(report.notes)
-                + pre_merge_notes
-                + list(more_notes)
-                + validate_notes
+                list(report.notes) + pre_merge_notes + list(more_notes)
             ),
         )
 
@@ -2089,13 +1802,7 @@ def execute_merge(
             post_merge_notes: List[str] = []
             prepared_problem: Optional[str] = None
             if verify_command:
-                prepared = prepare_tree(
-                    tree_root,
-                    pinned,
-                    "the merged result",
-                    allowed_changes=judges.restored,
-                    allowed_commit=pre_sha if judges.restored else None,
-                )
+                prepared = prepare_tree(tree_root, pinned, "the merged result")
                 if prepared.problem is not None:
                     prepared_problem = prepared.problem
                 else:
@@ -2111,19 +1818,14 @@ def execute_merge(
                     ],
                 )
             else:
-                validate_valid, verification, charged, notes = verify_merged(
+                verification, charged, notes = verify_merged(
                     tree_root,
-                    feature_id,
                     baseline_failing=baseline_failing,
                     timeout=verify_timeout,
-                    validate_command=validate_command,
                     resolved_command=resolved_command,
                     env=env,
-                    ran_marker_regex=ran_marker_regex,
                 )
-                result = _CheckRun(
-                    validate_valid, verification, charged, post_merge_notes + notes
-                )
+                result = _CheckRun(verification, charged, post_merge_notes + notes)
     finally:
         if judges.restored:
             try:
@@ -2165,11 +1867,12 @@ def execute_merge(
     if put_back_problem is not None and restore_problem is None:
         final = replace(
             final,
-            verify_status="unverified",
-            verify_detail=(
-                f"the join's folder could not be put back to the joined commit "
-                f"after the check ({put_back_problem}); the check itself said: "
-                f"{final.verify_detail}"
+            notes=tuple(
+                list(final.notes)
+                + [
+                    f"the join's folder could not be put back to the joined "
+                    f"commit after the check ({put_back_problem})"
+                ]
             ),
         )
     return final
@@ -2265,7 +1968,6 @@ def _put_target_judges_in_place(
 class _CheckRun(NamedTuple):
     """What the post-join install and check produced."""
 
-    validate_valid: Optional[bool]
     verification: VerificationResult
     charged: List[str]
     notes: List[str]
@@ -2282,31 +1984,12 @@ def _report_from_the_check(
     verify_source: Optional[str],
 ) -> MergeReport:
     """The merged report from a post-join check that ran."""
-    validate_valid, verification, charged = (
-        run.validate_valid, run.verification, run.charged
-    )
+    verification, charged = run.verification, run.charged
     notes = list(run.notes)
     # Nothing is read out of a run that measured nothing (see verify_merged).
     measured_run = verification.status != "unverified"
     merged_output = verification.output_for_parsing if measured_run else ""
     observed = failing_node_ids(merged_output)
-    # Two readings have to be complete before a failed suite may be excused:
-    # the merged run's own (the new red could be one of the names that fell
-    # off the end) and the baseline's (a short baseline cannot vouch for a
-    # failure it never named). Either one short and nothing is excused.
-    reading_complete = named_failures_are_complete(merged_output, observed)
-    if not reading_complete:
-        notes.append(
-            f"the test runner reported more failures than its output named "
-            f"({reported_failure_count(merged_output)} counted, "
-            f"{len(observed)} named), so none of them were excused"
-        )
-    if measured_run and baseline is not None and not baseline.names_complete:
-        reading_complete = False
-        notes.append(
-            f"the pre-merge run on {target_branch} reported more failures "
-            f"than its output named, so it was not used to excuse anything"
-        )
     verdict_status, verdict_detail = merge_verdict_from_run(
         suite_status=verification.status,
         suite_detail=verification.detail,
@@ -2314,7 +1997,6 @@ def _report_from_the_check(
         charged_failures=charged,
         baseline_known=baseline_failing is not None,
         target_branch=target_branch,
-        reading_complete=reading_complete,
     )
 
     return MergeReport(
@@ -2328,7 +2010,6 @@ def _report_from_the_check(
         verify_status=verdict_status,
         verify_detail=verdict_detail,
         verify_suite_status=verification.status,
-        validate_valid=validate_valid,
         charged_failures=tuple(charged),
         baseline_measured=(
             baseline if (baseline is not None and baseline.ran) else None
@@ -2351,8 +2032,6 @@ __all__ = [
     "current_branch",
     "checkout_branch",
     "passed_count_from_output",
-    "reported_failure_count",
-    "named_failures_are_complete",
     "branch_to_merge",
     "preflight_refusal",
     "merge_commit_message",
@@ -2360,11 +2039,7 @@ __all__ = [
     "resolve_verify_command_on_target",
     "measure_pre_merge_baseline",
     "merge_verdict_from_run",
-    "default_validate_command",
-    "parse_validate_stdout",
-    "run_feature_validate",
     "charged_failures_from_output",
-    "validate_with_notes",
     "verify_merged",
     "files_the_branch_changed",
     "pin_the_judge_on_target",

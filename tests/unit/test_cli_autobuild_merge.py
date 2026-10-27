@@ -7,7 +7,7 @@ Exit codes under test:
     0 merged (verification off, or on and passed)
     2 refused (dirty / moved / missing branch)
     3 conflict (aborted, tree clean)
-    4 merged but verification failed-or-unverified
+    4 merged but the tests ran and failed on something the merge caused
 """
 
 from __future__ import annotations
@@ -192,22 +192,22 @@ class TestMergeConflict:
 
 
 # ---------------------------------------------------------------------------
-# exit code 4 — merged, but verification gave no pass
+# exit code 4 — merged, but the tests ran and failed
 # ---------------------------------------------------------------------------
 
 
 class TestMergeVerifyExitCode:
-    def test_merged_but_unverified_exits_four(self, cli_runner, merge_repo):
+    def test_merged_with_tests_not_run_exits_zero(self, cli_runner, merge_repo):
         # The fixture repo has no tests/ and no runner: verification resolves
-        # to no command -> "unverified"; feature validate finds no feature.
-        # Both are honestly non-passes, so the exit is 4 — never 0.
+        # to no command -> "unverified". Since the cull (27 October 2026)
+        # tests that were not run do not fail the merge.
         result = cli_runner.invoke(merge, ["FEAT-C1"])
 
-        assert result.exit_code == 4, result.output
+        assert result.exit_code == 0, result.output
         assert _branch_exists(merge_repo, "autobuild/FEAT-C1")
         # The merge itself happened; the report says the verify part plainly.
         assert (merge_repo / "feature.txt").exists()
-        assert "not a pass" in result.output or "NOT" in result.output
+        assert "tests were not run" in result.output
 
 
 # ---------------------------------------------------------------------------
@@ -246,17 +246,15 @@ class TestBaselineJsonLoading:
         )
         assert _load_baseline_failing(p) == ["tests/a.py::test_x"]
 
-    def test_object_without_failing_node_ids_raises(self, tmp_path: Path):
+    def test_object_without_failing_node_ids_is_no_baseline(self, tmp_path: Path):
         p = tmp_path / "baseline.json"
         p.write_text(json.dumps({"command": "pytest"}), encoding="utf-8")
-        with pytest.raises(ValueError):
-            _load_baseline_failing(p)
+        assert _load_baseline_failing(p) is None
 
-    def test_scalar_raises(self, tmp_path: Path):
+    def test_scalar_is_no_baseline(self, tmp_path: Path):
         p = tmp_path / "baseline.json"
         p.write_text(json.dumps(42), encoding="utf-8")
-        with pytest.raises(ValueError):
-            _load_baseline_failing(p)
+        assert _load_baseline_failing(p) is None
 
     def test_missing_file_is_a_cli_usage_error(
         self, cli_runner, merge_repo

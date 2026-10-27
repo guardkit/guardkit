@@ -6,12 +6,9 @@ the P2 handoff clause: the review runs as an ADVISORY step behind the default-OF
 flag, its F14 record attached to the flow's artifacts, and it NEVER fails the
 flow. Layers exercised:
 
-1. The gate-flow step (:func:`run_review_gate_step`):
-   - flag OFF ⇒ a PROVABLE no-op (the payload factory is never called → no git),
-   - flag ON ⇒ emits an F14 record and NEVER blocks (``blocking`` stays False),
-   - a seat outage / an unreadable subject is a NAMED outcome, never a raise,
-   - the DF-017 ``route`` seam is called with the record; a router that raises is
-     swallowed (advisory), never propagated.
+(27 October 2026: the gate-flow step was removed with the other advisory
+steps; the on-demand command stays.)
+
 2. The on-demand ``guardkit qa review`` CLI entry:
    - flag OFF ⇒ no-op, exit 0, git never touched,
    - flag ON ⇒ emits, exit 0 (advisory never blocks) — full offline wiring,
@@ -31,17 +28,13 @@ import pytest
 from click.testing import CliRunner
 
 from guardkit.cli.qa import qa
-from guardkit.qa.diff_ingest import DiffIngestError, ReviewPayload, parse_unified_diff
-from guardkit.qa.formats import validate_instance
-from guardkit.qa.formats.review_findings import ReviewFindings
+from guardkit.qa.diff_ingest import ReviewPayload, parse_unified_diff
 from guardkit.qa.review_seat import (
     ALLOWED_SEATS,
     REVIEW_SEAT_ENV,
     REVIEW_SEAT_MODEL_ENV,
-    SEAT_NOT_CONFIGURED_ERROR,
     ReviewOutcome,
     default_merge_candidate_payload,
-    run_review_gate_step,
 )
 
 
@@ -140,72 +133,9 @@ def repo(tmp_path: Path) -> Path:
 # ===========================================================================
 
 
-def test_gate_step_off_is_provable_noop(tmp_path: Path) -> None:
-    calls = {"factory": 0, "seat": 0}
-
-    def factory() -> ReviewPayload:
-        calls["factory"] += 1
-        return _payload()
-
-    def seat_call(_s: str, _u: str, _m: str) -> str:  # pragma: no cover - must not run
-        calls["seat"] += 1
-        return SEAT_JSON
-
-    outcome = run_review_gate_step(
-        tmp_path,
-        payload_factory=factory,
-        seat_call=seat_call,
-        running_probe=_idle_probe(),
-    )
-    assert outcome.enabled is False
-    assert outcome.record is None
-    assert outcome.blocking is False
-    # The provable-no-op guarantee: neither the payload nor the seat was touched.
-    assert calls == {"factory": 0, "seat": 0}
-
-
 # ===========================================================================
 # 2. The gate-flow step — flag ON emits and NEVER blocks.
 # ===========================================================================
-
-
-def test_gate_step_on_emits_and_never_blocks(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    _flag_on(monkeypatch)
-    outcome = run_review_gate_step(
-        tmp_path,
-        payload_factory=_payload,
-        write=False,
-        seat_call=lambda _s, _u, _m: SEAT_JSON,
-        running_probe=_idle_probe(),
-    )
-    assert outcome.enabled is True
-    assert outcome.blocking is False  # advisory — never blocks
-    assert outcome.error is None
-    assert isinstance(outcome.record, ReviewFindings)
-    assert outcome.record.stats.findings_total == 1
-    # Reading is not a verdict: a reading-only seat never earns confirmed.
-    assert outcome.record.stats.confirmed == 0
-
-
-def test_gate_step_on_writes_f14_artifact(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    _flag_on(monkeypatch)
-    outcome = run_review_gate_step(
-        tmp_path,
-        payload_factory=_payload,
-        write=True,
-        seat_call=lambda _s, _u, _m: SEAT_JSON,
-        running_probe=_idle_probe(),
-    )
-    assert outcome.emitted_path is not None
-    written = Path(outcome.emitted_path)
-    assert written.is_file()
-    # The artifact round-trips through the pinned F14 loader (schema-valid).
-    record = validate_instance("review-findings", written)
-    assert record.stats.findings_total == 1
 
 
 # ===========================================================================
@@ -213,88 +143,9 @@ def test_gate_step_on_writes_f14_artifact(
 # ===========================================================================
 
 
-def test_gate_step_seat_outage_is_named_not_raised(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    _flag_on(monkeypatch)
-
-    def boom(_s: str, _u: str, _m: str) -> str:
-        raise ConnectionError("seat unreachable")
-
-    outcome = run_review_gate_step(
-        tmp_path,
-        payload_factory=_payload,
-        seat_call=boom,
-        running_probe=_idle_probe(),
-    )
-    assert outcome.enabled is True
-    assert outcome.blocking is False
-    assert outcome.record is None
-    assert outcome.error is not None and "seat call failed" in outcome.error
-
-
-def test_gate_step_unreadable_subject_is_named_not_raised(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    _flag_on(monkeypatch)
-
-    def bad_factory() -> ReviewPayload:
-        raise DiffIngestError("git exploded")
-
-    outcome = run_review_gate_step(
-        tmp_path,
-        payload_factory=bad_factory,
-        seat_call=lambda _s, _u, _m: SEAT_JSON,
-        running_probe=_idle_probe(),
-    )
-    assert outcome.enabled is True
-    assert outcome.blocking is False
-    assert outcome.record is None
-    assert outcome.error is not None and "could not build the review subject" in outcome.error
-
-
 # ===========================================================================
 # 4. The DF-017 route seam — called with the record; a raising router is swallowed.
 # ===========================================================================
-
-
-def test_gate_step_route_hook_receives_record(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    _flag_on(monkeypatch)
-    routed: list[ReviewFindings] = []
-    outcome = run_review_gate_step(
-        tmp_path,
-        payload_factory=_payload,
-        write=False,
-        route=routed.append,
-        seat_call=lambda _s, _u, _m: SEAT_JSON,
-        running_probe=_idle_probe(),
-    )
-    assert len(routed) == 1
-    assert routed[0] is outcome.record
-
-
-def test_gate_step_route_hook_raising_is_swallowed(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    _flag_on(monkeypatch)
-
-    def bad_route(_record: ReviewFindings) -> None:
-        raise RuntimeError("router bug")
-
-    outcome = run_review_gate_step(
-        tmp_path,
-        payload_factory=_payload,
-        write=False,
-        route=bad_route,
-        seat_call=lambda _s, _u, _m: SEAT_JSON,
-        running_probe=_idle_probe(),
-    )
-    # Advisory: the record still emitted; the router failure is a named note.
-    assert outcome.record is not None
-    assert outcome.blocking is False
-    assert any("finding router raised" in n for n in outcome.notes)
 
 
 # ===========================================================================
@@ -426,35 +277,6 @@ def test_cli_head_without_base_exit_two(
 # ===========================================================================
 # 9. No seat named (2026-10-05) — no built-in seat, so no model call.
 # ===========================================================================
-
-
-def test_gate_step_with_no_seat_named_makes_no_call(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    _flag_on(monkeypatch)
-    monkeypatch.delenv(REVIEW_SEAT_MODEL_ENV, raising=False)
-    calls = {"seat": 0, "probe": 0}
-
-    def seat_call(_s: str, _u: str, _m: str) -> str:  # pragma: no cover - must not run
-        calls["seat"] += 1
-        return SEAT_JSON
-
-    def probe():  # pragma: no cover - must not run
-        calls["probe"] += 1
-        return []
-
-    outcome = run_review_gate_step(
-        tmp_path,
-        payload_factory=_payload,
-        write=True,
-        seat_call=seat_call,
-        running_probe=probe,
-    )
-    assert outcome.enabled is True
-    assert outcome.blocking is False
-    assert outcome.record is None
-    assert outcome.error == SEAT_NOT_CONFIGURED_ERROR
-    assert calls == {"seat": 0, "probe": 0}
 
 
 def test_cli_with_no_seat_named_reports_it_and_makes_no_call(

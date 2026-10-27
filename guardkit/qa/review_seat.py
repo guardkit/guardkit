@@ -65,7 +65,7 @@ import re
 import time
 import urllib.error
 import urllib.request
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
@@ -101,9 +101,6 @@ REVIEW_SEAT_MAX_CHARS: int = int(
     os.environ.get(REVIEW_SEAT_MAX_CHARS_ENV, "300000")
 )
 
-# Protected section markers that must NEVER be trimmed.
-_REVIEW_INSTRUCTION_HEADER = "## Review subject"
-_REVIEW_FINDING_SCHEMA = "## Diff under review"
 
 __all__ = [
     "REVIEW_SEAT_ENV",
@@ -128,7 +125,6 @@ __all__ = [
     "PayloadFactory",
     "FindingRouter",
     "default_merge_candidate_payload",
-    "run_review_gate_step",
 ]
 
 # ---------------------------------------------------------------------------
@@ -1098,78 +1094,3 @@ def default_merge_candidate_payload(
         return ingest_commit(repo_root, ref, git_run=git_run)
 
 
-def run_review_gate_step(
-    repo_root: Path,
-    *,
-    payload_factory: Optional[PayloadFactory] = None,
-    review_id: Optional[str] = None,
-    model: Optional[str] = None,
-    base_url: Optional[str] = None,
-    write: bool = True,
-    route: Optional[FindingRouter] = None,
-    repo_context: Optional[str] = None,
-    trust_seat_reproduction: bool = False,
-    seat_call: Optional[SeatCall] = None,
-    running_probe: Optional[RunningProbe] = None,
-    sleep: Callable[[float], None] = time.sleep,
-) -> ReviewOutcome:
-    """Run the advisory review as a STEP in the gate flow (S5, pre-merge placement).
-
-    Flag-gated on ``qa.review_seat`` (default OFF). When OFF this is a **provable
-    no-op**: ``payload_factory`` is never called (no git), no seat call, nothing
-    written — the tier-1-stage discipline applied to the review seat.
-
-    When ON it builds the merge-candidate payload (default:
-    :func:`default_merge_candidate_payload`), runs :func:`run_advisory_review`
-    (which writes the F14 record as a flow artifact when ``write=True``), and —
-    if a ``route`` hook is supplied (the DF-017 seam "where it exists") — routes
-    the emitted record. It ALWAYS returns ``blocking=False`` and NEVER raises: an
-    advisory step can inform a flow but must never fail it. Promotion to blocking
-    is the S-4 calibration gate (Rich's bar), outside this function.
-    """
-    if not is_review_seat_enabled(repo_root):
-        return ReviewOutcome(
-            enabled=False,
-            notes=(
-                "review gate step: flag OFF (qa.review_seat) — no-op, "
-                "payload not built, no seat call",
-            ),
-        )
-
-    factory = payload_factory or (lambda: default_merge_candidate_payload(repo_root))
-    try:
-        payload = factory()
-    except Exception as exc:  # noqa: BLE001 — advisory: an unreadable subject is named, not raised
-        return ReviewOutcome(
-            enabled=True,
-            error=(
-                f"review gate step: could not build the review subject "
-                f"({type(exc).__name__}): {exc}"
-            ),
-        )
-
-    outcome = run_advisory_review(
-        repo_root,
-        payload,
-        review_id=review_id,
-        model=model,
-        base_url=base_url,
-        repo_context=repo_context,
-        write=write,
-        trust_seat_reproduction=trust_seat_reproduction,
-        seat_call=seat_call,
-        running_probe=running_probe,
-        sleep=sleep,
-    )
-
-    if route is not None and outcome.record is not None:
-        try:
-            route(outcome.record)
-        except Exception as exc:  # noqa: BLE001 — advisory: a routing bug is named, never raised
-            outcome = replace(
-                outcome,
-                notes=outcome.notes
-                + (f"finding router raised (ignored, advisory): {exc}",),
-            )
-
-    return outcome

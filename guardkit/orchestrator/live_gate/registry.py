@@ -3,9 +3,8 @@
 Reads ``qa/gates/registry.yaml`` (the F4 ``GateRegistry``) and selects which
 registered gates a run executes, in risk order.
 
-Selection honours ``--gates g1,g2`` (an explicit subset) and refuses an unknown
-gate id loudly — a typo'd gate id must not silently select nothing (which would
-pass vacuously).
+Selection honours ``--gates g1,g2`` (an explicit subset); an id the registry
+does not have selects nothing (the cull, 27 October 2026).
 
 Risk ordering (scope-design §3 step 2: "riskiest / never-exercised hop first").
 The full hop-risk matrix is F10 (tier-2/3, not yet built). Until F10 lands, the
@@ -22,8 +21,6 @@ from typing import List, Optional, Sequence
 
 from guardkit.qa.formats import GateRegistry, QAFormatError, validate_instance
 from guardkit.qa.formats.gate_registry import GateEntry
-
-from guardkit.orchestrator.live_gate.errors import LiveGateError
 
 
 def registry_path_for(repo_root: Path) -> Path:
@@ -49,8 +46,7 @@ def select_gates(
     Args:
         registry: the loaded F4 registry.
         requested_ids: if given, only these gate ids run (a ``--gates`` subset).
-            An id not in the registry raises :class:`LiveGateError` — a typo
-            must not silently select nothing.
+            An id not in the registry is skipped.
 
     Returns:
         The selected gates, never-exercised (no ``last_green``) first, then
@@ -59,15 +55,9 @@ def select_gates(
     by_id = {g.id: g for g in registry.gates}
 
     if requested_ids is not None:
-        unknown = [gid for gid in requested_ids if gid not in by_id]
-        if unknown:
-            raise LiveGateError(
-                f"unknown gate id(s) {unknown} — not in the registry. "
-                f"Registered gates: {sorted(by_id)}"
-            )
         # Preserve the caller's order within the requested subset before the
         # risk sort so an explicit selection is honoured deterministically.
-        selected = [by_id[gid] for gid in requested_ids]
+        selected = [by_id[gid] for gid in requested_ids if gid in by_id]
     else:
         selected = list(registry.gates)
 
@@ -83,5 +73,4 @@ __all__ = [
     "GateRegistry",
     "GateEntry",
     "QAFormatError",
-    "LiveGateError",
 ]

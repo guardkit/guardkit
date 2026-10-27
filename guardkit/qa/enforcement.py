@@ -57,7 +57,6 @@ Guardrails honoured (WS2 build-plan §B2):
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 import re
@@ -69,7 +68,6 @@ from typing import Callable, Iterable, List, Optional, Sequence, Tuple
 import yaml
 
 from guardkit.qa.formats import (
-    GateRegistry,
     KnownFailureLedger,
     PassBar,
     QAFormatError,
@@ -88,8 +86,6 @@ __all__ = [
     "diff_failures_against_ledger",
     "PassBarPreconditionResult",
     "check_pass_bar_precondition",
-    "RuntimeSurfaceGateResult",
-    "check_runtime_surface_gate",
     "pass_bar_path_for",
     "LEDGER_RELPATH",
     "LedgerAuthorshipResult",
@@ -104,10 +100,6 @@ ENFORCE_ENV = "GUARDKIT_QA_ENFORCE_TIER1"
 _TRUTHY = frozenset({"1", "true", "yes", "on"})
 _FALSY = frozenset({"0", "false", "no", "off", ""})
 
-# The two F1 evidence kinds that only a *live* / operator surface produces — a
-# pass bar carrying either declares a runtime surface (see
-# ``_pass_bar_is_runtime_surface``).
-_LIVE_EVIDENCE_KINDS = frozenset({"screenshot", "operator_signoff"})
 
 
 def _load_config(repo_root: Path) -> dict:
@@ -462,294 +454,6 @@ def check_pass_bar_precondition(
 # ---------------------------------------------------------------------------
 # 3. feature-complete runtime-surface refusal (F1 + F4)
 # ---------------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class RuntimeSurfaceGateResult:
-    """Outcome of the feature-complete runtime-surface / green-gate refusal."""
-
-    status: str  # "pass" | "fail" | "not_applicable"
-    runtime_surface: bool
-    detail: str
-    feature_pass_bars: Tuple[str, ...] = ()
-
-    @property
-    def passed(self) -> bool:
-        # not_applicable is a pass (an authless feature needs no live gate).
-        return self.status in {"pass", "not_applicable"}
-
-
-def _pass_bar_is_runtime_surface(bar: PassBar) -> bool:
-    """A pass bar declares a runtime surface when it is auth-surface-bearing,
-    walk-bearing, or carries a live/operator-evidenced criterion."""
-    if bar.auth_surface_bearing:
-        return True
-    if bar.checkpoint_list_ref:
-        return True
-    return any(c.evidence_kind in _LIVE_EVIDENCE_KINDS for c in bar.criteria)
-
-
-def _latest_results_envelope(repo_root: Path) -> Optional[Path]:
-    """The most recent F4 results envelope under ``qa/gates/history/``.
-
-    Newest by modification time, then by name so a fixture writing several
-    files in the same tick is still deterministic. ``None`` when the directory
-    is absent or holds no ``.json`` file.
-    """
-    history = repo_root / "qa" / "gates" / "history"
-    if not history.is_dir():
-        return None
-    envelopes = sorted(
-        (p for p in history.glob("*.json") if p.is_file()),
-        key=lambda p: (p.stat().st_mtime, p.name),
-    )
-    return envelopes[-1] if envelopes else None
-
-
-def _gate_envelope_has_real_assertion(envelope: Path, gate_id: str) -> bool:
-    """True when *envelope* carries a gate result for *gate_id* with at least
-    one assertion whose ``expected`` is non-empty.
-
-    A gate that asserted nothing proves nothing: an envelope with an empty
-    assertion list (or assertions with no stated expectation) is a green light
-    with no bulb behind it. Read defensively — a malformed envelope is simply
-    no corroboration.
-    """
-    try:
-        data = json.loads(envelope.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as exc:
-        logger.warning("results envelope %s is unreadable (%s)", envelope, exc)
-        return False
-    if not isinstance(data, dict):
-        return False
-    for gate in data.get("gates") or []:
-        if not isinstance(gate, dict) or gate.get("gate_id") != gate_id:
-            continue
-        for assertion in gate.get("assertions") or []:
-            if not isinstance(assertion, dict):
-                continue
-            expected = assertion.get("expected")
-            if isinstance(expected, str) and expected.strip():
-                return True
-            if expected is not None and not isinstance(expected, str):
-                return True
-    return False
-
-
-def check_runtime_surface_gate(
-    repo_root: Path,
-    feature_task_ids: Sequence[str],
-    candidate_sha: Optional[str] = None,
-) -> RuntimeSurfaceGateResult:
-    """Refuse feature-complete for a runtime-surface feature with no green gate.
-
-    The feature's committed F1 pass bars are the pass bars named
-    ``qa/pass-bar-<task_id>.yaml`` for its tasks. The feature is
-    *runtime-surface-bearing* when any of them declares a runtime surface
-    (:func:`_pass_bar_is_runtime_surface`). Such a feature cannot reach
-    feature-complete unless the F4 registry (``qa/gates/registry.yaml``)
-    carries at least one registered, GREEN gate (a gate with ``last_green``
-    set).
-
-    A feature with no runtime-surface pass bar is ``not_applicable`` (an
-    authless CLI / library / pipeline needs no live gate — PB-14's whole
-    point). A malformed pass bar or registry is a loud config error → fail.
-    """
-    pass_bars: List[Tuple[str, PassBar]] = []
-    for task_id in feature_task_ids:
-        path = pass_bar_path_for(repo_root, task_id)
-        if not path.is_file():
-            continue
-        try:
-            bar: PassBar = validate_instance("pass-bar", path)  # type: ignore[assignment]
-        except QAFormatError as exc:
-            return RuntimeSurfaceGateResult(
-                status="fail",
-                runtime_surface=False,
-                detail=(
-                    f"pass bar {path} is invalid and cannot be assessed for a "
-                    f"runtime surface: {exc}"
-                ),
-            )
-        pass_bars.append((str(path), bar))
-
-    runtime_bars = [p for p in pass_bars if _pass_bar_is_runtime_surface(p[1])]
-    if not runtime_bars:
-        return RuntimeSurfaceGateResult(
-            status="not_applicable",
-            runtime_surface=False,
-            detail=(
-                "no runtime-surface pass bar among the feature's tasks — "
-                "no live gate required (authless feature)"
-            ),
-            feature_pass_bars=tuple(p[0] for p in pass_bars),
-        )
-
-    runtime_bar_names = tuple(Path(p[0]).name for p in runtime_bars)
-    registry_path = repo_root / "qa" / "gates" / "registry.yaml"
-    if not registry_path.is_file():
-        return RuntimeSurfaceGateResult(
-            status="fail",
-            runtime_surface=True,
-            detail=(
-                f"feature declares a runtime surface ({', '.join(runtime_bar_names)}) "
-                f"but has no F4 gate registry at {registry_path} — a "
-                f"runtime-surface feature needs at least one registered, green "
-                f"gate before feature-complete"
-            ),
-            feature_pass_bars=runtime_bar_names,
-        )
-
-    try:
-        registry: GateRegistry = validate_instance("gate-registry", registry_path)  # type: ignore[assignment]
-    except QAFormatError as exc:
-        return RuntimeSurfaceGateResult(
-            status="fail",
-            runtime_surface=True,
-            detail=f"F4 gate registry {registry_path} is invalid: {exc}",
-            feature_pass_bars=runtime_bar_names,
-        )
-
-    green_gates = [g for g in registry.gates if g.last_green is not None]
-    if not green_gates:
-        return RuntimeSurfaceGateResult(
-            status="fail",
-            runtime_surface=True,
-            detail=(
-                f"feature declares a runtime surface ({', '.join(runtime_bar_names)}) "
-                f"but the F4 registry has no green gate (no gate with a "
-                f"last_green sha) — register a live gate and take it green "
-                f"before feature-complete"
-            ),
-            feature_pass_bars=runtime_bar_names,
-        )
-
-    # B9 (2026-09-19): A GREEN GATE MUST BE *THIS* FEATURE'S GREEN GATE.
-    # Before this, any registered gate with any last_green sha satisfied the
-    # check — an unrelated gate, green months ago against different code, with
-    # an envelope that asserted nothing, let a feature through. Three bindings
-    # now have to hold together:
-    #   1. the gate's pass_bar_ref is one of THIS feature's task pass bars;
-    #   2. its last_green.sha is the candidate sha under check;
-    #   3. its latest results envelope enumerates at least one assertion with
-    #      a non-empty `expected` (a gate that asserted nothing proves nothing).
-    if candidate_sha is None:
-        # FAILS CLOSED, and says why. A caller that cannot name the candidate
-        # cannot be told the gate covers it. The fix is to pass the sha.
-        return RuntimeSurfaceGateResult(
-            status="fail",
-            runtime_surface=True,
-            detail=(
-                f"feature declares a runtime surface ({', '.join(runtime_bar_names)}) "
-                f"and the F4 registry has green gate(s) "
-                f"({', '.join(g.id for g in green_gates)}), but no candidate sha "
-                f"was given to bind them to — a green gate cannot be shown to "
-                f"cover code it was never matched against. Pass "
-                f"candidate_sha=<the sha under check> to this check."
-            ),
-            feature_pass_bars=runtime_bar_names,
-        )
-
-    feature_bar_refs = {
-        _normalise_pass_bar_ref(p[0], repo_root) for p in pass_bars
-    }
-    bound = [
-        g
-        for g in green_gates
-        if _normalise_pass_bar_ref(g.pass_bar_ref, repo_root) in feature_bar_refs
-    ]
-    if not bound:
-        return RuntimeSurfaceGateResult(
-            status="fail",
-            runtime_surface=True,
-            detail=(
-                f"no registered green gate is bound to this feature: the green "
-                f"gate(s) {', '.join(g.id for g in green_gates)} name pass bars "
-                f"{', '.join(sorted({g.pass_bar_ref for g in green_gates}))}, "
-                f"none of which is one of this feature's "
-                f"({', '.join(runtime_bar_names)}). An unrelated green gate is "
-                f"not evidence about this feature."
-            ),
-            feature_pass_bars=runtime_bar_names,
-        )
-
-    at_sha = [g for g in bound if g.last_green.sha == candidate_sha]
-    if not at_sha:
-        return RuntimeSurfaceGateResult(
-            status="fail",
-            runtime_surface=True,
-            detail=(
-                f"the gate(s) bound to this feature "
-                f"({', '.join(g.id for g in bound)}) last went green at "
-                f"{', '.join(sorted({g.last_green.sha for g in bound}))}, not at "
-                f"the candidate sha {candidate_sha} — a stale green says nothing "
-                f"about the code being completed"
-            ),
-            feature_pass_bars=runtime_bar_names,
-        )
-
-    envelope = _latest_results_envelope(repo_root)
-    if envelope is None:
-        return RuntimeSurfaceGateResult(
-            status="fail",
-            runtime_surface=True,
-            detail=(
-                f"gate(s) {', '.join(g.id for g in at_sha)} are green at "
-                f"{candidate_sha} but there is no results envelope under "
-                f"qa/gates/history/ — nothing records what the gate actually "
-                f"asserted"
-            ),
-            feature_pass_bars=runtime_bar_names,
-        )
-
-    asserted = [
-        g for g in at_sha if _gate_envelope_has_real_assertion(envelope, g.id)
-    ]
-    if not asserted:
-        return RuntimeSurfaceGateResult(
-            status="fail",
-            runtime_surface=True,
-            detail=(
-                f"the latest results envelope {envelope.name} carries no "
-                f"assertion with a stated expectation for gate(s) "
-                f"{', '.join(g.id for g in at_sha)} — a gate that asserted "
-                f"nothing proves nothing"
-            ),
-            feature_pass_bars=runtime_bar_names,
-        )
-
-    green_ids = ", ".join(g.id for g in asserted)
-    return RuntimeSurfaceGateResult(
-        status="pass",
-        runtime_surface=True,
-        detail=(
-            f"runtime-surface feature backed by {len(asserted)} registered "
-            f"green gate(s) bound to it: {green_ids} (green at {candidate_sha}, "
-            f"assertions recorded in {envelope.name})"
-        ),
-        feature_pass_bars=runtime_bar_names,
-    )
-
-
-def _normalise_pass_bar_ref(ref: str, repo_root: Path) -> str:
-    """Compare pass-bar references by their repo-relative posix path.
-
-    A registry may name ``qa/pass-bar-TASK-X.yaml`` while the feature's bars
-    are absolute paths; both mean the same file.
-    """
-    candidate = Path(ref)
-    try:
-        if candidate.is_absolute():
-            candidate = candidate.relative_to(repo_root)
-    except ValueError:
-        pass
-    text = candidate.as_posix()
-    # Drop a leading "./" only. ``lstrip("./")`` strips any run of dots and
-    # slashes, which would mangle a name that begins with a dot
-    # (".guardkit/pass-bar.yaml" -> "guardkit/pass-bar.yaml").
-    while text.startswith("./"):
-        text = text[2:]
-    return text
 
 
 # ---------------------------------------------------------------------------

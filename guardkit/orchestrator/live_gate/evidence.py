@@ -1,20 +1,12 @@
 """F5 · evidence emitter + index (LPA-07) — WS2 session B3.
 
-Two responsibilities:
+One responsibility:
 
 - **Emit the F5 index automatically.** As gates run and produce assertions that
   carry ``evidence_ref``s (screenshots/traces), the collector turns them into
   ``EvidenceEntry`` rows and writes an ``EVIDENCE.yaml`` inside the run's
   evidence dir — validated against the F5 schema before it lands, so the runner
   never writes an invalid index.
-
-- **The read-the-image hook.** LPA-07 ("the verdict step OPENS and reads key
-  shots before declaring pass") needs a vision step. On the unattended path that
-  is a local VLM (DF-001) — **an interface only in v1** (scope Q1): the runner
-  does NOT invoke it; deterministic gate assertions carry the v1 verdict and
-  image inspection is attended / operator spot-check. The default
-  :class:`UnconfiguredImageVerifier` raises loudly if anything tries to use it,
-  so a future caller cannot silently get a fabricated "inspected: pass".
 
 The F5 schema deliberately permits a null ``inspected_by``/``verdict`` (an index
 legitimately exists BEFORE inspection). The refusal — "no PASS verdict while a
@@ -24,8 +16,6 @@ with ``inspected_by=None``.
 
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
-from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional, Sequence
 
@@ -33,8 +23,6 @@ import yaml
 
 from guardkit.qa.formats.evidence_index import EvidenceEntry, EvidenceIndex
 from guardkit.qa.formats.gate_registry import GateResult
-
-from guardkit.orchestrator.live_gate.errors import LiveGateStubError
 
 #: Filename of the F5 index, living inside the evidence dir it describes.
 EVIDENCE_INDEX_NAME = "EVIDENCE.yaml"
@@ -127,43 +115,3 @@ class EvidenceCollector:
             encoding="utf-8",
         )
         return out
-
-
-# ---------------------------------------------------------------------------
-# read-the-image hook (interface only in v1, scope Q1)
-# ---------------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class ImageVerdict:
-    """One artifact's vision-step call."""
-
-    inspected_by: str
-    verdict: str
-
-
-class ImageVerifier(ABC):
-    """LPA-07 read-the-image seam: open an artifact and judge it.
-
-    v1 ships the interface only (scope Q1). The unattended implementation is a
-    local VLM (DF-001), a later seat.
-    """
-
-    @abstractmethod
-    def inspect(self, artifact_path: Path, expectation: str) -> ImageVerdict:
-        """Open ``artifact_path``, judge it against ``expectation``."""
-
-
-class UnconfiguredImageVerifier(ImageVerifier):
-    """Default: raises loudly. v1's verdict rests on deterministic assertions;
-    image inspection is attended. A silent fake here would manufacture an
-    "inspected: pass" the LPA-07 rule exists to prevent."""
-
-    def inspect(self, artifact_path: Path, expectation: str) -> ImageVerdict:
-        raise LiveGateStubError(
-            "ImageVerifier is not configured: LPA-07 image inspection is "
-            "attended in v1 (scope Q1). No unattended vision model is wired, so "
-            f"the runner cannot auto-inspect {artifact_path}. The deterministic "
-            "gate assertions carry the v1 verdict; image inspection runs "
-            "attended / via operator spot-check."
-        )

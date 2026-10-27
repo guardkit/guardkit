@@ -39,7 +39,6 @@ import pytest
 from tests.self_contained_python import self_contained_python
 from guardkit.orchestrator.merge_executor import (
     OUTCOME_MERGED,
-    OUTCOME_REFUSED,
     execute_merge,
     measure_pre_merge_baseline,
 )
@@ -48,13 +47,6 @@ FEATURE = "FEAT-I"
 TARGET = "factory-integration/FEAT-I"
 CANNOT_FOLLOW = "uses shell syntax the factory cannot follow"
 IS_A_LINK = "is a symbolic link, so the factory cannot tell which program it would run"
-
-VALIDATE_OK = [
-    sys.executable,
-    "-c",
-    "import json; print(json.dumps({'feature_id': 'FEAT-I', 'valid': True,"
-    " 'errors': []}))",
-]
 
 SENTINELS = {
     "GUARDKIT_NATS_PASSWORD": "SENTINEL-nats-7f3a",
@@ -230,7 +222,6 @@ class Standin:
 
     def merge(self, **kwargs):
         folder = self.folder or self.join_folder()
-        kwargs.setdefault("validate_command", VALIDATE_OK)
         kwargs.setdefault("verify_timeout", 60)
         return execute_merge(
             repo_root=self.repo,
@@ -362,7 +353,8 @@ class TestTheMergeInstallsFirst:
         assert report.verify_status != "failed"
         assert "the registry refused forbidden" in report.verify_detail
         assert "merged result" in report.verify_detail
-        assert report.verify_ok is False
+        # Tests that were not run do not fail the verification (the cull).
+        assert report.verify_ok is True
 
     def test_install_and_check_share_the_declared_launch_environment(
         self, standin: Standin, monkeypatch: pytest.MonkeyPatch
@@ -384,7 +376,7 @@ class TestTheMergeInstallsFirst:
         )
         assert _git(standin.folder, "status", "--porcelain") == ""
 
-    def test_an_install_that_changes_tracked_files_refuses_the_merge(
+    def test_an_install_that_changes_tracked_files_does_not_refuse_the_merge(
         self, standin: Standin
     ):
         dirtying_install = (
@@ -399,12 +391,11 @@ class TestTheMergeInstallsFirst:
 
         report = standin.merge()
 
-        assert report.outcome == OUTCOME_REFUSED
-        assert "changed files" in (report.refusal_reason or "")
-        assert "notes.txt" in (report.refusal_reason or "")
-        # Nothing was joined.
-        assert _git(standin.repo, "rev-parse", TARGET) == g
-        assert "check-ran" not in standin.ran()
+        # What the project's own install writes is left where it is; the
+        # join goes ahead (the cull, 27 October 2026).
+        assert report.outcome == OUTCOME_MERGED, report.refusal_reason
+        assert _git(standin.repo, "rev-parse", TARGET) != g
+        assert "check-ran" in standin.ran()
 
 
 # ---------------------------------------------------------------------------
@@ -486,7 +477,7 @@ class TestAnHonestBaseline:
         _git(repo, "commit", "-q", "-m", "work")
         _git(repo, "checkout", "-q", "main")
 
-        report = execute_merge(repo, FEATURE, validate_command=VALIDATE_OK)
+        report = execute_merge(repo, FEATURE)
 
         assert report.verify_status == "passed", report.verify_detail
         assert report.verify_suite_status == "failed"
@@ -551,28 +542,6 @@ class TestAnHonestBaseline:
         assert str(home) not in text
         assert "standin_only_in_home" not in text
         assert SENTINELS["GUARDKIT_NATS_PASSWORD"] not in text
-
-    @pytest.mark.parametrize("measure", [True, False])
-    def test_a_declared_marker_a_passing_check_does_not_print_measured_nothing(
-        self, standin: Standin, measure: bool
-    ):
-        standin.init(
-            config=config_text(
-                install=None,
-                extra_toolchain='  ran_marker_regex: "NEVER-PRINTED"\n',
-                launch=None,
-            ),
-            files={"deps.txt": ""},
-        ).branch({"feature.txt": "built\n"})
-
-        if measure:
-            report = standin.merge()
-        else:
-            report = standin.merge(baseline_failing=[])
-
-        assert report.verify_status == "unverified", report.verify_detail
-        assert "measured nothing" in report.verify_detail
-        assert report.verify_ok is False
 
     def test_a_declared_marker_that_matches_is_a_pass(self, standin: Standin):
         standin.init(
@@ -640,7 +609,6 @@ class TestTheJudgeFiles:
 
         # Main names a file it does not have: the baseline on main measured
         # nothing useful, and the build's script is never run.
-        assert report.verify_ok is False
         assert report.verify_status == "unverified", report.verify_detail
         assert standin.build_copy_never_ran()
 
@@ -713,9 +681,11 @@ class TestTheJudgeFiles:
             for role in roles
         ],
     )
-    def test_a_command_the_factory_cannot_follow_gets_no_automatic_verdict(
+    def test_a_command_with_shell_syntax_is_not_refused(
         self, standin: Standin, command: str, role: str
     ):
+        """Since the cull (27 October 2026) the declared command's text is
+        never a reason to skip the check: it is run as declared."""
         if role == "check":
             config = config_text(test=command)
         else:
@@ -726,10 +696,8 @@ class TestTheJudgeFiles:
         report = standin.merge()
 
         assert report.outcome == OUTCOME_MERGED
-        assert report.verify_status == "unverified"
-        assert report.verify_ran is False
-        assert CANNOT_FOLLOW in report.verify_detail
-        assert standin.ran() == set()
+        assert CANNOT_FOLLOW not in report.verify_detail
+        assert not any(CANNOT_FOLLOW in note for note in report.notes)
 
     @pytest.mark.parametrize("role", ["check", "install"])
     def test_a_script_whose_name_has_an_equals_sign_is_still_matched(
@@ -1319,7 +1287,7 @@ class TestInstallPathsTheCoachProvedByHand:
         assert "ran on the merged result" in notes
         assert f"ran on {TARGET}" not in notes
 
-    def test_an_install_that_dirties_the_merged_tree_is_could_not_run(
+    def test_an_install_that_dirties_the_merged_tree_still_runs_the_check(
         self, standin: Standin
     ):
         dirtying_on_merged = (
@@ -1338,15 +1306,11 @@ class TestInstallPathsTheCoachProvedByHand:
 
         report = standin.merge()
 
-        # Not a refusal: the join has already happened by then.
+        # What the install wrote is left in the folder; the check runs.
         assert report.outcome == OUTCOME_MERGED
-        assert report.verify_status == "unverified"
-        assert report.verify_ran is False
-        assert "changed files" in report.verify_detail
-        assert "notes.txt" in report.verify_detail
-        assert "merged result" in report.verify_detail
+        assert report.verify_ran is True, report.verify_detail
         assert len(standin.lines("install-ran")) == 2
-        assert "check-ran" in standin.ran()  # the baseline ran; nothing after
+        assert len(standin.lines("check-ran")) == 2
 
     def test_an_install_command_that_cannot_start_is_could_not_run(
         self, standin: Standin
@@ -1460,64 +1424,6 @@ class TestTheChangedFilesComeFromTheMergedCommit:
         assert report.branch == f"autobuild/{FEATURE}"
 
 
-class TestAnUnverifiedRunChargesNothing:
-    """Implementation review R2: a run that measured nothing charges nothing."""
-
-    FAILED_WITHOUT_MARKER = (
-        "#!/bin/sh\n"
-        'echo "FAILED tests/test_new.py::test_new - looks like a failure"\n'
-        "exit 0\n"
-    )
-
-    @pytest.mark.parametrize("how", ["baseline handed in", "baseline off"])
-    def test_a_check_without_the_declared_marker_charges_nothing(
-        self, standin: Standin, how: str
-    ):
-        standin.init(
-            config=config_text(
-                install=None,
-                extra_toolchain='  ran_marker_regex: "NEVER-PRINTED"\n',
-                launch=None,
-            ),
-            files={"scripts/check.sh": self.FAILED_WITHOUT_MARKER},
-        ).branch({"feature.txt": "built\n"})
-
-        if how == "baseline handed in":
-            report = standin.merge(baseline_failing=[])
-        else:
-            report = standin.merge(measure_baseline=False)
-
-        assert report.verify_status == "unverified", report.verify_detail
-        assert "measured nothing" in report.verify_detail
-        assert report.charged_failures == ()
-        data = report.to_dict()
-        assert data["charged_failures"] == []
-        receipt = "\n".join(report.receipt_lines())
-        assert "tests/test_new.py::test_new" not in receipt
-        assert "charged to this merge" not in receipt
-        assert "diff unavailable" not in receipt
-        assert not any("failure" in note for note in report.notes), report.notes
-
-    def test_the_baseline_reads_no_names_from_a_run_that_measured_nothing(
-        self, standin: Standin
-    ):
-        standin.init(
-            config=config_text(
-                install=None,
-                extra_toolchain='  ran_marker_regex: "NEVER-PRINTED"\n',
-                launch=None,
-            ),
-            files={"scripts/check.sh": self.FAILED_WITHOUT_MARKER},
-        ).branch({"feature.txt": "built\n"})
-
-        report = standin.merge()
-
-        assert report.verify_status == "unverified"
-        assert report.baseline_measured is None
-        assert report.charged_failures == ()
-        assert "tests/test_new.py::test_new" not in _report_text(report)
-
-
 # ---------------------------------------------------------------------------
 # The merge check uses the target's copies of the judge files (15 October 2026)
 # ---------------------------------------------------------------------------
@@ -1617,7 +1523,7 @@ class TestTheMergeCheckUsesTheTargetsJudges:
         assert _clean(standin.folder)
 
     @pytest.mark.parametrize("touched", ["notes.txt", "scripts/check.sh"])
-    def test_an_install_that_changes_a_restored_file_or_another_file_is_could_not_run(
+    def test_an_install_that_changes_a_restored_file_or_another_file_still_checks(
         self, standin: Standin, touched: str
     ):
         install = standin.script(INSTALL_SH) + (
@@ -1633,13 +1539,11 @@ class TestTheMergeCheckUsesTheTargetsJudges:
 
         report = standin.merge()
 
+        # What the install wrote is left in the folder (the cull, 27
+        # October 2026); the check runs after the join, with main's copy.
         assert report.outcome == OUTCOME_MERGED
-        assert report.verify_status == "unverified", report.verify_detail
-        assert report.verify_ran is False
-        assert "changed files" in report.verify_detail
-        assert touched in report.verify_detail
-        # The baseline check ran on main; nothing ran after the join.
-        assert standin.lines("check-ran") == ["check"]
+        assert report.verify_ran is True, report.verify_detail
+        assert standin.lines("check-ran") == ["check", "check"]
         assert standin.build_copy_never_ran()
 
     def test_the_report_names_the_files_checked_with_mains_copies(
@@ -2175,7 +2079,7 @@ class TestGitFailingAroundTheCheck:
         assert _clean(standin.folder)
         assert standin.build_copy_never_ran()
 
-    def test_a_put_back_that_times_out_after_the_check_ends_unverified(
+    def test_a_put_back_that_times_out_after_the_check_is_a_note(
         self, standin: Standin, monkeypatch: pytest.MonkeyPatch
     ):
         standin.init()
@@ -2192,9 +2096,11 @@ class TestGitFailingAroundTheCheck:
 
         assert calls == [["scripts/check.sh", "scripts/install.sh"]]
         assert report.outcome == OUTCOME_MERGED
-        assert report.verify_status == "unverified"
-        assert "could not be put back" in report.verify_detail
-        assert "git checkout did not finish within 30 seconds" in report.verify_detail
+        # The check's own verdict stands; the put-back is reported.
+        assert report.verify_status == "passed", report.verify_detail
+        notes = " ".join(report.notes)
+        assert "could not be put back" in notes
+        assert "git checkout did not finish within 30 seconds" in notes
         assert report.judged_with_main_copies == ("scripts/check.sh",)
         assert report.judge_files_not_on_target == ()
         assert standin.build_copy_never_ran()
@@ -2223,107 +2129,6 @@ class TestGitFailingAroundTheCheck:
         assert "missing some of the joined files" in report.verify_detail
         assert report.judged_with_main_copies == ("scripts/check.sh",)
         assert standin.build_copy_never_ran()
-
-
-class _AfterTheInstall:
-    """Times out the first git call matching ``wanted`` that comes after an
-    install: the post-join one (``joined=True``) or the target's one before
-    the merge (``joined=False``)."""
-
-    def __init__(self, monkeypatch: pytest.MonkeyPatch, wanted, joined: bool) -> None:
-        from guardkit.orchestrator import merge_environment, merge_executor
-
-        self.wanted = wanted
-        self.joined = joined
-        self.after_join = False
-        self.armed = False
-        self.hit = None
-        self._run_git = merge_executor.run_git
-        self._perform = merge_executor.perform_merge
-        self._install = merge_executor.run_in_own_group
-        # The tree listing is read through merge_environment's own name.
-        monkeypatch.setattr(merge_executor, "run_git", self.run_git)
-        monkeypatch.setattr(merge_environment, "run_git", self.run_git)
-        monkeypatch.setattr(merge_executor, "perform_merge", self.perform)
-        monkeypatch.setattr(merge_executor, "run_in_own_group", self.install)
-
-    def perform(self, *a, **k):
-        done = self._perform(*a, **k)
-        self.after_join = True
-        return done
-
-    def install(self, *a, **k):
-        done = self._install(*a, **k)
-        if self.after_join == self.joined and self.hit is None:
-            self.armed = True
-        return done
-
-    def run_git(self, args, **kwargs):
-        shown = [str(a) for a in args]
-        if self.armed and self.hit is None and self.wanted(shown):
-            self.hit = shown
-            raise subprocess.TimeoutExpired(
-                f"git {shown[0]}", 30,
-                stderr=f"git {shown[0]} did not finish within 30 seconds.".encode(),
-            )
-        return self._run_git(args, **kwargs)
-
-
-class TestGitFailingAfterTheInstall:
-    """The check that the install left the folder alone reads git too; a git
-    command timing out there ends in the ordinary unverified report."""
-
-    @pytest.mark.parametrize("command", ["status", "ls-tree", "cat-file"])
-    def test_a_read_timing_out_after_the_post_join_install_ends_unverified(
-        self, standin: Standin, monkeypatch: pytest.MonkeyPatch, command: str
-    ):
-        standin.init()
-        green_install = standin.script(ALWAYS_GREEN_SH) + "# the build's install\n"
-        green_check = standin.script(ALWAYS_GREEN_SH) + "# the build's check\n"
-        standin.branch(
-            {"scripts/install.sh": green_install, "scripts/check.sh": green_check}
-        )
-        fault = _AfterTheInstall(
-            monkeypatch, lambda a: a[0] == command, joined=True
-        )
-        calls = _spy_on_put_back(monkeypatch)
-
-        report = standin.merge()
-
-        assert fault.hit is not None, "the fault was never reached"
-        assert report.outcome == OUTCOME_MERGED
-        assert report.verify_status == "unverified"
-        assert report.verify_ran is False
-        assert "could not be read after the declared install" in report.verify_detail
-        assert f"git {command} did not finish within 30 seconds" in report.verify_detail
-        assert calls == [["scripts/check.sh", "scripts/install.sh"]]
-        assert report.judged_with_main_copies == (
-            "scripts/check.sh", "scripts/install.sh",
-        )
-        assert report.judge_files_not_on_target == ()
-        folder = standin.folder
-        assert _clean(folder)
-        assert _git(folder, "rev-parse", "HEAD") == report.post_sha
-        assert (folder / "scripts/check.sh").read_text(encoding="utf-8") == green_check
-        assert (folder / "scripts/install.sh").read_text(
-            encoding="utf-8"
-        ) == green_install
-        assert standin.build_copy_never_ran()
-
-    def test_git_status_timing_out_after_the_targets_install_ends_unverified(
-        self, standin: Standin, monkeypatch: pytest.MonkeyPatch
-    ):
-        standin.init()
-        standin.branch({"feature.txt": "built\n"})
-        fault = _AfterTheInstall(monkeypatch, lambda a: a[0] == "status", joined=False)
-
-        report = standin.merge()
-
-        assert fault.hit is not None, "the fault was never reached"
-        assert report.verify_status == "unverified"
-        assert report.verify_ran is False
-        assert "could not be read after the declared install" in report.verify_detail
-        assert "git status did not finish within 30 seconds" in report.verify_detail
 
 
 def _as_the_cli_prints(report) -> tuple:

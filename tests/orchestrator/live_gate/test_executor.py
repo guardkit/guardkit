@@ -80,10 +80,14 @@ class TestParseStructured:
         gr = parse_gate_result("g1", GateRun(0, stdout, ""))
         assert [a.id for a in gr.assertions] == ["a"]
 
-    def test_invalid_assertion_raises_loudly(self):
-        stdout = json.dumps({"assertions": [{"id": "a", "status": "bogus"}]})
-        with pytest.raises(LiveGateError, match="invalid assertion"):
-            parse_gate_result("g1", GateRun(0, stdout, ""))
+    def test_invalid_assertion_is_left_out_and_the_exit_code_decides(self):
+        stdout = json.dumps(
+            {"assertions": [{"id": "a", "status": "bogus"}, {"id": "b", "status": "pass"}]}
+        )
+        gr = parse_gate_result("g1", GateRun(0, stdout, ""))
+        assert [a.id for a in gr.assertions] == ["b"]
+        failed = parse_gate_result("g1", GateRun(1, stdout, ""))
+        assert gate_failed(failed)
 
 
 class TestParseLegacy:

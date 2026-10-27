@@ -6,7 +6,6 @@ from pathlib import Path
 
 import pytest
 
-from guardkit.orchestrator.live_gate.errors import LiveGateError
 from guardkit.orchestrator.live_gate.registry import (
     load_registry,
     registry_path_for,
@@ -46,10 +45,10 @@ class TestSelectGates:
         assert {g.id for g in sel} == {"g3", "g1"}
         assert len(sel) == 2
 
-    def test_unknown_requested_id_raises(self):
+    def test_unknown_requested_id_is_skipped(self):
         reg = _registry(_gate("g1"))
-        with pytest.raises(LiveGateError, match="unknown gate id"):
-            select_gates(reg, ["nope"])
+        assert select_gates(reg, ["nope"]) == []
+        assert [g.id for g in select_gates(reg, ["nope", "g1"])] == ["g1"]
 
     def test_stable_order_when_all_green(self):
         reg = _registry(_gate("g1"), _gate("g2"))

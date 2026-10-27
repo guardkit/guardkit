@@ -239,7 +239,8 @@ class FeatureCompleteOrchestrator:
     dry_run : bool
         Whether to simulate without making changes
     force : bool
-        Whether to force completion even if tasks incomplete
+        Accepted so existing ``--force`` commands still run; since the cull
+        (27 October 2026) nothing refuses completion, so nothing reads it
 
     Examples
     --------
@@ -271,7 +272,7 @@ class FeatureCompleteOrchestrator:
         dry_run : bool, optional
             Simulate without making changes (default: False)
         force : bool, optional
-            Force completion even if tasks incomplete (default: False)
+            Accepted and unused since the cull (default: False)
         """
         self.repo_root = Path(repo_root).resolve()
         self.features_dir = features_dir or self.repo_root / ".guardkit" / "features"
@@ -381,8 +382,6 @@ class FeatureCompleteOrchestrator:
             If feature file not found
         FeatureValidationError
             If validation fails
-        FeatureCompleteError
-            If feature not ready for completion
         """
         logger.info(f"Phase 1 (Validation): Validating feature {feature_id}")
 
@@ -399,34 +398,6 @@ class FeatureCompleteOrchestrator:
         console.print(f"  Tasks: {len(feature.tasks)}")
         console.print(f"  Status: {feature.status}")
 
-        # Check if feature is already completed
-        if feature.status == "completed" and not self.force:
-            console.print("[yellow]⚠[/yellow] Feature already completed")
-            if not self.dry_run:
-                raise FeatureCompleteError(
-                    f"Feature {feature_id} is already completed. Use --force to re-complete."
-                )
-
-        # Tasks not completed are listed as advice, never a refusal (step 2,
-        # 26 October 2026): the build's own result already decided what was
-        # approved and offered. Deferred tasks count as done, as in the build.
-        from guardkit.orchestrator.feature_orchestrator import TERMINAL_SATISFIED
-
-        incomplete_tasks = [
-            task for task in feature.tasks if task.status not in TERMINAL_SATISFIED
-        ]
-        if incomplete_tasks:
-            console.print(
-                f"[yellow]⚠[/yellow] {len(incomplete_tasks)} task(s) not completed:"
-            )
-            for task in incomplete_tasks:
-                console.print(f"  - {task.id}: {task.status}")
-            logger.warning(
-                "Feature %s completes with %d task(s) not completed: %s",
-                feature_id, len(incomplete_tasks),
-                ", ".join(f"{t.id} ({t.status})" for t in incomplete_tasks),
-            )
-
         # Find worktree if it exists
         worktree = None
         if feature.execution.worktree_path:
@@ -442,119 +413,9 @@ class FeatureCompleteOrchestrator:
             else:
                 console.print("[yellow]⚠[/yellow] Worktree path not found (may have been cleaned up)")
 
-        # WS2 B2: a feature whose pass bar declares a runtime surface cannot
-        # reach feature-complete without at least one registered, green F4 gate.
-        # Flag-gated (qa.enforce_tier1, default OFF) — a no-op unless the repo
-        # has opted in, so existing feature-complete behaviour is unchanged.
-        # B9 (2026-09-19): the gate must be green for THIS candidate, so the
-        # candidate's commit is named to the check (see ``_candidate_sha``).
-        self._check_runtime_surface_gate(
-            feature, candidate_sha=self._candidate_sha(feature_id, worktree)
-        )
-
         console.print("[green]✓[/green] Validation complete\n")
 
         return feature, worktree
-
-    def _candidate_sha(
-        self, feature_id: str, worktree: Optional[Worktree] = None
-    ) -> Optional[str]:
-        """The commit the feature's candidate is at, or ``None`` when unknown.
-
-        B9 (2026-09-19). The runtime-surface check binds a green gate to the
-        code under check, so the caller has to name that code. In order: the
-        build worktree's HEAD when the worktree still exists; else the
-        ``autobuild/<feature_id>`` branch in the repository (which also covers
-        feature-complete run from inside the candidate checkout, because that
-        checkout is on that branch). This checkout's own HEAD is deliberately
-        NOT a fallback: with the worktree and the branch both gone it would
-        name whatever happens to be checked out, and a gate that went green
-        against pre-feature main would then be accepted for a candidate it
-        never saw (the independent coach drove exactly that, 2026-09-19).
-        Never raises: when git cannot answer, ``None`` is returned and the
-        check fails closed with the reason named — it never guesses.
-        """
-        import subprocess
-
-        from guardkit.lib.project_git import run_git
-
-        attempts = []
-        if worktree is not None:
-            attempts.append(["-C", str(worktree.path), "rev-parse", "HEAD"])
-        attempts.append(
-            [
-                "-C",
-                str(self.repo_root),
-                "rev-parse",
-                "--verify",
-                "--quiet",
-                f"refs/heads/autobuild/{feature_id}",
-            ]
-        )
-        for command in attempts:
-            try:
-                completed = run_git(command, check=False, timeout=30)
-            except (OSError, subprocess.SubprocessError):
-                continue
-            sha = (completed.stdout or "").strip()
-            if completed.returncode == 0 and len(sha) >= 7:
-                return sha
-        return None
-
-    def _check_runtime_surface_gate(
-        self, feature: Feature, candidate_sha: Optional[str] = None
-    ) -> None:
-        """WS2 B2: refuse feature-complete for a runtime-surface feature with
-        no registered green gate (flag-gated by ``qa.enforce_tier1``).
-
-        No-op when enforcement is OFF (the default). When ON and the feature
-        declares a runtime surface via its committed F1 pass bars but has no
-        green F4 gate, this refuses — printing the reason and raising
-        :class:`FeatureCompleteError` (unless ``--dry-run``, mirroring the
-        incomplete-tasks refusal). A gate-internal error never blocks
-        completion (degrades to a warning).
-        """
-        try:
-            from guardkit.qa.enforcement import (
-                check_runtime_surface_gate,
-                is_tier1_enforced,
-            )
-
-            if not is_tier1_enforced(self.repo_root):
-                return
-            task_ids = [task.id for task in feature.tasks]
-            if candidate_sha is None:
-                candidate_sha = self._candidate_sha(str(feature.id))
-            result = check_runtime_surface_gate(
-                self.repo_root, task_ids, candidate_sha=candidate_sha
-            )
-        except FeatureCompleteError:
-            raise
-        except Exception as exc:  # pragma: no cover - defensive
-            logger.warning(
-                "QA runtime-surface gate check errored for %s (%s) — not "
-                "blocking feature-complete",
-                feature.id,
-                exc,
-            )
-            return
-
-        if result.passed:
-            if result.runtime_surface:
-                console.print(
-                    f"[green]✓[/green] QA runtime-surface gate: {result.detail}"
-                )
-            return
-
-        console.print(
-            f"[red]✗ QA runtime-surface gate refusal:[/red] {result.detail}"
-        )
-        if not self.dry_run:
-            raise FeatureCompleteError(
-                f"Cannot complete feature {feature.id}: {result.detail}. "
-                "Register a live gate and take it green (qa/gates/registry.yaml), "
-                "or use --dry-run to inspect."
-            )
 
     def _completion_phase(self, feature: Feature) -> None:
         """

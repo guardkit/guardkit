@@ -23,12 +23,7 @@ from pathlib import Path
 import pytest
 
 from guardkit.orchestrator.live_gate.executor import GateRun, GateScriptRunner
-from guardkit.orchestrator.live_gate.preflight import (
-    BrokerDiffProvider,
-    F16ChecklistProvider,
-    ReservationBroker,
-    SeamResult,
-)
+from guardkit.orchestrator.live_gate.preflight import F16ChecklistProvider, SeamResult
 from guardkit.orchestrator.live_gate.runner import LiveGateRunner
 from guardkit.qa.formats import validate_instance
 
@@ -74,14 +69,9 @@ def _stage_lpa_repo(tmp_path: Path) -> Path:
 
 
 def test_six_lpa_gates_environment_fail_when_no_deploy(tmp_path):
-    """Default (unconfigured) seams → honest environment_fail, no gate run."""
+    """No deploy address set → honest environment_fail, no gate run."""
     repo = _stage_lpa_repo(tmp_path)
-    runner = LiveGateRunner(
-        repo,
-        reservation_resource="gb10-gpu",
-        broker_contract_ref="qa/broker.yaml",
-        now_fn=lambda: _FIXED,
-    )
+    runner = LiveGateRunner(repo, gate_env={}, now_fn=lambda: _FIXED)
     env = runner.run("FEAT-POC-DEMO-0705", "lpa-poc-tailnet")
 
     assert env.verdict == "environment_fail"
@@ -90,19 +80,6 @@ def test_six_lpa_gates_environment_fail_when_no_deploy(tmp_path):
     hist = list((repo / "qa" / "gates" / "history").glob("*.json"))
     assert len(hist) == 1
     assert validate_instance("results-envelope", hist[0]).verdict == "environment_fail"
-    # instrument side is green — all six scripts are present + the bar declares
-    # its five negative paths (this is genuinely an environment problem)
-    assert env.preflight.instrument_ok is True
-
-
-class _GreenRes(ReservationBroker):
-    def check(self, resource):
-        return SeamResult(ok=True, detail="lease held")
-
-
-class _GreenBroker(BrokerDiffProvider):
-    def diff(self, ref):
-        return SeamResult(ok=True, detail="broker matches")
 
 
 class _GreenF16(F16ChecklistProvider):
@@ -132,8 +109,6 @@ def test_six_lpa_gates_drive_end_to_end_when_preflight_green(tmp_path):
     runner = LiveGateRunner(
         repo,
         gate_runner=fake,
-        reservation_broker=_GreenRes(),
-        broker_diff=_GreenBroker(),
         f16_provider=_GreenF16(),
         now_fn=lambda: _FIXED,
     )

@@ -151,7 +151,8 @@ def _require_sdk_for_selected_harness() -> None:
         (the banner and wording of :func:`_require_sdk`, unchanged). Exit code
         3 when ``GUARDKIT_HARNESS`` names a harness that does not exist, so a
         typo is refused here in one sentence instead of failing later and
-        deeper inside the orchestrator.
+        deeper inside the orchestrator, after the build's worktree and branch
+        have been made.
     """
     from guardkit.orchestrator.harness.selector import (
         SUPPORTED_HARNESSES,
@@ -301,7 +302,7 @@ def autobuild():
     "sdk_timeout",
     default=None,
     type=int,
-    help="SDK timeout in seconds (at least 60). Defaults to task frontmatter autobuild.sdk_timeout or 1200",
+    help="SDK timeout in seconds. Defaults to task frontmatter autobuild.sdk_timeout or 1200",
 )
 @click.option(
     "--no-pre-loop",
@@ -331,13 +332,6 @@ def autobuild():
     help="Disable worktree checkpointing (not recommended - disables rollback)",
 )
 @click.option(
-    "--no-rollback",
-    "no_rollback",
-    is_flag=True,
-    default=False,
-    help="Disable automatic rollback on context pollution (manual rollback still available)",
-)
-@click.option(
     "--ablation",
     "ablation_mode",
     is_flag=True,
@@ -361,31 +355,6 @@ def autobuild():
         "Override via GUARDKIT_TIMEOUT_MULTIPLIER env var."
     ),
 )
-@click.option(
-    "--honesty-early-abort-threshold",
-    "honesty_early_abort_threshold",
-    default=None,
-    type=float,
-    help=(
-        "Abort the loop when the rolling honesty average drops below this "
-        "value (range 0.0-1.0, default 0.3). Honesty score is "
-        "1 - critical_failures/total_claims; an avg below 0.3 means most "
-        "claims across the window were rejected. "
-        "Defaults to task frontmatter autobuild.honesty_early_abort_threshold "
-        "or 0.3. TASK-FIX-HEAB."
-    ),
-)
-@click.option(
-    "--honesty-early-abort-window",
-    "honesty_early_abort_window",
-    default=None,
-    type=int,
-    help=(
-        "Number of recent turns averaged for the honesty early-abort check "
-        "(default: 3). Defaults to task frontmatter "
-        "autobuild.honesty_early_abort_window or 3. TASK-FIX-HEAB."
-    ),
-)
 @click.pass_context
 @handle_cli_errors
 def task(
@@ -402,12 +371,9 @@ def task(
     no_pre_loop: bool,
     skip_arch_review: bool,
     no_checkpoints: bool,
-    no_rollback: bool,
     ablation_mode: bool,
     enable_context: bool,
     timeout_multiplier: Optional[float],
-    honesty_early_abort_threshold: Optional[float],
-    honesty_early_abort_window: Optional[int],
 ):
     """
     Execute AutoBuild orchestration for a task.
@@ -487,14 +453,7 @@ def task(
         effective_mode = autobuild_config.get("mode", "tdd")
     logger.info(f"Development mode: {effective_mode}")
 
-    # Validate and resolve SDK timeout: CLI flag > task frontmatter > default (900)
-    # Step 2 (26 October 2026): no upper limit; an hour was a guide, and a
-    # slow local model may need longer for one call.
-    if sdk_timeout is not None and sdk_timeout < 60:
-        raise click.BadParameter(
-            "SDK timeout must be at least 60 seconds",
-            param_hint="'--sdk-timeout'",
-        )
+    # Resolve SDK timeout: CLI flag > task frontmatter > default
     effective_sdk_timeout = sdk_timeout
     sdk_timeout_is_override = sdk_timeout is not None
     if effective_sdk_timeout is None:
@@ -503,28 +462,6 @@ def task(
             "sdk_timeout", DEFAULT_SDK_TIMEOUT
         )
     logger.info(f"SDK timeout: {effective_sdk_timeout}s")
-
-    # TASK-FIX-HEAB: resolve honesty early-abort settings (CLI > frontmatter > default)
-    effective_honesty_threshold = honesty_early_abort_threshold
-    if effective_honesty_threshold is None:
-        effective_honesty_threshold = autobuild_config.get(
-            "honesty_early_abort_threshold", 0.3
-        )
-    if not (0.0 <= float(effective_honesty_threshold) <= 1.0):
-        raise click.BadParameter(
-            "honesty_early_abort_threshold must be between 0.0 and 1.0",
-            param_hint="'--honesty-early-abort-threshold'",
-        )
-    effective_honesty_window = honesty_early_abort_window
-    if effective_honesty_window is None:
-        effective_honesty_window = autobuild_config.get(
-            "honesty_early_abort_window", 3
-        )
-    if int(effective_honesty_window) < 1:
-        raise click.BadParameter(
-            "honesty_early_abort_window must be >= 1",
-            param_hint="'--honesty-early-abort-window'",
-        )
 
     # Resolve skip_arch_review: CLI flag > task frontmatter > default (False)
     effective_skip_arch_review = skip_arch_review
@@ -560,11 +497,6 @@ def task(
     effective_timeout_multiplier = timeout_multiplier
     if effective_timeout_multiplier is None:
         effective_timeout_multiplier = detect_timeout_multiplier()
-    if effective_timeout_multiplier is not None and effective_timeout_multiplier < 0.1:
-        raise click.BadParameter(
-            "Timeout multiplier must be at least 0.1",
-            param_hint="'--timeout-multiplier'",
-        )
     logger.info(f"Timeout multiplier: {effective_timeout_multiplier}x")
 
     # Display startup banner
@@ -597,13 +529,11 @@ def task(
     # Note: enable_pre_loop defaults to True for task-build, --no-pre-loop disables it
     enable_pre_loop = not no_pre_loop
     enable_checkpoints = not no_checkpoints
-    rollback_on_pollution = not no_rollback and enable_checkpoints  # Can't rollback without checkpoints
 
     logger.info(
         f"Initializing orchestrator (enable_pre_loop={enable_pre_loop}, "
         f"skip_arch_review={effective_skip_arch_review}, "
         f"enable_checkpoints={enable_checkpoints}, "
-        f"rollback_on_pollution={rollback_on_pollution}, "
         f"ablation_mode={ablation_mode}, "
         f"timeout_multiplier={effective_timeout_multiplier})"
     )
@@ -623,12 +553,9 @@ def task(
             sdk_timeout_is_override=sdk_timeout_is_override,
             skip_arch_review=effective_skip_arch_review,
             enable_checkpoints=enable_checkpoints,
-            rollback_on_pollution=rollback_on_pollution,
             ablation_mode=ablation_mode,
             enable_context=enable_context,
             timeout_multiplier=effective_timeout_multiplier,
-            honesty_early_abort_threshold=float(effective_honesty_threshold),
-            honesty_early_abort_window=int(effective_honesty_window),
             model=model,  # TASK-FIX-MODELPLUMB: thread --model to harness construction (load-bearing for LangGraph)
             coach_model=coach_model,  # TASK-FIX-COACHBUDG01: optional per-role override for Coach
             emitter=emitter,  # TASK-OBS-4899
@@ -812,7 +739,7 @@ def status(ctx, task_id: str, verbose: bool):
     "sdk_timeout",
     default=None,
     type=int,
-    help="SDK timeout in seconds (at least 60). Defaults to feature YAML autobuild.sdk_timeout or 1200",
+    help="SDK timeout in seconds. Defaults to feature YAML autobuild.sdk_timeout or 1200",
 )
 @click.option(
     "--enable-pre-loop/--no-pre-loop",
@@ -896,28 +823,6 @@ def status(ctx, task_id: str, verbose: bool):
     help="Seconds between per-task progress log snapshots (default: 60)",
     show_default=True,
 )
-@click.option(
-    "--honesty-early-abort-threshold",
-    "honesty_early_abort_threshold",
-    default=0.3,
-    type=float,
-    show_default=True,
-    help=(
-        "Abort each task's loop when its rolling honesty average drops "
-        "below this value (range 0.0-1.0). TASK-FIX-HEAB."
-    ),
-)
-@click.option(
-    "--honesty-early-abort-window",
-    "honesty_early_abort_window",
-    default=3,
-    type=int,
-    show_default=True,
-    help=(
-        "Number of recent turns averaged for the honesty early-abort "
-        "check. TASK-FIX-HEAB."
-    ),
-)
 @click.pass_context
 @handle_cli_errors
 def feature(
@@ -941,8 +846,6 @@ def feature(
     max_parallel_strategy: str,
     skip_validation: bool,
     task_log_interval: int,
-    honesty_early_abort_threshold: float,
-    honesty_early_abort_window: int,
 ):
     """
     Execute AutoBuild for all tasks in a feature.
@@ -1026,15 +929,6 @@ def feature(
         console.print("  --fresh    Start from scratch, ignoring saved state")
         sys.exit(3)
 
-    # Validate SDK timeout if provided
-    # Step 2 (26 October 2026): no upper limit; an hour was a guide, and a
-    # slow local model may need longer for one call.
-    if sdk_timeout is not None and sdk_timeout < 60:
-        raise click.BadParameter(
-            "SDK timeout must be at least 60 seconds",
-            param_hint="'--sdk-timeout'",
-        )
-
     # Resolve max_parallel: env var > CLI flag > feature-YAML > auto-detect.
     # The env/flag/auto-detect tiers are resolved here; the feature-YAML tier
     # (orchestration.recommended_parallel) is applied by FeatureOrchestrator
@@ -1052,18 +946,7 @@ def feature(
     env_max_parallel = os.environ.get("GUARDKIT_MAX_PARALLEL_TASKS")
     max_parallel_source = PARALLEL_SOURCE_AUTO_DETECT
     if env_max_parallel is not None:
-        try:
-            max_parallel = int(env_max_parallel)
-            if max_parallel < 1:
-                raise click.BadParameter(
-                    "GUARDKIT_MAX_PARALLEL_TASKS must be >= 1",
-                    param_hint="'GUARDKIT_MAX_PARALLEL_TASKS'",
-                )
-        except ValueError:
-            raise click.BadParameter(
-                f"Invalid GUARDKIT_MAX_PARALLEL_TASKS value: {env_max_parallel!r}",
-                param_hint="'GUARDKIT_MAX_PARALLEL_TASKS'",
-            )
+        max_parallel = int(env_max_parallel)
         max_parallel_source = PARALLEL_SOURCE_ENV
     elif max_parallel is not None:
         max_parallel_source = PARALLEL_SOURCE_FLAG
@@ -1073,12 +956,6 @@ def feature(
         detected_multiplier = timeout_multiplier if timeout_multiplier is not None else detect_timeout_multiplier()
         if detected_multiplier > 1.0:
             max_parallel = 1
-
-    if max_parallel is not None and max_parallel < 1:
-        raise click.BadParameter(
-            "max-parallel must be >= 1",
-            param_hint="'--max-parallel'",
-        )
 
     # TASK-VRF-006: Build ParallelConfig from CLI args
     if max_parallel_strategy == "dynamic":
@@ -1127,8 +1004,6 @@ def feature(
             skip_validation=skip_validation,
             emitter=emitter,
             task_log_interval=task_log_interval,
-            honesty_early_abort_threshold=honesty_early_abort_threshold,
-            honesty_early_abort_window=honesty_early_abort_window,
             model=model,  # TASK-FIX-LGFM: thread --model to per-task AutoBuildOrchestrator (load-bearing for LangGraph)
             coach_model=coach_model,  # TASK-FIX-COACHBUDG01: optional per-role override for Coach
         )
@@ -1190,15 +1065,14 @@ def feature(
 @click.option(
     "--force",
     is_flag=True,
-    help="Force completion even if tasks are incomplete",
+    help="Accepted for existing commands; completion is never refused",
 )
 @click.option(
     "--verify",
     is_flag=True,
     help=(
         "Re-run the project's test suite in the merge-target repo after "
-        "completion and report the result (never prints success unless "
-        "tests actually ran and passed)"
+        "completion and report the result"
     ),
 )
 @click.option(
@@ -1251,11 +1125,11 @@ def complete(
 
     \b
     Exit Codes:
-        0: Success (feature completed; verification passed if requested)
+        0: Success (feature completed; the tests did not fail, if requested)
         1: Feature not found
         2: Completion error
         3: Validation error
-        4: Completed, but post-completion verification FAILED or UNVERIFIED
+        4: Completed, but the project's tests ran and FAILED
     """
     verify = verify or verify_cmd is not None
     logger.info(
@@ -1291,8 +1165,7 @@ def complete(
             sys.exit(2)
 
         # Post-completion verification (TASK-AB-VERIFYCLI01). Report-only:
-        # a failure never un-completes anything, but it must never print
-        # success and must exit non-zero.
+        # a failure never un-completes anything.
         if verify:
             command, source, profile = verify_plan
             if dry_run:
@@ -1315,40 +1188,9 @@ def complete(
             )
             _display_verification_result(verification)
 
-            # WS2 B2: post-merge known-failure ledger sweep. Flag-gated
-            # (qa.enforce_tier1, default OFF); an un-ledgered failure or a stale
-            # ledger entry fails the gate even when the exit-code verdict looked
-            # plausible. Report-only towards completion (nothing un-completes)
-            # but the process exits non-zero so a caller/CI sees the gate fail.
-            exit_code = 0 if verification.status == "passed" else 4
-            from guardkit.qa.enforcement import is_tier1_enforced
-
-            if is_tier1_enforced(repo_root):
-                from guardkit.orchestrator.completion_verification import (
-                    sweep_completion_against_ledger,
-                )
-
-                sweep = sweep_completion_against_ledger(repo_root, verification)
-                _display_ledger_sweep_result(sweep)
-                if sweep.status == "fail" or sweep.status == "error":
-                    exit_code = 4
-
-            # S5: the R-b advisory review as a step in the gate flow (pre-merge
-            # advisory placement). Flag-gated (qa.review_seat, default OFF) — a
-            # provable no-op unless the repo opts in. ADVISORY: it emits an F14
-            # record as a flow artifact and NEVER changes exit_code. Promotion to
-            # blocking is the S-4 calibration bar (Rich's numbers), not here.
-            from guardkit.qa.review_seat import is_review_seat_enabled
-
-            if is_review_seat_enabled(repo_root):
-                from guardkit.cli.qa import _display_review_outcome
-                from guardkit.qa.review_seat import run_review_gate_step
-
-                review_outcome = run_review_gate_step(repo_root, write=True)
-                _display_review_outcome(review_outcome)
-                # exit_code deliberately UNTOUCHED — advisory never fails the flow.
-            sys.exit(exit_code)
-
+            # Report-only towards completion (nothing un-completes); the
+            # process exits 4 only when the project's tests ran and failed.
+            sys.exit(4 if verification.status == "failed" else 0)
         sys.exit(0)
 
     except FeatureNotFoundError as e:
@@ -1628,264 +1470,6 @@ def _display_verification_result(verification) -> None:
     console.print(Panel(body, title=f"Verification {label}", border_style="red"))
 
 
-def _display_ledger_sweep_result(sweep) -> None:
-    """Render the WS2 B2 known-failure ledger sweep outcome (flag-gated path)."""
-    from rich.markup import escape
-
-    console.print()
-    if sweep.status == "pass":
-        console.print(
-            Panel(
-                f"[green]✓ Known-failure ledger sweep clean[/green]\n\n"
-                f"{escape(sweep.detail)}",
-                title="Ledger Sweep Passed",
-                border_style="green",
-            )
-        )
-        return
-    if sweep.status == "unverified":
-        console.print(
-            Panel(
-                f"[yellow]○ Ledger sweep not run[/yellow]\n\n{escape(sweep.detail)}",
-                title="Ledger Sweep Skipped",
-                border_style="yellow",
-            )
-        )
-        return
-    # fail | error
-    console.print(
-        Panel(
-            f"[red]✗ Known-failure ledger sweep {sweep.status.upper()}[/red]\n\n"
-            f"{escape(sweep.detail)}\n\n"
-            "Triage the failure into qa/known-failures.yaml (human/Coach only), "
-            "or fix the code, before shipping.",
-            title=f"Ledger Sweep {sweep.status.upper()}",
-            border_style="red",
-        )
-    )
-
-
-# ============================================================================
-# Zero-Test Report — the reading instrument for the zero-test observations
-#
-# IT RENDERS FACTS AND OFFERS NO VERDICT. Every line it prints is either a
-# value copied from a recorded row, a statement of how that value was
-# established (zero_test_gate.FIELD_PROVENANCE), or a count of rows meeting a
-# condition whose heading names the condition exactly. Nothing here says what
-# a build did or did not do — a person reads the rows and rules on them.
-#
-# See guardkit/orchestrator/zero_test_gate.py.
-# ============================================================================
-
-
-def _zero_test_when(row: dict) -> str:
-    """The row's timestamp, trimmed to minutes. Empty when unrecorded."""
-    stamp = str(row.get("recorded_at") or "")
-    return stamp[:16].replace("T", " ")
-
-
-def _zero_test_build(row: dict) -> str:
-    return (
-        f"{row.get('worktree_dir') or '?'} / {row.get('task_id') or '?'}"
-        f" t{row.get('turn')}"
-    )
-
-
-def _zero_test_print_provenance() -> None:
-    """State, once, how every field on every row below was established."""
-    from rich.markup import escape
-
-    from guardkit.orchestrator import zero_test_gate
-
-    console.print("\n[bold]HOW EACH FIELD BELOW WAS ESTABLISHED[/bold]")
-    for label, how in zero_test_gate.FIELD_PROVENANCE:
-        # Escaped: these strings carry file-name patterns such as "*.test.ts"
-        # and bracketed labels, which the console would otherwise read as
-        # style markup and silently swallow.
-        console.print(f"  [bold]{escape(label)}[/bold]", soft_wrap=True)
-        console.print(f"    [dim]{escape(how)}[/dim]", soft_wrap=True)
-
-
-def _zero_test_print_rows(rows: list, show_repo: bool, heading: str) -> None:
-    """Print one card per recorded row.
-
-    Cards, not a table: a table wide enough to carry every field does not fit
-    an 80-column terminal, and the console library silently drops the columns
-    that do not fit — which would hide the very values this exists to show.
-    """
-    from rich.markup import escape
-
-    from guardkit.orchestrator import zero_test_gate
-
-    console.print(f"\n[bold]{heading}[/bold]")
-    for number, row in enumerate(rows, start=1):
-        # Every value below is escaped: a recorded value is a file name or a
-        # convention label such as "[test_*.py]", and the console would read
-        # the brackets as style markup and drop the very text this exists to
-        # show.
-        repo = (
-            f"  [dim]{escape(str(row.get('repo') or '?'))}[/dim]"
-            if show_repo
-            else ""
-        )
-        console.print(
-            f"\n [bold]{number:>2}[/bold]  [dim]{escape(_zero_test_when(row))}[/dim]"
-            f"  {escape(_zero_test_build(row))}{repo}"
-        )
-        for label, value in zero_test_gate.observation_lines(row):
-            console.print(
-                f"    {escape(label):<32}: {escape(value)}", soft_wrap=True
-            )
-
-
-@autobuild.command(name="zero-test-report")
-@click.option(
-    "--repo-root",
-    type=click.Path(exists=True, file_okay=False, path_type=Path),
-    multiple=True,
-    default=(),
-    help=(
-        "A repository whose ledger to read. Repeat it to read several at "
-        "once. Defaults to the current directory."
-    ),
-)
-@click.option(
-    "--limit",
-    type=int,
-    default=20,
-    show_default=True,
-    help="How many rows to print. Use 0 for all.",
-)
-@click.option(
-    "--json",
-    "as_json",
-    is_flag=True,
-    help="Print the raw recorded rows as JSON instead of cards.",
-)
-def zero_test_report(repo_root: tuple, limit: int, as_json: bool):
-    """
-    What was observed each time the zero-test rule fired.
-
-    While gathering evidence for the language-model Coach, GuardKit runs a
-    rule (CoachValidator._check_zero_test_anomaly). When the rule fires,
-    GuardKit writes down what it observed. On that path the rule changes
-    nothing unless GUARDKIT_ZERO_TEST_BLOCKING is set.
-
-    \b
-    This command prints those observations and nothing else. It states no
-    conclusion about whether a turn should have had a test: it prints each
-    recorded value, states how that value was established, and counts rows.
-    Reading them and ruling on them is your job.
-
-    \b
-    The ledger lives outside every repository working tree on purpose, so
-    that `git clean -fdx` and worktree removal cannot delete it (Decision of
-    Record D-OBS-4). Set GUARDKIT_ZERO_TEST_ROOT to move it.
-
-    \b
-    The repository is resolved from wherever you are standing — a
-    subdirectory or a git worktree reads the same ledger the build wrote.
-    Pass --repo-root once per repository to read several at once:
-        guardkit autobuild zero-test-report --repo-root ../forge --repo-root .
-
-    \b
-    Exit Codes:
-        0: Always. This is a report, not a gate.
-    """
-    from guardkit.orchestrator import zero_test_gate
-
-    starts = [Path(r) for r in repo_root] or [Path.cwd()]
-    # ONE resolver for reading and writing (zero_test_gate.resolve_repo_root),
-    # so a report run from a subdirectory cannot look somewhere a build never
-    # wrote.
-    reads = [zero_test_gate.read_ledger(start) for start in starts]
-    rows = [row for read in reads for row in read.rows]
-
-    if as_json:
-        console.print_json(json.dumps(rows))
-        sys.exit(0)
-
-    ledger = "\n  ".join(str(path) for read in reads for path in read.paths_read)
-    missing = [read for read in reads if not read.any_ledger_file]
-    if missing:
-        # Nothing was read. That is a different fact from "a ledger was read
-        # and held no rows", and the two must never be printed as one.
-        if len(reads) == 1:
-            which = missing[0].repo_root.name
-        else:
-            which = f"{len(missing)} of the {len(reads)} repositories asked about"
-        console.print(
-            f"[yellow]No ledger file exists for {which}, so no row was "
-            "read.[/yellow]"
-        )
-        for read in missing:
-            console.print(
-                f"[dim]  {read.repo_root} -> looked for {read.ledger_path}[/dim]",
-                soft_wrap=True,
-            )
-        console.print(
-            "[dim]A row is written only when the rule fires, and no ledger "
-            "file is present at the location above.[/dim]"
-        )
-        if not rows:
-            sys.exit(0)
-        console.print()
-
-    if not rows:
-        # Every ledger asked for exists and every one of them holds no rows.
-        console.print(
-            "[bold]0 rows recorded.[/bold] The ledger file(s) below exist and "
-            "hold no rows.\n"
-        )
-        console.print(f"[dim]Ledger(s) read:\n  {ledger}[/dim]", soft_wrap=True)
-        console.print(
-            "[dim]A row is written only when "
-            "CoachValidator._check_zero_test_anomaly fires on the "
-            "language-model Coach's evidence-gathering path. Turns whose task "
-            "type does not require tests, turns that stopped earlier on a "
-            "dishonest report or a failed quality gate, turns reviewed by the "
-            "rule-based Coach, and every build that ran before this "
-            "instrument was installed write no row.[/dim]"
-        )
-        sys.exit(0)
-
-    show_repo = len(reads) > 1
-    builds = {(r.get("repo"), r.get("worktree_dir") or r.get("task_id")) for r in rows}
-
-    from rich.markup import escape
-
-    counted = "\n".join(
-        f"  [bold]{sum(1 for row in rows if predicate(row))}[/bold]  "
-        f"{escape(heading)}"
-        for heading, predicate in zero_test_gate.OBSERVATION_COUNTS
-    )
-    console.print(
-        Panel(
-            f"[bold]{len(rows)}[/bold] row(s) recorded, across "
-            f"[bold]{len(builds)}[/bold] build worktree(s).\n\n"
-            "Of those rows:\n"
-            f"{counted}\n\n"
-            "[dim]Each count above is a count of rows meeting the condition "
-            "named beside it. The groups overlap, and a row can appear in "
-            "several.[/dim]",
-            title="Rows recorded when the zero-test rule fired",
-            border_style="cyan",
-        )
-    )
-
-    _zero_test_print_provenance()
-
-    shown = rows if limit <= 0 else rows[-limit:]
-    _zero_test_print_rows(
-        shown,
-        show_repo,
-        f"ROWS ({len(shown)} of {len(rows)} shown, in the order they were read)",
-    )
-
-    console.print(f"\n[dim]Ledger(s):\n  {ledger}[/dim]", soft_wrap=True)
-    sys.exit(0)
-
-
 @autobuild.command("merge")
 @click.argument("feature_id")
 @click.option(
@@ -1934,8 +1518,7 @@ def zero_test_report(repo_root: tuple, limit: int, as_json: bool):
     default=True,
     show_default=True,
     help=(
-        "Re-run the repo's test suite and validate the feature file on the "
-        "merged result. Only a positive pass ever reads as success."
+        "Re-run the repo's test suite on the merged result."
     ),
 )
 @click.option(
@@ -2000,9 +1583,8 @@ def merge(
 
     With verification on and no --baseline-json, the same test command is
     run on the target branch first, so only failures this merge actually
-    introduced are counted against it. If that first run cannot start, the
-    merge still happens and the checks are reported as "could not run" —
-    never as a clean baseline.
+    introduced are counted against it. If the tests cannot be run, the
+    merge still happens and the report says the tests were not run.
 
     \b
     Examples:
@@ -2015,11 +1597,11 @@ def merge(
 
     \b
     Exit Codes:
-        0: Merged (and verification passed, when on)
+        0: Merged (and no test failure charged to it, when verification is on)
         1: Unexpected error
         2: Refused (dirty tree / target moved / branch missing)
         3: Conflict (merge aborted, tree left clean, branch kept)
-        4: Merged, but verification failed or gave no verdict
+        4: Merged, but the tests ran and failed on something this merge caused
     """
     from guardkit.orchestrator.merge_executor import (
         OUTCOME_CONFLICT,
@@ -2069,11 +1651,12 @@ def merge(
     sys.exit(0)
 
 
-def _load_baseline_failing(path: Path) -> list:
+def _load_baseline_failing(path: Path) -> Optional[list]:
     """Read --baseline-json: a bare JSON list of failing pytest node ids, or
     an object carrying the list under ``failing_node_ids`` (the shape
     ``baseline.json`` is written in) or ``failing`` (the shape the deploy
-    sidecar hands over)."""
+    sidecar hands over). Any other shape carries no list, so the merge runs
+    as if no baseline had been handed in."""
     data = json.loads(path.read_text(encoding="utf-8"))
     if isinstance(data, list):
         return [str(x) for x in data]
@@ -2082,13 +1665,7 @@ def _load_baseline_failing(path: Path) -> list:
             ids = data.get(key)
             if isinstance(ids, list):
                 return [str(x) for x in ids]
-        raise ValueError(
-            f"{path} is an object with neither a failing_node_ids nor a "
-            f"failing list"
-        )
-    raise ValueError(
-        f"{path} must be a JSON list of node ids or an object carrying one"
-    )
+    return None
 
 
 # ============================================================================
@@ -2102,7 +1679,6 @@ __all__ = [
     "feature",
     "complete",
     "merge",
-    "zero_test_report",
     "_check_sdk_available",
     "_require_sdk",
 ]

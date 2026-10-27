@@ -179,10 +179,11 @@ class TestFeatureCompleteOrchestrator:
         mock_load_feature.assert_called_once()
 
     @patch("guardkit.orchestrator.feature_complete.FeatureLoader.load_feature")
-    def test_validate_phase_already_completed(
+    def test_validate_phase_already_completed_is_not_refused(
         self, mock_load_feature, mock_repo_root, mock_feature, mock_worktree_manager
     ):
-        """Test validation phase when feature already completed."""
+        """Completing a completed feature again is not refused (the cull, 27
+        October 2026): completion changes nothing that could be done twice."""
         mock_feature.status = "completed"
         mock_load_feature.return_value = mock_feature
 
@@ -193,16 +194,14 @@ class TestFeatureCompleteOrchestrator:
             force=False,
         )
 
-        with pytest.raises(FeatureCompleteError) as exc_info:
-            orchestrator._validate_phase("FEAT-TEST")
-
-        assert "already completed" in str(exc_info.value)
+        feature, _ = orchestrator._validate_phase("FEAT-TEST")
+        assert feature == mock_feature
 
     @patch("guardkit.orchestrator.feature_complete.FeatureLoader.load_feature")
     def test_validate_phase_incomplete_tasks(
         self, mock_load_feature, mock_repo_root, mock_feature, mock_worktree_manager
     ):
-        """Tasks not completed are advice, never a refusal (step 2, 26 October 2026)."""
+        """Tasks not completed are never a refusal."""
         mock_feature.tasks[0].status = "in_progress"
         mock_feature.tasks[1].status = "deferred"
         mock_load_feature.return_value = mock_feature

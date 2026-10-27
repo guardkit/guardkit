@@ -1,23 +1,21 @@
 """Live-gate runner orchestration + results-envelope emission (WS2 session B3).
 
-Composes the six B3 modules — pre-flight → registry → executor → sweep →
-poller (utility) → evidence — into one run that emits the scope-design §3
-results envelope (an F4 ``ResultsEnvelope``), writes it under
-``qa/gates/history/<run_id>.json``, and returns it (also printed on stdout by
-the CLI for the forge adapter).
+Composes pre-flight → registry → executor → evidence into one run that emits
+the scope-design §3 results envelope (an F4 ``ResultsEnvelope``), writes it
+under ``qa/gates/history/<run_id>.json``, and returns it (also printed on
+stdout by the CLI for the forge adapter).
 
 Deterministic (DF-015 clause 1): no model calls anywhere on this path. The only
 non-pure inputs are the wall clock (injected via ``now_fn`` so runs are
 reproducible in tests) and the gate subprocess (behind the executor's seam).
 
-Verdict (DF-017): the envelope carries one of ``pass | fail | instrument_fail |
-environment_fail``. ``instrument_fail`` / ``environment_fail`` come from
-pre-flight short-circuits and never indict the system under test. B3 derives a
-DETERMINISTIC v1 verdict (:func:`derive_verdict`); the richer disposition layer
-— an undispositioned red is an unclosed run, revision entries, the F9 attempts
-ledger — is session B4's ``disposition.py`` / ``verdict.py``, which enrich this
-same envelope (``dispositions_ref`` / ``attempts_ledger_ref`` are left null
-here for B4 to populate).
+Verdict (DF-017): the envelope carries ``pass``, ``fail`` or
+``environment_fail``. ``environment_fail`` comes from the pre-flight
+reachability check and never indicts the system under test. Since the cull
+(27 October 2026) the verdict is the gates' own result: any gate that exited
+non-zero or reported a failing assertion is ``fail``. The leak sweep, the
+disposition and campaign layers and the attempts ledger are gone, so
+``sweep``, ``dispositions_ref`` and ``attempts_ledger_ref`` are always null.
 """
 
 from __future__ import annotations
@@ -28,15 +26,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Dict, List, Literal, Mapping, Optional, Sequence
 
-from guardkit.qa.formats import QAFormatError, validate_instance
 from guardkit.qa.formats.gate_registry import (
+    GateEntry,
     GateResult,
     ResultsEnvelope,
-    SweepResult,
 )
-from guardkit.qa.formats.leak_sweep import LeakSweepManifest
 
-from guardkit.orchestrator.live_gate.errors import LiveGateError, LiveGateStubError
+from guardkit.orchestrator.live_gate.errors import LiveGateError
 from guardkit.orchestrator.project_command_env import main_checkout_environment
 from guardkit.orchestrator.live_gate.evidence import (
     EvidenceCollector,
@@ -50,22 +46,14 @@ from guardkit.orchestrator.live_gate.executor import (
     gate_failed,
 )
 from guardkit.orchestrator.live_gate.preflight import (
-    BrokerDiffProvider,
     DefaultF16ChecklistProvider,
     F16ChecklistProvider,
-    InstrumentSelfCheck,
-    ReservationBroker,
     run_preflight,
 )
 from guardkit.orchestrator.live_gate.registry import (
     load_registry,
     registry_path_for,
     select_gates,
-)
-from guardkit.orchestrator.live_gate.sweep import (
-    PageTextFetcher,
-    UnconfiguredPageTextFetcher,
-    run_sweep,
 )
 
 Verdict = Literal["pass", "fail", "instrument_fail", "environment_fail"]
@@ -79,31 +67,18 @@ EVIDENCE_DIRNAME = ("qa", "gates", "evidence")
 def derive_verdict(
     preflight_classification: Optional[Literal["instrument_fail", "environment_fail"]],
     gate_results: Sequence[GateResult],
-    sweep_result: Optional[SweepResult],
-    *,
-    sweep_unavailable: bool = False,
 ) -> Verdict:
-    """Deterministic v1 verdict (DF-017 enum). Pure.
+    """The run's verdict (DF-017 enum). Pure.
 
-    - A pre-flight short-circuit (``instrument_fail`` / ``environment_fail``)
-      wins outright — the system was never exercised.
-    - Otherwise an OBSERVED red wins: any failed gate, or any sweep leak, is
-      ``fail`` (a gate that ran and failed is a definite result; B4's
-      disposition layer may later re-attribute it, but B3's deterministic
-      verdict does not mask a real red behind an un-runnable sweep).
-    - Otherwise a surface-bearing sweep that could not run is
-      ``environment_fail`` — only downgrades an otherwise-passing run (we
-      cannot claim clean surfaces we never swept).
+    - A pre-flight short-circuit wins outright — the system was never
+      exercised.
+    - Otherwise any failed gate is ``fail``.
     - Otherwise: ``pass``.
     """
     if preflight_classification is not None:
         return preflight_classification
     if any(gate_failed(g) for g in gate_results):
         return "fail"
-    if sweep_result is not None and sweep_result.leaks:
-        return "fail"
-    if sweep_unavailable:
-        return "environment_fail"
     return "pass"
 
 
@@ -115,37 +90,24 @@ def _gate_scripts_env(repo_root: Path, addresses: Mapping[str, str]) -> dict:
 
 
 class LiveGateRunner:
-    """Deterministic live-gate runner. Seams are injected; the defaults are
-    the loud ``Unconfigured*`` stubs / real subprocess runner — except F16,
-    whose bare default is :class:`DefaultF16ChecklistProvider` (a real
-    reachability check against each gate's registry ``base_url_env``, ruled
-    08-15) so an unattended CLI run's verdict can follow the gates."""
+    """Deterministic live-gate runner. The gate runner and the pre-flight
+    checklist may be injected; the defaults are the real subprocess runner
+    and :class:`DefaultF16ChecklistProvider` (a real reachability check
+    against each gate's registry ``base_url_env``, ruled 08-15)."""
 
     def __init__(
         self,
         repo_root: Path,
         *,
         gate_runner: Optional[GateScriptRunner] = None,
-        page_text_fetcher: Optional[PageTextFetcher] = None,
-        reservation_broker: Optional[ReservationBroker] = None,
-        broker_diff: Optional[BrokerDiffProvider] = None,
         f16_provider: Optional[F16ChecklistProvider] = None,
-        instrument_check: Optional[InstrumentSelfCheck] = None,
-        reservation_resource: Optional[str] = None,
-        broker_contract_ref: Optional[str] = None,
         gate_env: Optional[dict] = None,
         gate_timeout_s: float = DEFAULT_GATE_TIMEOUT_S,
         now_fn: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
     ) -> None:
         self.repo_root = Path(repo_root)
         self.gate_runner = gate_runner or SubprocessGateScriptRunner()
-        self.page_text_fetcher = page_text_fetcher
-        self.reservation_broker = reservation_broker
-        self.broker_diff = broker_diff
         self.f16_provider = f16_provider
-        self.instrument_check = instrument_check
-        self.reservation_resource = reservation_resource
-        self.broker_contract_ref = broker_contract_ref
         # The gate scripts' environment is always built from nothing
         # (:meth:`_gate_script_env`), never a copy of this process's, which
         # holds the factory's credentials. ``gate_env``, when a caller hands
@@ -162,11 +124,11 @@ class LiveGateRunner:
         address is read from (``base_url_env``). That name must be one a
         project may declare (not one of the factory's own, not
         credential-shaped), and its value, read from ``gate_env`` when a
-        caller handed one in or else this process, must be an absolute http
-        or https URL with a host and contain no ``@`` anywhere (no user name
-        or password, however it parses). Any refusal names the setting and
-        never shows a value, and happens before the pre-flight reachability check, which
-        records the address in the run's history. Only these checked values
+        caller handed one in or else this process, must contain no ``@``
+        anywhere (no user name or password, however it parses). Any refusal
+        names the setting and never shows a value, and happens before the
+        pre-flight reachability check, which records the address in the
+        run's history. Only these checked values
         reach the reachability check and the gate scripts. An address that
         is not set is left out (the reachability check says so).
         """
@@ -187,8 +149,8 @@ class LiveGateRunner:
             value = source.get(name)
             if value is None:
                 continue
-            # Any "@" anywhere, or anything but an absolute http(s) URL with a
-            # host, is refused by the setting's name; the value is never shown.
+            # Any "@" anywhere is refused by the setting's name; the value is
+            # never shown.
             refusal = gate_address_refusal(name, value)
             if refusal is not None:
                 raise LiveGateError(refusal)
@@ -227,7 +189,6 @@ class LiveGateRunner:
         *,
         requested_gate_ids: Optional[Sequence[str]] = None,
         registry_path: Optional[Path] = None,
-        campaign: bool = False,  # v1: accepted; the F9 campaign loop is B4
     ) -> ResultsEnvelope:
         started = self.now_fn()
         run_id = self._make_run_id(feature_id, target_env, started)
@@ -243,35 +204,18 @@ class LiveGateRunner:
         evidence_dir = ensure_evidence_dir(self._evidence_base(), run_id)
         collector = EvidenceCollector()
 
-        # F16 default wiring (ruled 08-15): a bare runner (no provider injected
-        # — the `guardkit qa live-gate` CLI path) gets the minimal REAL
-        # provider: reachability GET against each selected gate's registry
-        # base_url env, remaining perishable prereqs recorded
-        # declared-not-verified. Before this, every bare run short-circuited
-        # to environment_fail on the Unconfigured stub (proven run
-        # PILOT-HURL-local-20260814T205745Z) and the verdict could never
-        # follow the gates.
-        # It reads only the checked addresses, never this process's own
-        # environment (13 October 2026).
+        # A bare runner (no provider injected — the `guardkit qa live-gate`
+        # CLI path) gets the reachability check against each selected gate's
+        # registry base_url env (ruled 08-15). It reads only the checked
+        # addresses, never this process's own environment (13 October 2026).
         f16 = self.f16_provider or DefaultF16ChecklistProvider(
             gates, env=addresses
         )
 
-        preflight = run_preflight(
-            gates,
-            repo_root=self.repo_root,
-            reservation_broker=self.reservation_broker,
-            broker_diff=self.broker_diff,
-            f16_provider=f16,
-            instrument_check=self.instrument_check,
-            reservation_resource=self.reservation_resource,
-            broker_contract_ref=self.broker_contract_ref,
-        )
+        preflight = run_preflight(gates, f16_provider=f16)
         classification = preflight.classification
 
         gate_results: List[GateResult] = []
-        sweep_result: Optional[SweepResult] = None
-        sweep_unavailable = False
 
         if classification is None:
             # Pre-flight green: exercise the deployed app.
@@ -289,11 +233,8 @@ class LiveGateRunner:
                 timeout_s=self.gate_timeout_s,
             )
             collector.add_from_gate_results(gate_results)
-            sweep_result, sweep_unavailable = self._maybe_sweep(gates)
 
-        verdict = derive_verdict(
-            classification, gate_results, sweep_result, sweep_unavailable=sweep_unavailable
-        )
+        verdict = derive_verdict(classification, gate_results)
 
         index_path = collector.write_index(evidence_dir)
         finished = self.now_fn()
@@ -307,39 +248,11 @@ class LiveGateRunner:
             finished=finished.isoformat(),
             preflight=preflight.to_schema(),
             gates=gate_results,
-            sweep=sweep_result,
-            poller_outcomes=[],  # populated by callers that watch async ops
             evidence_index_ref=self._rel(index_path) if index_path else None,
-            dispositions_ref=None,  # B4
-            attempts_ledger_ref=None,  # B4
             verdict=verdict,
         )
         self._write_envelope(envelope, run_id)
         return envelope
-
-    def _maybe_sweep(self, gates) -> tuple[Optional[SweepResult], bool]:
-        """Run the F3 sweep if a selected gate is surface-bearing.
-
-        Returns ``(sweep_result, sweep_unavailable)``. A surface-bearing gate
-        with no live page-text source makes the sweep un-runnable →
-        ``sweep_unavailable=True`` (verdict environment_fail), never a vacuous
-        pass.
-        """
-        sweep_gate = next((g for g in gates if g.leak_sweep_manifest_ref), None)
-        if sweep_gate is None:
-            return None, False
-        manifest_path = (self.repo_root / sweep_gate.leak_sweep_manifest_ref).resolve()
-        try:
-            manifest: LeakSweepManifest = validate_instance("leak-sweep", manifest_path)  # type: ignore[assignment]
-        except QAFormatError:
-            # A malformed/missing manifest for a surface-bearing gate = cannot
-            # sweep = environment/config not ready.
-            return None, True
-        fetcher = self.page_text_fetcher or UnconfiguredPageTextFetcher()
-        try:
-            return run_sweep(manifest, fetcher), False
-        except LiveGateStubError:
-            return None, True
 
     def _write_envelope(self, envelope: ResultsEnvelope, run_id: str) -> Path:
         history = self._history_dir()

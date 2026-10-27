@@ -14,13 +14,14 @@ three pieces the merge now pins on the TARGET branch, before anything lands
   mapping, a block the schema refuses) is a reason the checks cannot run;
   nothing falls back to a stack default.
 * :func:`judge_words` and :func:`judge_files` are the judge-file rule. The
-  merge accepts only plain command text it can follow completely: a short
-  list of ordinary characters, split the way the shell (for the test command)
-  or GuardKit (for the install) splits it, where every word is a plain word.
-  A file one of those words names is a judge file. Since 15 October 2026 the
-  merge checks the join with the TARGET's copy of every judge file (the
-  build's copy is never run), so a build that changed one still gets a
-  verdict; which ones it changed is kept for the card and the receipt.
+  pinned command text is split the way the shell (for the test command) or
+  GuardKit (for the install) splits it, and its plain words are kept. A file
+  one of those words names is a judge file. Since 15 October 2026 the merge
+  checks the join with the TARGET's copy of every judge file (the build's
+  copy is never run); which ones it changed is kept for the card and the
+  receipt. Since the cull of 27 October 2026 no command text is refused: a
+  word that is not plain, or text that cannot be split, simply names no
+  judge file.
 * :func:`judge_links` is the link rule: a judge file, or a folder on its
   path, that is a symbolic link in a tree the merge reads means no verdict,
   because putting the target's copy back would put back the link and not the
@@ -39,7 +40,6 @@ from __future__ import annotations
 import os
 import re
 import shlex
-import string
 import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
@@ -62,7 +62,6 @@ from guardkit.orchestrator.toolchain_declaration import (
 )
 
 __all__ = [
-    "CANNOT_FOLLOW",
     "JUDGE_FILES_CHANGED",
     "JUDGE_IS_A_LINK",
     "MergeDeclarations",
@@ -208,10 +207,6 @@ def read_merge_declarations(
 # The judge-file rule (design item 2b, final form after review round 6)
 # ---------------------------------------------------------------------------
 
-CANNOT_FOLLOW = (
-    "could not verify — the check command uses shell syntax the factory "
-    "cannot follow; put it in a script and name the script"
-)
 JUDGE_FILES_CHANGED = "could not verify — the build changed the commands that judge it"
 JUDGE_IS_A_LINK = (
     "could not verify — {path} is a symbolic link, so the factory cannot tell "
@@ -250,9 +245,6 @@ def shown_path(path: str) -> str:
     return "".join(out)
 
 
-_ALLOWED_CHARACTERS = frozenset(
-    string.ascii_letters + string.digits + " \t\n" + "_./=:@%+,-'\"\\&|;()<>"
-)
 _PLAIN_WORD = re.compile(r"[A-Za-z0-9_./=:@%+,-]+")
 _OPERATOR_WORD = re.compile(r"[&|;()<>]+")
 
@@ -260,7 +252,7 @@ _OPERATOR_WORD = re.compile(r"[&|;()<>]+")
 def judge_words(
     command: str, *, through_shell: bool
 ) -> Tuple[Optional[Tuple[str, ...]], Optional[str]]:
-    """The plain words of a pinned command, or the reason it is refused.
+    """The plain words of a pinned command.
 
     ``through_shell`` is True for the test command, which runs through a
     shell: it is split the way the shell splits it (quotes and escapes
@@ -268,12 +260,10 @@ def judge_words(
     dropped. The install runs without a shell, so its words are exactly the
     argument list ``shlex.split`` gives, as the builder's own install builds.
 
-    Returns ``(words, None)`` or ``(None, CANNOT_FOLLOW)``. Decided from the
-    text alone: a character outside the short allowed list, a split that
-    fails, or any word that is not a plain word refuses it.
+    Returns ``(words, None)``: the second place is kept for callers that
+    read it and is always ``None``. Text that cannot be split gives no
+    words; a word that is not a plain word is left out.
     """
-    if any(ch not in _ALLOWED_CHARACTERS for ch in command):
-        return None, CANNOT_FOLLOW
     try:
         if through_shell:
             lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
@@ -283,14 +273,13 @@ def judge_words(
         else:
             words = shlex.split(command)
     except ValueError:
-        return None, CANNOT_FOLLOW
+        return (), None
     plain: List[str] = []
     for word in words:
         if through_shell and _OPERATOR_WORD.fullmatch(word):
             continue
-        if not _PLAIN_WORD.fullmatch(word):
-            return None, CANNOT_FOLLOW
-        plain.append(word)
+        if _PLAIN_WORD.fullmatch(word):
+            plain.append(word)
     return tuple(plain), None
 
 
@@ -431,15 +420,12 @@ class MergeEnvironment:
 
     ``install_argv`` is empty when no install is declared. ``install_timeout``
     is already capped at the merge's own check time limit.
-    ``ran_marker_regex`` is the target's repository-root marker, when it
-    declares one: a passing check must print it to count as a measurement.
     """
 
     install_argv: Tuple[str, ...] = ()
     install_text: str = ""
     install_timeout: int = 0
     launch: Optional[LaunchDeclaration] = None
-    ran_marker_regex: Optional[str] = None
     # The plain words of the pinned test command and install, for the
     # judge-file comparison.
     judge_words: Tuple[str, ...] = ()
@@ -454,17 +440,18 @@ def pin_merge_environment(
     test_command: Optional[str],
     verify_timeout: int,
 ) -> Tuple[Optional[MergeEnvironment], Optional[str]]:
-    """Pin what the merge will run, or say why nothing can run.
+    """Pin what the merge will run.
 
-    Applies the judge-file text rule to the resolved test command and the
-    declared install before anything else. ``judge_files_changed`` is filled
-    in later, by the merge, from the files the build changed.
+    Returns ``(pinned, None)``: the second place is kept for callers that
+    read it and is always ``None``. The judge words come from the resolved
+    test command and the declared install. The install runs as the argument
+    list ``shlex.split`` gives; text that cannot be split is not run.
+    ``judge_files_changed`` is filled in later, by the
+    merge, from the files the build changed.
     """
     words: List[str] = []
     if test_command:
-        test_words, refusal = judge_words(test_command, through_shell=True)
-        if refusal is not None:
-            return None, refusal
+        test_words, _ = judge_words(test_command, through_shell=True)
         words.extend(test_words or ())
 
     toolchain = declarations.toolchain
@@ -472,16 +459,12 @@ def pin_merge_environment(
     install_argv: Tuple[str, ...] = ()
     install_timeout = 0
     if install_text:
-        install_words, refusal = judge_words(install_text, through_shell=False)
-        if refusal is not None:
-            return None, refusal
-        install_argv = tuple(install_words or ())
-        if not install_argv:
-            return None, (
-                f"the declared install (`{install_text}`) does not split into "
-                f"a command"
-            )
-        words.extend(install_argv)
+        try:
+            install_argv = tuple(shlex.split(install_text))
+        except ValueError:
+            install_argv = ()
+        install_words, _ = judge_words(install_text, through_shell=False)
+        words.extend(install_words or ())
         install_timeout = max(1, min(toolchain.install_timeout, verify_timeout))
 
     return (
@@ -490,9 +473,6 @@ def pin_merge_environment(
             install_text=install_text,
             install_timeout=install_timeout,
             launch=declarations.launch,
-            ran_marker_regex=(
-                toolchain.ran_marker_regex if toolchain is not None else None
-            ),
             judge_words=tuple(words),
         ),
         None,

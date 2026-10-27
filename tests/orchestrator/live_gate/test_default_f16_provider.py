@@ -4,10 +4,9 @@ Before this default, the bare ``guardkit qa live-gate`` CLI hit the
 ``UnconfiguredF16ChecklistProvider`` stub on every repo and every run was
 ``environment_fail`` (proven run PILOT-HURL-local-20260814T205745Z). The
 default provider performs one REAL check — a reachability GET against each
-selected gate's registry ``base_url_env`` (any HTTP answer = ready) — and
-records the remaining perishable prereqs declared-not-verified ``ok=True``
-(the existing recorded-not-faked convention). These tests prove the verdict
-follows the gate, not ``environment_fail``, once something is listening.
+selected gate's registry ``base_url_env`` (any HTTP answer = ready). These
+tests prove the verdict follows the gate, not ``environment_fail``, once
+something is listening.
 """
 
 from __future__ import annotations
@@ -60,27 +59,21 @@ class TestChecklistShape:
     def test_env_unset_is_not_ready(self):
         provider = DefaultF16ChecklistProvider([_gate()], env={})
         results = list(provider.checklist())
-        assert len(results) == 2  # reachability + declared-not-verified tail
+        assert len(results) == 1
         assert results[0].ok is False
         assert "BASE" in results[0].detail and "not set" in results[0].detail
-
-    def test_declared_not_verified_tail_is_ok_true(self):
-        provider = DefaultF16ChecklistProvider([_gate()], env={})
-        tail = list(provider.checklist())[-1]
-        assert tail.ok is True
-        assert "declared-not-verified" in tail.detail
 
     def test_duplicate_env_vars_checked_once(self, live_server):
         gates = [_gate("g1"), _gate("g2")]  # both target BASE
         provider = DefaultF16ChecklistProvider(gates, env={"BASE": live_server})
         results = list(provider.checklist())
-        assert len(results) == 2  # ONE reachability check + the tail
+        assert len(results) == 1  # ONE reachability check
 
     def test_distinct_env_vars_each_checked(self):
         gates = [_gate("g1", "BASE_A"), _gate("g2", "BASE_B")]
         provider = DefaultF16ChecklistProvider(gates, env={})
         results = list(provider.checklist())
-        assert len(results) == 3
+        assert len(results) == 2
         assert all(isinstance(r, SeamResult) for r in results)
 
 
