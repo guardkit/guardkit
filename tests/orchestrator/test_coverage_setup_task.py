@@ -12,9 +12,10 @@ Checked here:
 * a task that says it will change ``.guardkit/config.yaml`` is not stopped;
   after its turn the coverage command it wrote is pinned and the Coach
   measures coverage with it, on that turn, through the real loop;
-* a task that says so but declares no coverage command stops after its turn
-  with the same plain reason, worded for a stop after the turn;
-* a task that does not touch the file still stops before any work;
+* a task that says so but declares no coverage command goes on to the Coach
+  after its turn, with the same plain reason as advice, worded for after the
+  turn (advice since step 1, 24 October 2026);
+* a task that does not touch the file runs with that advice;
 * a coverage command an earlier task of the same build declared in the
   worktree reaches the next task's pin, so that task is not stopped;
 * only the coverage command is ever taken from the worktree, a pinned one is
@@ -357,7 +358,7 @@ class TestATaskThatDeclaresTheCommand:
         assert coach.get("is_configuration_error", False) is False
         advice = _coverage_advice(result)
         assert advice and "declares no coverage command" in advice[0]
-        assert "after that turn the file still declares none" in advice[0]
+        assert "after its turn the file still declares none" in advice[0]
         assert load_toolchain_snapshot(TASK, worktree).coverage is None
 
     def test_a_task_not_touching_the_file_runs_with_advice(
@@ -561,7 +562,7 @@ class TestAProjectWithNoToolchainBlock:
         assert turns.coach_receipts == [None]
         assert result.final_decision == "approved", result.error
         advice = _coverage_advice(result)
-        assert advice and "after that turn the file still declares none" in advice[0]
+        assert advice and "after its turn the file still declares none" in advice[0]
         assert load_coverage_only_pin(TASK, worktree) is None
 
     def test_an_earlier_wave_adding_the_first_declaration_is_seen(

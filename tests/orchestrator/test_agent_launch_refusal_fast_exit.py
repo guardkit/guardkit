@@ -1,9 +1,10 @@
 """A refused agent launch stops the task at once (factory reliability repair 3).
 
-B463 task two: the harness refused to start the Player because its reused run
-profile held something unexpected. Each refusal was then handled like an
-implementation failure — state recovery, a synthetic report, the Coach and
-feedback asking for code — for four turns.
+B463 task two: the harness refused to start the Player. Each refusal was
+then handled like an implementation failure — state recovery, a synthetic
+report, the Coach and feedback asking for code — for four turns. (What the
+run profile holds is advice since 26 October 2026, step 2; the refusals left
+are the safety settings and the profile selection.)
 
 These tests drive the real seams: ``AutoBuildOrchestrator._loop_phase`` →
 ``_invoke_player_safely`` → the real ``AgentInvoker.invoke_player`` → the
@@ -17,7 +18,6 @@ not import the harness package.
 
 from __future__ import annotations
 
-import hashlib
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -34,12 +34,7 @@ from guardkit.orchestrator.harness import HarnessAdapter
 from guardkit.worktrees import Worktree
 
 _TASK = "TASK-LAUNCH-001"
-_ENTRY = {
-    "path": "guardkit-player/notes.json",
-    "type": "file",
-    "size": 20,
-    "sha256": hashlib.sha256(b"remember-this-secret").hexdigest(),
-}
+_REASON = "DEEPAGENTS_CODE_OFFLINE is not set to 1"
 
 
 class _HarnessLaunchRefused(RuntimeError):
@@ -47,19 +42,15 @@ class _HarnessLaunchRefused(RuntimeError):
 
     failure_kind = "agent_launch_refused"
 
-    def __init__(self, message: str, *, profile: str, entries: list) -> None:
+    def __init__(self, message: str, *, profile: str) -> None:
         super().__init__(message)
         self.profile = profile
-        self.entries = tuple(dict(entry) for entry in entries)
 
 
 def _refusal() -> _HarnessLaunchRefused:
     return _HarnessLaunchRefused(
-        "dcode Player: run profile contains unexpected configuration or nonempty "
-        f"memory; unexpected profile entries: {_ENTRY['path']} (file, "
-        f"size={_ENTRY['size']}, sha256={_ENTRY['sha256']})",
+        f"dcode Player: {_REASON}",
         profile="/profiles/run",
-        entries=[_ENTRY],
     )
 
 
@@ -211,17 +202,17 @@ def test_one_launch_refusal_stops_the_task(tmp_path, worktree, display, mode):
     coach_safely.assert_not_called()
     coach.assert_not_called()
 
-    # The reason and the inventory reach the task's result.
+    # The reason and the profile reach the task's result.
     result = turn.player_result
     assert result.success is False
     assert result.report["unrecoverable"] is True
     assert result.report["unrecoverable_reason"] == "agent launch refused"
-    assert result.report["launch_refused_entries"] == [_ENTRY]
+    assert "launch_refused_entries" not in result.report
     assert result.report["launch_refused_profile"] == "/profiles/run"
     assert result.error.startswith("Unrecoverable: agent launch refused: ")
-    assert _ENTRY["path"] in result.error and _ENTRY["sha256"] in result.error
+    assert _REASON in result.error
     message = orchestrator._build_error_message("error", turns)
-    assert "agent launch refused" in message and _ENTRY["path"] in message
+    assert "agent launch refused" in message and _REASON in message
 
 
 @pytest.mark.parametrize("mode", ["task-work", "direct"])
@@ -277,7 +268,7 @@ def test_refusal_is_found_through_a_wrapper():
 
     mapped = AgentLaunchRefusedError.from_refusal(refusal)
     assert mapped.reason == "agent launch refused"
-    assert mapped.entries == [_ENTRY]
+    assert mapped.profile == "/profiles/run"
     assert str(mapped).startswith("agent launch refused: dcode Player:")
 
 
@@ -287,7 +278,7 @@ def test_the_real_harness_refusal_is_recognised_when_installed():
     refused_type = getattr(harness, "PlayerLaunchRefused", None)
     if refused_type is None:
         pytest.skip("installed guardkitfactory predates PlayerLaunchRefused")
-    error = refused_type("dcode Player: refused", profile="/p", entries=[_ENTRY])
+    error = refused_type("dcode Player: refused", profile="/p")
     assert isinstance(error, harness.LangGraphHarnessError)
     assert find_agent_launch_refusal(error) is error
-    assert AgentLaunchRefusedError.from_refusal(error).entries == [_ENTRY]
+    assert AgentLaunchRefusedError.from_refusal(error).profile == "/p"

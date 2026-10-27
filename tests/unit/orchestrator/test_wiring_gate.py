@@ -65,6 +65,25 @@ def _orchestrator(tmp_path: Path) -> FeatureOrchestrator:
     )
 
 
+def _checkout(tmp_path: Path) -> MagicMock:
+    """A stand-in worktree whose path is a real git checkout.
+
+    The gate runs the analyser as the checkout's one writer, which reads the
+    checkout with git; an empty folder made the gate take its "stopped on an
+    error of its own" path before any finding was looked at.
+    """
+    import subprocess
+
+    root = tmp_path / "checkout"
+    root.mkdir(exist_ok=True)
+    (root / "a.py").write_text("x = 1\n", encoding="utf-8")
+    git = ["git", "-c", "user.name=Test", "-c", "user.email=test@example.invalid"]
+    subprocess.run(git + ["init", "-q", "-b", "main"], cwd=root, check=True)
+    subprocess.run(git + ["add", "-A"], cwd=root, check=True)
+    subprocess.run(git + ["commit", "-q", "-m", "start"], cwd=root, check=True)
+    return MagicMock(path=str(root))
+
+
 def _wave_result(task_ids, all_succeeded=True) -> WaveExecutionResult:
     return WaveExecutionResult(
         wave_number=1,
@@ -243,7 +262,7 @@ class TestRunPostWaveWiringGate:
                    return_value=_wiring_dict()), \
              patch.object(orch, "_execute_wave") as exec_wave:
             outcome = orch._run_post_wave_wiring_gate(
-                1, ["TASK-A"], MagicMock(), MagicMock(path=str(tmp_path)), wr
+                1, ["TASK-A"], MagicMock(), _checkout(tmp_path), wr
             )
         assert outcome.terminate is False
         assert outcome.findings_unresolved is False
@@ -257,7 +276,7 @@ class TestRunPostWaveWiringGate:
              patch("guardkitfactory.wiring.analyze_wiring") as az, \
              patch.object(orch, "_execute_wave") as exec_wave:
             outcome = orch._run_post_wave_wiring_gate(
-                1, ["TASK-A"], MagicMock(), MagicMock(path=str(tmp_path)), wr
+                1, ["TASK-A"], MagicMock(), _checkout(tmp_path), wr
             )
         assert outcome.terminate is False
         az.assert_not_called()
@@ -272,7 +291,7 @@ class TestRunPostWaveWiringGate:
                    side_effect=RuntimeError("boom")), \
              patch.object(orch, "_execute_wave") as exec_wave:
             outcome = orch._run_post_wave_wiring_gate(
-                1, ["TASK-A"], MagicMock(), MagicMock(path=str(tmp_path)), wr
+                1, ["TASK-A"], MagicMock(), _checkout(tmp_path), wr
             )
         assert outcome.terminate is False
         exec_wave.assert_not_called()
@@ -284,7 +303,7 @@ class TestRunPostWaveWiringGate:
         with patch.dict(sys.modules, {"guardkitfactory.wiring": None}), \
              patch.object(orch, "_execute_wave") as exec_wave:
             outcome = orch._run_post_wave_wiring_gate(
-                1, ["TASK-A"], MagicMock(), MagicMock(path=str(tmp_path)), wr
+                1, ["TASK-A"], MagicMock(), _checkout(tmp_path), wr
             )
         assert outcome.terminate is False
         exec_wave.assert_not_called()
@@ -302,7 +321,7 @@ class TestRunPostWaveWiringGate:
                    side_effect=results), \
              patch.object(orch, "_execute_wave", return_value=rerun) as exec_wave:
             outcome = orch._run_post_wave_wiring_gate(
-                1, ["TASK-A"], MagicMock(), MagicMock(path=str(tmp_path)), wr
+                1, ["TASK-A"], MagicMock(), _checkout(tmp_path), wr
             )
         exec_wave.assert_called_once()
         # seed_feedback carries the wiring feedback to turn 1.
@@ -325,7 +344,7 @@ class TestRunPostWaveWiringGate:
                    return_value=_wiring_dict(ctor_findings=[_CTOR])), \
              patch.object(orch, "_execute_wave", return_value=rerun) as exec_wave:
             outcome = orch._run_post_wave_wiring_gate(
-                1, ["TASK-A"], MagicMock(), MagicMock(path=str(tmp_path)), wr
+                1, ["TASK-A"], MagicMock(), _checkout(tmp_path), wr
             )
         exec_wave.assert_called_once()  # exactly one retry (budget = 1)
         assert outcome.terminate is False      # NEVER hard-terminates on findings
@@ -341,7 +360,7 @@ class TestRunPostWaveWiringGate:
                    return_value=_wiring_dict(seam_findings=[_SEAM])), \
              patch.object(orch, "_execute_wave") as exec_wave:
             outcome = orch._run_post_wave_wiring_gate(
-                1, ["TASK-A"], MagicMock(), MagicMock(path=str(tmp_path)), wr
+                1, ["TASK-A"], MagicMock(), _checkout(tmp_path), wr
             )
         exec_wave.assert_not_called()  # budget 0 → no feed-back
         assert outcome.terminate is False
@@ -360,7 +379,7 @@ class TestRunPostWaveWiringGate:
                    return_value=_wiring_dict(seam_findings=[_SEAM])), \
              patch.object(orch, "_execute_wave", return_value=rejected):
             outcome = orch._run_post_wave_wiring_gate(
-                1, ["TASK-A"], MagicMock(), MagicMock(path=str(tmp_path)), wr
+                1, ["TASK-A"], MagicMock(), _checkout(tmp_path), wr
             )
         assert outcome.terminate is False
         assert outcome.final_wave_result is rejected

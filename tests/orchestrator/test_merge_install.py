@@ -1122,8 +1122,6 @@ INVALID_DECLARATIONS = {
         install=None, extra_toolchain="  install: [a, b]\n"
     ),
     "toolchain is text": 'toolchain: "text"\n',
-    "launch settings is text": _VALID_TOOLCHAIN
-    + 'launch:\n  settings: "PATH_X"\n',
     "top level is a list": "- toolchain\n- launch\n",
     "broken yaml": "toolchain:\n  test: [unclosed\n",
     # Present but empty is not the same as absent (implementation review R1).
@@ -1136,6 +1134,23 @@ INVALID_DECLARATIONS = {
     "whole document tilde": "~\n",
     "whole document null with comments": "# settings\nnull\n",
 }
+
+
+class TestMalformedLaunchSettingsAreAdvice:
+    def test_launch_settings_as_text_are_ignored_and_the_merge_verifies(
+        self, standin: Standin
+    ):
+        """Step 2 (26 October 2026): `launch.settings` that is not a list of
+        names is logged and ignored; the project's own check still runs."""
+        standin.init(
+            config=_VALID_TOOLCHAIN + 'launch:\n  settings: "PATH_X"\n',
+        ).branch({"feature.txt": "built\n"})
+
+        report = standin.merge()
+
+        assert report.outcome == OUTCOME_MERGED
+        assert report.verify_status == "passed", report.verify_detail
+        assert report.verify_ran is True
 
 
 class TestDeclarationsAreReadFailClosed:

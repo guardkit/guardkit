@@ -1094,7 +1094,8 @@ def test_task_command_sdk_timeout_in_help(cli_runner):
     result = cli_runner.invoke(task, ["--help"])
     assert result.exit_code == 0
     assert "--sdk-timeout" in result.output
-    assert "60-3600" in result.output
+    assert "at least 60" in result.output
+    assert "3600" not in result.output
 
 
 def test_feature_command_sdk_timeout_in_help(cli_runner):
@@ -1104,7 +1105,8 @@ def test_feature_command_sdk_timeout_in_help(cli_runner):
     result = cli_runner.invoke(feature, ["--help"])
     assert result.exit_code == 0
     assert "--sdk-timeout" in result.output
-    assert "60-3600" in result.output
+    assert "at least 60" in result.output
+    assert "3600" not in result.output
 
 
 @patch("guardkit.cli.autobuild._require_sdk")
@@ -1259,17 +1261,26 @@ def test_task_command_sdk_timeout_invalid_below_minimum(
 
 @patch("guardkit.cli.autobuild._require_sdk")
 @patch("guardkit.cli.autobuild.TaskLoader.load_task")
-def test_task_command_sdk_timeout_invalid_above_maximum(
-    mock_load_task, mock_require_sdk, cli_runner, mock_task_data
+@patch("guardkit.cli.autobuild.AutoBuildOrchestrator")
+def test_task_command_sdk_timeout_above_an_hour_is_accepted(
+    mock_orchestrator_class,
+    mock_load_task,
+    mock_require_sdk,
+    cli_runner,
+    mock_task_data,
+    mock_success_result,
 ):
-    """Test task command rejects sdk_timeout above 3600 seconds."""
+    """Step 2 (26 October 2026): the one-hour upper limit is gone; a slow
+    local model may need longer for one call."""
     mock_load_task.return_value = mock_task_data
+    mock_orchestrator = MagicMock()
+    mock_orchestrator.orchestrate.return_value = mock_success_result
+    mock_orchestrator_class.return_value = mock_orchestrator
 
     result = cli_runner.invoke(task, ["TASK-AB-001", "--sdk-timeout", "5000"])
 
-    # Should fail with validation error
-    assert result.exit_code != 0
-    assert "3600" in result.output or "between" in result.output.lower()
+    assert result.exit_code == 0, result.output
+    assert mock_orchestrator_class.call_args[1]["sdk_timeout"] == 5000
 
 
 @patch("guardkit.cli.autobuild._require_sdk")
@@ -1312,7 +1323,7 @@ def test_task_command_sdk_timeout_boundary_maximum(
     mock_task_data,
     mock_success_result,
 ):
-    """Test task command accepts maximum sdk_timeout (3600 seconds)."""
+    """Test task command accepts an sdk_timeout of 3600 seconds."""
     mock_load_task.return_value = mock_task_data
 
     mock_orchestrator = MagicMock()
@@ -1335,15 +1346,14 @@ def test_feature_command_sdk_timeout_validation(mock_require_sdk, cli_runner):
     """Test feature command validates sdk_timeout range."""
     from guardkit.cli.autobuild import feature
 
-    # Test below minimum
+    # Below the minimum is still refused.
     result = cli_runner.invoke(feature, ["FEAT-A1B2", "--sdk-timeout", "30"])
     assert result.exit_code != 0
-    assert "60" in result.output or "between" in result.output.lower()
+    assert "at least 60" in result.output
 
-    # Test above maximum
+    # Step 2 (26 October 2026): over an hour is no longer refused for its size.
     result = cli_runner.invoke(feature, ["FEAT-A1B2", "--sdk-timeout", "5000"])
-    assert result.exit_code != 0
-    assert "3600" in result.output or "between" in result.output.lower()
+    assert "SDK timeout must be" not in result.output
 
 
 @patch("guardkit.cli.autobuild._require_sdk")

@@ -358,6 +358,23 @@ def _ffec_repo(tmp_path: Path) -> Path:
     return repo
 
 
+def _commit_as_worktree(repo: Path, worktree: Worktree) -> None:
+    """Make the stand-in shared worktree a real git checkout of ``repo``.
+
+    Worktree setup reads the feature's declarations from the new checkout's
+    commit with git, as a real worktree has one; an empty folder is not a
+    checkout.
+    """
+    import shutil
+    import subprocess
+
+    shutil.copytree(repo, worktree.path, dirs_exist_ok=True)
+    git = ["git", "-c", "user.name=Test", "-c", "user.email=test@example.invalid"]
+    subprocess.run(git + ["init", "-q", "-b", "main"], cwd=worktree.path, check=True)
+    subprocess.run(git + ["add", "-A"], cwd=worktree.path, check=True)
+    subprocess.run(git + ["commit", "-q", "-m", "start"], cwd=worktree.path, check=True)
+
+
 def _declare_ffec_002_needs_003(repo: Path) -> None:
     path = repo / ".guardkit" / "features" / "FEAT-FFEC.yaml"
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
@@ -376,6 +393,7 @@ def test_setup_phase_gives_the_committed_ffec_plan_as_advice(
     """Step 2 (26 October 2026): the unordered reference is advice; the build
     starts."""
     repo = _ffec_repo(tmp_path)
+    _commit_as_worktree(repo, mock_worktree)
     orchestrator = FeatureOrchestrator(repo_root=repo, worktree_manager=mock_worktree_manager)
 
     with caplog.at_level("WARNING"):
@@ -396,6 +414,7 @@ def test_setup_phase_reads_a_task_file_that_has_moved_along_the_lifecycle(
     moved = repo / "tasks" / "in_progress" / slug / name
     moved.parent.mkdir(parents=True)
     (repo / "tasks" / "backlog" / slug / name).rename(moved)
+    _commit_as_worktree(repo, mock_worktree)
     orchestrator = FeatureOrchestrator(repo_root=repo, worktree_manager=mock_worktree_manager)
 
     with caplog.at_level("WARNING"):
@@ -1761,15 +1780,20 @@ async def test_bare_object_direct_wave_dispatch_runs_every_task(
     bare = FeatureOrchestrator.__new__(FeatureOrchestrator)
     bare.__dict__.update(configured.__dict__)
 
-    with patch.object(
-        bare,
-        "_execute_task",
-        side_effect=lambda task, *_args, **_kwargs: TaskExecutionResult(
+    def _execute_task(task, *_args, admission_event=None, **_kwargs):
+        # The real _execute_task says when the task holds the checkout; the
+        # wave waits for that before it starts the task's deadline.
+        if admission_event is not None:
+            admission_event()
+        return TaskExecutionResult(
             task_id=task.id,
             success=True,
             total_turns=1,
             final_decision="approved",
-        ),
+        )
+
+    with patch.object(
+        bare, "_execute_task", side_effect=_execute_task
     ) as execute_task, patch.object(
         bare,
         "_wave_task_paths",

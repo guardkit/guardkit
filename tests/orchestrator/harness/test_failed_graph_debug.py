@@ -1,12 +1,10 @@
-"""Returned failed dcode graphs reach disk through the real consumer."""
+"""How a dcode Player turn's graph reaches the debug record: an empty or
+cut-off answer ends the turn as usual, and a failed graph's record keeps
+credentials out."""
 from __future__ import annotations
 
-import asyncio
 import json
-import os
 import socket
-import sys
-from pathlib import Path
 
 import pytest
 
@@ -38,7 +36,12 @@ def _routine_fleet_route(m0_routine_fleet_route):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("route", ["role", "direct"])
 @pytest.mark.parametrize("text,reason", [("", "stop"), ("", "length"), ("partial", "length")])
-async def test_failed_graph_retains_actual_skill_read(monkeypatch, tmp_path, text, reason, route, credential_case=None):
+async def test_empty_or_cut_off_answer_ends_the_turn_as_usual(monkeypatch, tmp_path, text, reason, route):
+    """26 October 2026 (step 2, guardkitfactory d8fcbdb): an empty or cut-off
+    final Player answer is logged by the harness and the turn ends as usual.
+    No graph failure is recorded; the turn's own result (for the direct route,
+    the receipt built from the files) is what the reviewer reads, and the
+    skill read the graph streamed is still in the debug record."""
     def deny(*args, **kwargs):
         raise AssertionError("real network forbidden")
 
@@ -48,90 +51,36 @@ async def test_failed_graph_retains_actual_skill_read(monkeypatch, tmp_path, tex
     emitter = NullEmitter(capture=True)
     invoker = _make_invoker(tmp_path, emitter=emitter)
     skill = _enable_dcode_player(monkeypatch, invoker.worktree_path)
-    if credential_case is not None:
-        with skill.open("a") as out:
-            out.write("\n" + credential_case[0] + "\nSAFE_AFTER_CREDENTIAL\n")
     script = _DcodePlayerChat(skill, final_text=text, finish_reason=reason)
     clients = _install_factory_owned_mock_transport(monkeypatch, script)
-    errors = []
-    invoke = invoker._invoke_with_role
-
-    async def observe(**kwargs):
-        try:
-            return await invoke(**kwargs)
-        except AgentInvocationError as error:
-            errors.append(error)
-            raise
-
-    monkeypatch.setattr(invoker, "_invoke_with_role", observe)
     if route == "role":
-        with pytest.raises(AgentInvocationError):
-            await invoker._invoke_with_role(
-                prompt="TASK-FAILED-GRAPH read the selected workflow", agent_type="player",
-                allowed_tools=["Read"], permission_mode="acceptEdits",
-            )
+        await invoker._invoke_with_role(
+            prompt="TASK-FAILED-GRAPH read the selected workflow", agent_type="player",
+            allowed_tools=["Read"], permission_mode="acceptEdits",
+        )
     else:
         result = await invoker._invoke_player_direct(
             task_id="TASK-FAILED-GRAPH", turn=1, requirements="Read the selected workflow",
         )
-        assert result.success is False
+        assert result.success is True
         receipt = invoker.worktree_path / ".guardkit/autobuild/TASK-FAILED-GRAPH/task_work_results.json"
-        assert json.loads(receipt.read_text())["success"] is False
-    await asyncio.sleep(0.05)
-    assert len(errors) == 1
-    original = errors[0].__cause__
-    assert type(original).__name__ == "LangGraphHarnessError"
-    assert ("empty" if not text else "truncated") in str(original)
-    raw = original.raw_result
+        assert json.loads(receipt.read_text())["success"] is True
     _assert_dcode_http_evidence(script)
     _assert_owned_clients_closed(clients)
     calls = [event for event in emitter.events if isinstance(event, LLMCallEvent)]
-    assert len(calls) == 1 and calls[0].status == "error"
-    assert invoker._last_session_id is None
+    assert all(call.status == "ok" for call in calls)
+    if route == "direct":
+        assert len(calls) == 1
     paths = list(invoker.worktree_path.rglob("messages.jsonl"))
     assert len(paths) == 1
     records = [json.loads(line) for line in paths[0].read_text().splitlines()]
-    # The native tool events the graph streamed are recorded as they happen
-    # (guardkitfactory 9a4baad, 17 September 2026), so they can come before
-    # the failure summary; the summary is found by its type.
-    summaries = [record for record in records if record.get("type") == "GraphFailure"]
-    assert len(summaries) == 1
-    summary = summaries[0]
-    assert summary["outcome"] == "failed"
-    assert summary["graph_result_available"] is True
-    assert summary["finish_reason"] == reason
-    assert summary["text_empty"] is (not text)
-    assert summary["text_length"] == len(text)
-    assert summary["usage"]["input_tokens"] == 7
-    assert summary["usage"]["output_tokens"] == 3
-    assert summary["terminal_graph_index"] == len(raw["messages"]) - 1
-    messages = [record for record in records if "graph_index" in record]
-    assert [record["graph_index"] for record in messages] == [1, 2, 3]
-    call, result, terminal = messages
-    actual_call = raw["messages"][1].tool_calls[0]
-    assert call["tool_calls"] == [{key: actual_call[key] for key in ("id", "name", "args")}]
-    assert call["tool_calls"][0]["args"]["file_path"] == str(skill)
-    assert result["tool_call_id"] == actual_call["id"]
-    assert result["status"] == "success"
-    # Preserve exact output except these explicit planted regression values.
-    # The independent credential probe also reuses this consumer assertion.
-    expected = raw["messages"][2].content
-    for planted in ("opaque-header-secret", "opaque-password-secret"):
-        expected = expected.replace(planted, "[REDACTED]")
-    if credential_case is not None:
-        credential, safe_prefix = credential_case
-        assert credential in expected
-        expected = expected.split(credential, 1)[0] + safe_prefix + "[REDACTED]"
-    assert result["content"] == expected
-    assert "ACTUAL_CWD_SKILL_MARKER" in result["content"]
-    assert terminal["content"] == text
-    assert terminal["finish_reason"] == reason
-    assert not any(record["type"] in {"ResultMessageEvent", "AssistantMessageEvent"} for record in records)
-    evidence = os.environ.get("FAILED_GRAPH_EVIDENCE")
-    if evidence:
-        target = Path(evidence) / f"dcode-{route}-{reason}-{'partial' if text else 'empty'}.jsonl"
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(paths[0].read_bytes())
+    assert not any(record.get("type") == "GraphFailure" for record in records)
+    reads = [
+        record for record in records
+        if record.get("type") == "NativeToolEvent" and record.get("phase") == "end"
+    ]
+    assert len(reads) == 1
+    assert "ACTUAL_CWD_SKILL_MARKER" in reads[0]["payload"]["content"]
 
 
 @pytest.mark.asyncio
@@ -168,25 +117,47 @@ async def test_internal_graph_failure_does_not_invent_activity(monkeypatch, tmp_
         assert all("graph_index" not in record for record in records)
 
 
-@pytest.mark.asyncio
+def _failed_skill_read(tmp_path, skill_text):
+    """Write the failure record for a graph that returned after reading a
+    skill, through the real writer, and return the recorded tool output.
+
+    The harness no longer fails a turn for its final answer (step 2), so these
+    tests hand the writer a returned graph directly: whatever failure carries
+    the graph's messages, a credential in a tool's output never reaches disk.
+    """
+    from guardkitfactory.harness.langgraph_harness import LangGraphHarnessError
+    from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+    from guardkit.orchestrator import sdk_debug
+
+    call = {"id": "call-read-selected-skill", "name": "read_file",
+            "args": {"file_path": "skills/planning/SKILL.md"}}
+    raw = {"messages": [
+        HumanMessage(content="TASK-FAILED-GRAPH read the selected workflow"),
+        AIMessage(content="", tool_calls=[call]),
+        ToolMessage(content=skill_text, tool_call_id=call["id"], status="success"),
+        AIMessage(content=""),
+    ]}
+    debug_dir = tmp_path / "sdk_debug" / "turn_1"
+    debug_dir.mkdir(parents=True)
+    sdk_debug.preserve_failure(debug_dir, LangGraphHarnessError("graph failed", raw_result=raw))
+    written = (debug_dir / "messages.jsonl").read_text()
+    for planted in ("opaque-header-secret", "opaque-password-secret", "opaque-actual-value"):
+        assert planted not in written
+    records = [json.loads(line) for line in written.splitlines()]
+    return next(record["content"] for record in records if record["type"] == "ToolMessage")
+
+
+_SKILL_TEXT = "# Planning\n\nACTUAL_CWD_SKILL_MARKER\n"
+
+
 @pytest.mark.parametrize("embedded", [
     '{"Authorization": "opaque-header-secret", "password": "opaque-password-secret", "safe": "KEEP_JSON"}',
     'Example: {"Authorization": "opaque-header-secret", "password": "opaque-password-secret"} KEEP_SUFFIX',
     '{"Authorization": "opaque-header-secret"}\n{"password": "opaque-password-secret", "safe": "KEEP_JSONL"}',
 ])
-async def test_failed_skill_read_redacts_embedded_credentials(monkeypatch, tmp_path, embedded):
-    original = _enable_dcode_player
-
-    def enable(monkeypatch, worktree):
-        skill = original(monkeypatch, worktree)
-        with skill.open("a") as out:
-            out.write("\n" + embedded + "\nKEEP_AFTER_CREDENTIALS\n")
-        return skill
-
-    monkeypatch.setattr(sys.modules[__name__], "_enable_dcode_player", enable)
-    await test_failed_graph_retains_actual_skill_read(monkeypatch, tmp_path, "", "length", "role")
-    records = [json.loads(line) for line in next(tmp_path.rglob("messages.jsonl")).read_text().splitlines()]
-    content = next(record["content"] for record in records if record["type"] == "ToolMessage")
+def test_failed_skill_read_redacts_embedded_credentials(tmp_path, embedded):
+    content = _failed_skill_read(tmp_path, _SKILL_TEXT + embedded + "\nKEEP_AFTER_CREDENTIALS\n")
+    assert "ACTUAL_CWD_SKILL_MARKER" in content
     assert "KEEP_AFTER_CREDENTIALS" in content
     assert "[REDACTED]" in content
     for marker in ("KEEP_JSON", "KEEP_SUFFIX", "KEEP_JSONL"):
@@ -194,12 +165,11 @@ async def test_failed_skill_read_redacts_embedded_credentials(monkeypatch, tmp_p
             assert marker in content
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize("credential_case", [
     ("password: 'can''t-opaque-actual-value'", "password: "),
     ('password = """opaque-actual-value"""', "password = "),
 ])
-async def test_failed_skill_read_discards_uncertain_quoted_value(monkeypatch, tmp_path, credential_case):
-    await test_failed_graph_retains_actual_skill_read(
-        monkeypatch, tmp_path, "", "length", "role", credential_case,
-    )
+def test_failed_skill_read_discards_uncertain_quoted_value(tmp_path, credential_case):
+    credential, safe_prefix = credential_case
+    content = _failed_skill_read(tmp_path, _SKILL_TEXT + credential + "\nSAFE_AFTER_CREDENTIAL\n")
+    assert content == _SKILL_TEXT + safe_prefix + "[REDACTED]"

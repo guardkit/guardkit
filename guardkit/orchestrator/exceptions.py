@@ -311,8 +311,6 @@ class AgentLaunchRefusedError(AgentInvokerError):
 
     Attributes:
         reason: Always ``"agent launch refused"``.
-        entries: The harness's description of each unexpected entry (path,
-            type, size, SHA-256), never file contents.
         profile: The refused run profile, when the harness named it.
     """
 
@@ -321,18 +319,15 @@ class AgentLaunchRefusedError(AgentInvokerError):
     def __init__(
         self,
         message: str,
-        entries: Optional[List[Dict[str, Any]]] = None,
         profile: Optional[str] = None,
     ):
         super().__init__(f"{self.reason}: {message}")
-        self.entries = [dict(entry) for entry in entries or ()]
         self.profile = profile
 
     @classmethod
     def from_refusal(cls, refusal: BaseException) -> "AgentLaunchRefusedError":
         return cls(
             str(refusal),
-            entries=list(getattr(refusal, "entries", None) or ()),
             profile=getattr(refusal, "profile", None),
         )
 

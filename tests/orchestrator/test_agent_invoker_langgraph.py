@@ -1247,9 +1247,12 @@ class TestDcodePlayerRealRoutes:
         _assert_owned_clients_closed(clients)
 
     @pytest.mark.asyncio
-    async def test_direct_route_rejects_empty_length_after_nonempty_tool_result(
+    async def test_direct_route_ends_an_empty_cut_off_answer_as_usual(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
+        """26 October 2026 (step 2, guardkitfactory d8fcbdb): an empty final
+        answer cut off at the length limit is logged by the harness and the
+        turn ends as usual; the files are what the reviewer reads."""
         invoker = _make_invoker(tmp_path, emitter=NullEmitter(capture=True))
         skill_file = _enable_dcode_player(
             monkeypatch, invoker.worktree_path
@@ -1263,23 +1266,24 @@ class TestDcodePlayerRealRoutes:
         )
         clients = _install_factory_owned_mock_transport(monkeypatch, script)
 
-        with pytest.raises(AgentInvocationError) as exc_info:
-            await invoker._invoke_with_role(
-                prompt="TASK-DCODE-DIRECT-TRUNCATED read then fail",
-                agent_type="player",
-                allowed_tools=["Read"],
-                permission_mode="acceptEdits",
-            )
+        await invoker._invoke_with_role(
+            prompt="TASK-DCODE-DIRECT-TRUNCATED read then stop",
+            agent_type="player",
+            allowed_tools=["Read"],
+            permission_mode="acceptEdits",
+        )
 
-        assert "empty terminal assistant" in str(exc_info.value).lower()
         _assert_dcode_http_evidence(script)
         assert activity
         _assert_owned_clients_closed(clients)
 
     @pytest.mark.asyncio
-    async def test_task_work_rejects_empty_length_after_nonempty_tool_result(
+    async def test_task_work_ends_an_empty_cut_off_answer_as_usual(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
+        """The same empty, cut-off answer on the task-work route is no longer
+        an invocation error (step 2); the turn's result is what the reviewer
+        gets."""
         invoker = _make_invoker(tmp_path, emitter=NullEmitter(capture=True))
         skill_file = _enable_dcode_player(
             monkeypatch, invoker.worktree_path
@@ -1298,9 +1302,8 @@ class TestDcodePlayerRealRoutes:
             mode="standard",
         )
 
-        assert result.success is False
-        assert result.error is not None
-        assert "empty terminal assistant" in result.error.lower()
+        assert result.success is True
+        assert result.error is None
         _assert_dcode_http_evidence(script)
         assert activity
         _assert_owned_clients_closed(clients)

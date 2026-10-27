@@ -11783,15 +11783,13 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         """Map a harness launch refusal in ``error``'s chain to GuardKit's error.
 
         Returns ``None`` for every other failure, which keeps its existing
-        handling. The refusal's entry list (path, type, size, SHA-256) is
-        logged so the task's log carries the evidence.
+        handling.
         """
         refusal = find_agent_launch_refusal(error)
         if refusal is None:
             return None
         refused = AgentLaunchRefusedError.from_refusal(refusal)
         logger.error(f"[{task_id}] AGENT LAUNCH REFUSED: {refused}")
-        logger.error(f"[{task_id}] Unexpected launch entries: {refused.entries}")
         return refused
 
     def _write_direct_mode_results(

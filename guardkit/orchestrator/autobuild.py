@@ -10382,7 +10382,6 @@ class AutoBuildOrchestrator:
             report: Dict[str, Any] = {"unrecoverable": True}
             if isinstance(e, AgentLaunchRefusedError):
                 report["unrecoverable_reason"] = e.reason
-                report["launch_refused_entries"] = e.entries
                 report["launch_refused_profile"] = e.profile
             return AgentInvocationResult(
                 task_id=task_id,
