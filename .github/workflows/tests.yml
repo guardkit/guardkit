@@ -182,6 +182,23 @@ jobs:
         # stuck runner.
         run: python -m pip install "claude-agent-sdk>=0.2.121,<0.3" pytest-timeout
 
+      - name: Fetch tiktoken's encoding once, before the tests
+        # guardkit/orchestrator/instrumentation/digests.py counts tokens with
+        # tiktoken's cl100k_base encoding (tiktoken comes in with
+        # guardkitfactory). tiktoken downloads that encoding on first use, and
+        # the suite's no-network guard (tests/conftest.py) refuses the download
+        # inside a test, so the digest tests failed here while passing on
+        # machines that already had tiktoken's cache. Fetching it now keeps the
+        # tests themselves offline.
+        run: python -c "import tiktoken; tiktoken.get_encoding('cl100k_base')"
+
+      - name: Give the runner a git identity (the code under test commits)
+        # The checkpoint and protected-path tests make real git commits, and a
+        # fresh runner has no user.name / user.email, so `git commit` exits 128.
+        run: |
+          git config --global user.email "ci@guardkit.invalid"
+          git config --global user.name "guardkit CI"
+
       - name: Run test suite (quarantine applied via tests/conftest.py)
         # `-o addopts=""` clears the repo's default --cov flags (this gate is
         # pass/fail, not coverage). --timeout bounds any single hang.
