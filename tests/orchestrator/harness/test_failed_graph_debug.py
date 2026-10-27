@@ -117,6 +117,41 @@ async def test_internal_graph_failure_does_not_invent_activity(monkeypatch, tmp_
         assert all("graph_index" not in record for record in records)
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("route", ["role", "direct"])
+async def test_successful_turn_debug_record_redacts_the_skill_read(monkeypatch, tmp_path, route):
+    """27 October 2026: the ordinary debug record of a turn that ends well
+    masks a credential in a file the Player read, as the failure record does;
+    the turn itself is unaffected."""
+    monkeypatch.setattr(socket.socket, "connect", lambda *a, **k: (_ for _ in ()).throw(
+        AssertionError("real network forbidden")))
+    monkeypatch.setenv("GUARDKIT_AUTOBUILD_PRESERVE_DEBUG", "1")
+    monkeypatch.setenv("DEEPAGENTS_CODE_OFFLINE", "1")
+    invoker = _make_invoker(tmp_path, emitter=NullEmitter(capture=True))
+    skill = _enable_dcode_player(monkeypatch, invoker.worktree_path)
+    with skill.open("a") as out:
+        out.write('\n{"Authorization": "opaque-header-secret", "password": "opaque-password-secret"}\n'
+                  "password: 'opaque-actual-value'\n")
+    script = _DcodePlayerChat(skill, final_text="read the workflow; done")
+    _install_factory_owned_mock_transport(monkeypatch, script)
+    if route == "role":
+        await invoker._invoke_with_role(
+            prompt="TASK-FAILED-GRAPH read the selected workflow", agent_type="player",
+            allowed_tools=["Read"], permission_mode="acceptEdits",
+        )
+    else:
+        result = await invoker._invoke_player_direct(
+            task_id="TASK-FAILED-GRAPH", turn=1, requirements="Read the selected workflow",
+        )
+        assert result.success is True
+    _assert_dcode_http_evidence(script)
+    written = next(invoker.worktree_path.rglob("messages.jsonl")).read_text()
+    for planted in ("opaque-header-secret", "opaque-password-secret", "opaque-actual-value"):
+        assert planted not in written
+    assert "ACTUAL_CWD_SKILL_MARKER" in written
+    assert "[REDACTED]" in written
+
+
 def _failed_skill_read(tmp_path, skill_text):
     """Write the failure record for a graph that returned after reading a
     skill, through the real writer, and return the recorded tool output.

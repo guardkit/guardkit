@@ -764,8 +764,12 @@ def preserve_event(debug_dir: Optional[Path], event: Any) -> None:
 
         # Not yet at cap — append event
         line = json.dumps(_event_to_jsonable(event), default=repr)
-        # Redact the JSON line before writing (fail-closed: no raw payload on error)
+        # Redact the JSON line before writing (fail-closed: no raw payload on error).
+        # Text credentials in the event (a tool's file read, a repr) are masked
+        # the way the failure record masks them, before the line redactor
+        # (27 October 2026: a successful turn's skill read kept them).
         try:
+            line = json.dumps(_event_text_credentials(json.loads(line)), default=repr)
             redacted_line = _get_redactor().redact(line)
         except Exception as redact_exc:  # noqa: BLE001
             logger.warning("sdk_debug: event redaction failed: %s", redact_exc)
@@ -851,6 +855,36 @@ def _failure_text_credentials(value: str) -> str:
         end = quoted.end()
     parts.append(value[end:])
     return "".join(parts)
+
+
+def _event_text_credentials(value: Any) -> Any:
+    """Mask credentials in every text of one recorded event, without the
+    failure record's size limits: text assignments as
+    :func:`_failure_text_credentials` finds them, the values of the
+    process's own credential settings, and text values under
+    credential-named keys (numbers such as token counts are kept)."""
+    secrets = sorted({
+        item for key, item in os.environ.items()
+        if item and _credential_field(key)
+    }, key=len, reverse=True)
+
+    def walk(item: Any) -> Any:
+        if type(item) is str:
+            item = _failure_text_credentials(item)
+            for secret in secrets:
+                item = item.replace(secret, "[REDACTED]")
+            return item
+        if type(item) is dict:
+            return {
+                key: "[REDACTED]" if type(sub) is str and _credential_field(key)
+                else walk(sub)
+                for key, sub in item.items()
+            }
+        if type(item) is list:
+            return [walk(sub) for sub in item]
+        return item
+
+    return walk(value)
 
 
 class _FailureScrubber:
