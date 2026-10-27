@@ -1,12 +1,12 @@
 """WS2-B2 gate: tier-1 QA enforcement refusals FIRE, and a correctly-formatted
 repo PASSES.
 
-Covers the three B2 refusals (all flag-gated on ``qa.enforce_tier1``, default
-OFF):
+Covers the two remaining refusals (both flag-gated on ``qa.enforce_tier1``,
+default OFF):
 
-1. Post-merge known-failure ledger sweep (F2).
-2. Coach task-start pinned-pass-bar precondition (F1).
-3. feature-complete runtime-surface / registered-green-gate refusal (F1 + F4).
+1. Known-failure ledger sweep at completion (F2): only a test that ran and
+   failed and is not in the ledger fails it.
+2. Plan-time ledger-authorship reject-lint (F2).
 
 Both fixture repos' committed exemplar instances (lpa-platform-poc, study-tutor)
 are exercised as the "correctly-formatted repo passes" bar. An ST-05 mutation
@@ -15,7 +15,6 @@ tripwire proves the ledger diff is load-bearing: break the diff and reds appear.
 
 from __future__ import annotations
 
-import os
 import subprocess
 from pathlib import Path
 
@@ -24,7 +23,6 @@ import pytest
 from guardkit.qa.enforcement import (
     ENFORCE_ENV,
     LEDGER_RELPATH,
-    check_pass_bar_precondition,
     check_plan_does_not_author_ledger,
     diff_failures_against_ledger,
     git_changed_paths,
@@ -35,76 +33,6 @@ from guardkit.qa.enforcement import (
 FIXTURES = Path(__file__).parent.parent / "fixtures" / "qa_formats"
 LPA = FIXTURES / "lpa-platform-poc"
 STUDY = FIXTURES / "study-tutor"
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-def _git(repo: Path, *args: str) -> subprocess.CompletedProcess:
-    env = {
-        **os.environ,
-        "GIT_AUTHOR_NAME": "t",
-        "GIT_AUTHOR_EMAIL": "t@example.com",
-        "GIT_COMMITTER_NAME": "t",
-        "GIT_COMMITTER_EMAIL": "t@example.com",
-    }
-    return subprocess.run(
-        ["git", "-C", str(repo), *args],
-        capture_output=True,
-        text=True,
-        env=env,
-        check=True,
-    )
-
-
-def _init_repo(path: Path) -> Path:
-    path.mkdir(parents=True, exist_ok=True)
-    _git(path, "init", "-q", "-b", "main")
-    (path / "seed.txt").write_text("seed\n")
-    _git(path, "add", "-A")
-    _git(path, "commit", "-q", "-m", "seed")
-    return path
-
-
-def _head(repo: Path) -> str:
-    return _git(repo, "rev-parse", "HEAD").stdout.strip()
-
-
-def _write_pass_bar(path: Path, task_id: str, sha: str, *, auth: bool = True) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    if auth:
-        neg = [
-            "wrong_credential",
-            "anonymous_deep_link",
-            "post_logout_401",
-            "unauthorized_403_ui",
-            "dependency_down_degradation",
-        ]
-        evidence = "screenshot"
-    else:
-        neg = ["dependency_down_degradation"]
-        evidence = "json"
-    neg_block = "\n".join(f"  - {p}" for p in neg)
-    path.write_text(
-        f"""format_version: "2.0"
-task_id: {task_id}
-registered_at:
-  sha: {sha}
-  date: "2026-07-08"
-auth_surface_bearing: {"true" if auth else "false"}
-preconditions:
-  - suite_green_vs_ledger
-criteria:
-  - id: AC-1
-    text: "does the thing"
-    class: machine
-    evidence_kind: {evidence}
-negative_paths:
-{neg_block}
-"""
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -144,7 +72,7 @@ class TestFlagReader:
 
 
 # ---------------------------------------------------------------------------
-# 1. Ledger sweep (F2)
+# 1. Ledger sweep at completion (F2)
 # ---------------------------------------------------------------------------
 
 
@@ -194,8 +122,9 @@ class TestLedgerSweep:
         res = diff_failures_against_ledger(parse_pytest_outcome(out), ledger)
         assert res.status == "pass", res.detail
 
-    def test_stale_unconditional_entry_fails(self, tmp_path):
-        # An unconditional known-failure that did NOT fail this green run.
+    def test_stale_unconditional_entry_does_not_fail(self, tmp_path):
+        # An unconditional known-failure that did NOT fail this green run: no
+        # test failed, so nothing refuses (the cull, 27 October 2026).
         ledger = self._ledger(
             tmp_path,
             "  - test_id: tests/a.py::test_x\n"
@@ -205,8 +134,7 @@ class TestLedgerSweep:
         )
         out = "120 passed in 3s\n"
         res = diff_failures_against_ledger(parse_pytest_outcome(out), ledger)
-        assert res.status == "fail"
-        assert res.stale_ledger_entries == ("tests/a.py::test_x",)
+        assert res.status == "pass", res.detail
 
     def test_env_conditional_entry_not_stale(self, tmp_path):
         # An env-conditional entry passing on another env is expected, not stale.
@@ -227,12 +155,17 @@ class TestLedgerSweep:
         res = diff_failures_against_ledger(parse_pytest_outcome("no summary"), ledger)
         assert res.status == "unverified"
 
-    def test_malformed_ledger_is_error(self, tmp_path):
+    def test_malformed_ledger_is_read_as_empty(self, tmp_path):
+        # An unreadable ledger excuses nothing: a real failure still fails,
+        # a green run passes (the cull, 27 October 2026).
         p = tmp_path / "known-failures.yaml"
         p.write_text("format_version: \"1.0\"\nsuite_id: s\n")  # missing required
         out = "1 failed, 5 passed\nFAILED tests/a.py::test_x - boom\n"
         res = diff_failures_against_ledger(parse_pytest_outcome(out), p)
-        assert res.status == "error"
+        assert res.status == "fail"
+        assert res.unledgered_failures == ("tests/a.py::test_x",)
+        green = diff_failures_against_ledger(parse_pytest_outcome("5 passed\n"), p)
+        assert green.status == "pass"
 
     def test_missing_ledger_is_empty_ledger(self, tmp_path):
         missing = tmp_path / "known-failures.yaml"
@@ -294,86 +227,7 @@ class TestLedgerSweepAgainstFixtures:
 
 
 # ---------------------------------------------------------------------------
-# 2. Coach task-start precondition (F1)
-# ---------------------------------------------------------------------------
-
-
-class TestPassBarPrecondition:
-    def test_missing_bar_refuses(self, tmp_path):
-        repo = _init_repo(tmp_path / "repo")
-        res = check_pass_bar_precondition(repo, "TASK-XYZ")
-        assert res.passed is False
-        assert "no pinned F1 pass bar" in res.detail
-
-    def test_valid_bar_predating_head_passes(self, tmp_path):
-        repo = _init_repo(tmp_path / "repo")
-        pinned_sha = _head(repo)  # commit that predates implementation
-        _write_pass_bar(
-            repo / "qa" / "pass-bar-TASK-XYZ.yaml", "TASK-XYZ", pinned_sha
-        )
-        _git(repo, "add", "-A")
-        _git(repo, "commit", "-q", "-m", "pin pass bar")
-        # Now some later "implementation" commit.
-        (repo / "impl.py").write_text("x = 1\n")
-        _git(repo, "add", "-A")
-        _git(repo, "commit", "-q", "-m", "impl")
-        res = check_pass_bar_precondition(repo, "TASK-XYZ")
-        assert res.passed is True, res.detail
-
-    def test_sha_not_ancestor_refuses(self, tmp_path):
-        repo = _init_repo(tmp_path / "repo")
-        # A syntactically valid sha that is not in this repo's history.
-        _write_pass_bar(
-            repo / "qa" / "pass-bar-TASK-XYZ.yaml",
-            "TASK-XYZ",
-            "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
-        )
-        res = check_pass_bar_precondition(repo, "TASK-XYZ")
-        assert res.passed is False
-        assert "not a commit" in res.detail
-
-    def test_future_sha_not_ancestor_refuses(self, tmp_path):
-        repo = _init_repo(tmp_path / "repo")
-        _write_pass_bar(repo / "qa" / "pass-bar-TASK-XYZ.yaml", "TASK-XYZ", "PLACEHOLD")
-        # Make a NEW commit that the bar will point at (registered AFTER impl).
-        (repo / "later.py").write_text("y = 2\n")
-        _git(repo, "add", "-A")
-        _git(repo, "commit", "-q", "-m", "later")
-        later = _head(repo)
-        # Now rewrite the bar to point at `later`, but check against an earlier
-        # HEAD by making the current HEAD a sibling (detach to seed).
-        _write_pass_bar(repo / "qa" / "pass-bar-TASK-XYZ.yaml", "TASK-XYZ", later)
-        # Reset HEAD back before `later` so `later` is NOT an ancestor of HEAD.
-        _git(repo, "reset", "-q", "--hard", "HEAD~1")
-        res = check_pass_bar_precondition(repo, "TASK-XYZ")
-        assert res.passed is False
-        assert "ancestor" in res.detail
-
-    def test_task_id_mismatch_refuses(self, tmp_path):
-        repo = _init_repo(tmp_path / "repo")
-        sha = _head(repo)
-        _write_pass_bar(repo / "qa" / "pass-bar-TASK-XYZ.yaml", "TASK-OTHER", sha)
-        res = check_pass_bar_precondition(repo, "TASK-XYZ")
-        assert res.passed is False
-        assert "mismatched" in res.detail or "task_id" in res.detail
-
-    def test_invalid_bar_refuses(self, tmp_path):
-        repo = _init_repo(tmp_path / "repo")
-        bad = repo / "qa" / "pass-bar-TASK-XYZ.yaml"
-        bad.parent.mkdir(parents=True)
-        bad.write_text("format_version: \"2.0\"\ntask_id: TASK-XYZ\n")  # missing fields
-        res = check_pass_bar_precondition(repo, "TASK-XYZ")
-        assert res.passed is False
-        assert "invalid" in res.detail
-
-
-# ---------------------------------------------------------------------------
-# 3. feature-complete runtime-surface refusal (F1 + F4)
-# ---------------------------------------------------------------------------
-
-
-# ---------------------------------------------------------------------------
-# 4. Plan-time ledger-authorship reject-lint (F2 · K15 / LPA-09) — DIM5-F3
+# 2. Plan-time ledger-authorship reject-lint (F2 · K15 / LPA-09) — DIM5-F3
 # ---------------------------------------------------------------------------
 
 

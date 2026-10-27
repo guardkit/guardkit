@@ -51,7 +51,7 @@
     },
     "feature-plan.md": {
       "sha256": "75c278252ffbb4bc15a9d5023d2e03655d3339bba880b313455138c59f4177d7",
-      "source_commit": "5c350010"
+      "source_commit": "7582b179"
     },
     "feature-spec.md": {
       "sha256": "32c1b7fecf14913927cd6d950edb04c332a3821b1538e48e3f5da9ab77c56aec",
@@ -70,7 +70,7 @@
       "source_commit": "6dd7e071"
     },
     "task-complete.md": {
-      "sha256": "495d314051be1c73353391c34fe3b08375ed8fb575eff08cb3311de2ae4c1dd3",
+      "sha256": "1694d4dbe56e8bd6f33f89ee8581ed084cb40842c854539e1d7be1d293c43b26",
       "source_commit": "423cbc23"
     },
     "task-create.md": {

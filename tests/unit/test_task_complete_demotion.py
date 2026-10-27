@@ -7,8 +7,8 @@ Covers the shared atomic completion routine + the Phase 6 decision:
     single ``os.replace`` cannot leave a completed-in-backlog state).
   * **Carve-outs** — autobuild / operator_handoff refuse.
   * **Tri-state routing** — ``decide_finalize`` Green/Amber/Red/Skip.
-  * **Enforcement call site** — ``qa.enforce_tier1`` fires (fail-closed) when the
-    repo flag is on.
+  * **Enforcement call site** — with ``qa.enforce_tier1`` on, a test that ran and
+    failed outside the known-failure ledger refuses completion.
   * **CLI** — ``guardkit task complete`` pause / autobuild-refuse / happy paths.
 """
 
@@ -278,21 +278,39 @@ def test_enforce_tier1_off_is_noop(repo, in_review_task):
     assert Path(result["new_path"]).exists()
 
 
-def test_enforce_tier1_on_no_passbar_refuses(repo, in_review_task, monkeypatch):
+def test_enforce_tier1_on_no_passbar_completes(repo, in_review_task, monkeypatch):
+    # A missing pass-bar file is a record's form, not a failed test: it no
+    # longer refuses completion (the cull, 27 October 2026).
+    path, task_id = in_review_task
+    monkeypatch.setenv("GUARDKIT_QA_ENFORCE_TIER1", "1")
+    result = complete_task(task_id, enforce_tier1=True)
+    assert Path(result["new_path"]).exists()
+
+
+def test_enforce_tier1_on_unledgered_failure_refuses(repo, in_review_task, monkeypatch):
+    # A test that ran and failed and is not in the known-failure ledger still
+    # refuses completion.
     path, task_id = in_review_task
     monkeypatch.setenv("GUARDKIT_QA_ENFORCE_TIER1", "1")
     with pytest.raises(CompletionRefused) as exc:
-        complete_task(task_id, enforce_tier1=True)
-    assert "enforce_tier1" in str(exc.value)
-    # Fail-closed → task untouched.
+        complete_task(
+            task_id,
+            enforce_tier1=True,
+            test_output="FAILED tests/a.py::test_x - boom\n1 failed, 5 passed\n",
+        )
+    assert "un-ledgered" in str(exc.value)
+    # Refused → task untouched.
     assert path.exists() and _status_of(path) == "in_review"
 
 
 def test_enforce_helper_reason_when_flag_on_off(repo, in_review_task, monkeypatch):
     _, task_id = in_review_task
-    assert _enforce_tier1_completion(repo, task_id) is None  # off
+    failing = "FAILED tests/a.py::test_x - boom\n1 failed, 5 passed\n"
+    assert _enforce_tier1_completion(repo, task_id, test_output=failing) is None  # off
     monkeypatch.setenv("GUARDKIT_QA_ENFORCE_TIER1", "1")
-    assert _enforce_tier1_completion(repo, task_id) is not None  # on + no pass bar
+    assert _enforce_tier1_completion(repo, task_id) is None  # on, no pass bar, no run
+    assert _enforce_tier1_completion(repo, task_id, test_output="5 passed\n") is None
+    assert _enforce_tier1_completion(repo, task_id, test_output=failing) is not None
 
 
 # ---------------------------------------------------------------------------

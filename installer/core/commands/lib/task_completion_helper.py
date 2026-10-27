@@ -414,17 +414,16 @@ def _enforce_tier1_completion(
     string when the flag is ON and a check fails. The single completion-time call
     site for WS2-B2 so BOTH entry points (task-work Phase 6 + the CLI) inherit it.
 
-    When ON, runs the pinned-pass-bar precondition, and — if a completion-suite
-    ``test_output`` is supplied — the known-failure ledger diff. An ABSENT test
-    signal never blocks (``absence-of-failure-is-not-success``); a malformed
-    ledger fails closed. Enforcement is opt-in, so a repo that turns it on always
+    When ON and a completion-suite ``test_output`` is supplied, refuses only
+    when a test ran and failed and is not in the known-failure ledger. No test
+    output, or output with no run signal, never blocks; a missing or unreadable
+    pass-bar file is not checked. Enforcement is opt-in, so a repo that turns it on always
     has ``guardkit`` importable; if the checker cannot be imported the gate is
     treated as OFF (there is nothing to enforce against).
     """
     try:
         from guardkit.qa.enforcement import (
             is_tier1_enforced,
-            check_pass_bar_precondition,
             parse_pytest_outcome,
             diff_failures_against_ledger,
         )
@@ -435,17 +434,13 @@ def _enforce_tier1_completion(
     if not is_tier1_enforced(repo_root):
         return None
 
-    precondition = check_pass_bar_precondition(repo_root, task_id)
-    if not precondition.passed:
-        return f"qa.enforce_tier1 pass-bar precondition failed: {precondition.detail}"
-
     if test_output is not None:
         outcome = parse_pytest_outcome(test_output)
         sweep = diff_failures_against_ledger(
             outcome, repo_root / "qa" / "known-failures.yaml"
         )
-        # "pass" and "unverified" (absent signal) proceed; "fail"/"error" refuse.
-        if sweep.status in ("fail", "error"):
+        # "pass" and "unverified" (no run signal) proceed; "fail" refuses.
+        if sweep.status == "fail":
             return f"qa.enforce_tier1 known-failure ledger sweep failed: {sweep.detail}"
 
     return None

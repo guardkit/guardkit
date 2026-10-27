@@ -103,8 +103,8 @@ Carve-outs enforced by the routine / `guardkit task complete`:
 
 Quality gates must pass before completion: coverage ≥80%, tests 100%, security
 clean, code review approved. When `qa.enforce_tier1` is on for the repo, the
-routine additionally fails CLOSED unless the pinned F1 pass bar predates the work
-and the known-failure ledger sweep is clean (WS2-B2).
+routine additionally refuses when a completion test run shows a test that ran and
+failed and is not in the known-failure ledger (WS2-B2).
 
 ## Fleet-Memory Knowledge Capture (Write Path)
 

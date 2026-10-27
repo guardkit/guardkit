@@ -1,58 +1,36 @@
 """Tier-1 QA enforcement (session B2, 2026-07-08) — flag-gated, default OFF.
 
 Design source (binding): ai-transition/docs/ws2-qa-verifier-and-last-mile-
-build-plan-2026-07-07.md §B2. This module wires the tier-1 QA formats (F1
-pass-bar, F2 known-failure ledger, F4 gate registry — built schema-only in B1)
-into three refusals. All three key on ``qa.enforce_tier1`` (``.guardkit/
-config.yaml``, default ``False``; env override ``GUARDKIT_QA_ENFORCE_TIER1``):
+build-plan-2026-07-07.md §B2. This module keeps two refusals, both keyed on ``qa.enforce_tier1``
+(``.guardkit/config.yaml``, default ``False``; env override
+``GUARDKIT_QA_ENFORCE_TIER1``):
 
-1. **Ledger post-merge sweep** — the completion suite result is diffed against
-   ``qa/known-failures.yaml`` (F2). An un-ledgered failure fails the gate; an
-   unexpectedly-passing *unconditional* ledger entry fails the gate (stale
-   ledger is a finding). ``completion_verification.py`` is the enforcement
-   home (WS2 build-plan §B2 ownership note = WS3-S4; built once, here);
-   :func:`diff_failures_against_ledger` + :func:`parse_pytest_outcome` are the
-   pure helpers it consumes.
+1. **Ledger sweep at completion** — the completion suite result is diffed
+   against ``qa/known-failures.yaml`` (F2). A test that ran and failed and is
+   not in the ledger refuses completion. :func:`diff_failures_against_ledger` +
+   :func:`parse_pytest_outcome`. (The cull of 27 October 2026 removed the
+   refusals that read only the record's form: a missing, unreadable or
+   mismatched pass-bar file, a ledger entry that unexpectedly passed, and a
+   malformed ledger file, which is now read as an empty ledger.)
 
-2. **Coach task-start precondition** — a task cannot start without a pinned F1
-   pass bar at ``qa/pass-bar-<TASK-ID>.yaml`` whose ``registered_at.sha``
-   predates implementation commits (mechanically: is an ancestor of HEAD).
-   :func:`check_pass_bar_precondition`.
-
-3. **feature-complete runtime-surface refusal** — a feature whose pass bar
-   declares a runtime surface (auth-surface-bearing, walk-bearing, or any
-   live-evidence criterion) cannot reach feature-complete without at least one
-   registered, green gate in the F4 registry. :func:`check_runtime_surface_gate`.
-
-4. **plan-time ledger-authorship reject-lint** — a headless ``/feature-spec`` /
+2. **Plan-time ledger-authorship reject-lint** — a headless ``/feature-spec`` /
    ``/feature-plan`` session whose diff adds or modifies ``qa/known-failures.yaml``
-   is refused. The F2 ledger is authored by human/Coach *at triage* only (K15 /
-   LPA-09); the other three refusals check *when* ledger entries are honoured
-   (the sweep) but never *who authored them at plan time*. A planner writing the
-   ledger would have its invented entries silently treated as expected failures
-   by refusal 1's sweep (the ABL-001 false-green class, planner channel).
-   :func:`check_plan_does_not_author_ledger` (pure; consumes a diff / changed-path
-   set) + :func:`git_changed_paths` (the working-tree + staged + untracked reader
-   the wiring feeds it). Wired at ``guardkit feature validate`` — the plan-output
-   oracle ``/feature-plan`` runs (feature-plan.md step 8.5) and the SPL
-   FEAT-SPL-007/008 named oracle — so the lint fires on a planning session's
-   outputs at the same deterministic Python surface the other refusals prefer,
-   never the LLM skill markdown (DIM5-F3, DF-012 §2.5).
+   is refused, because the ledger excuses real failures in refusal 1.
+   :func:`check_plan_does_not_author_ledger` (pure; consumes a changed-path
+   set) + :func:`git_changed_paths`. Wired at ``guardkit feature validate``.
 
 Guardrails honoured (WS2 build-plan §B2):
 
 - The F2 ledger is written by human/Coach at triage ONLY. **No function in this
   module writes the ledger** — it is read-only here (LPA-09; a mid-build Player
-  append would neuter the whole point of the ledger). Refusal 4 extends that
+  append would neuter the whole point of the ledger). Refusal 2 extends that
   writer restriction explicitly to headless planners (K15): the ledger stays
   writable by nothing automated.
 - No F1–F5 semantic changes: this module *consumes* ``guardkit.qa.formats``
   (including PB-14's ``auth_surface_bearing`` + the exported
   ``AUTH_/UNIVERSAL_/REQUIRED_NEGATIVE_PATHS`` sets), it does not reopen them.
-- Absence-of-failure-safe (``.claude/rules/absence-of-failure-is-not-success``):
-  a suite that could not run, a not-collected test, or a missing/absent signal
-  is never read as a pass and never fabricated into a fail. Only positive
-  evidence (a test ran and failed; the suite ran green) drives a verdict.
+- Only a test that ran and failed drives a refusal; a suite that produced no
+  run signal is never fabricated into a fail.
 """
 
 from __future__ import annotations
@@ -69,7 +47,6 @@ import yaml
 
 from guardkit.qa.formats import (
     KnownFailureLedger,
-    PassBar,
     QAFormatError,
     validate_instance,
 )
@@ -84,9 +61,6 @@ __all__ = [
     "parse_pytest_outcome",
     "LedgerSweepResult",
     "diff_failures_against_ledger",
-    "PassBarPreconditionResult",
-    "check_pass_bar_precondition",
-    "pass_bar_path_for",
     "LEDGER_RELPATH",
     "LedgerAuthorshipResult",
     "check_plan_does_not_author_ledger",
@@ -141,13 +115,8 @@ def is_tier1_enforced(repo_root: Path) -> bool:
     return bool(qa.get("enforce_tier1", False))
 
 
-def pass_bar_path_for(repo_root: Path, task_id: str) -> Path:
-    """Canonical F1 instance path for a task (``qa/pass-bar-<TASK-ID>.yaml``)."""
-    return repo_root / "qa" / f"pass-bar-{task_id}.yaml"
-
-
 # ---------------------------------------------------------------------------
-# 1. Ledger post-merge sweep (F2)
+# 1. Ledger sweep at completion (F2)
 # ---------------------------------------------------------------------------
 
 # pytest's "short test summary info" lines — the tail of a run enumerates every
@@ -206,17 +175,13 @@ class LedgerSweepResult:
     """Outcome of diffing a completion run against the F2 ledger.
 
     ``status``:
-      - ``"pass"``       — every failure is ledgered; no stale entry.
-      - ``"fail"``       — un-ledgered failure(s) and/or stale ledger entry.
-      - ``"unverified"`` — the suite produced no positive run signal (absent);
-                            never a fail (absence-of-failure-is-not-success).
-      - ``"error"``      — the ledger file exists but is malformed (loud config
-                            error; fails closed).
+      - ``"pass"``       — every failure that ran is in the ledger.
+      - ``"fail"``       — a test ran and failed and is not in the ledger.
+      - ``"unverified"`` — the suite produced no run signal; never a fail.
     """
 
     status: str
     unledgered_failures: Tuple[str, ...]
-    stale_ledger_entries: Tuple[str, ...]
     detail: str
 
     @property
@@ -230,31 +195,18 @@ def diff_failures_against_ledger(
 ) -> LedgerSweepResult:
     """Diff a parsed pytest outcome against the F2 ledger at ``ledger_path``.
 
-    Semantics (WS2 build-plan §B2):
+    A failing test id not present in the ledger fails the sweep. If the summary
+    reports failed/errored counts but fewer ids could be named, the unnamed
+    failures are not in the ledger either, so they fail the sweep too.
 
-    - **un-ledgered failure** → FAIL: any failing test id not present in the
-      ledger. If the summary reports failed/errored counts but no ids could be
-      attributed, that unattributable failure also fails (a failure we cannot
-      excuse is never waved through).
-    - **unexpectedly-passing entry** → FAIL: an *unconditional* ledger entry
-      (no ``env_condition``) that did not fail this run, when the suite ran with
-      positive evidence. Entries with an ``env_condition`` are exempt — they are
-      environment-specific and legitimately pass elsewhere, so flagging them
-      everywhere would be a false-red.
-
-    A missing ledger file is treated as an empty ledger (zero known failures):
-    a green suite passes, any failure is un-ledgered. A present-but-malformed
-    ledger is a loud config error (``status="error"``).
+    A missing or unreadable ledger file is read as an empty ledger (zero known
+    failures): a green suite passes, any failure is un-ledgered.
     """
     if not outcome.ran:
         return LedgerSweepResult(
             status="unverified",
             unledgered_failures=(),
-            stale_ledger_entries=(),
-            detail=(
-                "ledger sweep skipped: no positive evidence the suite ran "
-                "(absent signal is never a pass and never a fail)"
-            ),
+            detail="ledger sweep skipped: no evidence the suite ran",
         )
 
     ledger: Optional[KnownFailureLedger] = None
@@ -262,84 +214,49 @@ def diff_failures_against_ledger(
         try:
             ledger = validate_instance("known-failures", ledger_path)  # type: ignore[assignment]
         except QAFormatError as exc:
-            return LedgerSweepResult(
-                status="error",
-                unledgered_failures=(),
-                stale_ledger_entries=(),
-                detail=f"ledger is malformed and cannot be diffed against: {exc}",
+            logger.warning(
+                "known-failure ledger %s is unreadable (%s); reading it as empty",
+                ledger_path,
+                exc,
             )
 
     ledgered_ids = {e.test_id for e in ledger.known_failures} if ledger else set()
-    unconditional_ids = (
-        {e.test_id for e in ledger.known_failures if not e.env_condition}
-        if ledger
-        else set()
-    )
 
     failing = set(outcome.failing_ids)
     unledgered = tuple(sorted(failing - ledgered_ids))
 
-    # Unattributable failure: the summary says something failed/errored but no
-    # node id surfaced (truncated tail, an import/collection error before ids
-    # are printed). We cannot excuse what we cannot name — fail closed.
     fail_count = (outcome.failed or 0) + (outcome.errored or 0)
-    unattributable = fail_count > len(failing)
-
-    # Stale: an unconditional known-failure that did not fail this run.
-    stale = tuple(sorted(unconditional_ids - failing))
+    unnamed = max(fail_count - len(failing), 0)
 
     problems: List[str] = []
     if unledgered:
         problems.append(
             f"{len(unledgered)} un-ledgered failure(s): {', '.join(unledgered)}"
         )
-    if unattributable:
+    if unnamed:
         problems.append(
             f"{fail_count} failure(s)/error(s) reported but only "
-            f"{len(failing)} attributable to a node id — an unattributable "
-            f"failure cannot be excused by the ledger"
-        )
-    if stale:
-        problems.append(
-            f"{len(stale)} stale ledger entry/entries (unconditional, "
-            f"expected to fail but passed this run): {', '.join(stale)}"
+            f"{len(failing)} named by a test id; the unnamed ones are not in "
+            f"the ledger"
         )
 
     if problems:
         return LedgerSweepResult(
             status="fail",
             unledgered_failures=unledgered,
-            stale_ledger_entries=stale,
             detail="known-failure ledger sweep FAILED — " + "; ".join(problems),
         )
 
     return LedgerSweepResult(
         status="pass",
         unledgered_failures=(),
-        stale_ledger_entries=(),
-        detail=(
-            f"ledger sweep clean: {len(failing)} failure(s), all ledgered; "
-            f"no stale entries"
-        ),
+        detail=f"ledger sweep clean: {len(failing)} failure(s), all ledgered",
     )
 
 
 # ---------------------------------------------------------------------------
-# 2. Coach task-start precondition (F1)
+# Shared git runner
 # ---------------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class PassBarPreconditionResult:
-    """Outcome of the task-start pinned-pass-bar precondition."""
-
-    status: str  # "pass" | "fail"
-    detail: str
-    pass_bar_path: Optional[str] = None
-
-    @property
-    def passed(self) -> bool:
-        return self.status == "pass"
 
 
 def _default_git(repo_root: Path) -> Callable[[Sequence[str]], subprocess.CompletedProcess]:
@@ -352,112 +269,8 @@ def _default_git(repo_root: Path) -> Callable[[Sequence[str]], subprocess.Comple
     return _run
 
 
-def check_pass_bar_precondition(
-    repo_root: Path,
-    task_id: str,
-    *,
-    git_run: Optional[Callable[[Sequence[str]], subprocess.CompletedProcess]] = None,
-) -> PassBarPreconditionResult:
-    """Refuse task start without a pinned F1 pass bar that predates the work.
-
-    A ``pass`` requires, in order:
-
-    1. ``qa/pass-bar-<TASK-ID>.yaml`` exists;
-    2. it validates as an F1 pass bar;
-    3. its ``task_id`` matches ``task_id`` (guards a copy-pasted bar);
-    4. its ``registered_at.sha`` is a real commit that is an ancestor of HEAD
-       (the pass bar was pinned BEFORE implementation begins — the ordering the
-       F1 docstring calls "mechanically checkable").
-
-    Fails CLOSED: if git cannot verify the ordering (not a repo, sha unknown),
-    the precondition refuses — the whole point of the gate is proving the bar
-    predates the work, and enforcement is opt-in.
-    """
-    path = pass_bar_path_for(repo_root, task_id)
-    if not path.is_file():
-        return PassBarPreconditionResult(
-            status="fail",
-            detail=(
-                f"no pinned F1 pass bar for {task_id}: expected {path} "
-                f"(the pass bar must be committed BEFORE implementation — "
-                f"qa.enforce_tier1 is on)"
-            ),
-            pass_bar_path=str(path),
-        )
-
-    try:
-        bar: PassBar = validate_instance("pass-bar", path)  # type: ignore[assignment]
-    except QAFormatError as exc:
-        return PassBarPreconditionResult(
-            status="fail",
-            detail=f"pinned pass bar {path} is invalid: {exc}",
-            pass_bar_path=str(path),
-        )
-
-    if bar.task_id != task_id:
-        return PassBarPreconditionResult(
-            status="fail",
-            detail=(
-                f"pass bar {path} declares task_id {bar.task_id!r} but is being "
-                f"used to start {task_id!r} — a mismatched bar is not a pinned bar"
-            ),
-            pass_bar_path=str(path),
-        )
-
-    sha = bar.registered_at.sha
-    run = git_run or _default_git(repo_root)
-    try:
-        exists = run(["cat-file", "-e", f"{sha}^{{commit}}"])
-    except (OSError, subprocess.SubprocessError) as exc:
-        return PassBarPreconditionResult(
-            status="fail",
-            detail=(
-                f"cannot verify registered_at.sha {sha} for {task_id}: git "
-                f"unavailable ({exc}). Refusing — the pass bar's predates-impl "
-                f"ordering must be checkable."
-            ),
-            pass_bar_path=str(path),
-        )
-    if exists.returncode != 0:
-        return PassBarPreconditionResult(
-            status="fail",
-            detail=(
-                f"registered_at.sha {sha} in {path} is not a commit in this "
-                f"repository — the pass bar cannot be shown to predate "
-                f"implementation"
-            ),
-            pass_bar_path=str(path),
-        )
-
-    ancestor = run(["merge-base", "--is-ancestor", sha, "HEAD"])
-    if ancestor.returncode != 0:
-        return PassBarPreconditionResult(
-            status="fail",
-            detail=(
-                f"registered_at.sha {sha} is NOT an ancestor of HEAD — the pass "
-                f"bar for {task_id} was not pinned before implementation began "
-                f"(a bar registered after the work does not predate it)"
-            ),
-            pass_bar_path=str(path),
-        )
-
-    return PassBarPreconditionResult(
-        status="pass",
-        detail=(
-            f"pinned pass bar {path.name} predates implementation "
-            f"(registered_at.sha {sha} is an ancestor of HEAD)"
-        ),
-        pass_bar_path=str(path),
-    )
-
-
 # ---------------------------------------------------------------------------
-# 3. feature-complete runtime-surface refusal (F1 + F4)
-# ---------------------------------------------------------------------------
-
-
-# ---------------------------------------------------------------------------
-# 4. Plan-time ledger-authorship reject-lint (F2 · K15 / LPA-09)
+# 2. Plan-time ledger-authorship reject-lint (F2 · K15 / LPA-09)
 # ---------------------------------------------------------------------------
 
 #: The canonical repo-relative F2 known-failure ledger path. A planning session
@@ -522,8 +335,8 @@ def check_plan_does_not_author_ledger(
     explicit file set. FAILS if any of them is the F2 known-failure ledger.
 
     The F2 ledger is authored by human/Coach *at triage* only (K15 / LPA-09).
-    B2's other three refusals check *when* ledger entries are honoured; none
-    checks *who authored them at plan time*. A headless planner writing the
+    The completion sweep checks *when* ledger entries are honoured; it does
+    not check *who authored them at plan time*. A headless planner writing the
     ledger would have its invented entries silently treated as expected
     failures by the post-merge sweep (:func:`diff_failures_against_ledger`) —
     the ABL-001 false-green class through the planner channel. This lint closes
