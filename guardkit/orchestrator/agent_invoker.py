@@ -4931,7 +4931,6 @@ Turn: {turn}
         synthesis: bool = False,
         grammar: Optional[str] = None,
         recursion_limit: Optional[int] = None,
-        specialist_finalization: Optional[Dict[str, Any]] = None,
         max_tool_result_chars: Optional[int] = None,
         event_role: Optional[str] = None,
         event_agent_name: Optional[str] = None,
@@ -5161,7 +5160,6 @@ Turn: {turn}
                 # select_harness before the SDK harness sees them; only the
                 # LangGraph branch honours them. The Coach gather sets them.
                 recursion_limit=recursion_limit,
-                specialist_finalization=specialist_finalization,
                 max_tool_result_chars=max_tool_result_chars,
                 model=model,
                 resume_session_id=resume_session_id,

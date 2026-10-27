@@ -62,7 +62,13 @@ PINNED_TEMPLATES = {
         # 2026-10-27: mirror corrected to specialist-agent's current pin
         # (pins.py, re-pinned 2026-10-24 for guardkit b85b8e80: planning
         # guidance). Only this mirror was stale. 3,015 lines.
-        "a029fbffa5a9531b2656882f59ddfd5b572b75cb4f7e3ab0188fc6fc27e2690f"
+        #
+        # 2026-10-27 (the cull): a029fbff... -> 75c27825..., step 8.6 (the
+        # --validate-smoke-gates call, whose check is deleted) removed from both
+        # the flow and the example trace, and 9's "8.5 or 8.6" reads "8.5".
+        # Instruction text only; 3,015 -> 2,981 lines. specialist-agent's
+        # pins.py still holds a029fbff... and must be re-pinned to match.
+        "75c278252ffbb4bc15a9d5023d2e03655d3339bba880b313455138c59f4177d7"
     ),
 }
 

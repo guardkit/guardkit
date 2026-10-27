@@ -35,6 +35,18 @@
 - reason: <one line>
 -->
 
+### 2026-10-27 — the cull: step 8.6 removed from feature-plan.md (installer/core/commands/feature-plan.md)
+- specialist-agent re-pin commit / contract §0 note: OWED — specialist-agent
+  `src/specialist_agent/templates/pins.py` (line 163) and
+  `docs/design/contracts/CONTRACT-feature-spec-plan-outputs.md` (line 25) still pin
+  `a029fbff…`; the new bytes are `75c27825…` (3,015 → 2,981 lines). The GuardKit mirror in
+  `tests/packaging/test_df011_template_pins.py` is moved to the new value.
+- G2b re-freeze: the cull's coordinator decided on 27 October 2026 to delete the step
+  rather than keep a flag for a deleted check.
+- reason: step 8.6 only ran `generate-feature-yaml --validate-smoke-gates`, a check the
+  cull deleted; the step is removed from the flow and from the example trace, and step 9's
+  "8.5 or 8.6" now reads "8.5". Instruction text only; output schema unchanged.
+
 ### 2026-10-27 — the cull: checks removed from the feature loader, the feature command and the task-type profiles (guardkit/orchestrator/feature_loader.py, guardkit/cli/feature.py, guardkit/models/task_types.py)
 - specialist-agent re-pin commit / contract §0 note: none needed — no pinned template bytes
   changed (feature-spec.md and feature-plan.md are byte-identical; the template pin test

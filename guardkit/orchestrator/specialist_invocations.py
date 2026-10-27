@@ -306,7 +306,6 @@ async def run_specialist(
     no_activity_watchdog_seconds: Optional[float] = None,
     capture_final_message: bool = False,
     recursion_limit: Optional[int] = None,
-    specialist_finalization: Optional[dict[str, Any]] = None,
     max_tool_result_chars: Optional[int] = None,
     tool_counter: Any = None,
 ) -> SpecialistInvocationResult:
@@ -459,10 +458,6 @@ async def run_specialist(
     capturing = capture_final_message
     if capturing:
         invoke_kwargs["return_events"] = True
-    # 13 October 2026: the code reviewer's step cap and tool record. Added
-    # only when asked for, so every other caller's call is unchanged.
-    if specialist_finalization is not None:
-        invoke_kwargs["specialist_finalization"] = specialist_finalization
     if recursion_limit is not None:
         invoke_kwargs["recursion_limit"] = recursion_limit
     if max_tool_result_chars is not None:

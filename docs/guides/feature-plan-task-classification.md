@@ -55,15 +55,15 @@ hard failure.
 in the smoke gate, no such directory in the forge repo,
 17 minutes of SDK budget burned, 10 of 11 tasks blocked.
 
-**Defence layers** (defence in depth — same defect rejected at ≥2 layers):
+**Defence layers.** (27 October 2026: the path checks in `generate-feature-yaml
+--validate-smoke-gates`, `guardkit feature validate` and the feature loader's
+pre-flight were removed with the other checks; a wrong path now shows up as the
+smoke command's own failure.)
 
 | Layer | Surface | Subtask | What it does |
 |---|---|---|---|
 | L3a | `feature-plan.md` prompt | TASK-FPSG-001 | "Path verification — REQUIRED" rule above the smoke-gate-author block |
-| L3b | `generate-feature-yaml --validate-smoke-gates` | TASK-FPSG-002 | Parses positional argv, resolves each path against target repo, errors on miss |
 | L3c | `smoke_gates_nudge` example block | TASK-FPSG-003 | Discovers and lists the target repo's actual `tests/` subdirs in the nudge banner |
-| L3d | `guardkit feature validate FEAT-XXXX` | TASK-FPSG-004 | Same checks as L3b at the CLI validator + fixes the `~/.agentecflow/bin/guardkit` wrapper that previously silently no-op'd |
-| L4 | `FeatureLoader._parse_feature` pre-flight | TASK-FPSG-005 | Final pre-flight at feature-load time, before any wave fires |
 
 See [`tasks/backlog/feature-plan-defects/class-a-invented-paths/README.md`](../../tasks/backlog/feature-plan-defects/class-a-invented-paths/README.md)
 and its [`IMPLEMENTATION-GUIDE.md`](../../tasks/backlog/feature-plan-defects/class-a-invented-paths/IMPLEMENTATION-GUIDE.md)
