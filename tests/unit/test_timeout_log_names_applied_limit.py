@@ -41,7 +41,7 @@ def _orchestrator(tmp_path: Path, worktree: Mock) -> AutoBuildOrchestrator:
     display = Mock()
     display.__enter__ = Mock(return_value=display)
     display.__exit__ = Mock(return_value=False)
-    return AutoBuildOrchestrator(
+    orch = AutoBuildOrchestrator(
         repo_root=tmp_path,
         max_turns=1,
         worktree_manager=manager,
@@ -51,6 +51,10 @@ def _orchestrator(tmp_path: Path, worktree: Mock) -> AutoBuildOrchestrator:
         sdk_timeout=1800,
         task_timeout=16200,
     )
+    # ``orchestrate`` admits the task's scope before the loop; this test
+    # drives ``_loop_phase`` directly, so it states that no scope was admitted.
+    orch.task_work_scope = None
+    return orch
 
 
 def _timed_out_turn(error: str) -> TurnRecord:

@@ -9,7 +9,6 @@ a self-contained markdown file alongside the autobuild output directory.
 
 from __future__ import annotations
 
-import json
 import logging
 from dataclasses import dataclass
 from datetime import datetime
@@ -44,8 +43,6 @@ class TaskSummaryRow:
     sdk_invocations: int
     sdk_ceiling_hits: int
     error: Optional[str] = None
-    # TASK-FIX-7A07: Sub-type label for unrecoverable_stall exits.
-    decision_subtype: Optional[str] = None
 
 
 @dataclass
@@ -118,92 +115,19 @@ class ReviewSummaryGenerator:
             self._render_quality_metrics(result),
             self._render_turn_efficiency(result),
             self._render_key_findings(result),
-            # QAV shadow: a log-only section, only when shadow receipts exist.
-            # When the (default-OFF) shadow lane wrote nothing, this returns ""
-            # and is filtered out, so the summary stays byte-identical to today.
-            self._render_qav_shadow(result),
         ]
         return "\n\n".join(s for s in sections if s) + "\n"
 
     def _render_header(self, result: FeatureOrchestrationResult) -> str:
-        # TASK-FIX-7A07 AC-6: Prefer the MIXED_PARTIAL_FAILURE verdict when
-        # the feature has a majority of approved tasks but ≥1 unrecoverable
-        # stall AND ≥1 preempted/cancelled exit. This clarifies what
-        # happened without changing success semantics (still a failure).
-        status_badge = self._compute_feature_verdict(result)
+        status_badge = "COMPLETED" if result.success else result.status.upper()
         generated_at = datetime.now().strftime("%Y-%m-%d %H:%M UTC")
-        headline = self._compute_verdict_headline(result, status_badge)
         sections = [
             f"# Autobuild Review Summary: {result.feature_id}",
             "",
             f"**Status:** {status_badge}  ",
             f"**Generated:** {generated_at}",
         ]
-        if headline:
-            sections.append("")
-            sections.append(f"**Verdict:** {headline}")
         return "\n".join(sections)
-
-    def _compute_feature_verdict(
-        self, result: FeatureOrchestrationResult
-    ) -> str:
-        """Determine the top-line verdict label.
-
-        Rules (TASK-FIX-7A07 AC-6):
-
-        1. If the feature succeeded overall → ``COMPLETED``.
-        2. MIXED_PARTIAL_FAILURE fires when **all** of the following hold:
-           - ≥ 50% of observed tasks approved
-           - ≥ 1 task exited ``unrecoverable_stall``
-           - ≥ 1 task exited ``cancelled`` (preempted under
-             ``stop_on_failure``)
-        3. Otherwise, fall back to the upper-case feature status (typically
-           ``FAILED`` or ``PAUSED``).
-        """
-        if result.success:
-            return "COMPLETED"
-        all_tasks = self._flatten_task_results(result)
-        total = len(all_tasks)
-        if total == 0:
-            return result.status.upper()
-        approved = sum(1 for r in all_tasks if r.success)
-        stalled = sum(
-            1 for r in all_tasks
-            if r.final_decision == "unrecoverable_stall"
-        )
-        preempted = sum(
-            1 for r in all_tasks
-            if r.final_decision == "cancelled"
-        )
-        approved_ratio = approved / total
-        if approved_ratio >= 0.5 and stalled >= 1 and preempted >= 1:
-            return "MIXED_PARTIAL_FAILURE"
-        return result.status.upper()
-
-    def _compute_verdict_headline(
-        self,
-        result: FeatureOrchestrationResult,
-        status_badge: str,
-    ) -> Optional[str]:
-        """Return a one-line headline accompanying the verdict label."""
-        if status_badge != "MIXED_PARTIAL_FAILURE":
-            return None
-        all_tasks = self._flatten_task_results(result)
-        total = len(all_tasks)
-        approved = sum(1 for r in all_tasks if r.success)
-        stalled = sum(
-            1 for r in all_tasks
-            if r.final_decision == "unrecoverable_stall"
-        )
-        preempted = sum(
-            1 for r in all_tasks
-            if r.final_decision == "cancelled"
-        )
-        return (
-            f"{approved} of {total} observed tasks approved; "
-            f"{stalled} stalled; "
-            f"{preempted} preempted under stop_on_failure"
-        )
 
     def _render_feature_metrics(self, result: FeatureOrchestrationResult) -> str:
         all_tasks = self._flatten_task_results(result)
@@ -244,16 +168,7 @@ class ReviewSummaryGenerator:
                 notes = f"ceiling hits: {row.sdk_ceiling_hits}" + (
                     f"; {notes}" if notes else ""
                 )
-            # TASK-FIX-7A07 AC-4: Render the sub-type alongside the legacy
-            # final_decision token so downstream consumers still see the
-            # legacy label AND the new sub-type label. Format:
-            #   unrecoverable_stall | coach_agent_invocations_stall
             decision_cell = row.final_decision
-            if (
-                row.final_decision == "unrecoverable_stall"
-                and row.decision_subtype
-            ):
-                decision_cell = f"{row.final_decision} | {row.decision_subtype}"
             lines.append(
                 f"| {row.task_id} | {row.wave} | {row.turns} "
                 f"| {outcome} | {decision_cell} | {notes} |"
@@ -349,64 +264,6 @@ class ReviewSummaryGenerator:
         bullet_lines = "\n".join(f"- {f}" for f in findings)
         return f"## Key Findings\n\n{bullet_lines}"
 
-    def _render_qav_shadow(self, result: FeatureOrchestrationResult) -> str:
-        """Render the QAV shadow section from the per-turn shadow receipts.
-
-        Globs every ``*/qav_shadow_turn_*.json`` under the shared autobuild
-        directory (``self.output_dir.parent`` — the parent of this feature's
-        output dir, which contains every task's dir) and tallies:
-
-        - **N judged** — receipts with ``status == "ok"``;
-        - **M disagreements** — judged receipts where ``agree is False`` (the
-          shadow and the coach reached opposite verdicts), listed as
-          ``TASK turn N``;
-        - **K absent** — receipts with ``status == "absent"``.
-
-        Returns ``""`` (section omitted) when no shadow receipts exist, so the
-        default-OFF lane leaves the summary byte-identical. Never raises — a
-        malformed/unreadable receipt is skipped.
-        """
-        shadow_root = self.output_dir.parent
-        try:
-            paths = sorted(shadow_root.glob("*/qav_shadow_turn_*.json"))
-        except OSError:
-            return ""
-        if not paths:
-            return ""
-
-        judged = 0
-        absent = 0
-        disagreements: List[str] = []
-        for path in paths:
-            try:
-                record = json.loads(path.read_text(encoding="utf-8"))
-            except (OSError, ValueError):
-                continue
-            if not isinstance(record, dict):
-                continue
-            status = record.get("status")
-            if status == "ok":
-                judged += 1
-                if record.get("agree") is False:
-                    task_id = record.get("task_id", "?")
-                    turn = record.get("turn", "?")
-                    disagreements.append(f"{task_id} turn {turn}")
-            elif status == "absent":
-                absent += 1
-
-        disagree_list = (
-            ", ".join(disagreements) if disagreements else "none"
-        )
-        lines = [
-            "## QAV Shadow",
-            "",
-            (
-                f"QAV shadow: {judged} judged, {len(disagreements)} disagreements "
-                f"({disagree_list}), {absent} absent."
-            ),
-        ]
-        return "\n".join(lines)
-
     # ------------------------------------------------------------------
     # Utilities
     # ------------------------------------------------------------------
@@ -432,9 +289,6 @@ class ReviewSummaryGenerator:
                         sdk_invocations=task_result.sdk_total_invocations,
                         sdk_ceiling_hits=task_result.sdk_ceiling_hits,
                         error=task_result.error,
-                        decision_subtype=getattr(
-                            task_result, "decision_subtype", None
-                        ),
                     )
                 )
         return rows

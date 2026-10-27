@@ -21,9 +21,7 @@ import json
 import os
 import subprocess
 from pathlib import Path
-from typing import Dict, Any
 from unittest.mock import Mock, MagicMock, patch, AsyncMock
-from dataclasses import dataclass
 
 # Import test dependencies
 import sys
@@ -33,15 +31,9 @@ sys.path.insert(0, str(_test_root))
 from guardkit.orchestrator.autobuild import (
     AutoBuildOrchestrator,
     OrchestrationResult,
-    TurnRecord,
 )
 from guardkit.orchestrator.agent_invoker import AgentInvocationResult
-from guardkit.orchestrator.quality_gates import (
-    PreLoopQualityGates,
-    CoachValidator,
-    CoachValidationResult,
-    QualityGateStatus,
-)
+from guardkit.orchestrator.quality_gates import PreLoopQualityGates
 from guardkit.worktrees import Worktree
 
 
@@ -349,43 +341,15 @@ def mock_task_work_results(task_scenario, mock_worktree):
 @pytest.fixture
 def mock_coach_validator(task_scenario, mock_task_work_results):
     """
-    Mock CoachValidator that validates task-work results.
+    Mock CoachValidator, so the project's checks are not run.
 
-    Returns realistic validation results based on the simulated
-    task-work quality gate results.
-
-    Which part of this decides a turn (checked 19 October 2026): since
-    51ac051b5 (21 May 2026, TASK-HMIG-008R) the LLM Coach is primary. By
-    default the orchestrator asks this validator only for evidence
+    The orchestrator asks this validator only for evidence
     (``gather_evidence``, which here returns a MagicMock, keeping the run
-    hermetic), and the decision is the one the test's ``invoke_coach`` mock
-    returns. ``validate()``'s result below is read only on the
-    ``GUARDKIT_COACH_LEGACY=1`` revert.
+    hermetic); the turn's decision is the one the test's ``invoke_coach``
+    mock returns.
     """
     with patch("guardkit.orchestrator.autobuild.CoachValidator") as mock_validator_class:
         mock_instance = MagicMock()
-
-        # Build validation result
-        quality_gate_status = QualityGateStatus(
-            tests_passed=True,
-            coverage_met=True,
-            arch_review_passed=True,
-            plan_audit_passed=True,
-        )
-
-        validation_result = CoachValidationResult(
-            task_id=task_scenario["task_id"],
-            turn=1,
-            decision="approve",
-            quality_gates=quality_gate_status,
-            independent_tests=None,
-            requirements=None,
-            issues=[],
-            rationale="Implementation meets all quality gates",
-        )
-
-        mock_instance.validate.return_value = validation_result
-        mock_instance.save_decision.return_value = None
         mock_validator_class.return_value = mock_instance
 
         yield mock_validator_class

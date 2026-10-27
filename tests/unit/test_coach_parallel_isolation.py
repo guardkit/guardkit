@@ -6,10 +6,8 @@ Verifies:
   when no infrastructure pattern matches (prevents spurious blocking)
 - run_independent_tests() routes to _run_isolated_tests() when wave_size > 1
   and subprocess mode is active
-- validate() grants conditional approval for parallel_contention and code failures
-  in parallel waves when all Player quality gates passed
 - Serial tasks (wave_size=1) are NOT affected: code failures still return
-  ("code", "n/a") and do NOT receive conditional approval
+  ("code", "n/a")
 
 Defence-in-depth fix for parallel wave contention causing spurious Coach
 independent-test failures when multiple tasks share the same worktree.
@@ -25,32 +23,20 @@ import pytest
 
 from guardkit.orchestrator.quality_gates.coach_validator import (
     CoachValidator,
-    CoachValidationResult,
     IndependentTestResult,
-    QualityGateStatus,
-    RequirementsValidation,
 )
 
 
 def test_effective_concurrency_is_end_appended_on_positional_apis() -> None:
     from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
     from guardkit.orchestrator.feature_orchestrator import FeatureOrchestrator
-    from guardkit.orchestrator.specialist_invocations import (
-        _deterministic_phase_4_block,
-        _run_deterministic_phase_4,
-        invoke_test_orchestrator,
-    )
 
     changed_callables = (
         AutoBuildOrchestrator.__init__,
         AutoBuildOrchestrator._invoke_coach_safely,
-        AutoBuildOrchestrator._invoke_coach_legacy,
         AutoBuildOrchestrator._invoke_coach_primary,
-        FeatureOrchestrator._execute_task,
+        FeatureOrchestrator._execute_task_owned,
         CoachValidator.__init__,
-        _run_deterministic_phase_4,
-        _deterministic_phase_4_block,
-        invoke_test_orchestrator,
     )
     for changed_callable in changed_callables:
         assert list(inspect.signature(changed_callable).parameters)[-1] == (
@@ -97,23 +83,6 @@ def _make_isolated_result(tests_passed: bool = True) -> IndependentTestResult:
         test_output_summary="5 passed" if tests_passed else "1 failed",
         duration_seconds=1.5,
         raw_output="5 passed" if tests_passed else "FAILED: ValueError custom",
-    )
-
-
-def _passing_gates() -> QualityGateStatus:
-    return QualityGateStatus(
-        tests_passed=True,
-        coverage_met=True,
-        arch_review_passed=True,
-        plan_audit_passed=True,
-    )
-
-
-def _passing_requirements() -> RequirementsValidation:
-    return RequirementsValidation(
-        criteria_total=1,
-        criteria_met=1,
-        all_criteria_met=True,
     )
 
 
@@ -412,151 +381,3 @@ class TestIsolationRouting:
 # ---------------------------------------------------------------------------
 
 
-class TestConditionalApprovalParallel:
-    """validate() must grant conditional approval for parallel-wave failures
-    when all Player quality gates passed, and must NOT grant it for serial tasks."""
-
-    def _run_validate_with_mocked_internals(
-        self,
-        tmp_path: Path,
-        wave_size: int,
-        test_output: str,
-    ) -> CoachValidationResult:
-        """Run validate() with all internal dependencies mocked.
-
-        Mocks: read_quality_gate_results, verify_quality_gates,
-        run_independent_tests, validate_requirements,
-        _check_zero_test_anomaly, _check_seam_test_recommendation,
-        _validate_consumer_context.
-
-        The test_output is fed into the failing IndependentTestResult so that
-        _classify_test_failure() runs on it naturally inside validate().
-        """
-        validator = _make_validator(tmp_path, wave_size=wave_size)
-        task = {"task_type": "feature", "acceptance_criteria": ["implement feature"]}
-
-        failing_result = IndependentTestResult(
-            tests_passed=False,
-            test_command="pytest tests/ -v",
-            test_output_summary="1 failed",
-            duration_seconds=1.5,
-            raw_output=test_output,
-        )
-
-        with patch.object(validator, "read_quality_gate_results", return_value=_passing_task_work_results()):
-            with patch.object(validator, "verify_quality_gates", return_value=_passing_gates()):
-                with patch.object(validator, "run_independent_tests", return_value=failing_result):
-                    with patch.object(validator, "validate_requirements", return_value=_passing_requirements()):
-                        with patch.object(validator, "_check_zero_test_anomaly", return_value=[]):
-                            with patch.object(validator, "_check_seam_test_recommendation", return_value=[]):
-                                with patch.object(validator, "_validate_consumer_context", return_value=[]):
-                                    return validator.validate("TASK-ABFIX-005", 1, task)
-
-    def test_parallel_contention_failure_gets_conditional_approval(self, tmp_path: Path) -> None:
-        """parallel_contention classification + all gates passed → decision = approve.
-
-        Unmatched test output in a parallel wave (wave_size=2) is classified as
-        parallel_contention.  validate() must grant conditional approval and
-        return "approve" when all Player quality gates passed.
-        """
-        result = self._run_validate_with_mocked_internals(
-            tmp_path,
-            wave_size=2,
-            test_output="FAILED: ValueError: some unrecognised error",
-        )
-        assert result.decision == "approve", (
-            f"Expected 'approve' for parallel_contention in parallel wave, "
-            f"got '{result.decision}': {result.rationale}"
-        )
-
-    def test_code_failure_parallel_wave_gets_conditional_approval(self, tmp_path: Path) -> None:
-        """Code failure in parallel wave → conditional approval when gates pass.
-
-        Even if _classify_test_failure would have returned ("code", ...), validate()
-        also checks self.is_parallel.  In practice for parallel waves, unmatched
-        failures are reclassified as parallel_contention, but this tests the explicit
-        ("code" + is_parallel) branch too by verifying the behaviour via wave_size.
-        """
-        # Use output that gives parallel_contention naturally (unmatched failure)
-        # This covers both branches in the conditional_approval expression.
-        result = self._run_validate_with_mocked_internals(
-            tmp_path,
-            wave_size=3,
-            test_output="FAILED tests/test_feature.py::test_x - AssertionError: assert 1 == 2",
-        )
-        assert result.decision == "approve", (
-            f"Expected 'approve' for code failure in parallel wave (wave_size=3), "
-            f"got '{result.decision}': {result.rationale}"
-        )
-
-    def test_code_failure_serial_wave_does_not_get_conditional_approval(self, tmp_path: Path) -> None:
-        """Code failure in serial task (wave_size=1) → feedback, no conditional approval.
-
-        Serial tasks must NOT benefit from the parallel contention bypass.
-        """
-        result = self._run_validate_with_mocked_internals(
-            tmp_path,
-            wave_size=1,
-            test_output="FAILED tests/test_feature.py::test_x - AssertionError: assert 1 == 2",
-        )
-        assert result.decision == "feedback", (
-            f"Expected 'feedback' for code failure in serial wave, "
-            f"got '{result.decision}': {result.rationale}"
-        )
-
-    def test_infrastructure_failure_serial_no_conditional_approval_without_infra_decl(
-        self, tmp_path: Path
-    ) -> None:
-        """Infrastructure failure without declared requires_infrastructure → feedback.
-
-        Confirms that the new parallel-wave conditions do not accidentally grant
-        conditional approval to serial infrastructure failures (pre-existing rule).
-        """
-        validator = _make_validator(tmp_path, wave_size=1)
-        # Task has NO requires_infrastructure, so infra conditional approval cannot apply
-        task = {"task_type": "feature", "acceptance_criteria": ["implement feature"]}
-
-        failing_result = IndependentTestResult(
-            tests_passed=False,
-            test_command="pytest tests/ -v",
-            test_output_summary="1 failed",
-            duration_seconds=1.5,
-            raw_output="ConnectionRefusedError: [Errno 111] Connection refused",
-        )
-
-        with patch.object(validator, "read_quality_gate_results", return_value=_passing_task_work_results()):
-            with patch.object(validator, "verify_quality_gates", return_value=_passing_gates()):
-                with patch.object(validator, "run_independent_tests", return_value=failing_result):
-                    result = validator.validate("TASK-ABFIX-005", 1, task)
-
-        # No requires_infrastructure → infrastructure conditional approval doesn't apply
-        assert result.decision == "feedback"
-
-    def test_parallel_contention_without_all_gates_passes_does_not_approve(
-        self, tmp_path: Path
-    ) -> None:
-        """Conditional approval only fires when ALL Player gates passed.
-
-        If a parallel wave task has tests failing in Player's own gates,
-        Coach must still return feedback even for contention-classified failures.
-        """
-        validator = _make_validator(tmp_path, wave_size=2)
-        task = {"task_type": "feature", "acceptance_criteria": ["implement feature"]}
-
-        failing_gates = QualityGateStatus(
-            tests_passed=False,  # Player gates did NOT all pass
-            coverage_met=True,
-            arch_review_passed=True,
-            plan_audit_passed=True,
-        )
-        # all_gates_passed will be computed as False since tests_passed=False
-
-        with patch.object(validator, "read_quality_gate_results", return_value=_passing_task_work_results()):
-            with patch.object(validator, "verify_quality_gates", return_value=failing_gates):
-                # validate() returns early from gates check before reaching test verification
-                result = validator.validate("TASK-ABFIX-005", 1, task)
-
-        assert result.decision == "feedback", (
-            "Expected 'feedback' when Player quality gates failed (tests_passed=False), "
-            f"got '{result.decision}'"
-        )

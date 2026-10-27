@@ -1,16 +1,13 @@
-"""A rollback in a repair round never lands on an earlier round's checkpoint.
+"""A checkpoint lookup in a repair round prefers this round's checkpoint.
 
 When a gate re-opens an approved task, the repair round numbers its turns from
 1 again and appends to the same ``checkpoints.json``, so one task's list reads
-``[1, 2, 1, 2, 3, 4]`` (20 October 2026). A rollback looked a turn number up
-and took the FIRST match, which is the earlier round's checkpoint: a
-context-pollution rollback in the repair round reset the worktree to before
-work that had already been approved.
+``[1, 2, 1, 2, 3, 4]`` (20 October 2026). A lookup by turn number returns the
+latest matching checkpoint, which is this round's.
 
-Now a lookup prefers this round's checkpoints (the latest matching one), a
-rollback only ever targets this round, and the list is cut by position.
-Driven on a real git repository through the real ``WorktreeCheckpointManager``;
-every file here is invented.
+(27 October 2026 cull: the context-pollution rollback these tests also drove
+is deleted; the lookup stays.) Driven on a real git repository through the
+real ``WorktreeCheckpointManager``; every file here is invented.
 """
 
 from __future__ import annotations
@@ -75,34 +72,7 @@ def _two_rounds(repo: Path, round_two: List):
         yield second
 
 
-class TestARepairRoundRollsBackWithinItself:
-    def test_pollution_rollback_keeps_the_approved_round(self, repo: Path) -> None:
-        with _two_rounds(repo, [True, False, False, False]) as manager:
-            assert [cp.turn for cp in manager.checkpoints] == [1, 2, 1, 2, 3, 4]
-            assert manager.should_rollback()
-
-            target = manager.find_last_passing_checkpoint()
-            assert target == 1
-            assert manager.rollback_to(target) is True
-
-            round_two_turn_one = manager.checkpoints[-1]
-            assert _git(repo, "rev-parse", "HEAD") == round_two_turn_one.commit_hash
-            # The approved round's work is still there; the polluted turns are gone.
-            assert (repo / "round1-turn2-approved.txt").exists()
-            assert (repo / "round2-turn1.txt").exists()
-            assert not (repo / "round2-turn4.txt").exists()
-            assert [cp.turn for cp in manager.checkpoints] == [1, 2, 1]
-
-    def test_no_passing_turn_in_this_round_is_no_target(self, repo: Path) -> None:
-        with _two_rounds(repo, [False, False, False]) as manager:
-            assert manager.find_last_passing_checkpoint() is None
-
-    def test_a_turn_this_round_never_reached_is_not_rolled_back_to(self, repo: Path) -> None:
-        with _two_rounds(repo, [True]) as manager:
-            head = _git(repo, "rev-parse", "HEAD")
-            assert manager.rollback_to(2) is False
-            assert _git(repo, "rev-parse", "HEAD") == head
-
+class TestARepairRoundLooksUpItsOwnCheckpoint:
     def test_a_lookup_prefers_this_rounds_checkpoint(self, repo: Path) -> None:
         with _two_rounds(repo, [True, False]) as manager:
             assert manager.get_checkpoint(2) is manager.checkpoints[3]
@@ -110,14 +80,3 @@ class TestARepairRoundRollsBackWithinItself:
             manager.checkpoints = manager.checkpoints[:3]
             assert manager.get_checkpoint(2) is manager.checkpoints[1]
 
-
-class TestASingleRoundIsUnchanged:
-    def test_rollback_in_the_only_round(self, repo: Path) -> None:
-        with _manager(repo) as manager:
-            commits = [
-                _turn(manager, repo, f"turn{n}", n, n <= 2).commit_hash for n in (1, 2, 3, 4)
-            ]
-            assert manager.find_last_passing_checkpoint() == 2
-            assert manager.rollback_to(2) is True
-            assert _git(repo, "rev-parse", "HEAD") == commits[1]
-            assert [cp.turn for cp in manager.checkpoints] == [1, 2]

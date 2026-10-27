@@ -48,8 +48,11 @@ def capturing_emitter() -> NullEmitter:
 
 @pytest.fixture
 def repo_root(tmp_path: Path) -> Path:
-    """Create a minimal repo root for testing."""
-    (tmp_path / ".git").mkdir()
+    """A real git checkout: orchestrate() runs the task under the checkout's
+    writer lease, which reads the checkout's git identity."""
+    from tests.task_scope_fixtures import init_checkout
+
+    init_checkout(tmp_path)
     (tmp_path / ".guardkit").mkdir()
     return tmp_path
 
@@ -133,7 +136,9 @@ class TestTaskStartedEvent:
         mock_wm = MagicMock()
         mock_worktree = MagicMock()
         mock_worktree.task_id = "TASK-001"
-        mock_worktree.path = repo_root / "worktree"
+        mock_worktree.path = repo_root
+        mock_worktree.base_branch = "main"
+        mock_wm.create.return_value = mock_worktree
         mock_wm.create_worktree.return_value = mock_worktree
         mock_wm.preserve_on_failure.return_value = None
 
@@ -182,7 +187,9 @@ class TestTaskStartedEvent:
         mock_wm = MagicMock()
         mock_worktree = MagicMock()
         mock_worktree.task_id = "TASK-002"
-        mock_worktree.path = repo_root / "worktree"
+        mock_worktree.path = repo_root
+        mock_worktree.base_branch = "main"
+        mock_wm.create.return_value = mock_worktree
 
         orchestrator = AutoBuildOrchestrator(
             repo_root=repo_root,
@@ -234,7 +241,9 @@ class TestTaskCompletedEvent:
         mock_wm = MagicMock()
         mock_worktree = MagicMock()
         mock_worktree.task_id = "TASK-001"
-        mock_worktree.path = repo_root / "worktree"
+        mock_worktree.path = repo_root
+        mock_worktree.base_branch = "main"
+        mock_wm.create.return_value = mock_worktree
 
         orchestrator = AutoBuildOrchestrator(
             repo_root=repo_root,
@@ -289,7 +298,9 @@ class TestTaskCompletedEvent:
         mock_wm = MagicMock()
         mock_worktree = MagicMock()
         mock_worktree.task_id = "TASK-001"
-        mock_worktree.path = repo_root / "worktree"
+        mock_worktree.path = repo_root
+        mock_worktree.base_branch = "main"
+        mock_wm.create.return_value = mock_worktree
 
         orchestrator = AutoBuildOrchestrator(
             repo_root=repo_root,
@@ -337,9 +348,7 @@ class TestTaskFailedEvent:
             ("error", "other"),
             ("timeout", "timeout"),
             ("cancelled", "other"),
-            ("configuration_error", "env_failure"),
             ("pre_loop_blocked", "other"),
-            ("unrecoverable_stall", "other"),
         ],
     )
     def test_task_failed_emitted_with_correct_category(
@@ -355,7 +364,9 @@ class TestTaskFailedEvent:
         mock_wm = MagicMock()
         mock_worktree = MagicMock()
         mock_worktree.task_id = "TASK-001"
-        mock_worktree.path = repo_root / "worktree"
+        mock_worktree.path = repo_root
+        mock_worktree.base_branch = "main"
+        mock_wm.create.return_value = mock_worktree
 
         orchestrator = AutoBuildOrchestrator(
             repo_root=repo_root,
@@ -402,7 +413,9 @@ class TestTaskFailedEvent:
         mock_wm = MagicMock()
         mock_worktree = MagicMock()
         mock_worktree.task_id = "TASK-001"
-        mock_worktree.path = repo_root / "worktree"
+        mock_worktree.path = repo_root
+        mock_worktree.base_branch = "main"
+        mock_wm.create.return_value = mock_worktree
 
         orchestrator = AutoBuildOrchestrator(
             repo_root=repo_root,
@@ -431,7 +444,9 @@ class TestTaskFailedEvent:
         mock_wm = MagicMock()
         mock_worktree = MagicMock()
         mock_worktree.task_id = "TASK-001"
-        mock_worktree.path = repo_root / "worktree"
+        mock_worktree.path = repo_root
+        mock_worktree.base_branch = "main"
+        mock_wm.create.return_value = mock_worktree
 
         mock_turn = MagicMock()
         mock_turn.decision = "approved"
@@ -611,7 +626,9 @@ class TestEmitterFlush:
         mock_wm = MagicMock()
         mock_worktree = MagicMock()
         mock_worktree.task_id = "TASK-001"
-        mock_worktree.path = repo_root / "worktree"
+        mock_worktree.path = repo_root
+        mock_worktree.base_branch = "main"
+        mock_wm.create.return_value = mock_worktree
 
         # Track flush calls
         flush_called = False
@@ -691,9 +708,7 @@ class TestFailureCategoryMapping:
             "timeout_budget_exhausted": "timeout",
             "rate_limited": "rate_limit",
             "cancelled": "other",
-            "configuration_error": "env_failure",
             "pre_loop_blocked": "other",
-            "unrecoverable_stall": "other",
             "design_extraction_failed": "other",
         }
 

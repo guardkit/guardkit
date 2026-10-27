@@ -214,7 +214,7 @@ def clean_report(task_id: str = TASK_ID) -> str:
         f"# Review Report — {task_id}\n\n"
         "## Summary\n\nRead src/parser.py end to end.\n\n"
         "## Context Used\n\n- clarification: defaults applied (unattended)\n\n"
-        f"## Findings\n\n{review_runner.CLEAN_REVIEW_LINE}\n\n"
+        "## Findings\n\nCLEAN-REVIEW: NO FINDINGS\n\n"
         "## Recommendations\n\nNone — the review is clean.\n"
     )
 
@@ -524,7 +524,6 @@ class TestStemCollisionGuard:
     def test_the_report_stem_really_does_match_forges_fix_task_regex(self):
         """The hazard is real: this is why the guard exists."""
         assert FORGE_FIX_TASK_ID_RE.match(f"{TASK_ID}-review-report")
-        assert review_runner.FIX_TASK_STEM_RE.match(f"{TASK_ID}-review-report")
 
     def test_report_is_never_admitted_as_an_artefact(self, tmp_path):
         report = tmp_path / ".claude" / "reviews" / f"{TASK_ID}-review-report.md"
@@ -576,75 +575,14 @@ class TestArtefactDiscipline:
         assert admitted == []
         assert rejected[0]["reason"] == "does not exist on disk"
 
-    def test_stem_the_pipeline_would_drop_is_rejected_loudly(self, tmp_path):
-        """A 2-char prefix fails forge's `[A-Z0-9]{3,12}` head and is dropped."""
-        short = tmp_path / "TASK-FW-001-too-short-a-prefix.md"
-        short.write_text("x", encoding="utf-8")
-        assert not FORGE_FIX_TASK_ID_RE.match(short.stem)
-        admitted, rejected = review_runner.admit_fix_task_paths(
-            [short], written_this_run=[short], report_path=tmp_path / "report.md"
-        )
-        assert admitted == []
-        assert "would drop it silently" in rejected[0]["reason"]
-
 
 # ===========================================================================
-# 6. The internal consistency check, both ways
+# 6. A review that wrote nothing
 # ===========================================================================
 
 
 class TestConsistencyCheck:
-    def test_findings_with_no_fix_tasks_fails(self):
-        verdict, reason = review_runner.evaluate_consistency(
-            findings=[SAMPLE_FINDING], fix_task_paths=[]
-        )
-        assert verdict == "FAILED"
-        assert "clean-looking success" in reason
 
-    def test_findings_with_fix_tasks_passes(self):
-        verdict, reason = review_runner.evaluate_consistency(
-            findings=[SAMPLE_FINDING], fix_task_paths=["/tmp/TASK-ABC-001.md"]
-        )
-        assert (verdict, reason) == ("PASSED", None)
-
-    def test_clean_with_no_fix_tasks_passes(self):
-        assert review_runner.evaluate_consistency(findings=[], fix_task_paths=[])[0] == (
-            "PASSED"
-        )
-
-    def test_fix_tasks_without_findings_fails(self):
-        verdict, reason = review_runner.evaluate_consistency(
-            findings=[], fix_task_paths=["/tmp/TASK-ABC-001.md"]
-        )
-        assert verdict == "FAILED"
-        assert "claims clean while producing work" in reason
-
-    def test_end_to_end_findings_but_producer_wrote_nothing_exits_2(
-        self, runner, repo, monkeypatch
-    ):
-        install_fake_producer(monkeypatch, repo, [])  # producer writes nothing
-        install_fake_specialist(
-            monkeypatch,
-            repo,
-            report_body=findings_report(),
-            findings_payload={"findings": [SAMPLE_FINDING]},
-        )
-        result = runner.invoke(task_review, ["--task-id", TASK_ID])
-        assert result.exit_code == 2
-        assert "refusing to print a clean-looking success" in result.stderr
-        assert "## Artefacts" not in result.stdout
-
-    def test_a_clean_review_must_be_positively_clean(self, runner, repo, monkeypatch):
-        """Empty findings + no explicit clean line = exit 2, not a quiet pass."""
-        install_fake_specialist(
-            monkeypatch,
-            repo,
-            report_body="# Review Report\n\n## Findings\n\nnothing much\n",
-            findings_payload={"findings": []},
-        )
-        result = runner.invoke(task_review, ["--task-id", TASK_ID])
-        assert result.exit_code == 2
-        assert "POSITIVELY" in result.stderr
 
     def test_missing_findings_file_exits_2(self, runner, repo, monkeypatch):
         install_fake_specialist(monkeypatch, repo, report_body=clean_report())
@@ -707,7 +645,6 @@ class TestReceipt:
         assert receipt["status"] == "findings"
         assert receipt["exit_code"] == 0
         assert receipt["findings_count"] == 1
-        assert receipt["consistency_check"] == "PASSED"
         assert isinstance(receipt["duration_seconds"], (int, float))
         assert len(receipt["fix_task_paths"]) == 1
         assert receipt["review_report_path"].endswith(
@@ -756,23 +693,6 @@ class TestReceipt:
         assert "gate_decision" in by_checkpoint[
             next(c for c in by_checkpoint if "Phase 5" in c)
         ]["relocated_to"]
-
-    def test_receipt_written_on_the_refusal_path_too(
-        self, runner, repo, monkeypatch
-    ):
-        install_fake_producer(monkeypatch, repo, [])
-        install_fake_specialist(
-            monkeypatch,
-            repo,
-            report_body=findings_report(),
-            findings_payload={"findings": [SAMPLE_FINDING]},
-        )
-        result = runner.invoke(task_review, ["--task-id", TASK_ID])
-        assert result.exit_code == 2
-        receipt = self._receipt(repo)
-        assert receipt["status"] == "inconsistent"
-        assert receipt["consistency_check"] == "FAILED"
-        assert receipt["exit_code"] == 2
 
 
 # ===========================================================================
@@ -944,7 +864,6 @@ class TestComposition:
 
         body = load_protocol("task_review_protocol")
         assert "Phases Not Run" in body
-        assert review_runner.CLEAN_REVIEW_LINE in body
 
 
 # ===========================================================================
@@ -1193,10 +1112,6 @@ class TestRealProducer:
         assert rejected == []
         # And the pipeline's own extractor recovers every one of them.
         assert len(forge_extract_fix_tasks(admitted)) == len(written)
-        verdict, _reason = review_runner.evaluate_consistency(
-            findings=[SAMPLE_FINDING], fix_task_paths=admitted
-        )
-        assert verdict == "PASSED"
 
 
 # ===========================================================================

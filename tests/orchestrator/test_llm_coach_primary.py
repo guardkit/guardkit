@@ -1,48 +1,51 @@
-"""AC-015 — _invoke_coach_safely routing decision (TASK-HMIG-008R Part E).
+"""The Coach turn: the project's own checks, then the reviewer (27 October 2026).
 
-Verifies the Part B inversion: by default the LLM Coach is the primary
-decision-maker (CoachValidator.gather_evidence + AgentInvoker.invoke_coach);
-``GUARDKIT_COACH_LEGACY=1`` reactivates the legacy flow (CoachValidator.validate
-as primary, LLM Coach as exception fallback).
+``AutoBuildOrchestrator._invoke_coach_safely`` gathers the project's own check
+results (``CoachValidator.gather_evidence``) and invokes the reviewer (the LLM
+Coach, ``AgentInvoker.invoke_coach``) on every turn with them. The reviewer's
+verdict is advice: its findings are kept in ``coach_turn_N.json`` and the
+turn is sent back only when the project's own checks ran and failed.
 
-Falsifier shapes:
+Checked here:
 
-* **Default flow (env var unset)**:
-  - ``CoachValidator.gather_evidence`` is called exactly once.
-  - ``CoachValidator.validate`` is NOT called.
-  - ``AgentInvoker.invoke_coach`` is called exactly once (the LLM Coach
-    runs on every turn, not just on validator exception).
-  - The verbatim log line ``"Using LLM Coach (primary)"`` is emitted.
-* **Legacy flow (GUARDKIT_COACH_LEGACY=1)**:
-  - ``CoachValidator.validate`` is called exactly once.
-  - ``CoachValidator.gather_evidence`` is NOT called (the legacy
-    branch returns before reaching the primary path).
-  - ``AgentInvoker.invoke_coach`` is NOT called when validate succeeds.
-    (It IS called only via the legacy except-branch fallback, which is
-    a separate test case.)
-  - The verbatim log line ``"Using CoachValidator (legacy,
-    GUARDKIT_COACH_LEGACY=1)"`` is emitted.
+* the seam: ``gather_evidence`` once, the reviewer once, the bundle passed
+  through unchanged, the log line; a gathering error leaves the reviewer to
+  run without a bundle; the reviewer's own failures pass through unchanged;
+  the input bundle is persisted beside the turn;
+* end to end, through the real ``_invoke_coach_safely`` →
+  ``CoachValidator.gather_evidence`` over a declared test command →
+  ``AgentInvoker.invoke_coach`` with only the model call stubbed: a reviewer
+  ``feedback`` verdict over a passing run is approved and its findings are
+  kept in ``coach_turn_N.json``; a required suite that ran and failed is sent
+  back; a reviewer that gives no readable verdict leaves the turn approved.
 
-These verbatim log strings are referenced by AC-007 in the task spec and
-must not drift — they are the operational signal operators use to confirm
-which Coach path is active.
+The verbatim log line ``"Using LLM Coach (primary)"`` is the operational
+signal operators use to confirm the Coach path; it must not drift.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import stat
+import subprocess
 from pathlib import Path
 from typing import Any, Dict, Optional
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+import yaml
 
 from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
 from guardkit.orchestrator.agent_invoker import AgentInvocationResult, AgentInvoker
-from guardkit.orchestrator.quality_gates.coach_evidence import CoachEvidenceBundle
-from guardkit.orchestrator.coach_verification import Discrepancy, HonestyVerification
+from guardkit.orchestrator.harness.adapter import AssistantMessageEvent
+from guardkit.orchestrator.paths import TaskArtifactPaths
+from guardkit.orchestrator.quality_gates.coach_evidence import (
+    CoachEvidenceBundle,
+    RuntimeParityResult,
+)
 from guardkit.orchestrator.quality_gates.coach_validator import IndependentTestResult
+from guardkit.orchestrator.toolchain_declaration import snapshot_task_toolchain
 from guardkit.worktrees.manager import Worktree
 
 
@@ -138,7 +141,6 @@ def orchestrator(
 
 def _empty_bundle() -> CoachEvidenceBundle:
     return CoachEvidenceBundle(
-        honesty=HonestyVerification(verified=True),
         gathering_status="complete",
         task_type="feature",
         profile_name="feature",
@@ -161,12 +163,12 @@ def _invoke_coach(
 
 
 # ---------------------------------------------------------------------------
-# Default flow — LLM Coach as primary decision-maker
+# The Coach turn: gather evidence, then the reviewer
 # ---------------------------------------------------------------------------
 
 
 class TestPrimaryFlow:
-    """``GUARDKIT_COACH_LEGACY`` unset → LLM Coach is primary."""
+    """The reviewer runs on every turn, given the evidence bundle."""
 
     @patch.dict("os.environ", {}, clear=False)
     def test_gather_evidence_called_once(
@@ -176,7 +178,6 @@ class TestPrimaryFlow:
         mock_agent_invoker: MagicMock,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        monkeypatch.delenv("GUARDKIT_COACH_LEGACY", raising=False)
         with patch(
             "guardkit.orchestrator.autobuild.CoachValidator"
         ) as mock_validator_class:
@@ -191,32 +192,6 @@ class TestPrimaryFlow:
             )
 
     @patch.dict("os.environ", {}, clear=False)
-    def test_validate_not_called(
-        self,
-        orchestrator: AutoBuildOrchestrator,
-        mock_worktree: Worktree,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """Falsifier #1: ``autobuild._invoke_coach -> CoachValidator.validate()
-        for the decision is GONE`` under the default path."""
-        monkeypatch.delenv("GUARDKIT_COACH_LEGACY", raising=False)
-        with patch(
-            "guardkit.orchestrator.autobuild.CoachValidator"
-        ) as mock_validator_class:
-            mock_instance = MagicMock()
-            mock_instance.gather_evidence.return_value = _empty_bundle()
-            mock_validator_class.return_value = mock_instance
-
-            _invoke_coach(orchestrator, mock_worktree)
-
-            assert mock_instance.validate.call_count == 0, (
-                "Falsifier #1: validate() must NOT be called on the primary path. "
-                "If this fails, the deterministic CoachValidator has silently "
-                "re-become the decision-maker, contradicting the Block "
-                "adversarial-cooperation paper."
-            )
-
-    @patch.dict("os.environ", {}, clear=False)
     def test_invoke_coach_called_on_every_turn(
         self,
         orchestrator: AutoBuildOrchestrator,
@@ -224,9 +199,7 @@ class TestPrimaryFlow:
         mock_agent_invoker: MagicMock,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Falsifier #1 sibling: the LLM Coach runs on EVERY turn under
-        the default path, not just on validator exception."""
-        monkeypatch.delenv("GUARDKIT_COACH_LEGACY", raising=False)
+        """The reviewer runs on EVERY turn."""
         with patch(
             "guardkit.orchestrator.autobuild.CoachValidator"
         ) as mock_validator_class:
@@ -248,7 +221,6 @@ class TestPrimaryFlow:
     ) -> None:
         """Part B/C wiring: the bundle produced by gather_evidence must
         flow to invoke_coach so Part C's prompt renderer can use it."""
-        monkeypatch.delenv("GUARDKIT_COACH_LEGACY", raising=False)
         with patch(
             "guardkit.orchestrator.autobuild.CoachValidator"
         ) as mock_validator_class:
@@ -278,7 +250,6 @@ class TestPrimaryFlow:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """AC-007: verbatim log line `"Using LLM Coach (primary)"`."""
-        monkeypatch.delenv("GUARDKIT_COACH_LEGACY", raising=False)
         with patch(
             "guardkit.orchestrator.autobuild.CoachValidator"
         ) as mock_validator_class:
@@ -296,157 +267,18 @@ class TestPrimaryFlow:
 
 
 # ---------------------------------------------------------------------------
-# Legacy flow — operator-controlled revert
+# A gathering error: the reviewer runs without the bundle
 # ---------------------------------------------------------------------------
 
 
-class TestLegacyFlow:
-    """``GUARDKIT_COACH_LEGACY=1`` → CoachValidator.validate is primary."""
-
-    def test_validate_called_once(
-        self,
-        orchestrator: AutoBuildOrchestrator,
-        mock_worktree: Worktree,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        monkeypatch.setenv("GUARDKIT_COACH_LEGACY", "1")
-        with patch(
-            "guardkit.orchestrator.autobuild.CoachValidator"
-        ) as mock_validator_class:
-            mock_instance = MagicMock()
-            mock_result = MagicMock()
-            mock_result.to_dict.return_value = {"decision": "approve"}
-            mock_instance.validate.return_value = mock_result
-            mock_validator_class.return_value = mock_instance
-
-            _invoke_coach(orchestrator, mock_worktree)
-
-            assert mock_instance.validate.call_count == 1
-
-    def test_gather_evidence_not_called(
-        self,
-        orchestrator: AutoBuildOrchestrator,
-        mock_worktree: Worktree,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """Legacy branch does NOT enter the primary path at all."""
-        monkeypatch.setenv("GUARDKIT_COACH_LEGACY", "1")
-        with patch(
-            "guardkit.orchestrator.autobuild.CoachValidator"
-        ) as mock_validator_class:
-            mock_instance = MagicMock()
-            mock_result = MagicMock()
-            mock_result.to_dict.return_value = {"decision": "approve"}
-            mock_instance.validate.return_value = mock_result
-            mock_validator_class.return_value = mock_instance
-
-            _invoke_coach(orchestrator, mock_worktree)
-
-            assert mock_instance.gather_evidence.call_count == 0
-
-    def test_invoke_coach_not_called_when_validate_succeeds(
+class TestPrimaryFlowGatheringError:
+    def test_gather_evidence_exception_runs_the_reviewer_without_a_bundle(
         self,
         orchestrator: AutoBuildOrchestrator,
         mock_worktree: Worktree,
         mock_agent_invoker: MagicMock,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """The LLM Coach is only the except-fallback under legacy, so it must
-        NOT be invoked when validate() returns cleanly."""
-        monkeypatch.setenv("GUARDKIT_COACH_LEGACY", "1")
-        with patch(
-            "guardkit.orchestrator.autobuild.CoachValidator"
-        ) as mock_validator_class:
-            mock_instance = MagicMock()
-            mock_result = MagicMock()
-            mock_result.to_dict.return_value = {"decision": "approve"}
-            mock_instance.validate.return_value = mock_result
-            mock_validator_class.return_value = mock_instance
-
-            _invoke_coach(orchestrator, mock_worktree)
-
-            assert mock_agent_invoker.invoke_coach.call_count == 0
-
-    def test_legacy_log_line_emitted(
-        self,
-        orchestrator: AutoBuildOrchestrator,
-        mock_worktree: Worktree,
-        caplog: pytest.LogCaptureFixture,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """AC-007: verbatim log line
-        `"Using CoachValidator (legacy, GUARDKIT_COACH_LEGACY=1)"`.
-        """
-        monkeypatch.setenv("GUARDKIT_COACH_LEGACY", "1")
-        with patch(
-            "guardkit.orchestrator.autobuild.CoachValidator"
-        ) as mock_validator_class:
-            mock_instance = MagicMock()
-            mock_result = MagicMock()
-            mock_result.to_dict.return_value = {"decision": "approve"}
-            mock_instance.validate.return_value = mock_result
-            mock_validator_class.return_value = mock_instance
-
-            with caplog.at_level(logging.INFO, logger="guardkit.orchestrator.autobuild"):
-                _invoke_coach(orchestrator, mock_worktree)
-
-        assert any(
-            "Using CoachValidator (legacy, GUARDKIT_COACH_LEGACY=1)"
-            in record.message
-            for record in caplog.records
-        ), "AC-007: legacy-path log line missing"
-
-
-# ---------------------------------------------------------------------------
-# Exception handling on the primary path — synthetic feedback, not validate()
-# ---------------------------------------------------------------------------
-
-
-class TestPrimaryFlowExceptionHandling:
-    """Per Phase 2.5 review finding #1 and plan §3: unexpected exceptions
-    in ``gather_evidence`` MUST NOT fall back to ``validate()`` — that
-    would reactivate falsifier #1's forbidden path. Instead, a synthetic
-    feedback coach_turn_N.json is written and an AgentInvocationResult
-    with decision="feedback" is returned.
-    """
-
-    def test_gather_evidence_exception_emits_synthetic_feedback(
-        self,
-        orchestrator: AutoBuildOrchestrator,
-        mock_worktree: Worktree,
         tmp_path: Path,
-        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        monkeypatch.delenv("GUARDKIT_COACH_LEGACY", raising=False)
-        # Point the mock worktree at a real tmp_path so file writes work.
-        mock_worktree.path = tmp_path
-
-        with patch(
-            "guardkit.orchestrator.autobuild.CoachValidator"
-        ) as mock_validator_class:
-            mock_instance = MagicMock()
-            mock_instance.gather_evidence.side_effect = RuntimeError(
-                "synthetic_failure"
-            )
-            mock_validator_class.return_value = mock_instance
-
-            result = _invoke_coach(orchestrator, mock_worktree)
-
-            # Synthetic feedback decision returned
-            assert result.report.get("decision") == "feedback"
-            assert "synthetic_failure" in result.report.get("rationale", "")
-            assert result.report.get("coach_primary_synthetic_feedback") is True
-
-    def test_gather_evidence_exception_does_not_call_validate(
-        self,
-        orchestrator: AutoBuildOrchestrator,
-        mock_worktree: Worktree,
-        tmp_path: Path,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """The critical falsifier-#1 protection: on primary-path exception,
-        validate() MUST NOT silently re-become the decision-maker."""
-        monkeypatch.delenv("GUARDKIT_COACH_LEGACY", raising=False)
         mock_worktree.path = tmp_path
 
         with patch(
@@ -456,172 +288,23 @@ class TestPrimaryFlowExceptionHandling:
             mock_instance.gather_evidence.side_effect = RuntimeError("boom")
             mock_validator_class.return_value = mock_instance
 
-            _invoke_coach(orchestrator, mock_worktree)
-
-            assert mock_instance.validate.call_count == 0, (
-                "Falsifier #1: validate() must NOT be called as exception "
-                "fallback in the primary path. GUARDKIT_COACH_LEGACY=1 is the "
-                "sole operator-controlled mechanism for reactivating validate()."
-            )
-
-    def test_synthetic_feedback_written_to_disk(
-        self,
-        orchestrator: AutoBuildOrchestrator,
-        mock_worktree: Worktree,
-        tmp_path: Path,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        monkeypatch.delenv("GUARDKIT_COACH_LEGACY", raising=False)
-        mock_worktree.path = tmp_path
-
-        with patch(
-            "guardkit.orchestrator.autobuild.CoachValidator"
-        ) as mock_validator_class:
-            mock_instance = MagicMock()
-            mock_instance.gather_evidence.side_effect = ValueError("oops")
-            mock_validator_class.return_value = mock_instance
-
-            _invoke_coach(orchestrator, mock_worktree)
-
-        decision_path = (
-            tmp_path / ".guardkit" / "autobuild-private" / "TASK-LCP-001" / "coach_turn_1.json"
-        )
-        assert decision_path.exists(), (
-            "Synthetic feedback must write coach_turn_N.json to disk so the "
-            "downstream consumer chain (_display_criteria_progress, "
-            "_count_criteria_passed) sees a consistent shape."
-        )
-
-
-# ---------------------------------------------------------------------------
-# TASK-FIX-COACHSF01 — soft-fail on Coach verdict-emission failures
-# ---------------------------------------------------------------------------
-
-
-class TestPrimaryFlowVerdictEmissionSoftFail:
-    """TASK-FIX-COACHSF01 regression: when ``invoke_coach`` catches
-    ``CoachDecisionNotFoundError`` / ``CoachDecisionInvalidError`` internally
-    and returns ``success=False`` with the exception text in ``error``,
-    ``_invoke_coach_primary`` MUST convert that into a synthetic feedback
-    decision (so the Player gets a turn N+1 with Coach's feedback) instead of
-    surfacing ``success=False`` to the wave loop and hard-failing the turn.
-
-    Falsifier (from the task spec): "After landing, ... if Coach LLM
-    completes its invocation but does NOT write coach_turn_N.json
-    (qwen36-workhorse F2-at-Coach-level substrate behaviour),
-    ``_invoke_coach_primary`` MUST emit a synthetic feedback decision
-    (writes coach_turn_N.json with rationale naming the failure mode) and
-    return success=True."
-
-    Other ``success=False`` outcomes (``SDKTimeoutError``, generic
-    ``Unexpected error``) MUST continue to propagate as-is (AC-003) — the
-    soft-fail is narrowly scoped to verdict-emission failures.
-    """
-
-    def test_decision_not_found_emits_synthetic_feedback(
-        self,
-        orchestrator: AutoBuildOrchestrator,
-        mock_worktree: Worktree,
-        mock_agent_invoker: MagicMock,
-        tmp_path: Path,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """AC-002 + AC-004: ``invoke_coach`` returns success=False with
-        "Coach decision not found" → synthetic feedback fires.
-        """
-        monkeypatch.delenv("GUARDKIT_COACH_LEGACY", raising=False)
-        mock_worktree.path = tmp_path
-
-        # Simulate invoke_coach catching CoachDecisionNotFoundError internally.
-        mock_agent_invoker.invoke_coach.return_value = AgentInvocationResult(
-            task_id="TASK-LCP-001",
-            turn=1,
-            agent_type="coach",
-            success=False,
-            report={},
-            duration_seconds=0.0,
-            error="Coach decision not found: coach_turn_1.json missing",
-        )
-
-        with patch(
-            "guardkit.orchestrator.autobuild.CoachValidator"
-        ) as mock_validator_class:
-            mock_instance = MagicMock()
-            mock_instance.gather_evidence.return_value = _empty_bundle()
-            mock_validator_class.return_value = mock_instance
-
             result = _invoke_coach(orchestrator, mock_worktree)
 
-        # Synthetic feedback fired: success=True, decision=feedback, on-disk.
-        assert result.success is True, (
-            "AC-004: verdict-emission failure must be soft-failed as "
-            "synthetic feedback (success=True), not hard-failed as "
-            "success=False (which the wave loop reads as coach_decision=error)."
+        assert mock_agent_invoker.invoke_coach.call_count == 1
+        assert mock_agent_invoker.invoke_coach.call_args.kwargs["evidence_bundle"] is None
+        assert result.report.get("decision") == "approve"
+        evidence_path = TaskArtifactPaths.private_artifact_path(
+            "TASK-LCP-001", "coach_evidence_turn_1.json", tmp_path
         )
-        assert result.report.get("decision") == "feedback"
-        assert result.report.get("coach_primary_synthetic_feedback") is True
-        # Rationale names the failure mode so future runs / Graphiti can
-        # distinguish this class from other Coach-side errors.
-        assert "verdict-emission failed" in result.report.get("rationale", "")
-        assert "Coach decision not found" in result.report.get("rationale", "")
+        assert json.loads(evidence_path.read_text()) is None
 
-        # coach_turn_1.json was written.
-        decision_path = (
-            tmp_path / ".guardkit" / "autobuild-private" / "TASK-LCP-001" / "coach_turn_1.json"
-        )
-        assert decision_path.exists(), (
-            "Synthetic feedback must write coach_turn_N.json so downstream "
-            "consumers see a consistent shape."
-        )
 
-    def test_decision_invalid_emits_synthetic_feedback(
-        self,
-        orchestrator: AutoBuildOrchestrator,
-        mock_worktree: Worktree,
-        mock_agent_invoker: MagicMock,
-        tmp_path: Path,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """AC-002 sibling: ``CoachDecisionInvalidError`` (malformed JSON) is
-        the same failure class as not-found and must also soft-fail.
-        """
-        monkeypatch.delenv("GUARDKIT_COACH_LEGACY", raising=False)
-        mock_worktree.path = tmp_path
+# ---------------------------------------------------------------------------
+# The reviewer's own failures pass through unchanged
+# ---------------------------------------------------------------------------
 
-        mock_agent_invoker.invoke_coach.return_value = AgentInvocationResult(
-            task_id="TASK-LCP-001",
-            turn=2,
-            agent_type="coach",
-            success=False,
-            report={},
-            duration_seconds=0.0,
-            error="Coach decision invalid: missing 'decision' field",
-        )
 
-        with patch(
-            "guardkit.orchestrator.autobuild.CoachValidator"
-        ) as mock_validator_class:
-            mock_instance = MagicMock()
-            mock_instance.gather_evidence.return_value = _empty_bundle()
-            mock_validator_class.return_value = mock_instance
-
-            result = orchestrator._invoke_coach_safely(
-                task_id="TASK-LCP-001",
-                turn=2,
-                requirements="Test requirements",
-                player_report={
-                    "status": "completed",
-                    "files_modified": [],
-                    "files_created": [],
-                },
-                worktree=mock_worktree,
-            )
-
-        assert result.success is True
-        assert result.report.get("decision") == "feedback"
-        assert result.report.get("coach_primary_synthetic_feedback") is True
-        assert "Coach decision invalid" in result.report.get("rationale", "")
-
+class TestPrimaryFlowReviewerOutcomes:
     def test_sdk_timeout_propagates_unchanged(
         self,
         orchestrator: AutoBuildOrchestrator,
@@ -634,7 +317,6 @@ class TestPrimaryFlowVerdictEmissionSoftFail:
         and must continue to propagate as success=False. The orchestrator's
         wave loop handles timeout distinctly from verdict-emission.
         """
-        monkeypatch.delenv("GUARDKIT_COACH_LEGACY", raising=False)
         mock_worktree.path = tmp_path
 
         # invoke_coach turns SDKTimeoutError into:
@@ -689,7 +371,6 @@ class TestPrimaryFlowVerdictEmissionSoftFail:
         ``invoke_coach``) is not a verdict-emission failure either and
         must propagate as success=False.
         """
-        monkeypatch.delenv("GUARDKIT_COACH_LEGACY", raising=False)
         mock_worktree.path = tmp_path
 
         # invoke_coach's catch-all branch produces:
@@ -735,7 +416,6 @@ class TestPrimaryFlowVerdictEmissionSoftFail:
         A normal successful Coach decision MUST flow through untouched and
         NOT be replaced by synthetic feedback.
         """
-        monkeypatch.delenv("GUARDKIT_COACH_LEGACY", raising=False)
         mock_worktree.path = tmp_path
 
         approved_result = AgentInvocationResult(
@@ -781,22 +461,13 @@ class TestPrimaryFlowEvidenceBundlePersistence:
     """
 
     def _rich_bundle(self) -> CoachEvidenceBundle:
-        """A bundle carrying the exact signals reconstruction could NOT recover
-        (the Coach's own independent_tests + honesty discrepancy + a
-        zero-cardinality BDD oracle)."""
+        """A bundle carrying the signals reconstruction could NOT recover
+        (the Coach's own independent_tests and the smoke command's run)."""
         return CoachEvidenceBundle(
-            honesty=HonestyVerification(
-                verified=False,
-                discrepancies=[
-                    Discrepancy(
-                        "test_result", "all tests pass", "3 failed", "critical"
-                    )
-                ],
-                honesty_score=0.3,
-            ),
             gathering_status="complete",
-            tests={"tests_passed": True, "tests_run": 30},
-            bdd={"scenarios_attempted": 0},
+            runtime_parity=RuntimeParityResult(
+                ran=True, passed=True, command="make smoke", exit_code=0,
+            ),
             independent_tests=IndependentTestResult(
                 tests_passed=False,
                 test_command="pytest -q",
@@ -814,7 +485,6 @@ class TestPrimaryFlowEvidenceBundlePersistence:
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        monkeypatch.delenv("GUARDKIT_COACH_LEGACY", raising=False)
         mock_worktree.path = tmp_path
 
         with patch(
@@ -841,9 +511,9 @@ class TestPrimaryFlowEvidenceBundlePersistence:
         saved = json.loads(evidence_path.read_text())
         # The discriminating signals that bundle reconstruction could NOT recover
         # (Coach's own verification) are present verbatim.
-        assert saved["bdd"]["scenarios_attempted"] == 0
+        assert saved["runtime_parity"]["command"] == "make smoke"
         assert saved["independent_tests"]["tests_passed"] is False
-        assert saved["honesty"]["discrepancies"][0]["claim_type"] == "test_result"
+        assert saved["independent_tests"]["test_output_summary"] == "3 failed, 27 passed"
 
     def test_persistence_failure_does_not_block_turn(
         self,
@@ -856,7 +526,6 @@ class TestPrimaryFlowEvidenceBundlePersistence:
         """Best-effort: a serialisation failure when persisting the bundle MUST
         NOT block the turn — the Coach verdict still flows through. (The write
         is wrapped in a guarded try/except.)"""
-        monkeypatch.delenv("GUARDKIT_COACH_LEGACY", raising=False)
         mock_worktree.path = tmp_path
 
         bundle = self._rich_bundle()
@@ -885,3 +554,160 @@ class TestPrimaryFlowEvidenceBundlePersistence:
         # The write was attempted but failed — no (or empty) artifact, and crucially
         # no exception escaped to fail the turn.
         assert not evidence_path.exists() or evidence_path.read_text() == ""
+
+
+# ---------------------------------------------------------------------------
+# End to end: the real Coach turn, with only the model call stubbed
+# ---------------------------------------------------------------------------
+
+_TASK = "TASK-LCP-E2E"
+_FAILING = "tests/test_users.py::test_delete_twice"
+
+
+def _git(root: Path, *args: str) -> None:
+    subprocess.run(
+        ["git", "-C", str(root), "-c", "user.name=Coach Test",
+         "-c", "user.email=coach@example.invalid", *args],
+        check=True, capture_output=True, text=True,
+    )
+
+
+def _project(tmp_path: Path, suite_output: str, exit_code: int) -> Path:
+    """A git project whose declared test command prints ``suite_output``."""
+    root = tmp_path / "project"
+    root.mkdir()
+    (root / ".guardkit").mkdir()
+    (root / ".guardkit" / "config.yaml").write_text(
+        yaml.safe_dump({"toolchain": {"test": "bash qa/run-suite.sh"}}),
+        encoding="utf-8",
+    )
+    (root / ".gitignore").write_text(".guardkit/autobuild-private/\n")
+    qa = root / "qa"
+    qa.mkdir()
+    body = "\n".join(f"echo {line!r}" for line in suite_output.splitlines())
+    script = qa / "run-suite.sh"
+    script.write_text(f"#!/bin/sh\n{body}\nexit {exit_code}\n", encoding="utf-8")
+    script.chmod(script.stat().st_mode | stat.S_IEXEC)
+    _git(root, "init", "-q", "-b", "main")
+    _git(root, "add", "-A")
+    _git(root, "commit", "-q", "-m", "start")
+    _git(root, "checkout", "-q", "-b", f"autobuild/{_TASK}")
+    snapshot_task_toolchain(_TASK, root, root)
+    return root
+
+
+def _reviewer_says(verdict: Optional[Dict[str, Any]]) -> AsyncMock:
+    """The model call, stubbed: the reviewer's response text ends with its
+    verdict as a fenced json block (or holds no verdict at all)."""
+    text = "I read the evidence."
+    if verdict is not None:
+        text += "\n\n```json\n" + json.dumps(verdict) + "\n```\n"
+    return AsyncMock(return_value=(None, [AssistantMessageEvent(text=text)]))
+
+
+def _real_turn(
+    tmp_path: Path, root: Path, reviewer: AsyncMock
+) -> AgentInvocationResult:
+    invoker = AgentInvoker(worktree_path=root, sdk_timeout_seconds=600)
+    orchestrator = AutoBuildOrchestrator(
+        repo_root=root,
+        max_turns=3,
+        worktree_manager=MagicMock(worktrees_dir=tmp_path),
+        agent_invoker=invoker,
+        enable_context=False,
+    )
+    worktree = Worktree(
+        task_id=_TASK, branch_name=f"autobuild/{_TASK}", path=root, base_branch="main",
+    )
+    with patch.object(invoker, "_invoke_with_role", reviewer):
+        result = orchestrator._invoke_coach_safely(
+            task_id=_TASK,
+            turn=1,
+            requirements="Delete a user twice without an error.",
+            player_report={"task_id": _TASK, "turn": 1, "files_modified": []},
+            worktree=worktree,
+            acceptance_criteria=["Deleting twice answers 404"],
+            task_type="feature",
+        )
+    reviewer.assert_awaited_once()
+    return result
+
+
+def _coach_record(root: Path) -> Dict[str, Any]:
+    return json.loads(
+        TaskArtifactPaths.private_artifact_path(_TASK, "coach_turn_1.json", root).read_text()
+    )
+
+
+_REVIEWER_FINDING = {
+    "severity": "must_fix",
+    "category": "missing_test",
+    "description": "No test covers deleting a user twice.",
+}
+
+
+class TestTheRealCoachTurn:
+    def test_a_feedback_verdict_over_a_passing_run_is_approved_and_kept(
+        self, tmp_path: Path
+    ) -> None:
+        root = _project(tmp_path, "5 passed in 0.50s\n", 0)
+        reviewer = _reviewer_says({
+            "task_id": _TASK, "turn": 1, "decision": "feedback",
+            "issues": [_REVIEWER_FINDING],
+            "rationale": "A test is missing.",
+        })
+
+        result = _real_turn(tmp_path, root, reviewer)
+
+        assert result.success is True, result.error
+        assert result.report["decision"] == "approve"
+        assert result.report["reviewer_decision"] == "feedback"
+        record = _coach_record(root)
+        assert record["decision"] == "approve"
+        assert record["reviewer_decision"] == "feedback"
+        assert record["issues"] == [_REVIEWER_FINDING]
+        independent = result.report["validation_results"]["independent_tests"]
+        assert independent["tests_passed"] is True
+        assert independent["test_command"] == "bash qa/run-suite.sh"
+
+    def test_a_required_suite_that_ran_and_failed_is_sent_back(
+        self, tmp_path: Path
+    ) -> None:
+        root = _project(
+            tmp_path,
+            f"FAILED {_FAILING} - AssertionError: deleted twice\n1 failed, 4 passed in 0.50s\n",
+            1,
+        )
+        reviewer = _reviewer_says({
+            "task_id": _TASK, "turn": 1, "decision": "approve", "issues": [],
+            "rationale": "Looks complete.",
+        })
+
+        result = _real_turn(tmp_path, root, reviewer)
+
+        assert result.success is True, result.error
+        assert result.report["decision"] == "feedback"
+        assert result.report["reviewer_decision"] == "approve"
+        categories = [i["category"] for i in result.report["issues"]]
+        assert categories[0] == "independent_test_code_failure"
+        record = _coach_record(root)
+        assert record["decision"] == "feedback"
+        assert _FAILING in json.dumps(record["issues"])
+
+        from guardkit.orchestrator.failing_test_feedback import SUITE_RECEIPT_KEY
+
+        receipt = result.report[SUITE_RECEIPT_KEY]
+        assert receipt["command"] == "bash qa/run-suite.sh"
+        assert any(_FAILING in line for line in receipt["failing_lines"])
+
+    def test_no_readable_verdict_leaves_a_green_turn_approved(
+        self, tmp_path: Path
+    ) -> None:
+        root = _project(tmp_path, "5 passed in 0.50s\n", 0)
+
+        result = _real_turn(tmp_path, root, _reviewer_says(None))
+
+        assert result.success is True, result.error
+        assert result.report["decision"] == "approve"
+        assert result.report["issues"] == []
+        assert _coach_record(root)["decision"] == "approve"

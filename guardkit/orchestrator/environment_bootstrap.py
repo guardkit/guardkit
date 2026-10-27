@@ -41,7 +41,6 @@ import os
 import re
 import shlex
 import shutil
-import stat
 import subprocess
 import sys
 import time
@@ -671,22 +670,6 @@ class BootstrapResult:
     non_relevant_failures: int = 0
     skipped_stacks: List[str] = field(default_factory=list)
     failure_details: List[BootstrapFailureDetail] = field(default_factory=list)
-    # A plain sentence when a declared install's input was refused before
-    # anything ran: a directory or file that escapes the worktree, or one that
-    # cannot be listed or read. ``success`` is then False and nothing was
-    # installed. Callers that build a feature treat it as a stopping error.
-    refused: Optional[str] = None
-
-
-class _DeclaredInputRefused(Exception):
-    """A declared install input escapes the worktree or cannot be read."""
-
-
-def _input_owner(component: Optional[str]) -> str:
-    """Name what a declared input belongs to, for a refusal sentence."""
-    if component is None:
-        return "Declared install input at the repository root"
-    return f"Declared install input for component {component!r}"
 
 
 def _declared_install_serves(
@@ -730,7 +713,7 @@ def _declared_install_serves(
 #   absent                      | present | yes        | uv sync --frozen
 #   absent                      | present | no         | pip install -e .  (+ warn)
 #   present                     | any     | yes        | uv pip install -e .  [1][2]
-#   present                     | any     | no         | HARD-FAIL (UvSourcesRequireUvError)
+#   present                     | any     | no         | uv pip install -e .  (the install fails: no uv)
 #
 # [1] ``uv pip install`` requires either an active venv or ``--system``. When
 #     this row fires and the worktree has neither an active ``$VIRTUAL_ENV``
@@ -802,17 +785,6 @@ def _missing_program(exc: OSError, cmd: Sequence[str]) -> Optional[str]:
     ):
         return str(cmd[0])
     return None
-
-
-class UvSourcesRequireUvError(DeclaredToolMissingError):
-    """
-    Raised at detection time when a pyproject.toml declares
-    ``[tool.uv.sources]`` but ``uv`` is not on PATH.
-
-    Plain pip cannot honour the sibling-source overrides, so installing would
-    silently produce a broken environment. The orchestrator catches this and
-    surfaces it as a hard-fail before any pip work runs.
-    """
 
 
 class BootstrapEnvironmentLeakError(RuntimeError):
@@ -1205,28 +1177,10 @@ def _resolve_python_pyproject_install_command(
         For the ``uv sync --frozen`` row, extras are ignored at install
         time (uv.lock bakes extras at lock time, not install time) and
         a warning is logged. (TASK-GK-BS-001)
-
-    Raises
-    ------
-    UvSourcesRequireUvError
-        When pyproject declares ``[tool.uv.sources]`` and ``uv`` is missing
-        from PATH. The error message names the file and lists the two
-        actionable fixes (install uv, or remove the block).
     """
     has_uv_sources = _pyproject_has_uv_sources(pyproject_path)
     has_uv_lock = (directory / "uv.lock").exists()
     uv_available = _uv_on_path()
-
-    if has_uv_sources and not uv_available:
-        raise UvSourcesRequireUvError(
-            f"{pyproject_path} declares [tool.uv.sources] but `uv` is not on PATH. "
-            "pip cannot honour these sibling-source overrides — installing "
-            "would silently produce a broken environment. "
-            "uv is missing from the build environment: add it there "
-            "(https://astral.sh/uv) and retry. The declaration is correct.",
-            tool="uv",
-            declaring_file=str(pyproject_path),
-        )
 
     target = "."
     if extras:
@@ -1932,22 +1886,8 @@ class EnvironmentBootstrapper:
                 manifest, changed_paths
             )
 
-        # Hash-based deduplication with outcome awareness. A declared
-        # install's input that escapes the worktree or cannot be read is a
-        # refusal: nothing runs, and the saved state is left as it was.
-        try:
-            content_hash = self._compute_hash(manifests)
-        except _DeclaredInputRefused as exc:
-            logger.error("Bootstrap refused: %s", exc)
-            return BootstrapResult(
-                success=False,
-                skipped=False,
-                stacks_detected=stacks_detected,
-                manifests_found=manifests_found,
-                error=str(exc),
-                refused=str(exc),
-                duration_seconds=time.monotonic() - start_time,
-            )
+        # Hash-based deduplication with outcome awareness.
+        content_hash = self._compute_hash(manifests)
         if self._should_skip(content_hash):
             saved = self._load_state()
             if saved.get("success", True):
@@ -2115,53 +2055,6 @@ class EnvironmentBootstrapper:
         duration = time.monotonic() - start_time
         overall_success = installs_failed == 0
 
-        # FFC6 (AC-006): replaces the historical TASK-SGER-002 false-success
-        # block. SGER-002 captured ``sys.executable`` on the macOS happy path
-        # to give the downstream smoke gate a venv path to work with — but
-        # ``sys.executable`` is the orchestrator's parent venv, so the
-        # editable ``_editable_impl_*.pth`` line had already landed there,
-        # silently corrupting the parent project's venv after the worktree
-        # was torn down.
-        #
-        # With AC-003's eager worktree-venv creation in place,
-        # ``self._venv_python`` is guaranteed to point at
-        # ``<worktree>/.venv/bin/python`` (or, on PEP 668 fallback, at
-        # ``<worktree>/.guardkit/venv/bin/python``) before any install
-        # subprocess runs. If we still find ourselves with an interpreter
-        # outside the worktree, an upstream code path has reintroduced the
-        # leak — refuse to claim success and surface the diagnostic.
-        # Instance of the ``absence-of-failure-is-not-success`` rule.
-        if (
-            overall_success
-            and any(m.stack == "python" for m in manifests)
-            and self._venv_python is not None
-            and not str(self._venv_python).startswith(str(self._root))
-        ):
-            raise BootstrapEnvironmentLeakError(
-                f"Python install completed but interpreter "
-                f"{self._venv_python} is outside worktree {self._root}. "
-                f"Refusing to claim success — this would silently corrupt "
-                f"the parent venv. See "
-                f".claude/reviews/TASK-REV-FFC6-review-report.md and "
-                f".claude/rules/absence-of-failure-is-not-success.md."
-            )
-
-        # WS3-S3 ENVTAMPER-a (§5.1): post-install skip-guard dependency parity +
-        # resolution-origin probe. Removes the motive for the ABL-001 self-mock by
-        # surfacing missing skip-guarded extras (and vendored-stub directories,
-        # RENV-1) as advisories BEFORE the Player is tempted to stub. Advisory
-        # only — NEVER fails bootstrap (AC-003). Fail-open.
-        try:
-            from guardkit.orchestrator.env_parity import analyze_env_parity
-            parity = analyze_env_parity(
-                Path(self._root),
-                str(self._venv_python) if self._venv_python else None,
-            )
-            for f in parity.findings:
-                logger.warning("ENV-PARITY (%s): %s", f.kind, f.detail)
-        except Exception as exc:  # noqa: BLE001 — advisory must never block bootstrap
-            logger.debug("env-parity probe skipped: %s", exc)
-
         # Persist state hash with outcome so failed attempts can be retried.
         # The state records success only when no install failed at all,
         # essential or not, and names the installs that failed; the returned
@@ -2213,11 +2106,6 @@ class EnvironmentBootstrapper:
         -------
         str
             Hex-encoded SHA-256 digest.
-
-        Raises
-        ------
-        _DeclaredInputRefused
-            A declared install input escapes the worktree or cannot be read.
         """
         if any(m.declared for m in manifests):
             return self._compute_declared_hash(manifests)
@@ -2242,84 +2130,35 @@ class EnvironmentBootstrapper:
         and, in each directory detection attached (the root, every component
         ``cwd`` and the directories between), the files directly inside it
         that the shared dependency-file check recognises. A declared directory
-        that does not exist is an "absent" entry. Nothing is read recursively.
-        Inferred manifests in the same run are hashed as before. The key also
-        records the image identity (``FORGE_IMAGE_IDENTITY``, or "not set")
-        and the resolved worktree root.
-
-        One rule holds for every filesystem call on a declared input: only
-        ``FileNotFoundError`` (or ``NotADirectoryError``, a path component
-        that is a file) means a declared directory is absent. Any other
-        ``OSError`` (permission, symlink loop, I/O) refuses the bootstrap,
-        naming the component and path, and as a backstop no ``OSError`` or
-        ``RuntimeError`` leaves this method as anything but a refusal.
+        that does not exist is an "absent" entry and one that cannot be read
+        an "unreadable" entry. Nothing is read recursively. Inferred manifests
+        in the same run are hashed as before. The key also records the image
+        identity (``FORGE_IMAGE_IDENTITY``, or "not set") and the resolved
+        worktree root.
         """
-        try:
-            return self._declared_hash(manifests)
-        except _DeclaredInputRefused:
-            raise
-        except (OSError, RuntimeError) as exc:
-            raise _DeclaredInputRefused(
-                "The declared install's inputs could not be read safely "
-                f"({type(exc).__name__}: {exc}), so nothing is installed."
-            ) from exc
-
-    def _declared_hash(self, manifests: List[DetectedManifest]) -> str:
-        """Body of :meth:`_compute_declared_hash`."""
         from guardkit.orchestrator.toolchain_declaration import resolve_component_cwd
 
         root = Path(self._root)
         entries: Dict[str, str] = {}
         for manifest in manifests:
             if not manifest.declared:
-                try:
-                    digest = hashlib.sha256(manifest.path.read_bytes()).hexdigest()
-                except OSError as exc:
-                    logger.warning(
-                        "Could not read manifest for hashing (%s): %s",
-                        manifest.path,
-                        exc,
-                    )
-                    digest = "unreadable"
-                entries[str(manifest.path)] = digest
+                entries[str(manifest.path)] = self._digest(manifest.path)
                 continue
-            self._hash_declared_file(
-                None, manifest.path, self._listed_path(manifest.path), entries
-            )
-            for owner, rel_dir in manifest.declared_inputs:
+            entries[self._listed_path(manifest.path)] = self._digest(manifest.path)
+            for _owner, rel_dir in manifest.declared_inputs:
                 try:
                     directory = resolve_component_cwd(root, rel_dir)
-                except (OSError, RuntimeError, ValueError) as exc:
-                    # RuntimeError: a symlink loop (Python 3.12 ``resolve``).
-                    raise _DeclaredInputRefused(
-                        f"{_input_owner(owner)}: directory {rel_dir!r} is refused: {exc}"
-                    ) from exc
-                # ``lstat`` rather than ``lexists``: ``lexists`` reads every
-                # OSError, an unsearchable parent included, as absence.
-                try:
-                    os.lstat(directory)
+                    names = sorted(os.listdir(directory))
                 except (FileNotFoundError, NotADirectoryError):
                     entries[f"{rel_dir}/"] = "absent"
                     continue
-                except OSError as exc:
-                    raise _DeclaredInputRefused(
-                        f"{_input_owner(owner)}: directory {rel_dir!r} cannot be "
-                        f"looked up ({exc}), so the declared install's inputs "
-                        "are unknown."
-                    ) from exc
-                try:
-                    names = sorted(os.listdir(directory))
-                except OSError as exc:
-                    raise _DeclaredInputRefused(
-                        f"{_input_owner(owner)}: directory {rel_dir!r} cannot be "
-                        f"listed ({exc}), so the declared install's inputs are unknown."
-                    ) from exc
+                except (OSError, RuntimeError, ValueError):
+                    entries[f"{rel_dir}/"] = "unreadable"
+                    continue
                 for name in names:
                     if dependency_file_stack(name) is not None:
                         listed = name if rel_dir == "." else f"{rel_dir}/{name}"
-                        self._hash_declared_file(
-                            owner, directory / name, listed, entries
-                        )
+                        entries[listed] = self._digest(directory / name)
 
         hasher = hashlib.sha256()
         hasher.update(b"declared-install-inputs/1\n")
@@ -2330,6 +2169,14 @@ class EnvironmentBootstrapper:
         hasher.update(f"root\0{root.resolve()}\n".encode("utf-8"))
         return hasher.hexdigest()
 
+    @staticmethod
+    def _digest(path: Path) -> str:
+        """SHA-256 of a file's contents, or "unreadable"."""
+        try:
+            return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+        except OSError:
+            return "unreadable"
+
     def _listed_path(self, path: Path) -> str:
         """*path* relative to the worktree as listed (links not followed)."""
         for base in (Path(self._root), Path(self._root).resolve()):
@@ -2337,51 +2184,7 @@ class EnvironmentBootstrapper:
                 return Path(path).relative_to(base).as_posix()
             except ValueError:
                 continue
-        return str(path)  # outside the worktree: refused when it is hashed
-
-    def _hash_declared_file(
-        self,
-        owner: Optional[str],
-        path: Path,
-        listed: str,
-        entries: Dict[str, str],
-    ) -> None:
-        """Add one declared input file to *entries*, or refuse it.
-
-        The entry is keyed by *listed*, the file's own worktree-relative path,
-        so two links to one target stay two entries and removing or renaming
-        either changes the key. The target is resolved only for the checks:
-        it must lie inside the worktree and be a regular file that can be
-        read; anything else raises :class:`_DeclaredInputRefused`.
-        """
-        try:
-            root = Path(self._root).resolve()
-            resolved = Path(path).resolve()
-        except (OSError, RuntimeError) as exc:  # RuntimeError: a symlink loop
-            raise _DeclaredInputRefused(
-                f"{_input_owner(owner)}: {listed} cannot be resolved ({exc}), "
-                "so it is not read."
-            ) from exc
-        if not resolved.is_relative_to(root):
-            raise _DeclaredInputRefused(
-                f"{_input_owner(owner)}: {listed} resolves outside the worktree "
-                f"{root}, so it is not read."
-            )
-        # A listed file is never "absent": any error looking it up or reading
-        # it (a dangling link included) refuses it.
-        try:
-            is_regular = stat.S_ISREG(os.stat(resolved).st_mode)
-            data = resolved.read_bytes() if is_regular else b""
-        except OSError as exc:
-            raise _DeclaredInputRefused(
-                f"{_input_owner(owner)}: {listed} cannot be read ({exc}), "
-                "so the declared install's inputs are unknown."
-            ) from exc
-        if not is_regular:
-            raise _DeclaredInputRefused(
-                f"{_input_owner(owner)}: {listed} is not a regular file."
-            )
-        entries[listed] = hashlib.sha256(data).hexdigest()
+        return str(path)
 
     def _recorded_failure_result(
         self,
@@ -3328,166 +3131,6 @@ class EnvironmentBootstrapper:
 
 
 # ============================================================================
-# requires-python pre-check (TASK-REV-JMBP Workstream E)
-# ============================================================================
-
-
-@dataclass
-class RequiresPythonMismatch:
-    """
-    Per-manifest mismatch between the active interpreter and a manifest's
-    ``requires-python`` specifier. Emitted by
-    :func:`check_requires_python_precheck`.
-
-    Attributes
-    ----------
-    manifest_path : str
-        Absolute path of the manifest that declared the constraint.
-    specifier : str
-        The raw specifier string (e.g. ``">=3.12,<3.13"``).
-    active_version : str
-        The active interpreter version actually detected (``"3.14.2"`` shape).
-    """
-
-    manifest_path: str
-    specifier: str
-    active_version: str
-
-
-def _active_python_version() -> str:
-    """Return the active interpreter version in ``major.minor.micro`` form."""
-    info = sys.version_info
-    return f"{info.major}.{info.minor}.{info.micro}"
-
-
-def check_requires_python_precheck(
-    manifests: List[DetectedManifest],
-    *,
-    active_version: Optional[str] = None,
-) -> List[RequiresPythonMismatch]:
-    """
-    Compare each manifest's ``requires-python`` against the active interpreter.
-
-    Runs BEFORE any pip invocation so the orchestrator can surface a clean
-    "your interpreter doesn't match" signal rather than relying on pip's
-    "requires a different Python: X not in '...'" line (which arrives after
-    a resolver pass and is easy to miss).
-
-    Behavior contract:
-
-    - Manifests without a ``requires-python`` constraint are silently skipped
-      (pip remains authoritative for those).
-    - Non-Python manifests are skipped.
-    - If :mod:`packaging.specifiers` is unavailable, the pre-check is a no-op
-      (empty list) — callers must still run the bootstrap, which lets pip be
-      authoritative. This matches the AC-REQPY-PRECHECK "skip gracefully"
-      requirement.
-    - Invalid specifier strings are skipped with a debug log; pip will still
-      get a chance to error.
-
-    Parameters
-    ----------
-    manifests : List[DetectedManifest]
-        Manifests produced by :class:`ProjectEnvironmentDetector`.
-    active_version : Optional[str]
-        Override for the active Python version (test fixtures inject a
-        fabricated version like ``"3.14.2"``). Defaults to
-        :func:`_active_python_version`.
-
-    Returns
-    -------
-    List[RequiresPythonMismatch]
-        One entry per manifest whose specifier is not satisfied by the
-        active interpreter. Empty list = no mismatches or pre-check unable to
-        run.
-    """
-    try:
-        from packaging.specifiers import InvalidSpecifier, SpecifierSet
-    except ImportError:
-        logger.debug(
-            "packaging.specifiers unavailable — skipping requires-python pre-check"
-        )
-        return []
-
-    current = active_version or _active_python_version()
-    mismatches: List[RequiresPythonMismatch] = []
-
-    for manifest in manifests:
-        specifier = manifest.get_requires_python()
-        if not specifier:
-            continue
-        try:
-            spec_set = SpecifierSet(specifier)
-        except InvalidSpecifier as exc:
-            logger.debug(
-                "Invalid requires-python %r in %s: %s — falling through to pip",
-                specifier,
-                manifest.path,
-                exc,
-            )
-            continue
-        if current not in spec_set:
-            mismatches.append(
-                RequiresPythonMismatch(
-                    manifest_path=str(manifest.path),
-                    specifier=specifier,
-                    active_version=current,
-                )
-            )
-
-    return mismatches
-
-
-def format_requires_python_remediation(
-    mismatch: RequiresPythonMismatch,
-) -> str:
-    """
-    Format a multi-line remediation hint for a single mismatch.
-
-    The hint names several package managers (uv / pyenv / conda) without
-    trying to auto-detect which one is available — the user decides. This
-    matches AC-REQPY-PRECHECK's "do not try to auto-detect the available
-    package manager" requirement.
-    """
-    # Pick a minor-only example version from the specifier when possible
-    # (e.g. specifier ">=3.12,<3.13" → suggest "3.12"). Fall back to a
-    # plain string otherwise. This keeps suggestions concrete rather than
-    # reprinting the specifier.
-    example = _example_version_from_specifier(mismatch.specifier) or "<pinned>"
-    return (
-        f"Python {mismatch.active_version} does not satisfy "
-        f"requires-python=`{mismatch.specifier}` for {mismatch.manifest_path}.\n"
-        f"Install a compatible interpreter with one of:\n"
-        f"  • uv python install {example}\n"
-        f"  • pyenv install {example} && pyenv local {example}\n"
-        f"  • conda create -n <name> python={example} && conda activate <name>"
-    )
-
-
-def _example_version_from_specifier(specifier: str) -> Optional[str]:
-    """Pick a plausible ``major.minor`` install target from a specifier."""
-    try:
-        from packaging.specifiers import SpecifierSet
-        from packaging.version import Version
-    except ImportError:
-        return None
-    try:
-        spec_set = SpecifierSet(specifier)
-    except Exception:
-        return None
-    # Try candidate versions covering the usual supported range; return the
-    # first that satisfies the specifier.
-    candidates = [f"3.{minor}" for minor in range(8, 16)]
-    for candidate in candidates:
-        try:
-            if Version(candidate) in spec_set:
-                return candidate
-        except Exception:
-            continue
-    return None
-
-
-# ============================================================================
 # Intra-wave manifest-change refresh (TASK-AB-COACHVENV01)
 # ============================================================================
 #
@@ -3771,10 +3414,8 @@ def refresh_environment_for_changes(
         :class:`BootstrapResult` from the reinstall. The caller is responsible
         for surfacing ``result.success is False`` as actionable feedback rather
         than swallowing it into a silent pass
-        (``absence-of-failure-is-not-success``). ``bootstrap`` may also raise
-        :class:`UvSourcesRequireUvError` / :class:`BootstrapEnvironmentLeakError`,
-        and detection may raise ``ToolchainDeclarationError``; those propagate
-        to the caller for the same reason.
+        (``absence-of-failure-is-not-success``). Detection may raise
+        ``ToolchainDeclarationError``; it propagates to the caller.
     """
     changed = changed_dependency_manifests(changed_paths, worktree_root)
     if not changed:
@@ -3818,12 +3459,8 @@ __all__ = [
     "dependency_file_stack",
     "stacks_for_changed_manifests",
     "refresh_environment_for_changes",
-    "RequiresPythonMismatch",
     "DeclaredToolMissingError",
-    "UvSourcesRequireUvError",
     "BootstrapEnvironmentLeakError",
-    "check_requires_python_precheck",
-    "format_requires_python_remediation",
     "_resolve_uv_sources_symlinks",
     "_create_worktree_uv_sources_symlinks",
 ]

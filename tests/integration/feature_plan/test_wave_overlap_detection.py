@@ -102,7 +102,6 @@ def _run_script(
         "--feature-slug", "foo",
         "--base-path", str(project_dir),
         "--tasks-json", str(tasks_json),
-        "--lenient",
     ]
     if auto_serialise:
         cmd.append("--auto-serialise-overlap")

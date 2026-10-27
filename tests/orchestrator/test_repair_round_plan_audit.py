@@ -1,4 +1,4 @@
-"""The plan audit in a gate-driven repair round (20 October 2026).
+"""What a gate-driven repair round may change (20 October 2026).
 
 A gate that runs after a wave can re-open an approved task with the gate's
 output as feedback. To make the gate pass the Player may have to make files
@@ -7,20 +7,20 @@ folder, can tell those from unrelated work. So in a repair round, and only
 there, handed to the audit IN MEMORY by the orchestrator that re-opened the
 task:
 
-* a non-protected extra file the round made does not count towards "three is
-  high"; it is named for the reviewer, whose prompt says it is a repair round
-  and asks it to refuse any file not needed to make the failing check pass;
-* a protected extra file the round made is high, always;
+* a non-protected extra file the round made is named for the reviewer, whose
+  prompt says it is a repair round;
+* a protected file the round made, changed or deleted sends the turn back,
+  always (``AgentInvoker._enforce_repair_round_protected``);
 * earlier approved work is the repair scope baseline; only this round
   is attributed to the current writer, including any protected edits.
 
-Ordinary turns are unchanged. The Coach's "Coverage is UNKNOWN" issue, when it
-only waits on another gate, is ordered after that gate, and the stall summary
-quotes the gate that refused the last turn.
+Since the cull (27 October 2026) the plan audit's own verdict, its advice and
+the refusal when the round's record could not be read are gone: a round whose
+record cannot be read sends nothing back.
 
-The audit cases drive the normal caller (``AgentInvoker._compute_plan_audit_verdict``)
-over real git repositories, and the gate (``CoachValidator.verify_quality_gates``).
-Every file name and content is invented.
+The cases drive the step every repair-round Coach turn runs before the model
+(``AgentInvoker._repair_round_review``) and the guard after it, over real git
+repositories. Every file name and content is invented.
 """
 
 from __future__ import annotations
@@ -29,30 +29,16 @@ import json
 import os
 import subprocess
 from pathlib import Path
-from types import SimpleNamespace
-from typing import Any, Dict, List, Optional
-from unittest.mock import MagicMock
+from typing import Any, Dict, Optional
 
 import pytest
 
-from guardkit.models.task_types import TaskType, get_profile
-from guardkit.orchestrator.agent_invoker import AgentInvocationResult, AgentInvoker
-from guardkit.orchestrator.autobuild import (
-    AutoBuildOrchestrator,
-    TurnRecord,
-    _coach_headline_issue,
-    _feedback_issue_is_must_fix,
-    _stall_refusal_line,
-)
+from guardkit.orchestrator.agent_invoker import AgentInvoker
 from guardkit.orchestrator.paths import TaskArtifactPaths
 from guardkit.orchestrator.task_work_scope import (
-    ScopeUnavailable, checkout_lease, register_fresh_checkout,
+    checkout_lease, register_fresh_checkout,
 )
 from guardkit.orchestrator.worktree_checkpoints import WorktreeCheckpointManager
-from guardkit.orchestrator.quality_gates.coach_validator import (
-    CoachValidator,
-    QualityGateStatus,
-)
 from guardkit.orchestrator.repair_round import (
     RepairRound,
     begin_repair_round,
@@ -159,7 +145,7 @@ class TestTheSplit:
 
 
 # ---------------------------------------------------------------------------
-# 3. The audit, through its normal caller, on real repositories
+# 3. The repair round's review and its guard, on real repositories
 # ---------------------------------------------------------------------------
 
 
@@ -282,49 +268,28 @@ def _reopen(root: Path, round_number: int = 2, gate_output: str = GATE_OUTPUT,
     return round_
 
 
-def _audit(root: Path, repair_round: Optional[RepairRound] = None) -> AgentInvoker:
+def _review(root: Path, repair_round: Optional[RepairRound] = None) -> AgentInvoker:
+    """The step every repair-round Coach turn runs before the model."""
     invoker = AgentInvoker(worktree_path=root, max_turns_per_agent=1, sdk_timeout_seconds=10)
     invoker.repair_round = repair_round
-    invoker.last_verdict = invoker._compute_plan_audit_verdict(TASK_ID)  # type: ignore[attr-defined]
-    # The step every repair-round Coach turn runs before the model.
     invoker.last_review = invoker._repair_round_review(TASK_ID)  # type: ignore[attr-defined]
     return invoker
 
 
-def _verdict(root: Path, repair_round: Optional[RepairRound] = None) -> Dict[str, Any]:
-    return _audit(root, repair_round).last_verdict  # type: ignore[attr-defined]
-
-
-def _gate_passes(root: Path, plan_audit: Dict[str, Any]) -> bool:
-    validator = CoachValidator(str(root), task_id=TASK_ID)
-    gates = validator.verify_quality_gates(
-        {
-            "task_id": TASK_ID,
-            "quality_gates": {"all_passed": True, "tests_failed": 0, "coverage_met": True},
-            "code_review": {"score": 95},
-            "plan_audit": plan_audit,
-        },
-        profile=get_profile(TaskType.FEATURE),
+def _guarded(invoker: AgentInvoker, tmp_path: Path) -> Dict[str, Any]:
+    """The reviewer approved; what the protected-file guard makes of it."""
+    decision: Dict[str, Any] = {"decision": "approve", "issues": [], "rationale": "fine"}
+    path = tmp_path / "coach_turn_1.json"
+    path.write_text(json.dumps(decision))
+    invoker._enforce_repair_round_protected(
+        decision=decision,
+        review=invoker.last_review,  # type: ignore[attr-defined]
+        task_id=TASK_ID,
+        turn=1,
+        coach_output_path=path,
     )
-    return bool(gates.plan_audit_passed)
-
-
-def _audit_advice(root: Path, plan_audit: Dict[str, Any]) -> bool:
-    """Step 1 (24 October 2026, GKT-141): the gate passes and the audit's
-    findings come back as advice."""
-    validator = CoachValidator(str(root), task_id=TASK_ID)
-    gates = validator.verify_quality_gates(
-        {
-            "task_id": TASK_ID,
-            "quality_gates": {"all_passed": True, "tests_failed": 0, "coverage_met": True},
-            "code_review": {"score": 95},
-            "plan_audit": plan_audit,
-        },
-        profile=get_profile(TaskType.FEATURE),
-    )
-    return bool(gates.plan_audit_passed) and any(
-        a["category"] == "plan_audit" for a in gates.advisories
-    )
+    assert json.loads(path.read_text())["decision"] == decision["decision"]
+    return decision
 
 
 NEAR_THE_FAILURE = {
@@ -342,7 +307,7 @@ def _write_all(root: Path, files: Dict[str, str]) -> None:
         _write(root, path, text)
 
 
-class TestTheAuditInARepairRound:
+class TestTheReviewInARepairRound:
     def test_the_round_starts_at_head_at_the_re_open(self, repo: Path) -> None:
         start = _approve_round_one(repo)
         round_ = _reopen(repo)
@@ -353,63 +318,62 @@ class TestTheAuditInARepairRound:
         # Every protected path, whatever git thinks of it: here, .gitignore.
         assert [path for path, _ in round_.protected_fingerprints] == [".gitignore"]
 
-    def test_extra_files_are_left_to_the_reviewer_and_all_named(self, repo: Path) -> None:
+    def test_extra_files_are_left_to_the_reviewer_and_all_named(
+        self, repo: Path, tmp_path: Path
+    ) -> None:
         _approve_round_one(repo)
         round_ = _reopen(repo)
         _write_all(repo, NEAR_THE_FAILURE)
 
-        verdict = _verdict(repo, round_)
+        turn = _review(repo, round_)
 
-        assert verdict["status"] == "passed", verdict
-        assert verdict["severity"] == "medium", verdict
-        assert verdict["missing_modifications"] == PLANNED_MODIFY
-        assert verdict["violations"] == 0
         made = [
             "scripts/seed-owner.sh",
             "scripts/seed-sample-book.sh",
             "tests/e2e/sign-in.ts",
             "web/src/test-render.tsx",
         ]
-        assert verdict["extra_files"] == made
-        assert verdict["extra_files_for_the_reviewer"] == made
-        assert verdict["extra_modifications"] == ["scripts/seed.sh", "tests/e2e/shelf.spec.ts"]
-        assert verdict["repair_round"] == {
+        assert turn.last_review == {  # type: ignore[attr-defined]
             "round_number": 2,
             "start_commit": round_.start_commit,
             "files_the_gate_names": ["scripts/check-feature.sh", "tests/e2e/shelf.spec.ts"],
             "files_made_this_round": made,
             "files_changed_this_round": ["scripts/seed.sh", "tests/e2e/shelf.spec.ts"],
+            "protected": [],
         }
-        assert _gate_passes(repo, verdict)
+        assert _guarded(turn, tmp_path)["decision"] == "approve"
 
-    def test_the_same_tree_on_an_ordinary_turn_is_high(self, repo: Path) -> None:
+    def test_an_ordinary_turn_has_no_review(self, repo: Path, tmp_path: Path) -> None:
         _approve_round_one(repo)
-        _write_all(repo, NEAR_THE_FAILURE)
+        _write(repo, "db/migrations/0003_seed.sql", "insert into items values (1);\n")
 
-        verdict = _verdict(repo)
+        turn = _review(repo)
 
-        assert verdict["status"] == "violation"
-        assert verdict["severity"] == "high"
-        assert verdict["extra_files_for_the_reviewer"] == []
-        assert "repair_round" not in verdict
-        assert _audit_advice(repo, verdict)
+        assert turn.last_review is None  # type: ignore[attr-defined]
+        assert turn.repair_round_inventory is None
+        assert _guarded(turn, tmp_path)["decision"] == "approve"
 
-    def test_a_protected_file_the_round_made_is_refused(self, repo: Path) -> None:
+    def test_a_protected_file_the_round_made_is_refused(
+        self, repo: Path, tmp_path: Path
+    ) -> None:
         _approve_round_one(repo)
         round_ = _reopen(repo)
         _write(repo, "tests/e2e/sign-in.ts", "export const s = 1;\n")
         _write(repo, "db/migrations/0003_seed.sql", "insert into items values (1);\n")
 
-        verdict = _verdict(repo, round_)
+        turn = _review(repo, round_)
 
-        assert verdict["status"] == "violation"
-        assert verdict["severity"] == "high"
-        assert verdict["extra_files_for_the_reviewer"] == ["tests/e2e/sign-in.ts"]
-        assert "db/migrations/0003_seed.sql" in verdict["extra_files"]
-        assert _audit_advice(repo, verdict)
+        assert turn.last_review["protected"] == ["db/migrations/0003_seed.sql"]  # type: ignore[attr-defined]
+        assert turn.repair_round_inventory == frozenset({"tests/e2e/sign-in.ts"})
+        decision = _guarded(turn, tmp_path)
+        assert decision["decision"] == "feedback"
+        assert [i["category"] for i in decision["issues"]] == ["repair_round_protected"]
+        assert "db/migrations/0003_seed.sql" in decision["issues"][0]["description"]
 
-    def test_files_an_earlier_round_made_are_the_admitted_baseline(self, repo: Path) -> None:
-        # Round 1 was approved with two extra files, one protected (medium).
+    def test_files_an_earlier_round_made_are_the_admitted_baseline(
+        self, repo: Path, tmp_path: Path
+    ) -> None:
+        # Round 1 was approved with two extra files, one protected.
         _approve_round_one(
             repo,
             extra={
@@ -420,20 +384,18 @@ class TestTheAuditInARepairRound:
         round_ = _reopen(repo)
         _write(repo, "api/src/a.ts", "export const a = 1;\n")
 
-        verdict = _verdict(repo, round_)
+        turn = _review(repo, round_)
 
-        assert verdict["severity"] == "medium", verdict
-        assert verdict["missing_modifications"] == PLANNED_MODIFY
-        assert verdict["extra_files"] == ["api/src/a.ts"]
-        assert verdict["extra_files_for_the_reviewer"] == ["api/src/a.ts"]
-        assert _gate_passes(repo, verdict)
+        assert turn.last_review["files_made_this_round"] == ["api/src/a.ts"]  # type: ignore[attr-defined]
+        assert turn.last_review["files_changed_this_round"] == []  # type: ignore[attr-defined]
+        assert turn.last_review["protected"] == []  # type: ignore[attr-defined]
+        assert _guarded(turn, tmp_path)["decision"] == "approve"
 
-    def test_a_round_whose_start_was_rolled_back_is_noted_and_still_audited(
-        self, repo: Path
+    def test_a_round_whose_start_was_rolled_back_never_raises(
+        self, repo: Path, tmp_path: Path
     ) -> None:
         """Step 1 (24 October 2026): a HEAD moved outside the task's own
-        checkpoints is noted, never fatal (GKT-150), and the plan audit is
-        advice, never a failed gate (GKT-141)."""
+        checkpoints is never fatal (GKT-150)."""
         first = _approve_round_one(repo)
         _write(repo, "web/src/ShelfCard.tsx", "export const ShelfCard = () => 1;\n")
         second = _commit(repo, "turn 2 checkpoint")
@@ -443,19 +405,28 @@ class TestTheAuditInARepairRound:
         _git(repo, "reset", "-q", "--hard", first)
         _write_all(repo, NEAR_THE_FAILURE)
 
-        verdict = _verdict(repo, round_)
+        turn = _review(repo, round_)
 
-        assert _gate_passes(repo, verdict)
+        assert isinstance(turn.last_review, dict)  # type: ignore[attr-defined]
+        assert _guarded(turn, tmp_path)["decision"] == "approve"
         admitted = _rounds.pop(repo)
-        assert any("HEAD moved" in note for note in admitted.lease.notes)
         admitted.close()
 
-    def test_a_round_from_before_the_task_is_audited_as_ordinary(self, repo: Path) -> None:
+    def test_a_round_from_before_the_task_sends_nothing_back(
+        self, repo: Path, tmp_path: Path
+    ) -> None:
+        """The round's record cannot be read for this task: it is
+        unavailable, and since the cull that refuses nothing."""
         round_ = begin_repair_round(repo, 2, GATE_OUTPUT)
         _approve_round_one(repo)
         _reopen(repo)  # A later admission cannot use the earlier round record.
         _write_all(repo, NEAR_THE_FAILURE)
-        assert _verdict(repo, round_)["severity"] == "high"
+
+        turn = _review(repo, round_)
+
+        assert "unavailable" in turn.last_review  # type: ignore[attr-defined]
+        assert turn.repair_round_inventory is None
+        assert _guarded(turn, tmp_path)["decision"] == "approve"
 
     def test_a_file_on_disk_never_makes_a_turn_a_repair_round(self, repo: Path) -> None:
         """Nothing is read from disk: a forged record in the private folder,
@@ -470,17 +441,14 @@ class TestTheAuditInARepairRound:
         }))
         _write_all(repo, NEAR_THE_FAILURE)
 
-        verdict = _verdict(repo)
-
-        assert verdict["severity"] == "high"
-        assert "repair_round" not in verdict
+        assert _review(repo).last_review is None  # type: ignore[attr-defined]
 
     def test_an_edit_the_task_document_does_not_name_reaches_the_inventory(
         self, tmp_path: Path
     ) -> None:
-        """A task that declares only files to create says nothing about edits,
-        so the ordinary audit lists none; the reviewer's inventory still has
-        every file git says the round changed."""
+        """A task that declares only files to create says nothing about edits;
+        the reviewer's inventory still has every file git says the round
+        changed."""
         repo = _make_repo(tmp_path, declare_modify=False)
         for path in PLANNED_CREATE:
             _write(repo, path)
@@ -491,25 +459,20 @@ class TestTheAuditInARepairRound:
         # A file the task document names is the task's own work: not listed.
         _write(repo, "web/src/ShelfPage.tsx", "export const ShelfPage = () => 2;\n")
 
-        turn = _audit(repo, round_)
-        verdict = turn.last_verdict  # type: ignore[attr-defined]
-        review = turn.last_review  # type: ignore[attr-defined]
+        review = _review(repo, round_).last_review  # type: ignore[attr-defined]
 
-        assert verdict["extra_modifications"] == []  # the ordinary audit is silent
-        for listed in (verdict["repair_round"], review):
-            assert listed["files_changed_this_round"] == ["api/src/server.ts"]
-            assert listed["files_made_this_round"] == ["tests/e2e/sign-in.ts"]
+        assert review["files_changed_this_round"] == ["api/src/server.ts"]
+        assert review["files_made_this_round"] == ["tests/e2e/sign-in.ts"]
 
     def test_a_later_re_entry_does_not_recount_what_a_repair_approved(
         self, repo: Path
     ) -> None:
         """Ordinary approval, a repair round approved with four new files, then
-        another gate's re-entry: the four are not counted again."""
+        another gate's re-entry: the four are not listed again."""
         _approve_round_one(repo)
         first_repair = _reopen(repo)
         _write_all(repo, NEAR_THE_FAILURE)
-        approving_turn = _audit(repo, first_repair)
-        assert approving_turn.last_verdict["status"] == "passed"  # type: ignore[attr-defined]
+        approving_turn = _review(repo, first_repair)
         # What the reviewer was shown on the turn it approved.
         assert approving_turn.repair_round_inventory == frozenset({
             "scripts/seed-owner.sh", "scripts/seed-sample-book.sh", "scripts/seed.sh",
@@ -524,14 +487,11 @@ class TestTheAuditInARepairRound:
         assert second_repair is not None
         _write(repo, "tests/e2e/shelf.spec.ts", "test('again', () => {});\n")
 
-        verdict = _verdict(repo, second_repair)
+        review = _review(repo, second_repair).last_review  # type: ignore[attr-defined]
 
-        assert verdict["status"] == "passed", verdict
-        assert verdict["extra_files_approved_by_a_repair"] == []
-        assert verdict["extra_files"] == []
-        # The actual retained baseline excludes earlier approved work even
-        # without a list of prior repair claims.
-        assert _verdict(repo, begin_repair_round(repo, 3, "x"))["severity"] == "medium"
+        assert review["files_made_this_round"] == []
+        assert review["files_changed_this_round"] == ["tests/e2e/shelf.spec.ts"]
+        assert review["protected"] == []
 
     def test_a_modify_only_task_cannot_make_a_migration_in_a_repair_round(
         self, tmp_path: Path
@@ -543,18 +503,10 @@ class TestTheAuditInARepairRound:
         _write(repo, "db/migrations/0003_seed.sql", "insert into books values (1);\n")
         _write(repo, "tests/e2e/sign-in.ts", "export const s = 1;\n")
 
-        verdict = _verdict(repo, round_)
+        turn = _review(repo, round_)
 
-        assert verdict["status"] == "violation"
-        assert verdict["severity"] == "high"
-        assert "db/migrations/0003_seed.sql" in verdict["extra_files"]
-        assert _audit_advice(repo, verdict)
-        # The ordinary audit has no create declaration. It reports only that
-        # this repair scope did not repeat the original planned modification.
-        ordinary = _verdict(repo)
-        assert ordinary["severity"] == "medium"
-        assert ordinary["missing_modifications"] == PLANNED_MODIFY
-        assert ordinary["violations"] == 0
+        assert turn.last_review["protected"] == ["db/migrations/0003_seed.sql"]  # type: ignore[attr-defined]
+        assert _guarded(turn, tmp_path)["decision"] == "feedback"
 
     def test_a_repair_round_cannot_edit_a_protected_file(self, tmp_path: Path) -> None:
         repo = _make_repo(tmp_path, declare_create=False)
@@ -564,23 +516,15 @@ class TestTheAuditInARepairRound:
         round_ = _reopen(repo)
         _write(repo, "deploy/Dockerfile", "FROM scratch\nRUN echo changed\n")
 
-        verdict = _verdict(repo, round_)
+        turn = _review(repo, round_)
 
-        assert verdict["severity"] == "high"
-        assert "deploy/Dockerfile" in verdict["extra_files"]
-        assert _audit_advice(repo, verdict)
-        # The ordinary audit reports this edit and the original modification
-        # that was not repeated in the admitted repair scope.
-        ordinary = _verdict(repo)
-        assert ordinary["severity"] == "medium"
-        assert ordinary["extra_modifications"] == ["deploy/Dockerfile"]
-        assert ordinary["missing_modifications"] == PLANNED_MODIFY
-        assert ordinary["violations"] == 0
+        assert turn.last_review["protected"] == ["deploy/Dockerfile"]  # type: ignore[attr-defined]
+        assert _guarded(turn, tmp_path)["decision"] == "feedback"
 
     def test_a_protected_file_an_earlier_round_was_approved_with_is_refused_when_edited(
-        self, repo: Path
+        self, repo: Path, tmp_path: Path
     ) -> None:
-        # Round 1 was approved with an unplanned migration (two extras: medium).
+        # Round 1 was approved with an unplanned migration.
         _approve_round_one(
             repo,
             extra={
@@ -595,9 +539,10 @@ class TestTheAuditInARepairRound:
         )
         _write(repo, "db/migrations/0002_items.sql", "create table items (id int, t text);\n")
 
-        approving = _audit(repo, round_)
+        approving = _review(repo, round_)
 
-        assert approving.last_verdict["severity"] == "high"  # type: ignore[attr-defined]
+        assert approving.last_review["protected"] == ["db/migrations/0002_items.sql"]  # type: ignore[attr-defined]
+        assert _guarded(approving, tmp_path)["decision"] == "feedback"
         # Nor is one ever carried to a later round.
         assert "db/migrations/0002_items.sql" not in (approving.repair_round_inventory or ())
 
@@ -618,17 +563,17 @@ class TestTheAuditInARepairRound:
         if committed:
             _commit(repo, "repair turn")
 
-        verdict = _verdict(repo, round_)
+        turn = _review(repo, round_)
+        review = turn.last_review  # type: ignore[attr-defined]
 
-        assert verdict["severity"] == "high", verdict
-        assert "deploy/Dockerfile" in verdict["extra_files"]
-        assert "deploy/Dockerfile" in verdict["repair_round"]["files_changed_this_round"]
-        assert "scripts/image-build" in verdict["repair_round"]["files_made_this_round"]
-        assert _audit_advice(repo, verdict)
+        assert "deploy/Dockerfile" in review["protected"], review
+        assert "deploy/Dockerfile" in review["files_changed_this_round"]
+        assert "scripts/image-build" in review["files_made_this_round"]
+        assert _guarded(turn, tmp_path)["decision"] == "feedback"
 
     def test_other_callers_keep_gits_rename_detection(self, repo: Path) -> None:
         """files_changed_since is unchanged unless the caller asks."""
-        from guardkit.orchestrator.arch_conformance import files_changed_since
+        from guardkit.orchestrator.security_check import files_changed_since
 
         start = _git(repo, "rev-parse", "HEAD")
         _git(repo, "mv", "scripts/seed.sh", "scripts/seed-books.sh")
@@ -636,23 +581,24 @@ class TestTheAuditInARepairRound:
         both = files_changed_since(repo, start, no_renames=True)
         assert {"scripts/seed.sh", "scripts/seed-books.sh"} <= set(both)
 
-    def test_an_unavailable_round_is_never_relaxed_and_never_reviewed(self, repo: Path) -> None:
+    def test_an_unavailable_round_is_never_reviewed_and_sends_nothing_back(
+        self, repo: Path, tmp_path: Path
+    ) -> None:
         """Even with a real start commit, a round marked unavailable gives the
-        plan audit nothing to relax and the review nothing but the reason."""
+        review nothing but the reason; since the cull that refuses nothing."""
         import dataclasses
 
         _approve_round_one(repo)
         round_ = dataclasses.replace(_reopen(repo), unavailable="invented reason")
         _write_all(repo, NEAR_THE_FAILURE)
 
-        turn = _audit(repo, round_)
+        turn = _review(repo, round_)
 
-        assert turn.last_verdict["severity"] == "high"  # type: ignore[attr-defined]
-        assert "repair_round" not in turn.last_verdict  # type: ignore[attr-defined]
         assert turn.last_review == {  # type: ignore[attr-defined]
             "unavailable": "at the re-open: invented reason"
         }
         assert turn.repair_round_inventory is None
+        assert _guarded(turn, tmp_path)["decision"] == "approve"
 
     def test_starting_a_round_without_git_never_raises(self, tmp_path: Path) -> None:
         """Still a round, carrying why its facts could not be read."""
@@ -662,44 +608,8 @@ class TestTheAuditInARepairRound:
 
 
 # ---------------------------------------------------------------------------
-# 4. What the Coach tells the Player, and what the reviewer is shown
+# 4. What the reviewer is shown
 # ---------------------------------------------------------------------------
-
-
-def _feedback_issue(plan_audit: Dict[str, Any]) -> Dict[str, Any]:
-    # Step 1 (24 October 2026, GKT-141): the audit's findings are advice.
-    return CoachValidator._plan_audit_advice(plan_audit)
-
-
-class TestTheCoachMessage:
-    def test_a_repair_round_names_only_the_protected_files(self) -> None:
-        issue = _feedback_issue({
-            "status": "violation",
-            "severity": "high",
-            "violations": 1,
-            "extra_files": ["db/migrations/0003_seed.sql", "tests/e2e/sign-in.ts"],
-            "extra_files_for_the_reviewer": ["tests/e2e/sign-in.ts"],
-            "extra_files_beside_the_plan": [],
-            "repair_round": {"round_number": 2, "start_commit": "abc"},
-        })
-        text = issue["description"]
-        assert issue["severity"] == "should_fix"
-        assert "1 extra file(s): db/migrations/0003_seed.sql" in text
-        assert "sign-in.ts" not in text
-        assert "this is a repair round" in text
-
-    def test_an_ordinary_turn_reads_as_before(self) -> None:
-        issue = _feedback_issue({
-            "status": "violation",
-            "severity": "high",
-            "violations": 1,
-            "extra_files": ["a/one.ts", "a/two.ts", "a/three.ts"],
-            "extra_files_beside_the_plan": [],
-        })
-        assert issue["description"] == (
-            "Plan audit detected high-severity discrepancies — 3 extra file(s): "
-            "a/one.ts, a/two.ts, a/three.ts"
-        )
 
 
 class TestTheReviewersPrompt:
@@ -725,102 +635,3 @@ class TestTheReviewersPrompt:
 
     def test_an_ordinary_turn_has_no_such_section(self) -> None:
         assert self._section(None) == ""
-
-
-# ---------------------------------------------------------------------------
-# 5. The gate that refused the turn is the one quoted
-# ---------------------------------------------------------------------------
-
-COVERAGE_WAITING = {
-    "severity": "must_fix",
-    "category": "coverage_unknown",
-    "description": (
-        "Coverage is UNKNOWN, not met: coverage is required for feature tasks. "
-        "The project declares a coverage command (toolchain.coverage: bash "
-        "scripts/coverage.sh), but it was not run this turn because the plan "
-        "audit gate(s) failed first."
-    ),
-    "details": {"waiting_on_gates": ["plan audit"]},
-}
-COVERAGE_UNMEASURED = {
-    "severity": "must_fix",
-    "category": "coverage_unknown",
-    "description": "Coverage is UNKNOWN, not met: nothing measured coverage.",
-    "details": {"waiting_on_gates": []},
-}
-PLAN_AUDIT = {
-    "severity": "must_fix",
-    "category": "plan_audit",
-    "description": "Plan audit detected high-severity discrepancies — 3 extra file(s): a, b, c",
-    "details": {"severity": "high"},
-}
-ADVISORY = {
-    "severity": "warning",
-    "category": "agent_invocations_advisory",
-    "description": "Advisory (non-blocking): missing phases.",
-}
-
-
-def _turn(turn: int, issues: List[Dict[str, Any]]) -> TurnRecord:
-    coach = AgentInvocationResult(
-        task_id=TASK_ID, turn=turn, agent_type="coach", success=True,
-        report={"decision": "feedback", "issues": issues}, duration_seconds=1.0,
-    )
-    player = AgentInvocationResult(
-        task_id=TASK_ID, turn=turn, agent_type="player", success=True,
-        report={"files_modified": ["a"], "files_created": []}, duration_seconds=1.0,
-    )
-    return TurnRecord(
-        turn=turn, player_result=player, coach_result=coach, decision="feedback",
-        feedback="same feedback", timestamp="2026-10-20T00:00:00Z",
-        files_changed_this_turn=2,
-    )
-
-
-def _orchestrator(tmp_path: Path) -> AutoBuildOrchestrator:
-    return AutoBuildOrchestrator(
-        repo_root=tmp_path,
-        max_turns=4,
-        enable_pre_loop=False,
-        enable_context=False,
-        agent_invoker=MagicMock(),
-        worktree_manager=SimpleNamespace(worktrees_dir=tmp_path),
-    )
-
-
-class TestTheBlockingGateIsQuoted:
-    def test_the_plan_audit_is_the_headline_not_the_coverage_waiting_on_it(self) -> None:
-        record = _turn(4, [ADVISORY, COVERAGE_WAITING, PLAN_AUDIT])
-        assert _coach_headline_issue(record) == (PLAN_AUDIT["description"], True)
-
-    def test_coverage_waiting_is_still_a_reason_the_turn_was_refused(self) -> None:
-        assert _feedback_issue_is_must_fix(COVERAGE_WAITING)
-
-    def test_unmeasured_coverage_keeps_its_place(self) -> None:
-        record = _turn(4, [COVERAGE_UNMEASURED, PLAN_AUDIT])
-        assert _coach_headline_issue(record)[0] == COVERAGE_UNMEASURED["description"]
-
-    def test_the_turn_summary_and_the_players_feedback_lead_with_the_plan_audit(
-        self, tmp_path: Path
-    ) -> None:
-        orch = _orchestrator(tmp_path)
-        report = {"issues": [ADVISORY, COVERAGE_WAITING, PLAN_AUDIT]}
-        assert orch._build_feedback_summary(report, "").startswith(
-            "Feedback: Plan audit detected"
-        )
-        feedback = orch._extract_feedback(report)
-        assert feedback.index("Plan audit detected") < feedback.index("Coverage is UNKNOWN")
-
-    def test_the_stall_summary_and_error_quote_the_plan_audit(self, tmp_path: Path) -> None:
-        orch = _orchestrator(tmp_path)
-        history = [_turn(n, [ADVISORY, COVERAGE_WAITING, PLAN_AUDIT]) for n in (2, 3, 4)]
-        summary = orch._build_summary_details(history, "unrecoverable_stall")
-        error = orch._build_error_message("unrecoverable_stall", history)
-        expected = f'The reviewer refused turn 4 for this: "{PLAN_AUDIT["description"]}"'
-        assert expected in summary, summary
-        assert expected in error, error
-        assert "Coverage is UNKNOWN" not in summary
-
-    def test_no_readable_issue_adds_nothing(self) -> None:
-        assert _stall_refusal_line([]) == ""
-        assert _stall_refusal_line([_turn(1, [])]) == ""

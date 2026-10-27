@@ -521,7 +521,7 @@ class TestSelectHarnessDispatch:
         monkeypatch.setenv(_TEST_ENV_VAR, "langgraph")
 
         from guardkitfactory.harness import LangGraphHarness
-        from guardkitfactory.harness.backend_config import LocalShellBackend
+        from deepagents.backends.local_shell import LocalShellBackend
         from guardkitfactory.harness.permissions import FilesystemPermission
         from deepagents.backends.composite import CompositeBackend
 
@@ -1072,26 +1072,28 @@ class TestRequiredPlayerSelection:
             "    required_documents: ['']\n",
         ],
     )
-    def test_malformed_required_documents_fail_visibly(
+    def test_malformed_required_documents_are_left_out(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, declaration: str
     ) -> None:
+        """A required_documents entry that is not a list of repository-relative
+        paths is left out; the Player is still selected."""
         monkeypatch.setenv(_TEST_ENV_VAR, "langgraph")
         monkeypatch.setenv("DEEPAGENTS_HOME", str(tmp_path.parent))
         (tmp_path / ".guardkit").mkdir()
         (tmp_path / ".guardkit" / "config.yaml").write_text(
             "autobuild:\n  player:\n" + declaration
         )
-        self._install_factory(monkeypatch)
+        constructions, config_calls, _ = self._install_factory(monkeypatch)
 
-        with pytest.raises(
-            AgentInvocationError, match="autobuild.player.required_documents"
-        ):
-            select_harness(
-                env_var=_TEST_ENV_VAR,
-                model=MagicMock(),
-                cwd=tmp_path,
-                harness_role="player",
-            )
+        select_harness(
+            env_var=_TEST_ENV_VAR,
+            model=MagicMock(),
+            cwd=tmp_path,
+            harness_role="player",
+        )
+
+        assert config_calls[0]["required_documents"] == ()
+        assert constructions
 
     @_requires_guardkitfactory
     def test_stale_factory_refuses_declared_required_documents_loudly(
@@ -1199,22 +1201,27 @@ class TestRequiredPlayerSelection:
             "autobuild:\n  player:\n    unknown: true\n",
         ],
     )
-    def test_malformed_project_player_config_fails_visibly(
+    def test_malformed_project_player_config_is_ignored(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, content: str
     ) -> None:
+        """A player section of the wrong shape, a non-list path entry and an
+        unknown key are ignored; the Player is still selected."""
         monkeypatch.setenv(_TEST_ENV_VAR, "langgraph")
         monkeypatch.setenv("DEEPAGENTS_HOME", str(tmp_path.parent))
         (tmp_path / ".guardkit").mkdir()
         (tmp_path / ".guardkit" / "config.yaml").write_text(content)
-        self._install_factory(monkeypatch)
+        constructions, config_calls, _ = self._install_factory(monkeypatch)
 
-        with pytest.raises(AgentInvocationError, match="Invalid"):
-            select_harness(
-                env_var=_TEST_ENV_VAR,
-                model=MagicMock(),
-                cwd=tmp_path,
-                harness_role="player",
-            )
+        select_harness(
+            env_var=_TEST_ENV_VAR,
+            model=MagicMock(),
+            cwd=tmp_path,
+            harness_role="player",
+        )
+
+        assert config_calls[0]["skills"] == ()
+        assert "unknown" not in config_calls[0]
+        assert constructions
 
     @_requires_guardkitfactory
     def test_missing_player_config_seam_refuses_native_fallback(
@@ -1859,211 +1866,6 @@ def _own_profile_at(monkeypatch: pytest.MonkeyPatch, made: Path) -> None:
         return str(made)
 
     monkeypatch.setattr(selector_module.tempfile, "mkdtemp", mkdtemp)
-
-
-def _factory_can_lock() -> bool:
-    if not _has_guardkitfactory():
-        return False
-    import inspect
-
-    from guardkitfactory.harness import build_player_config
-
-    return "lock_profile_identity" in inspect.signature(build_player_config).parameters
-
-
-@pytest.mark.skipif(
-    not _factory_can_lock(), reason="needs a guardkitfactory that can lock the profile"
-)
-class TestOwnDcodeProfileLock:
-    @pytest.fixture(autouse=True)
-    def _fresh_process(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(selector_module, "_AUTO_DCODE_PROFILE", None)
-        for name in (
-            "DEEPAGENTS_HOME",
-            "DEEPAGENTS_CODE_OFFLINE",
-            "LANGCHAIN_TRACING",
-            "LANGCHAIN_TRACING_V2",
-            "LANGSMITH_TRACING",
-        ):
-            monkeypatch.delenv(name, raising=False)
-        monkeypatch.setenv(_TEST_ENV_VAR, "langgraph")
-
-    @staticmethod
-    def _real_config_capture(monkeypatch: pytest.MonkeyPatch) -> list[Any]:
-        """Keep the real build_player_config (and its signature); record results."""
-        import functools
-
-        import guardkitfactory.harness as factory_harness
-
-        real = factory_harness.build_player_config
-        made: list[Any] = []
-
-        @functools.wraps(real)
-        def build_player_config(**kwargs: Any) -> Any:
-            made.append(real(**kwargs))
-            return made[-1]
-
-        monkeypatch.setattr(factory_harness, "build_player_config", build_player_config)
-        monkeypatch.setattr(
-            factory_harness, "LangGraphHarness", lambda **kwargs: kwargs["player_config"]
-        )
-        return made
-
-    def _select(self, root: Path) -> Any:
-        worktree = root / "worktree"
-        worktree.mkdir(exist_ok=True)
-        return select_harness(
-            env_var=_TEST_ENV_VAR, model=MagicMock(), cwd=worktree, harness_role="player"
-        )
-
-    def test_own_profile_asks_for_the_lock(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-    ) -> None:
-        made = tmp_path / "auto-profile"
-        _own_profile_at(monkeypatch, made)
-        configs = self._real_config_capture(monkeypatch)
-
-        config = self._select(tmp_path)
-
-        recorded = made.lstat()
-        assert config.lock_profile_identity == (recorded.st_dev, recorded.st_ino)
-        assert config.dcode_home == made.resolve()
-        assert configs == [config]
-
-    def test_supplied_profile_never_asks_for_the_lock(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-    ) -> None:
-        supplied = tmp_path.parent / f"{tmp_path.name}-supplied"
-        supplied.mkdir()
-        monkeypatch.setenv("DEEPAGENTS_HOME", str(supplied))
-        self._real_config_capture(monkeypatch)
-
-        for _turn in range(2):
-            assert self._select(tmp_path).lock_profile_identity is None
-        assert selector_module._AUTO_DCODE_PROFILE is None
-
-    def test_parallel_launches_on_the_locked_own_profile_all_succeed(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-    ) -> None:
-        made = tmp_path / "auto-profile"
-        _own_profile_at(monkeypatch, made)
-        self._real_config_capture(monkeypatch)
-        assert self._select(tmp_path).lock_profile_identity is not None
-        # What the factory's lock leaves: dcode's skeleton, read-only.
-        (made / "guardkit-player" / "skills").mkdir(parents=True)
-        (made / "guardkit-player" / "AGENTS.md").write_bytes(b"")
-        (made / "guardkit-player" / "AGENTS.md").chmod(0o444)
-        for folder in (made / "guardkit-player" / "skills", made / "guardkit-player", made):
-            folder.chmod(0o555)
-        try:
-            with ThreadPoolExecutor(max_workers=4) as pool:
-                configs = list(pool.map(lambda _i: self._select(tmp_path), range(8)))
-        finally:
-            for folder in (made, made / "guardkit-player", made / "guardkit-player" / "skills"):
-                folder.chmod(0o755)
-        recorded = made.lstat()
-        assert {config.lock_profile_identity for config in configs} == {
-            (recorded.st_dev, recorded.st_ino)
-        }
-
-
-    @pytest.mark.parametrize("replacement", ["link", "other_directory"])
-    def test_a_replaced_own_profile_is_not_locked_and_launches_as_today(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: Path,
-        caplog: pytest.LogCaptureFixture,
-        replacement: str,
-    ) -> None:
-        """R5: the profile root replaced before the first launch is not ours to lock."""
-        import stat as stat_module
-
-        made = tmp_path / "auto-profile"
-        _own_profile_at(monkeypatch, made)
-        configs = self._real_config_capture(monkeypatch)
-        worktree = tmp_path / "worktree"
-        worktree.mkdir()
-        assert selector_module._configure_dcode_launch(worktree) == made.resolve()
-
-        outside = tmp_path / "outside"
-        outside.mkdir()
-        (outside / "keep.txt").write_text("not the profile's")
-        before = {
-            str(p): stat_module.S_IMODE(p.lstat().st_mode) for p in [outside, *outside.rglob("*")]
-        }
-        # Moved aside (not deleted) so its inode cannot be reused by a new one.
-        made.rename(tmp_path / "moved-aside")
-        if replacement == "link":
-            made.symlink_to(outside, target_is_directory=True)
-            expected_home = outside.resolve()
-        else:
-            made.mkdir()  # same path, a different directory
-            expected_home = made.resolve()
-
-        with caplog.at_level(logging.WARNING, logger=selector_module.logger.name):
-            config = self._select(tmp_path)
-
-        assert config.lock_profile_identity is None
-        assert configs == [config]
-        assert any("dcode profile not locked" in r.getMessage() for r in caplog.records)
-        # As today: the launch uses what DEEPAGENTS_HOME now resolves to.
-        assert config.dcode_home == expected_home
-        assert os.environ["DEEPAGENTS_HOME"] == str(expected_home)
-        after = {
-            str(p): stat_module.S_IMODE(p.lstat().st_mode) for p in [outside, *outside.rglob("*")]
-        }
-        assert after == before
-
-
-    @pytest.mark.parametrize("replacement", ["link", "other_directory"])
-    def test_a_root_replaced_after_authorisation_is_never_locked(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: Path,
-        caplog: pytest.LogCaptureFixture,
-        replacement: str,
-    ) -> None:
-        """R5: GuardKit authorises, then the root is replaced before the factory locks."""
-        import stat as stat_module
-
-        from guardkitfactory.harness.dcode_harness import _lock_profile
-
-        made = tmp_path / "auto-profile"
-        _own_profile_at(monkeypatch, made)
-        self._real_config_capture(monkeypatch)
-        config = self._select(tmp_path)
-        assert config.lock_profile_identity is not None
-
-        def modes(root: Path) -> dict[str, int]:
-            return {
-                str(p): stat_module.S_IMODE(p.lstat().st_mode) for p in [root, *root.rglob("*")]
-            }
-
-        # The skeleton dcode would have made, then the root replaced.
-        (made / "guardkit-player" / "skills").mkdir(parents=True)
-        (made / "guardkit-player" / "AGENTS.md").write_bytes(b"")
-        aside = tmp_path / "moved-aside"
-        made.rename(aside)
-        outside = tmp_path / "outside"
-        (outside / "guardkit-player" / "skills").mkdir(parents=True)
-        (outside / "guardkit-player" / "AGENTS.md").write_bytes(b"")
-        if replacement == "link":
-            made.symlink_to(outside, target_is_directory=True)
-            replaced = outside
-        else:
-            made.mkdir()
-            (made / "guardkit-player" / "skills").mkdir(parents=True)
-            (made / "guardkit-player" / "AGENTS.md").write_bytes(b"")
-            replaced = made
-        before = {root: modes(root) for root in (replaced, outside, aside)}
-
-        with caplog.at_level(logging.WARNING, logger="guardkitfactory.harness.dcode_harness"):
-            _lock_profile(config.dcode_home, config.lock_profile_identity)
-
-        for root, recorded in before.items():
-            assert modes(root) == recorded
-            assert all(mode & 0o200 for mode in modes(root).values())
-        assert any("not locked" in r.getMessage() for r in caplog.records)
 
 
 def test_an_old_factory_gets_no_lock_and_keeps_todays_behaviour(

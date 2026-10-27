@@ -308,8 +308,10 @@ class TestSharedDependencyFileCheck:
         assert _ran(mock_run, _ROOT_INSTALL) == 1
         assert result.success is True and result.skipped is False
 
-    def test_a_turn_editing_a_csproj_triggers_the_per_turn_refresh(self, tmp_path):
-        """Through the real per-turn caller."""
+    def test_a_turn_editing_a_csproj_triggers_the_per_turn_refresh(self, tmp_path, caplog):
+        """Through the real per-turn caller. Since the cull of 27 October 2026
+        a failed reinstall is logged and the turn goes on; the project's own
+        tests then say what they say."""
         from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
 
         root = _node_root(tmp_path)
@@ -330,7 +332,10 @@ class TestSharedDependencyFileCheck:
                 1,
             )
         assert _ran(mock_run, _ROOT_INSTALL) == 1
-        assert feedback, "a failing declared install after a .csproj edit passed silently"
+        assert feedback is None
+        assert "did not succeed" in caplog.text, (
+            "a failing declared install after a .csproj edit was not logged"
+        )
 
 
 # =========================================================================

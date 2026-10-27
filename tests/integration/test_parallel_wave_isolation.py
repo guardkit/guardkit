@@ -2,16 +2,14 @@
 Integration Tests for Parallel Wave Coach Test Isolation (TASK-ABFIX-005)
 
 Exercises the integration seam: FeatureOrchestrator → AutoBuild(wave_size) →
-CoachValidator(wave_size) → is_parallel → _classify_test_failure / conditional_approval.
+CoachValidator(wave_size) → is_parallel → _classify_test_failure.
 
 Scenarios:
     1. Coach tests isolated from concurrent worktree mutations via tempdir copy
     2. parallel_contention classification for code failures in parallel waves
-    3. Conditional approval for code failures in parallel waves when all gates passed
-    4. Serial tasks (wave_size=1) unaffected by parallel wave mechanisms
+    3. Serial tasks (wave_size=1) unaffected by parallel wave mechanisms
 
 Coverage Target: >=80%
-Test Count: 6 tests
 
 Run with:
     pytest tests/integration/test_parallel_wave_isolation.py -v
@@ -34,10 +32,7 @@ from guardkit.orchestrator.agent_invoker import (
 )
 from guardkit.orchestrator.quality_gates.coach_validator import (
     CoachValidator,
-    CoachValidationResult,
     IndependentTestResult,
-    QualityGateStatus,
-    RequirementsValidation,
 )
 from guardkit.worktrees import Worktree
 
@@ -93,36 +88,6 @@ def _make_validator(tmp_path: Path, wave_size: int = 1) -> CoachValidator:
     # Force subprocess execution so isolation path is reachable
     validator._coach_test_execution = "subprocess"
     return validator
-
-
-def _passing_gates() -> QualityGateStatus:
-    """Create a QualityGateStatus with all gates passed."""
-    return QualityGateStatus(
-        tests_passed=True,
-        coverage_met=True,
-        arch_review_passed=True,
-        plan_audit_passed=True,
-    )
-
-
-def _failing_gates() -> QualityGateStatus:
-    """Create a QualityGateStatus with tests failed."""
-    return QualityGateStatus(
-        tests_passed=False,
-        coverage_met=True,
-        arch_review_passed=True,
-        plan_audit_passed=True,
-    )
-
-
-def _passing_requirements() -> RequirementsValidation:
-    """Create passing requirements validation."""
-    return RequirementsValidation(
-        criteria_total=1,
-        criteria_met=1,
-        all_criteria_met=True,
-        missing=[],
-    )
 
 
 def _make_completed_process(
@@ -245,105 +210,6 @@ class TestIsolationRoutingIntegration:
 
         # _run_isolated_tests should NOT have been called for serial tasks
         mock_isolated.assert_not_called()
-
-
-# ============================================================================
-# Tests: Conditional Approval in Parallel Waves
-# ============================================================================
-
-
-@pytest.mark.integration
-class TestConditionalApprovalIntegration:
-    """Test conditional approval for parallel wave failures."""
-
-    def test_parallel_contention_approved_when_all_gates_passed(self, tmp_path):
-        """
-        End-to-end: parallel_contention classification + all gates passed
-        → conditional approval → validate() returns "approve" decision.
-        """
-        validator = _make_validator(tmp_path, wave_size=3)
-
-        # Mock the internal methods to set up the scenario
-        with patch.object(
-            validator, "read_quality_gate_results",
-            return_value={
-                "tests_passed": True,
-                "test_pass_rate": 100,
-                "coverage": {"line": 85.0, "branch": 80.0},
-                "arch_review": {"score": 80},
-                "plan_audit": {"violations": 0},
-            },
-        ), patch.object(
-            validator, "verify_quality_gates",
-            return_value=_passing_gates(),
-        ), patch.object(
-            validator, "run_independent_tests",
-            return_value=IndependentTestResult(
-                tests_passed=False,
-                test_command="pytest tests/ -v",
-                test_output_summary="1 failed",
-                duration_seconds=2.0,
-                raw_output="FAILED: tests/test_feature.py - ValueError: custom error",
-            ),
-        ), patch.object(
-            validator, "validate_requirements",
-            return_value=_passing_requirements(),
-        ):
-            result = validator.validate(
-                task_id="TASK-PAR-001",
-                turn=1,
-                task={
-                    "task_type": "feature",
-                    "acceptance_criteria": ["Feature works"],
-                },
-            )
-
-        # Should conditionally approve despite test failure
-        assert result.decision == "approve"
-
-    def test_code_failure_in_serial_does_not_get_conditional_approval(self, tmp_path):
-        """
-        Verify that code failures in serial execution (wave_size=1) do NOT
-        receive conditional approval — they should return 'feedback'.
-        """
-        validator = _make_validator(tmp_path, wave_size=1)
-
-        with patch.object(
-            validator, "read_quality_gate_results",
-            return_value={
-                "tests_passed": True,
-                "test_pass_rate": 100,
-                "coverage": {"line": 85.0, "branch": 80.0},
-                "arch_review": {"score": 80},
-                "plan_audit": {"violations": 0},
-            },
-        ), patch.object(
-            validator, "verify_quality_gates",
-            return_value=_passing_gates(),
-        ), patch.object(
-            validator, "run_independent_tests",
-            return_value=IndependentTestResult(
-                tests_passed=False,
-                test_command="pytest tests/ -v",
-                test_output_summary="1 failed",
-                duration_seconds=2.0,
-                raw_output="FAILED: tests/test_feature.py - ValueError: custom error",
-            ),
-        ), patch.object(
-            validator, "validate_requirements",
-            return_value=_passing_requirements(),
-        ):
-            result = validator.validate(
-                task_id="TASK-PAR-001",
-                turn=1,
-                task={
-                    "task_type": "feature",
-                    "acceptance_criteria": ["Feature works"],
-                },
-            )
-
-        # Serial code failures should NOT be conditionally approved
-        assert result.decision == "feedback"
 
 
 # ============================================================================

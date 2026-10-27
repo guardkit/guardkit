@@ -48,6 +48,7 @@ from guardkit.orchestrator.worktree_checkpoints import (
     WorktreeCheckpointManager,
 )
 from guardkit.worktrees.manager import Worktree, WorktreeManager
+from tests.task_scope_fixtures import RetainedTaskAdmission, init_checkout
 
 BRANCH = "autobuild/FEAT-0D7C"
 
@@ -76,9 +77,34 @@ def worktree(tmp_path: Path) -> Path:
     return path
 
 
+# A checkpoint is written by the checkout's one admitted task. One admission
+# is open per worktree at a time; asking for another task's closes it first.
+_admissions: dict = {}
+
+
+@pytest.fixture(autouse=True)
+def _close_admissions():
+    yield
+    while _admissions:
+        _, admission = _admissions.popitem()
+        admission.close()
+
+
+def _admit(worktree: Path, task_id: str):
+    """The admitted scope for ``task_id`` (HEAD must be on a branch)."""
+    open_ = _admissions.get(worktree)
+    if open_ is not None and open_.scope.task_id == task_id:
+        return open_.scope
+    if open_ is not None:
+        _admissions.pop(worktree).close()
+    _admissions[worktree] = RetainedTaskAdmission(worktree, task_id)
+    return _admissions[worktree].scope
+
+
 def _manager(worktree: Path, task_id: str) -> WorktreeCheckpointManager:
     return WorktreeCheckpointManager(
-        worktree_path=worktree, task_id=task_id, expected_branch=BRANCH
+        worktree_path=worktree, task_id=task_id, expected_branch=BRANCH,
+        task_work_scope=_admit(worktree, task_id),
     )
 
 
@@ -106,14 +132,14 @@ def _attached(worktree: Path) -> str:
 def test_positive_control_another_tasks_checkpoint_during_an_invocation(
     worktree: Path,
 ) -> None:
-    """Parallel tasks share the worktree; the branch advancing is normal."""
-    task_a = _manager(worktree, "TASK-0D7C-001")
-    task_b = _manager(worktree, "TASK-0D7C-002")
+    """Another task's checkpoint lands during this task's invocation; the
+    branch advancing is normal. (One task writes the checkout at a time, so
+    task B's admission is closed before task A's opens.)"""
     before = _tip(worktree)
 
     token = invocation_started(worktree, role="player", task_id="TASK-0D7C-001", turn=1)
     (worktree / "b.txt").write_text("task b's work\n")
-    task_b.create_checkpoint(turn=1, tests_passed=True)
+    _manager(worktree, "TASK-0D7C-002").create_checkpoint(turn=1, tests_passed=True)
     (worktree / "a.txt").write_text("task a's work\n")
     end = invocation_finished(token)
 
@@ -124,7 +150,9 @@ def test_positive_control_another_tasks_checkpoint_during_an_invocation(
         "TASK-0D7C-002"
     ]
 
-    checkpoint = task_a.create_checkpoint(turn=1, tests_passed=True)
+    checkpoint = _manager(worktree, "TASK-0D7C-001").create_checkpoint(
+        turn=1, tests_passed=True
+    )
 
     assert _attached(worktree) == f"refs/heads/{BRANCH}"
     assert _tip(worktree) == checkpoint.commit_hash
@@ -136,6 +164,7 @@ def test_detached_exactly_at_the_tip_is_reattached_with_a_warning(
     worktree: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     tip = _tip(worktree)
+    _admit(worktree, "TASK-0D7C-003")
     _git(worktree, "checkout", "-q", "--detach")
     (worktree / "work.txt").write_text("the turn's work\n")
 
@@ -162,6 +191,7 @@ def test_detached_elsewhere_is_refused_naming_both_identities(
     worktree: Path,
 ) -> None:
     tip = _tip(worktree)
+    _admit(worktree, "TASK-0D7C-003")
     _git(worktree, "checkout", "-q", "--detach", "HEAD~1")
     elsewhere = _head(worktree)
     (worktree / "work.txt").write_text("the turn's work\n")
@@ -225,11 +255,15 @@ def test_normal_serial_turns_are_unchanged_but_for_one_read(
         return Mock(returncode=0, stdout="abc123def456\n", stderr="")
 
     executor.execute.side_effect = _execute
+    # The checkpoint needs its admitted task scope, on a real checkout; the
+    # checkpoint's own git commands still go to the stand-in executor.
+    root = init_checkout(tmp_path / "wt", branch=BRANCH)
     manager = WorktreeCheckpointManager(
-        worktree_path=tmp_path,
+        worktree_path=root,
         task_id="TASK-0D7C-001",
         git_executor=executor,
         expected_branch=BRANCH,
+        task_work_scope=_admit(root, "TASK-0D7C-001"),
     )
     with patch.object(manager, "_save_checkpoints"):
         for turn in (1, 2):
@@ -265,6 +299,7 @@ def test_the_record_is_never_committed(worktree: Path) -> None:
 def test_a_refused_checkpoint_stops_the_task_with_its_reason(
     worktree: Path, decision: str
 ) -> None:
+    _admit(worktree, "TASK-0D7C-003")
     _git(worktree, "checkout", "-q", "--detach", "HEAD~1")
     display = MagicMock()
     display.__enter__ = Mock(return_value=display)
@@ -298,7 +333,6 @@ def test_a_refused_checkpoint_stops_the_task_with_its_reason(
 
     with patch.object(orchestrator, "_execute_turn", side_effect=_turn), \
             patch.object(orchestrator, "_capture_turn_state"), \
-            patch.object(orchestrator, "_record_honesty"), \
             patch.object(orchestrator, "_display_criteria_progress"):
         history, final = orchestrator._loop_phase(
             task_id="TASK-0D7C-003",
@@ -343,6 +377,7 @@ def test_a_later_task_starting_on_main_is_refused(worktree: Path) -> None:
         task_id="FEAT-0D7C", branch_name=BRANCH, path=worktree, base_branch="main"
     )
     assert feature._pinned_feature_branch(declared) == BRANCH
+    scope = _admit(worktree, "TASK-0D7C-004")
 
     _git(worktree, "checkout", "-q", "main")  # an agent switched it mid-build
     pinned = feature._pinned_feature_branch(declared)
@@ -351,6 +386,7 @@ def test_a_later_task_starting_on_main_is_refused(worktree: Path) -> None:
     later_task = WorktreeCheckpointManager(
         worktree_path=worktree, task_id="TASK-0D7C-004",
         expected_branch=pinned, refuse_without_branch=True,
+        task_work_scope=scope,
     )
     with pytest.raises(CheckpointRefused) as refused:
         later_task.create_checkpoint(turn=1, tests_passed=True)
@@ -362,6 +398,7 @@ def test_a_task_orchestrator_uses_the_pinned_branch_not_head(
     worktree: Path,
 ) -> None:
     """A task starting on main with the pinned branch passed in is refused."""
+    scope = _admit(worktree, "TASK-0D7C-004")
     _git(worktree, "checkout", "-q", "main")
     display = MagicMock()
     display.__enter__ = Mock(return_value=display)
@@ -371,6 +408,7 @@ def test_a_task_orchestrator_uses_the_pinned_branch_not_head(
         agent_invoker=Mock(), progress_display=display,
         pre_loop_gates=MagicMock(), expected_branch=BRANCH,
     )
+    orchestrator.task_work_scope = scope
     record = TurnRecord(
         turn=1,
         player_result=Mock(success=True, report={}, error=None),
@@ -383,7 +421,6 @@ def test_a_task_orchestrator_uses_the_pinned_branch_not_head(
     )
     with patch.object(orchestrator, "_execute_turn", return_value=record), \
             patch.object(orchestrator, "_capture_turn_state"), \
-            patch.object(orchestrator, "_record_honesty"), \
             patch.object(orchestrator, "_display_criteria_progress"):
         history, final = orchestrator._loop_phase(
             task_id="TASK-0D7C-004", requirements="r", acceptance_criteria=["AC1"],
@@ -411,6 +448,7 @@ def test_a_resume_on_an_agent_made_branch_is_refused_naming_both(
         WorktreeCheckpointManager(
             worktree_path=worktree, task_id="TASK-0D7C-002",
             expected_branch=pinned, refuse_without_branch=True,
+            task_work_scope=_admit(worktree, "TASK-0D7C-002"),
         ).create_checkpoint(turn=1, tests_passed=True)
     message = str(refused.value)
     assert f"Expected branch: {BRANCH}." in message
@@ -431,6 +469,7 @@ def test_a_feature_pinned_to_no_branch_is_not_re_read_per_task(
         pre_loop_gates=MagicMock(),
         expected_branch=None, expected_branch_pinned=True,
     )
+    orchestrator.task_work_scope = _admit(worktree, "TASK-0D7C-004")
     record = TurnRecord(
         turn=1,
         player_result=Mock(success=True, report={}, error=None),
@@ -444,7 +483,6 @@ def test_a_feature_pinned_to_no_branch_is_not_re_read_per_task(
     tip = _tip(worktree)
     with patch.object(orchestrator, "_execute_turn", return_value=record), \
             patch.object(orchestrator, "_capture_turn_state"), \
-            patch.object(orchestrator, "_record_honesty"), \
             patch.object(orchestrator, "_display_criteria_progress"):
         history, final = orchestrator._loop_phase(
             task_id="TASK-0D7C-004", requirements="r", acceptance_criteria=["AC1"],
@@ -496,6 +534,7 @@ def test_orchestrate_pins_after_setup_and_before_the_first_wave(
 def test_no_branch_known_refuses_rather_than_skipping(
     worktree: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
+    scope = _admit(worktree, "TASK-0D7C-001")
     _git(worktree, "checkout", "-q", "--detach")
     tip = _tip(worktree)
     with caplog.at_level(logging.ERROR):
@@ -507,6 +546,7 @@ def test_no_branch_known_refuses_rather_than_skipping(
         WorktreeCheckpointManager(
             worktree_path=worktree, task_id="TASK-0D7C-001",
             expected_branch=branch, refuse_without_branch=True,
+            task_work_scope=scope,
         ).create_checkpoint(turn=1, tests_passed=True)
     assert _head(worktree) == tip
 

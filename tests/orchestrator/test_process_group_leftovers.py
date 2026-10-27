@@ -568,9 +568,9 @@ def _self_test_not_failed(monkeypatch: pytest.MonkeyPatch) -> None:
 
 class TestCleanupCapability:
     """Where a command's leftovers cannot all be stopped safely, the project
-    commands run with the reduced clean-up and one warning: on a person's own
-    run, and since step 2 (26 October 2026) on a factory launch whose
-    clean-up self-test failed (advice, never a refusal before the command)."""
+    commands run with the reduced clean-up: on a person's own run, and since
+    step 2 (26 October 2026) on a factory launch whose clean-up self-test
+    failed (never a refusal before the command)."""
 
     _MISSING = (
         "pidfd_open is refused here by the kernel or a security filter "
@@ -588,23 +588,17 @@ class TestCleanupCapability:
         # finds the same thing missing.
         monkeypatch.setattr(process_group, "_self_test", lambda: self._MISSING)
         monkeypatch.setattr(process_group, "_SELF_TEST_PASSED", [])
-        monkeypatch.setattr(process_group, "_CAPABILITY", [self._MISSING])
-        monkeypatch.setattr(process_group, "_WARNED", [])
 
     @pytest.fixture
     def fresh(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """The self-test runs again (for real) in this test."""
         monkeypatch.setattr(process_group, "_SELF_TEST_PASSED", [])
-        monkeypatch.setattr(process_group, "_CAPABILITY", [])
 
     @pytest.fixture
     def passed(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """The self-test passed earlier in this process (a cached success)."""
         monkeypatch.setattr(process_group, "_SELF_TEST_PASSED", [True])
 
-    @linux_only
-    def test_this_system_has_everything_needed(self) -> None:
-        assert process_group._missing_capability() is None
 
     @staticmethod
     def _self_test_processes() -> Set[int]:
@@ -630,13 +624,6 @@ class TestCleanupCapability:
         assert len(os.listdir("/proc/self/fd")) == before_fds
         assert self._self_test_processes() - before == set()
 
-    @linux_only
-    def test_a_refused_pidfd_is_named(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        def refused(_pid: int) -> int:
-            raise PermissionError(errno.EPERM, "Operation not permitted")
-
-        monkeypatch.setattr(process_group.os, "pidfd_open", refused)
-        assert process_group._missing_capability() == self._MISSING
 
     @linux_only
     def test_a_refused_signal_through_a_pidfd_is_named_and_a_factory_launch_goes_on(
@@ -647,7 +634,6 @@ class TestCleanupCapability:
             raise PermissionError(errno.EPERM, "Operation not permitted")
 
         monkeypatch.setattr(process_group.signal, "pidfd_send_signal", refused)
-        monkeypatch.setattr(process_group, "_CAPABILITY", [])
         monkeypatch.setattr(process_group, "_SELF_TEST_PASSED", [])
         monkeypatch.setenv("GUARDKIT_FACTORY_LAUNCH", "build-x")
         expected = (
@@ -655,7 +641,6 @@ class TestCleanupCapability:
             "(Operation not permitted)"
         )
 
-        assert process_group._missing_capability() == expected
         _run(tmp_path, "touch ran")
         assert process_group._SELF_TEST_FAILED == [expected]
         assert (tmp_path / "ran").exists()
@@ -670,10 +655,8 @@ class TestCleanupCapability:
             pytest.skip("no setsid program")
         monkeypatch.delattr(os, "pidfd_open")
         monkeypatch.delattr(signal, "pidfd_send_signal")
-        monkeypatch.setattr(process_group, "_CAPABILITY", [])
         monkeypatch.setattr(process_group, "_SELF_TEST_PASSED", [])
 
-        assert process_group._missing_capability() is None
         assert process_group._self_test() is None
         _run(
             tmp_path,
@@ -693,43 +676,11 @@ class TestCleanupCapability:
 
         monkeypatch.delattr(os, "pidfd_open")
         monkeypatch.setattr(process_group, "_raw_syscall", refused)
-        monkeypatch.setattr(process_group, "_CAPABILITY", [])
         monkeypatch.setattr(process_group, "_SELF_TEST_PASSED", [])
-        expected = (
-            "this Python build lacks pidfd_open, and the system call itself is "
-            "refused by the kernel or a security filter (Operation not permitted)"
-        )
-
-        assert process_group._missing_capability() == expected
         _run(tmp_path, "touch ran")
         assert "Python build lacks" in process_group._SELF_TEST_FAILED[0]
         assert (tmp_path / "ran").exists()
 
-    def test_without_wrappers_off_linux_the_platform_is_named(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        if not Path("/proc/self/stat").exists():
-            pytest.skip("needs /proc")
-        monkeypatch.delattr(os, "pidfd_open", raising=False)
-        monkeypatch.setattr(process_group.sys, "platform", "darwin")
-        assert process_group._missing_capability() == (
-            "this Python build lacks pidfd_open, and this system is not Linux"
-        )
-
-    @linux_only
-    @pytest.mark.parametrize("send", ["works", "refused"])
-    def test_the_probe_closes_its_pidfd(
-        self, monkeypatch: pytest.MonkeyPatch, send: str
-    ) -> None:
-        if send == "refused":
-            def refused(_handle: int, _sig: int) -> None:
-                raise PermissionError(errno.EPERM, "Operation not permitted")
-
-            monkeypatch.setattr(signal, "pidfd_send_signal", refused)
-        before = len(os.listdir("/proc/self/fd"))
-        for _ in range(20):
-            process_group._missing_capability()
-        assert len(os.listdir("/proc/self/fd")) == before
 
     @linux_only
     def test_a_refused_waitid_is_named_and_both_entry_points_run_reduced(
@@ -740,13 +691,11 @@ class TestCleanupCapability:
             raise PermissionError(errno.EPERM, "Operation not permitted")
 
         monkeypatch.setattr(process_group.os, "waitid", refused)
-        monkeypatch.setattr(process_group, "_CAPABILITY", [])
         monkeypatch.setattr(process_group, "_SELF_TEST_PASSED", [])
         expected = (
             "waitid is refused here by the kernel or a security filter "
             "(Operation not permitted)"
         )
-        assert process_group._missing_capability() == expected
         _run(tmp_path, "touch ran")
         (tmp_path / "ran").unlink()
         run_in_own_group(
@@ -764,8 +713,6 @@ class TestCleanupCapability:
             raise PermissionError(errno.EPERM, "Operation not permitted")
 
         monkeypatch.setattr(process_group.os, "waitid", refused)
-        monkeypatch.setattr(process_group, "_CAPABILITY", [])
-        monkeypatch.setattr(process_group, "_WARNED", [])
         assert _run(tmp_path, "echo ok").stdout == "ok\n"
         with pytest.raises(subprocess.TimeoutExpired):
             _run(tmp_path, "echo $$ > fg.pid; exec sleep 300", timeout=1, grace=0.2)
@@ -851,11 +798,11 @@ class TestCleanupCapability:
             "the target",
         )
 
-        # The install ran (step 2); what it left is the dirty-tree check's.
+        # The install ran (step 2); what it left stays in the folder (the cull).
         assert "could not start" not in (done.problem or "")
         assert (tree / "ran").exists()
 
-    def test_a_factory_launch_with_a_failed_self_test_runs_with_one_warning(
+    def test_a_factory_launch_with_a_failed_self_test_runs_with_the_reduced_clean_up(
         self,
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
@@ -870,11 +817,9 @@ class TestCleanupCapability:
             )
         assert (tmp_path / "ran").exists()
         assert process_group._SELF_TEST_FAILED == [self._MISSING]
-        warnings = [r for r in caplog.records if "may be left running" in r.getMessage()]
-        assert len(warnings) == 1
 
     @pytest.mark.personal_run
-    def test_a_persons_own_run_goes_on_with_one_warning(
+    def test_a_persons_own_run_goes_on(
         self,
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
@@ -888,8 +833,6 @@ class TestCleanupCapability:
 
         assert first.stdout == second.stdout == "ok\n"
         assert (tmp_path / "ran").exists()
-        warnings = [r for r in caplog.records if "may be left running" in r.getMessage()]
-        assert len(warnings) == 1
 
     @pytest.mark.personal_run
     def test_an_empty_factory_signal_is_not_a_factory_launch(
@@ -934,8 +877,6 @@ class TestTheRuleOnAFactoryLaunch:
         # commands run with the reduced clean-up.
         self._deny_proc_listing(monkeypatch)
         monkeypatch.setattr(process_group, "_SELF_TEST_PASSED", [])
-        monkeypatch.setattr(process_group, "_CAPABILITY", [])
-        monkeypatch.setattr(process_group, "_WARNED", [])
         _run(tmp_path, "touch ran")
         run_in_own_group(
             "echo ok", shell=True, cwd=tmp_path, env=dict(_ENV), timeout=30
@@ -969,7 +910,6 @@ class TestTheRuleOnAFactoryLaunch:
         monkeypatch: pytest.MonkeyPatch,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        monkeypatch.setattr(process_group, "_CAPABILITY", [None])
         self._deny_proc_listing(monkeypatch)
         with caplog.at_level(logging.WARNING, logger=process_group.__name__):
             proc = _run(tmp_path, "sleep 300 >/dev/null 2>&1 & echo $! > bg.pid; echo ok")
@@ -1048,7 +988,6 @@ class TestTheSelfTestSeesForItself:
         own = os.getpid()
         self._deny_environ(monkeypatch, lambda pid: pid != own)
         monkeypatch.setattr(process_group, "_SELF_TEST_PASSED", [])
-        monkeypatch.setattr(process_group, "_CAPABILITY", [])
         _run(tmp_path, "touch ran")  # advice since step 2: the command runs
         assert process_group._SELF_TEST_FAILED == [
             "the clean-up self-test's process environment could not be read "
@@ -1221,7 +1160,6 @@ class TestTheSelfTestSeesForItself:
             file = tmp_path / "bg.pid"
             return file.exists() and file.read_text().strip() == str(pid)
 
-        monkeypatch.setattr(process_group, "_CAPABILITY", [None])
         self._refuse_metadata(monkeypatch, escapee)
         with caplog.at_level(logging.WARNING, logger=process_group.__name__):
             proc = _run(
@@ -1269,7 +1207,6 @@ class TestTheSelfTestReportsTheRealCause:
     ) -> None:
         monkeypatch.delattr(os, "waitid")
         monkeypatch.setattr(process_group, "_SELF_TEST_PASSED", [])
-        monkeypatch.setattr(process_group, "_CAPABILITY", [])
         _run(tmp_path, "touch ran")  # advice since step 2: the command runs
         reason = process_group._SELF_TEST_FAILED[0]
         monkeypatch.undo()
@@ -1352,7 +1289,6 @@ class TestProcGoneAfterTheSelfTest:
         caplog: pytest.LogCaptureFixture,
     ) -> None:
         monkeypatch.setattr(process_group, "_proc_available", lambda: False)
-        monkeypatch.setattr(process_group, "_CAPABILITY", [None])
         with caplog.at_level(logging.WARNING, logger=process_group.__name__):
             proc = _run(
                 tmp_path, "echo $$ > fg.pid; echo ok", timeout=30

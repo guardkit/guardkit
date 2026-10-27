@@ -41,10 +41,8 @@ from guardkit.orchestrator.feature_check import (
     RECEIPT_RELATIVE_PATH,
     FeatureCheckAttempt,
     FeatureCheckOutcome,
-    completion_verdict,
     merge_not_checked,
     parse_project_check_line,
-    update_feature_check_receipt,
 )
 
 from tests.orchestrator.test_feature_check import (  # noqa: E402
@@ -257,28 +255,6 @@ def test_a_name_on_the_not_checked_list_is_never_on_the_covered_list(
     assert receipt["attempts"][-1]["scenarios_covered"] == ["Another example"]
 
 
-def test_the_guard_s_missing_list_reaches_the_record_without_blocking(
-    tmp_path: Path,
-) -> None:
-    """The central guard reports and does not block; the names still travel.
-
-    The project declares an example that wants a check file of its own and
-    writes no such file. Nothing looked at that example, so it is named — and
-    the build is not refused over it.
-    """
-    repo_root, worktree, feature = _project(
-        tmp_path, "echo '" + _line(scenarios_covered=[]) + "'\nexit 0\n",
-        hurl_scenario=True,
-    )
-
-    _, _, result = _run_build(repo_root, worktree, feature, _WaveRecorder(worktree))
-
-    receipt = _receipt(worktree)
-    assert result.status == "completed"
-    assert SCENARIO_TITLE in [e["name"] for e in receipt["not_checked"]]
-    assert receipt["scenarios_covered"] == []
-
-
 def test_one_example_named_by_both_sources_is_counted_once(
     tmp_path: Path,
 ) -> None:
@@ -339,63 +315,6 @@ def test_names_the_project_could_not_carry_are_still_counted(
     receipt = _receipt(worktree)
     assert len(receipt["not_checked"]) == MAX_NOT_CHECKED_CARRIED
     assert receipt["not_checked_total"] == MAX_NOT_CHECKED_CARRIED + 5
-
-
-def test_finishing_the_record_removes_a_newly_not_checked_name_from_covered(
-    tmp_path: Path,
-) -> None:
-    """The end-of-build caller's own rule, on a record already on disk."""
-    path = tmp_path / RECEIPT_RELATIVE_PATH
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps({"status": "passed", "scenarios_covered": ["A", "B"]}),
-        encoding="utf-8",
-    )
-
-    written = update_feature_check_receipt(
-        tmp_path,
-        not_checked=[{"name": "a", "reason": "nothing looked at it"}],
-        notes=["said once"],
-    )
-
-    assert written is not None
-    data = json.loads(path.read_text())
-    assert data["scenarios_covered"] == ["B"], "compared without regard to case"
-    assert [e["name"] for e in data["not_checked"]] == ["a"]
-    assert data["record_notes"] == ["said once"]
-
-
-def test_finishing_the_record_cleans_the_copy_inside_each_attempt_too(
-    tmp_path: Path,
-) -> None:
-    """The completion rule and the guard both speak after the record is written."""
-    path = tmp_path / RECEIPT_RELATIVE_PATH
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(
-            {
-                "status": "passed",
-                "scenarios_covered": ["A", "B"],
-                "attempts": [{"attempt": 1, "scenarios_covered": ["A", "B"]}],
-            }
-        ),
-        encoding="utf-8",
-    )
-
-    update_feature_check_receipt(
-        tmp_path, not_checked=[{"name": "A", "reason": "nothing looked at it"}]
-    )
-
-    data = json.loads(path.read_text())
-    assert data["scenarios_covered"] == ["B"]
-    assert data["attempts"][0]["scenarios_covered"] == ["B"]
-
-
-def test_finishing_a_record_that_is_not_there_never_raises(tmp_path: Path) -> None:
-    assert update_feature_check_receipt(
-        tmp_path, not_checked=[{"name": "x", "reason": "y"}]
-    ) is None
-    assert update_feature_check_receipt(tmp_path, not_checked=[]) is None
 
 
 def test_merging_two_sources_keeps_one_entry_per_name(tmp_path: Path) -> None:
@@ -529,38 +448,6 @@ def _receipt_on_disk(worktree: Path, payload: dict) -> None:
     path = worktree / RECEIPT_RELATIVE_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload), encoding="utf-8")
-
-
-def test_the_rule_still_blocks_a_record_that_says_failed(tmp_path: Path) -> None:
-    repo_root, worktree, feature = _project(tmp_path, "exit 0\n")
-    _receipt_on_disk(worktree, {"status": "failed", "scenarios_covered": []})
-
-    verdict = completion_verdict(
-        repo_root=repo_root, worktree_root=worktree, feature=feature
-    )
-    assert verdict.blocks is True
-
-
-def test_the_rule_does_not_block_a_record_that_says_could_not_run(
-    tmp_path: Path,
-) -> None:
-    repo_root, worktree, feature = _project(tmp_path, "exit 0\n", hurl_scenario=True)
-    _receipt_on_disk(
-        worktree,
-        {
-            "status": "could_not_run",
-            "could_not_run_reason": "no interpreter for the check",
-            "scenarios_covered": [],
-        },
-    )
-
-    verdict = completion_verdict(
-        repo_root=repo_root, worktree_root=worktree, feature=feature
-    )
-
-    assert verdict.blocks is False
-    assert [e["name"] for e in verdict.not_checked] == [SCENARIO_TITLE]
-    assert verdict.not_checked[0]["reason"] == "no interpreter for the check"
 
 
 def test_an_outcome_object_never_reports_a_not_checked_name_as_covered() -> None:

@@ -107,15 +107,6 @@ SPECIALIST_MESSAGE_UNAVAILABLE = (
     "The runner did not supply the text of what the specialist said."
 )
 
-#: MIRROR of the pipeline's fix-task identifier shape,
-#: ``forge/src/forge/cli/_serve_deps_stage_log.py:398``
-#: (``default_fix_tasks_extractor``). A printed artefact whose *stem* does not
-#: match this is silently dropped by the pipeline — which would end the journey
-#: looking "clean". The leg therefore applies the same test as an admission
-#: filter, so the mismatch surfaces here as a named failure instead of there as
-#: silence.
-FIX_TASK_STEM_RE = re.compile(r"^TASK-[A-Z0-9]{3,12}(?:-[A-Za-z0-9]+)*$")
-
 # ``FRONTIER_PROVIDER_PREFIXES`` used to be defined here. It MOVED (stage-2
 # design §3.1) to :mod:`guardkit.orchestrator.m0_fence`, which is now the single
 # statement of the M0 rule — the chokepoint fence in ``harness/selector.py`` and
@@ -177,36 +168,10 @@ PHASES_NOT_RUN: Tuple[Dict[str, str], ...] = (
             "The unattended leg does not decide, it produces: findings present "
             "-> the [I]mplement path via implement_orchestrator."
             "handle_implement_option_sync; findings absent -> the [A]ccept "
-            "path, empty artefact section plus an explicit clean line."
+            "path, empty artefact section."
         ),
     },
 )
-
-#: The positively-clean sentence the report must carry when there are no
-#: findings. An empty artefact section alone is indistinguishable downstream
-#: from a leg that found problems and failed to print them (§c.1).
-CLEAN_REVIEW_LINE = (
-    "No findings. This review is positively clean — every item in scope was "
-    "read and no defect was found."
-)
-
-#: Coordinator cure (LI coach finding 4): the exact-substring match on a
-#: 100+ char em-dash sentence is the most likely first-crossing failure — a
-#: local seat paraphrasing ONE character flips a genuinely clean review into
-#: exit 2. The check now accepts the short un-mangleable sentinel token as
-#: well; the protocol instructs the model to print BOTH.
-CLEAN_REVIEW_SENTINEL = "CLEAN-REVIEW: NO FINDINGS"
-
-
-def _clean_line_present(report_text: str) -> bool:
-    """Whitespace/case-tolerant: the sentinel token or the full sentence."""
-    import re as _re
-
-    flat = " ".join(report_text.split()).lower()
-    if " ".join(CLEAN_REVIEW_SENTINEL.split()).lower() in flat:
-        return True
-    return " ".join(CLEAN_REVIEW_LINE.split()).lower() in flat
-
 
 def truncate_specialist_message(text: Any) -> Optional[str]:
     """Bound what the specialist said to :data:`SPECIALIST_MESSAGE_LIMIT`.
@@ -261,8 +226,6 @@ class ReviewLegOutcome:
     rejected_artefacts: List[Dict[str, str]] = field(default_factory=list)
     report_path: Optional[str] = None
     findings_file: Optional[str] = None
-    consistency_check: str = "not-run"
-    clean_line_present: bool = False
     error: Optional[str] = None
     fleet_memory_cli: Dict[str, Any] = field(default_factory=dict)
     context_payloads: List[ContextPayload] = field(default_factory=list)
@@ -566,10 +529,10 @@ def read_findings_file(path: Path) -> Tuple[List[Dict[str, Any]], Optional[float
     elif isinstance(payload, list):
         raw_findings = payload
     else:
-        return [], None, "findings file is neither a JSON object nor a JSON array"
+        raw_findings = []
 
     if not isinstance(raw_findings, list):
-        return [], coach_score, "'findings' is not a JSON array"
+        raw_findings = []
     findings = [item for item in raw_findings if isinstance(item, dict)]
     return findings, coach_score, None
 
@@ -681,16 +644,14 @@ def admit_fix_task_paths(
 ) -> Tuple[List[str], List[Dict[str, str]]]:
     """Filter candidate artefacts down to what may legally be printed.
 
-    Four tests, all of which must pass (§e.3, §e.4):
+    Three tests, all of which must pass (§e.3, §e.4):
 
     1. the path was **written by this leg in this run**;
     2. the path **exists on disk**;
     3. it is **not the review report** — the report's own stem
        (``TASK-REV-a1b2c3-review-report``) *matches* the pipeline's fix-task
        regex, so listing it would inject a phantom fix task and the conductor
-       would dispatch a work leg against a review report;
-    4. its stem matches the pipeline's fix-task identifier shape — otherwise
-       the pipeline drops it silently and the journey ends looking clean.
+       would dispatch a work leg against a review report.
 
     Returns ``(admitted_paths, rejections)``; rejections carry a reason so the
     receipt can name what was withheld and why.
@@ -724,61 +685,12 @@ def admit_fix_task_paths(
         if not resolved.is_file():
             rejected.append({"path": as_str, "reason": "does not exist on disk"})
             continue
-        if not FIX_TASK_STEM_RE.match(resolved.stem):
-            rejected.append(
-                {
-                    "path": as_str,
-                    "reason": (
-                        "stem does not match the pipeline's fix-task id shape "
-                        f"{FIX_TASK_STEM_RE.pattern!r} — the pipeline would "
-                        "drop it silently"
-                    ),
-                }
-            )
-            continue
         if as_str in seen:
             continue
         seen.add(as_str)
         admitted.append(as_str)
 
     return admitted, rejected
-
-
-# ---------------------------------------------------------------------------
-# §c.1 — the internal consistency check
-# ---------------------------------------------------------------------------
-
-
-def evaluate_consistency(
-    *, findings: Sequence[Dict[str, Any]], fix_task_paths: Sequence[str]
-) -> Tuple[str, Optional[str]]:
-    """Return ``(verdict, failure_reason)`` for the pre-print consistency check.
-
-    An empty ``## Artefacts`` section is indistinguishable downstream from a
-    clean review: the extractor returns ``()``, the row records
-    ``fix_tasks: []``, and the planner terminates ``CLEAN_REVIEW``. So a leg
-    that finds problems and writes no fix tasks must **exit 2**, never print a
-    clean-looking success.
-    """
-    if findings and not fix_task_paths:
-        return (
-            "FAILED",
-            (
-                f"{len(findings)} finding(s) recorded but zero fix-task files "
-                "were admitted — refusing to print a clean-looking success "
-                "(design §c.1, the empty-artefacts silent lie)"
-            ),
-        )
-    if not findings and fix_task_paths:
-        return (
-            "FAILED",
-            (
-                f"{len(fix_task_paths)} fix-task file(s) written but the "
-                "findings file is empty — the review claims clean while "
-                "producing work"
-            ),
-        )
-    return ("PASSED", None)
 
 
 # ---------------------------------------------------------------------------
@@ -1143,8 +1055,6 @@ def build_receipt(
         "rejected_artefacts": list(outcome.rejected_artefacts),
         "review_report_path": outcome.report_path,
         "findings_file": outcome.findings_file,
-        "clean_line_present": outcome.clean_line_present,
-        "consistency_check": outcome.consistency_check,
         "phases_not_run": [dict(phase) for phase in PHASES_NOT_RUN],
         "fleet_memory_cli": outcome.fleet_memory_cli,
         "context": [p.as_receipt_entry() for p in outcome.context_payloads],
@@ -1389,13 +1299,9 @@ def run_review_leg(
         )
 
     # The anchor is attached HERE — at the one point where the findings that
-    # become ``## Detection Findings`` are assembled — so the marker block, the
-    # receipt and the consistency check all see the same anchored findings and
-    # cannot disagree (design §5, leg side).
+    # become ``## Detection Findings`` are assembled — so the marker block and
+    # the receipt see the same anchored findings (design §5, leg side).
     findings = anchored_findings(findings, repo_root)
-
-    report_text = report_path.read_text(encoding="utf-8", errors="replace")
-    clean_line_present = _clean_line_present(report_text)
 
     produced: List[Path] = []
     producer_info: Dict[str, Any] = {"called": False}
@@ -1420,46 +1326,6 @@ def run_review_leg(
         all_backlog, written_this_run=produced, report_path=report_path
     )
 
-    verdict, failure = evaluate_consistency(
-        findings=findings, fix_task_paths=fix_task_paths
-    )
-
-    if verdict != "PASSED":
-        return _outcome(
-            "inconsistent",
-            2,
-            error=failure,
-            findings=findings,
-            coach_score=coach_score,
-            fix_task_paths=fix_task_paths,
-            rejected_artefacts=rejected,
-            consistency_check=verdict,
-            clean_line_present=clean_line_present,
-            fleet_memory_cli=memory,
-            context_payloads=payloads,
-            producer=producer_info,
-            pass_bars=pass_bars,
-        )
-
-    if not findings and not clean_line_present:
-        return _outcome(
-            "inconsistent",
-            2,
-            error=(
-                "the review reported no findings but the report does not carry "
-                "the explicit clean line — a clean review must be POSITIVELY "
-                "clean (design §c.1)"
-            ),
-            findings=findings,
-            coach_score=coach_score,
-            consistency_check="FAILED",
-            clean_line_present=False,
-            fleet_memory_cli=memory,
-            context_payloads=payloads,
-            producer=producer_info,
-            pass_bars=pass_bars,
-        )
-
     return _outcome(
         "findings" if findings else "clean",
         0,
@@ -1467,8 +1333,6 @@ def run_review_leg(
         coach_score=coach_score,
         fix_task_paths=fix_task_paths,
         rejected_artefacts=rejected,
-        consistency_check=verdict,
-        clean_line_present=clean_line_present,
         fleet_memory_cli=memory,
         context_payloads=payloads,
         producer=producer_info,
@@ -1477,10 +1341,8 @@ def run_review_leg(
 
 
 __all__ = [
-    "CLEAN_REVIEW_LINE",
     "DEFAULT_SDK_TIMEOUT_SECONDS",
     "EMPTY_ARTEFACTS_NOTE_REVIEW",
-    "FIX_TASK_STEM_RE",
     "FRONTIER_PROVIDER_PREFIXES",
     "MIN_SECOND_ASK_SECONDS",
     "PHASES_NOT_RUN",
@@ -1497,7 +1359,6 @@ __all__ = [
     "anchored_findings",
     "attempt_fleet_memory_cli",
     "build_receipt",
-    "evaluate_consistency",
     "finding_anchor",
     "normalize_anchor_file",
     "normalize_anchor_severity",

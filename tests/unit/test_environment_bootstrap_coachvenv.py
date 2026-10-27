@@ -273,7 +273,9 @@ class TestMaybeRefreshVenvHook:
         assert feedback is None
         assert obj._venv_python == new_venv
 
-    def test_reinstall_failure_returns_actionable_feedback(self, tmp_path: Path):
+    def test_reinstall_failure_is_logged_and_the_turn_goes_on(
+        self, tmp_path: Path, caplog
+    ):
         obj = _orchestrator_with_refresh()
         failed = BootstrapResult(
             success=False,
@@ -301,13 +303,16 @@ class TestMaybeRefreshVenvHook:
                 _worktree(tmp_path),
                 turn=3,
             )
-        assert feedback is not None
-        assert "reinstall failed" in feedback.lower()
-        assert "No matching distribution found for nope" in feedback
+        # 27 October 2026 cull: a failed reinstall no longer sends the turn
+        # back; it is logged and the project's own tests say what they say.
+        assert feedback is None
+        assert "No matching distribution found for nope" in caplog.text
         # A failed reinstall must NOT silently update the interpreter.
         assert obj._venv_python == "/old/venv/bin/python"
 
-    def test_exception_is_surfaced_not_swallowed(self, tmp_path: Path):
+    def test_exception_is_logged_and_the_turn_goes_on(
+        self, tmp_path: Path, caplog
+    ):
         obj = _orchestrator_with_refresh()
         with patch(
             "guardkit.orchestrator.environment_bootstrap.refresh_environment_for_changes",
@@ -318,5 +323,6 @@ class TestMaybeRefreshVenvHook:
                 _worktree(tmp_path),
                 turn=4,
             )
-        assert feedback is not None
-        assert "uv exploded" in feedback
+        assert feedback is None
+        assert "uv exploded" in caplog.text
+        assert obj._venv_python == "/old/venv/bin/python"

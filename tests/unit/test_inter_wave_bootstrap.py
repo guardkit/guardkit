@@ -149,7 +149,6 @@ class TestInterWaveBootstrapHook:
             return _successful_wave_result(number, task_ids)
 
         with (
-            patch.object(orchestrator, "_preflight_check"),
             patch.object(orchestrator, "_bootstrap_environment") as mock_bootstrap,
             patch.object(
                 orchestrator,
@@ -180,7 +179,6 @@ class TestInterWaveBootstrapHook:
         feature, task_map = _make_feature([["TASK-001"]])
 
         with (
-            patch.object(orchestrator, "_preflight_check"),
             patch.object(orchestrator, "_bootstrap_environment") as mock_bootstrap,
             patch.object(
                 orchestrator,
@@ -219,7 +217,6 @@ class TestInterWaveBootstrapHook:
             return _successful_wave_result(number, task_ids)
 
         with (
-            patch.object(orchestrator, "_preflight_check"),
             patch.object(orchestrator, "_bootstrap_environment") as mock_bootstrap,
             patch.object(
                 orchestrator,

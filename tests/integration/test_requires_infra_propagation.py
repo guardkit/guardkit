@@ -121,7 +121,7 @@ class TestFeatureOrchestratorPassesRequiresInfrastructure:
                     repo_root=tmp_path,
                     worktree_manager=Mock(),
                 )
-                orchestrator._execute_task(feature_task, mock_feature, mock_worktree)
+                orchestrator._execute_task_owned(feature_task, mock_feature, mock_worktree)
 
         call_kwargs = MockABO.return_value.orchestrate.call_args.kwargs
         assert "requires_infrastructure" in call_kwargs, (
@@ -170,7 +170,7 @@ class TestFeatureOrchestratorPassesRequiresInfrastructure:
                     repo_root=tmp_path,
                     worktree_manager=Mock(),
                 )
-                orchestrator._execute_task(feature_task, mock_feature, mock_worktree)
+                orchestrator._execute_task_owned(feature_task, mock_feature, mock_worktree)
 
         call_kwargs = MockABO.return_value.orchestrate.call_args.kwargs
         assert call_kwargs["requires_infrastructure"] == []

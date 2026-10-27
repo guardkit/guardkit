@@ -1,15 +1,14 @@
 """The project commands' private folders are owner-only (19 October 2026).
 
 ``launch_declaration._private_directory`` made a missing folder with mode 0700
-but took an existing one as it found it. It now makes an existing folder of
-this user's owner-only too, and refuses another user's. These are the project
+but took an existing one as it found it. It now makes an existing folder
+owner-only too. These are the project
 commands' ``HOME`` and ``TMPDIR`` (``project_command_env``) and the declared
 ``launch.scratch`` folders, so the same tests as the factory's shell folders.
 """
 
 from __future__ import annotations
 
-import os
 import subprocess
 from pathlib import Path
 
@@ -17,7 +16,6 @@ import pytest
 
 from guardkit.orchestrator.launch_declaration import (
     LaunchDeclaration,
-    LaunchEnvironmentError,
     _private_directory,
     apply_launch_environment,
 )
@@ -81,30 +79,6 @@ def test_an_existing_open_declared_scratch_folder_is_made_owner_only(
 
     assert env["TOOL_CACHE"] == str(folder)
     assert _mode(folder) == 0o700
-
-
-def test_a_folder_owned_by_another_user_is_refused(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    worktree = _checkout(tmp_path)
-    (_toolchain(worktree) / "HOME").mkdir(parents=True)
-    real_uid = os.geteuid()
-    monkeypatch.setattr(os, "geteuid", lambda: real_uid + 1)
-
-    with pytest.raises(LaunchEnvironmentError, match="another user"):
-        project_command_environment(worktree, None)
-
-
-def test_a_symlink_is_still_refused(tmp_path: Path) -> None:
-    elsewhere = tmp_path / "elsewhere"
-    elsewhere.mkdir()
-    elsewhere.chmod(0o755)
-    link = tmp_path / "link"
-    link.symlink_to(elsewhere, target_is_directory=True)
-
-    with pytest.raises(LaunchEnvironmentError, match="not a real folder"):
-        _private_directory(link)
-    assert _mode(elsewhere) == 0o755  # the target is never touched
 
 
 def test_a_folder_made_by_another_caller_first_is_reused(

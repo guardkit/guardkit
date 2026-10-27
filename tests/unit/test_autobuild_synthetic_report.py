@@ -2,16 +2,14 @@
 Unit tests for AutoBuild synthetic report observability and enrichment.
 
 Tests logging, flagging, and file-existence promise generation for synthetic
-recovery reports (TASK-ASF-004 + TASK-ASF-006).
-
-Coverage Target: >=85%
-Test Count: 11 tests
+recovery reports (TASK-ASF-004 + TASK-ASF-006), and the sibling-repository
+send-back report.
 """
 
 import json
 import logging
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 import tempfile
 
 import pytest
@@ -19,11 +17,6 @@ import pytest
 from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
 from guardkit.orchestrator.state_tracker import WorkState
 from guardkit.orchestrator.agent_invoker import AgentInvocationResult
-from guardkit.orchestrator.quality_gates.coach_validator import (
-    CoachValidator,
-    RequirementsValidation,
-    CriterionResult,
-)
 
 
 # ============================================================================
@@ -62,7 +55,7 @@ def orchestrator(mock_worktree_manager, mock_agent_invoker, mock_progress_displa
     """Create AutoBuildOrchestrator instance for testing."""
     with tempfile.TemporaryDirectory() as tmpdir:
         repo_root = Path(tmpdir)
-        yield AutoBuildOrchestrator(
+        orchestrator = AutoBuildOrchestrator(
             repo_root=repo_root,
             worktree_manager=mock_worktree_manager,
             agent_invoker=mock_agent_invoker,
@@ -72,6 +65,10 @@ def orchestrator(mock_worktree_manager, mock_agent_invoker, mock_progress_displa
             sdk_timeout=900,
             ablation_mode=False,
         )
+        # A task admitted to its own working copy (since 24 October 2026 a
+        # rebuilt report carries promises only then).
+        orchestrator.task_work_scope = Mock()
+        yield orchestrator
 
 
 @pytest.fixture
@@ -86,14 +83,6 @@ def work_state():
         test_count=5,
         detection_method="git_test_detection",
     )
-
-
-@pytest.fixture
-def coach_validator(tmp_path):
-    """Create CoachValidator instance for testing."""
-    worktree_path = tmp_path / "worktree"
-    worktree_path.mkdir()
-    return CoachValidator(worktree_path=worktree_path)
 
 
 # ============================================================================
@@ -144,60 +133,6 @@ def test_build_synthetic_report_warning_contains_file_and_test_counts(
     assert "1 files created" in warning_message  # 1 file created
     assert "2 files modified" in warning_message  # 2 files modified
     assert "5 tests" in warning_message  # 5 tests
-
-
-def test_synthetic_report_detection_logic(orchestrator, caplog):
-    """Test that synthetic flag in report is detected correctly."""
-    # Create a synthetic Player result
-    synthetic_report = {
-        "task_id": "TASK-TEST-001",
-        "turn": 1,
-        "files_modified": ["src/main.py"],
-        "files_created": ["src/new.py"],
-        "tests_written": [],
-        "tests_run": True,
-        "tests_passed": True,
-        "test_output_summary": "All tests passed",
-        "implementation_notes": "[RECOVERED via git_test_detection] Original error: Failed",
-        "concerns": ["Player failed with error: Failed"],
-        "requirements_addressed": [],
-        "requirements_remaining": [],
-        "_synthetic": True,  # Synthetic flag
-        "_recovery_metadata": {
-            "detection_method": "git_test_detection",
-            "git_insertions": 100,
-            "git_deletions": 20,
-            "timestamp": "2025-01-15T12:00:00",
-        },
-    }
-
-    player_result = AgentInvocationResult(
-        task_id="TASK-TEST-001",
-        turn=1,
-        agent_type="player",
-        success=True,
-        report=synthetic_report,
-        duration_seconds=120.5,
-        error=None,
-    )
-
-    # Verify the check at line 1793 would trigger
-    with caplog.at_level(logging.WARNING):
-        # Directly test the condition from the code (line 1792-1797)
-        if player_result.success and player_result.report.get("_synthetic"):
-            logger = logging.getLogger("guardkit.orchestrator.autobuild")
-            logger.warning(
-                f"[Turn {player_result.turn}] Passing synthetic report to Coach for {player_result.task_id}. "
-                f"Promise matching will fail — falling through to text matching."
-            )
-
-    # Verify warning was logged
-    assert len(caplog.records) > 0
-    warning_messages = [rec.message for rec in caplog.records if rec.levelname == "WARNING"]
-    assert any(
-        "Passing synthetic report to Coach" in msg and "Promise matching will fail" in msg
-        for msg in warning_messages
-    ), f"Expected synthetic report warning, got: {warning_messages}"
 
 
 # ============================================================================
@@ -369,120 +304,6 @@ def test_logging_differences_scaffolding_vs_non_scaffolding(orchestrator, work_s
     feature_warnings = [rec.message for rec in caplog.records if rec.levelname == "WARNING"]
     assert any("git-analysis promises for feature task" in msg for msg in feature_warnings)
     assert not any("Generating file-existence promises" in msg for msg in feature_warnings)
-
-
-# ============================================================================
-# 3. CoachValidator Fast-Fail Tests (TASK-ASF-006)
-# ============================================================================
-
-
-def test_coach_fast_fail_with_promises(coach_validator):
-    """Test CoachValidator.validate_requirements() with synthetic report containing promises."""
-    acceptance_criteria = [
-        "Create src/file1.py",
-        "Create src/file2.py",
-    ]
-
-    # Synthetic report with completion_promises
-    task_work_results = {
-        "_synthetic": True,
-        "completion_promises": [
-            {
-                "criterion_id": "AC-001",
-                "criterion_text": "Create src/file1.py",
-                "status": "complete",
-                "evidence": "File-existence verified: src/file1.py (created)",
-            },
-            {
-                "criterion_id": "AC-002",
-                "criterion_text": "Create src/file2.py",
-                "status": "incomplete",
-                "evidence": "No file-existence evidence for this criterion",
-            },
-        ],
-    }
-
-    task = {
-        "acceptance_criteria": acceptance_criteria,
-    }
-
-    # Mock methods that aren't needed for this test
-    with patch.object(coach_validator, '_match_by_promises', return_value=RequirementsValidation(
-        criteria_total=2,
-        criteria_met=1,
-        all_criteria_met=False,
-        missing=["Create src/file2.py"],
-        criteria_results=[
-            CriterionResult(
-                criterion_id="AC-001",
-                criterion_text="Create src/file1.py",
-                result="approved",
-                status="approved",
-                evidence="File-existence verified: src/file1.py (created)",
-            ),
-            CriterionResult(
-                criterion_id="AC-002",
-                criterion_text="Create src/file2.py",
-                result="rejected",
-                status="rejected",
-                evidence="No file-existence evidence for this criterion",
-            ),
-        ],
-    )) as mock_match_promises:
-        result = coach_validator.validate_requirements(
-            task=task,
-            task_work_results=task_work_results,
-            turn=1,
-        )
-
-        # Verify _match_by_promises was called (promise-based matching)
-        mock_match_promises.assert_called_once()
-
-        # Verify result
-        assert result.criteria_total == 2
-        assert result.criteria_met == 1
-        assert result.all_criteria_met is False
-
-
-def test_coach_fast_fail_without_promises(coach_validator, caplog):
-    """Test CoachValidator.validate_requirements() with synthetic report without promises."""
-    acceptance_criteria = [
-        "Implement authentication logic",
-        "Add error handling",
-    ]
-
-    # Synthetic report WITHOUT completion_promises
-    task_work_results = {
-        "_synthetic": True,
-        "task_id": "TASK-TEST-001",
-    }
-
-    task = {
-        "acceptance_criteria": acceptance_criteria,
-    }
-
-    with caplog.at_level(logging.WARNING):
-        result = coach_validator.validate_requirements(
-            task=task,
-            task_work_results=task_work_results,
-            turn=1,
-        )
-
-    # Verify all criteria are unmet
-    assert result.criteria_total == 2
-    assert result.criteria_met == 0
-    assert result.all_criteria_met is False
-    assert len(result.missing) == 2
-
-    # Verify all criteria results are rejected
-    for criterion_result in result.criteria_results:
-        assert criterion_result.result == "rejected"
-        assert criterion_result.status == "rejected"
-        assert "Synthetic report — no file-existence promises available" in criterion_result.evidence
-
-    # Verify warning was logged
-    warning_messages = [rec.message for rec in caplog.records if rec.levelname == "WARNING"]
-    assert any("Synthetic report has no completion_promises" in msg for msg in warning_messages)
 
 
 # ============================================================================
@@ -811,381 +632,14 @@ def test_git_analysis_logging_differs_from_scaffolding(
     assert not any("file-existence promises" in m for m in warnings)
 
 
-# ============================================================================
-# 6. TASK-ACR-004: CoachValidator partial status handling
-# ============================================================================
+class TestSyntheticCoachFeedback:
+    """``_emit_synthetic_coach_feedback``: the sibling-repository send-back.
 
-
-def test_coach_validator_treats_partial_as_verified(coach_validator):
-    """Test CoachValidator._match_by_promises treats status=partial as verified."""
-    acceptance_criteria = ["Implement payment processing"]
-
-    task_work_results = {
-        "_synthetic": True,
-        "completion_promises": [
-            {
-                "criterion_id": "AC-001",
-                "criterion_text": "Implement payment processing",
-                "status": "partial",
-                "evidence": "Git-analysis detected: Files: src/payment.py (created)",
-                "evidence_type": "git_analysis",
-            },
-        ],
-    }
-
-    task = {"acceptance_criteria": acceptance_criteria}
-
-    with patch.object(
-        coach_validator,
-        "_match_by_promises",
-        wraps=coach_validator._match_by_promises,
-    ):
-        result = coach_validator.validate_requirements(
-            task=task,
-            task_work_results=task_work_results,
-            turn=1,
-        )
-
-    # Partial status still counts as met — and, B9 Lane C (2026-09-19), it is
-    # recorded as the Player's claim, not as a Coach verdict.
-    assert result.criteria_met == 1
-    assert result.all_criteria_met is True
-    assert result.criteria_results[0].result == "claimed"
-    assert "[Partial confidence" in result.criteria_results[0].evidence
-    assert "git_analysis" in result.criteria_results[0].evidence
-
-
-def test_coach_validator_mixed_partial_and_incomplete(coach_validator):
-    """Test CoachValidator with mix of partial and incomplete promises."""
-    acceptance_criteria = [
-        "Implement payment processing",
-        "Add database migration",
-    ]
-
-    task_work_results = {
-        "_synthetic": True,
-        "completion_promises": [
-            {
-                "criterion_id": "AC-001",
-                "criterion_text": "Implement payment processing",
-                "status": "partial",
-                "evidence": "Git-analysis detected: Files: src/payment.py (created)",
-                "evidence_type": "git_analysis",
-            },
-            {
-                "criterion_id": "AC-002",
-                "criterion_text": "Add database migration",
-                "status": "incomplete",
-                "evidence": "No git-analysis evidence for this criterion",
-                "evidence_type": "git_analysis",
-            },
-        ],
-    }
-
-    task = {"acceptance_criteria": acceptance_criteria}
-
-    result = coach_validator.validate_requirements(
-        task=task,
-        task_work_results=task_work_results,
-        turn=1,
-    )
-
-    # One partial (verified), one incomplete (rejected)
-    assert result.criteria_met == 1
-    assert result.criteria_total == 2
-    assert result.all_criteria_met is False
-    assert len(result.missing) == 1
-    assert "Add database migration" in result.missing
-
-
-# ============================================================================
-# 7. TASK-FIX-ASPF-006: Synthetic Path Hybrid Fallback Tests
-# ============================================================================
-
-
-def test_synthetic_hybrid_fallback_upgrades_unmatched_criteria(coach_validator):
-    """Synthetic report with promises + requirements_addressed: unmatched criteria
-    recovered via hybrid text matching fallback.
-
-    The hybrid fallback only upgrades criteria that have NO promise at all
-    (evidence contains 'No completion promise'). Criteria with explicit
-    'incomplete' promises are preserved as-is (conservative behavior)."""
-    acceptance_criteria = [
-        "Create src/file1.py",
-        "Implement authentication logic for user sessions",
-    ]
-
-    # Only AC-001 has a promise; AC-002 has no promise (Player wrote fewer
-    # promises than criteria, e.g. SDK turn exhaustion).
-    task_work_results = {
-        "_synthetic": True,
-        "completion_promises": [
-            {
-                "criterion_id": "AC-001",
-                "criterion_text": "Create src/file1.py",
-                "status": "complete",
-                "evidence": "File-existence verified: src/file1.py (created)",
-            },
-        ],
-        # requirements_addressed populated by infer_requirements_from_files
-        "requirements_addressed": [
-            "Implement authentication logic for user sessions",
-        ],
-    }
-
-    task = {"acceptance_criteria": acceptance_criteria}
-
-    result = coach_validator.validate_requirements(
-        task=task,
-        task_work_results=task_work_results,
-        turn=1,
-    )
-
-    # Both criteria should now be met (AC-001 via promises, AC-002 via hybrid)
-    assert result.criteria_met == 2
-    assert result.all_criteria_met is True
-
-
-def test_synthetic_no_promises_with_requirements_uses_text_matching(
-    coach_validator, caplog
-):
-    """Synthetic report with no promises but populated requirements_addressed
-    uses _match_by_text() instead of _build_all_unmet()."""
-    acceptance_criteria = [
-        "Implement authentication logic for user sessions",
-        "Add error handling for edge cases",
-    ]
-
-    task_work_results = {
-        "_synthetic": True,
-        # No completion_promises
-        "requirements_addressed": [
-            "Implement authentication logic for user sessions",
-            "Add error handling for edge cases",
-        ],
-    }
-
-    task = {"acceptance_criteria": acceptance_criteria}
-
-    with caplog.at_level(logging.INFO):
-        result = coach_validator.validate_requirements(
-            task=task,
-            task_work_results=task_work_results,
-            turn=1,
-        )
-
-    # Both criteria should be met via text matching
-    assert result.criteria_met == 2
-    assert result.all_criteria_met is True
-
-    # Verify text matching path was taken
-    info_messages = [r.message for r in caplog.records if r.levelname == "INFO"]
-    assert any(
-        "requirements_addressed" in msg and "text matching" in msg
-        for msg in info_messages
-    )
-
-
-def test_synthetic_hybrid_fallback_preserves_promise_verified(coach_validator):
-    """Promise-verified criteria are not overridden by text matching results."""
-    acceptance_criteria = [
-        "Create src/auth.py for authentication",
-    ]
-
-    task_work_results = {
-        "_synthetic": True,
-        "completion_promises": [
-            {
-                "criterion_id": "AC-001",
-                "criterion_text": "Create src/auth.py for authentication",
-                "status": "complete",
-                "evidence": "File-existence verified: src/auth.py (created)",
-            },
-        ],
-        "requirements_addressed": [
-            "Create src/auth.py for authentication",
-        ],
-    }
-
-    task = {"acceptance_criteria": acceptance_criteria}
-
-    result = coach_validator.validate_requirements(
-        task=task,
-        task_work_results=task_work_results,
-        turn=1,
-    )
-
-    assert result.criteria_met == 1
-    assert result.all_criteria_met is True
-    # Evidence should be from promise matching, not text matching
-    assert "File-existence" in result.criteria_results[0].evidence
-
-
-def test_synthetic_hybrid_fallback_with_empty_requirements(
-    coach_validator, caplog
-):
-    """Empty requirements_addressed on synthetic path still falls through
-    to _build_all_unmet()."""
-    acceptance_criteria = [
-        "Implement authentication logic",
-        "Add error handling",
-    ]
-
-    task_work_results = {
-        "_synthetic": True,
-        # No promises AND empty requirements_addressed
-        "requirements_addressed": [],
-    }
-
-    task = {"acceptance_criteria": acceptance_criteria}
-
-    with caplog.at_level(logging.WARNING):
-        result = coach_validator.validate_requirements(
-            task=task,
-            task_work_results=task_work_results,
-            turn=1,
-        )
-
-    # All criteria unmet (same as before TASK-FIX-ASPF-006)
-    assert result.criteria_met == 0
-    assert result.all_criteria_met is False
-    assert len(result.missing) == 2
-
-    # Verify the warning about no promises was logged
-    warning_messages = [r.message for r in caplog.records if r.levelname == "WARNING"]
-    assert any("no completion_promises" in msg for msg in warning_messages)
-
-
-# ============================================================================
-# Section: Cumulative Requirements Addressed (TASK-VRF-005)
-# ============================================================================
-
-
-class TestCumulativeRequirementsAddressed:
-    """Tests for cumulative requirements_addressed high-water-mark (TASK-VRF-005).
-
-    Verifies that once a criterion is inferred as addressed in any turn,
-    it remains addressed in subsequent turns even if the current turn's
-    inference doesn't find it.
+    Used when a declared sibling repository's tests ran and failed; the
+    reviewer is not run and the turn goes back with the failure.
     """
 
-    def test_cumulative_set_initialized_empty(self, orchestrator):
-        """Orchestrator starts with empty cumulative requirements set."""
-        assert orchestrator._cumulative_requirements_addressed == set()
-
-    def test_cumulative_set_accumulates_across_reports(self, orchestrator):
-        """Cumulative set grows as new requirements are addressed."""
-        # Simulate turn 1: criteria A addressed
-        report1 = {
-            "requirements_addressed": ["Criterion A"],
-            "_synthetic": True,
-        }
-        player_result1 = Mock(spec=AgentInvocationResult)
-        player_result1.success = True
-        player_result1.report = report1
-
-        # Simulate the accumulation logic (mirrors _execute_turn)
-        current = report1.get("requirements_addressed", [])
-        orchestrator._cumulative_requirements_addressed.update(current)
-        report1["requirements_addressed"] = list(
-            orchestrator._cumulative_requirements_addressed
-        )
-
-        assert "Criterion A" in report1["requirements_addressed"]
-
-        # Simulate turn 2: criteria B addressed, A not found this turn
-        report2 = {
-            "requirements_addressed": ["Criterion B"],
-            "_synthetic": True,
-        }
-        current2 = report2.get("requirements_addressed", [])
-        orchestrator._cumulative_requirements_addressed.update(current2)
-        report2["requirements_addressed"] = list(
-            orchestrator._cumulative_requirements_addressed
-        )
-
-        # Both A and B should be present (high water mark)
-        assert "Criterion A" in report2["requirements_addressed"]
-        assert "Criterion B" in report2["requirements_addressed"]
-        assert len(report2["requirements_addressed"]) == 2
-
-    def test_cumulative_set_prevents_regression(self, orchestrator):
-        """Criteria verified in turn N remain verified in turn N+1."""
-        # Turn 1: 3 criteria addressed
-        criteria_turn1 = ["Criterion A", "Criterion B", "Criterion C"]
-        orchestrator._cumulative_requirements_addressed.update(criteria_turn1)
-
-        # Turn 2: only 1 criterion re-detected (regression in inference)
-        criteria_turn2 = ["Criterion B"]
-        orchestrator._cumulative_requirements_addressed.update(criteria_turn2)
-
-        # Report should still show all 3 (no regression)
-        report = {"requirements_addressed": criteria_turn2}
-        report["requirements_addressed"] = list(
-            orchestrator._cumulative_requirements_addressed
-        )
-        assert len(report["requirements_addressed"]) == 3
-        assert set(report["requirements_addressed"]) == {
-            "Criterion A", "Criterion B", "Criterion C"
-        }
-
-    def test_cumulative_set_handles_empty_requirements(self, orchestrator):
-        """Empty requirements_addressed in a turn doesn't clear cumulative set."""
-        # Seed with prior criteria
-        orchestrator._cumulative_requirements_addressed.update(
-            ["Criterion A", "Criterion B"]
-        )
-
-        # Turn with empty requirements (e.g., inference failed)
-        report = {"requirements_addressed": []}
-        current = report.get("requirements_addressed", [])
-        orchestrator._cumulative_requirements_addressed.update(current)
-        if orchestrator._cumulative_requirements_addressed:
-            report["requirements_addressed"] = list(
-                orchestrator._cumulative_requirements_addressed
-            )
-
-        assert len(report["requirements_addressed"]) == 2
-
-    def test_cumulative_set_skipped_for_failed_player(self, orchestrator):
-        """Cumulative accumulation only happens for successful player results."""
-        # Simulate failed player — report should not be merged
-        report = {"requirements_addressed": ["Should Not Accumulate"]}
-        player_result = Mock(spec=AgentInvocationResult)
-        player_result.success = False
-        player_result.report = report
-
-        # The _execute_turn logic guards on player_result.success
-        if player_result.success and player_result.report:
-            orchestrator._cumulative_requirements_addressed.update(
-                report.get("requirements_addressed", [])
-            )
-
-        assert len(orchestrator._cumulative_requirements_addressed) == 0
-
-
-# ============================================================================
-# close-the-loop lane, 2026-08-14 — CURE 2
-# The synthetic report tells the truth about what was measured.
-# ============================================================================
-
-
-class TestSyntheticReportRequirementsThreading:
-    """``_emit_synthetic_coach_feedback`` reports the caller's measurement.
-
-    Round-3 evidence: the direct-mode evidence gate blocked turns while
-    HOLDING a ``RequirementsValidation`` showing ``criteria_met=4`` of 6, yet
-    the synthetic report it emitted wrote ``validation_results.requirements:
-    null``. ``_count_criteria_passed`` therefore returned 0 structurally, and
-    ``_is_feedback_stalled`` took its "true zero progress — unrecoverable"
-    branch at 3 turns instead of the extended threshold. The count was a lie
-    about a measurement that had already been made.
-
-    The six non-direct-mode call sites keep today's report byte-for-byte:
-    both new parameters are keyword-only and default to the old values.
-    """
-
-    _RATIONALE = "gate blocked the turn"
+    _RATIONALE = "sibling suite failed"
 
     def _emit(self, orchestrator, tmp_path, **kwargs):
         worktree = Mock()
@@ -1199,173 +653,38 @@ class TestSyntheticReportRequirementsThreading:
             **kwargs,
         )
 
-    @staticmethod
-    def _requirements(met=4, total=6):
-        """A RequirementsValidation shaped like the r3 gate's own handle."""
-        results = []
-        for i in range(1, total + 1):
-            verified = i <= met
-            results.append(
-                CriterionResult(
-                    criterion_id=f"AC-{i:03d}",
-                    criterion_text=f"criterion {i}",
-                    result="verified" if verified else "rejected",
-                    status="verified" if verified else "rejected",
-                    evidence="promise" if verified else "No completion promise",
-                )
-            )
-        return RequirementsValidation(
-            criteria_total=total,
-            criteria_met=met,
-            all_criteria_met=met == total,
-            missing=[f"criterion {i}" for i in range(met + 1, total + 1)],
-            criteria_results=results,
-        )
-
-    # ---- byte-preservation of the six non-direct-mode call sites ----------
-
-    def test_default_report_matches_the_pre_change_golden(
-        self, orchestrator, tmp_path
-    ):
-        """Full-dict equality against the report shape emitted before CURE 2.
-
-        This is the byte-preservation sentinel for the six emitter call
-        sites that do NOT pass the new parameters (``:7473``, ``:7681``,
-        ``:7713``, ``:7731``, ``:7793``, and the ``_bdd_authoring_sweep_gate``
-        site). Asserted on the WHOLE dict, not selected keys.
-        """
+    def test_default_report_shape(self, orchestrator, tmp_path):
+        """The whole report, and the same report written to coach_turn_N.json."""
         result = self._emit(orchestrator, tmp_path)
 
-        assert result.report == {
+        expected = {
             "task_id": "TASK-CTL-001",
             "turn": 2,
             "decision": "feedback",
-            "validation_results": {
-                "quality_gates": None,
-                "independent_tests": None,
-                "requirements": None,
-            },
-            "criteria_verification": [],
-            "acceptance_criteria_verification": {"criteria_results": []},
             "issues": [
                 {
                     "severity": "must_fix",
-                    "category": "coach_primary_exception",
+                    "category": "evidence_repo_tests_failed",
                     "description": self._RATIONALE,
                 }
             ],
             "rationale": self._RATIONALE,
-            "context_used": None,
-            "approved_without_independent_tests": False,
-            "is_configuration_error": False,
-            "environment_conditional_approval": False,
-            "honesty_verification": None,
             "coach_primary_synthetic_feedback": True,
-            "evidence_repo_signal_absent": False,
         }
+        assert result.report == expected
+        written = list(tmp_path.rglob("coach_turn_2.json"))
+        assert len(written) == 1
+        assert json.loads(written[0].read_text()) == expected
 
-    def test_evidence_repo_signal_flag_still_threads(
-        self, orchestrator, tmp_path
-    ):
-        """The pre-existing keyword-only flag is unaffected by the new ones."""
-        result = self._emit(
-            orchestrator, tmp_path, evidence_repo_signal_absent=True
-        )
-        assert result.report["evidence_repo_signal_absent"] is True
-        assert result.report["validation_results"]["requirements"] is None
-
-    # ---- the honest report -------------------------------------------------
-
-    def test_threaded_requirements_reach_the_report(
-        self, orchestrator, tmp_path
-    ):
-        result = self._emit(
-            orchestrator, tmp_path, requirements=self._requirements()
-        )
-        req = result.report["validation_results"]["requirements"]
-
-        assert req == {
-            "criteria_total": 6,
-            "criteria_met": 4,
-            "all_criteria_met": False,
-            "missing": ["criterion 5", "criterion 6"],
-        }
-        results = result.report["acceptance_criteria_verification"][
-            "criteria_results"
-        ]
-        assert len(results) == 6
-        assert sum(1 for r in results if r["status"] == "verified") == 4
-
-    def test_decision_is_still_feedback_no_approval_path_created(
-        self, orchestrator, tmp_path
-    ):
-        """Honesty must not become leniency: nothing here can approve."""
-        result = self._emit(
-            orchestrator,
-            tmp_path,
-            requirements=self._requirements(met=6, total=6),
-            category="direct_mode_gate",
-        )
+    def test_decision_is_feedback(self, orchestrator, tmp_path):
+        result = self._emit(orchestrator, tmp_path, category="other")
         assert result.report["decision"] == "feedback"
         assert result.report["issues"][0]["severity"] == "must_fix"
 
     def test_category_override_names_the_real_blocker(
         self, orchestrator, tmp_path
     ):
-        """A gate rejection must not be labelled a Coach exception.
-
-        On the 9 failing r3 legs the LLM Coach was never invoked (~1s coach
-        latency, ``coach_primary_synthetic_feedback: true``), yet the issue
-        category read ``coach_primary_exception``.
-        """
         result = self._emit(
             orchestrator, tmp_path, category="direct_mode_gate"
         )
         assert result.report["issues"][0]["category"] == "direct_mode_gate"
-
-    # ---- the consumer that motivated the change ---------------------------
-
-    def test_count_criteria_passed_reads_four_not_zero(
-        self, orchestrator, tmp_path
-    ):
-        result = self._emit(
-            orchestrator, tmp_path, requirements=self._requirements()
-        )
-        turn_record = Mock()
-        turn_record.coach_result = result
-
-        assert orchestrator._count_criteria_passed(turn_record) == 4
-
-    def test_count_criteria_passed_still_zero_on_the_default_report(
-        self, orchestrator, tmp_path
-    ):
-        """The old shape keeps its old (structurally zero) reading."""
-        result = self._emit(orchestrator, tmp_path)
-        turn_record = Mock()
-        turn_record.coach_result = result
-
-        assert orchestrator._count_criteria_passed(turn_record) == 0
-
-    def test_count_falls_back_to_criteria_results_when_met_absent(
-        self, orchestrator
-    ):
-        """The legacy fallback path is exercised, not bypassed.
-
-        Proves ``_count_criteria_passed`` is untouched: with a requirements
-        block present but ``criteria_met`` missing, it must still count
-        ``acceptance_criteria_verification`` entries.
-        """
-        turn_record = Mock()
-        turn_record.coach_result = Mock()
-        turn_record.coach_result.report = {
-            "validation_results": {"requirements": {"criteria_total": 6}},
-            "acceptance_criteria_verification": {
-                "criteria_results": [
-                    {"criterion_id": "AC-001", "status": "verified"},
-                    {"criterion_id": "AC-002", "status": "verified"},
-                    {"criterion_id": "AC-003", "status": "rejected"},
-                ]
-            },
-        }
-
-        assert orchestrator._count_criteria_passed(turn_record) == 2

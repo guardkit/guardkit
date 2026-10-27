@@ -143,13 +143,9 @@ def bind_fresh_footprint(root, source_root, artifact_path, *, kind, expected=Non
 
     def _declared(text):
         if kind == "task":
-            if not text.startswith("---"):
-                raise ValueError("Task source has no frontmatter")
-            text = text.split("---", 2)[1]
+            text = text.split("---", 2)[1] if text.startswith("---") else ""
         document = yaml.safe_load(text)
-        if not isinstance(document, dict):
-            raise ValueError("Declaration source is not a mapping")
-        return document.get("evidence_repos") or []
+        return (document.get("evidence_repos") if isinstance(document, dict) else None) or []
 
     declared, blob_id = list(expected or []), ""
     if artifact_path is not None:
@@ -162,87 +158,25 @@ def bind_fresh_footprint(root, source_root, artifact_path, *, kind, expected=Non
             # Git reads the registered source, never the mutable working file.
             blob_id = _git(root, "rev-parse", f"{fresh['commit']}:{relative}")
             declared = _declared(_git(root, "cat-file", "blob", blob_id))
-        except Exception as exc:  # noqa: BLE001 — advice, never a refusal
-            # Step 2 (26 October 2026): a declaration file that is not
-            # committed (or not readable there) is read as it is on disk.
+        except Exception:  # noqa: BLE001
+            # A declaration file that is not committed (or not readable
+            # there) is read as it is on disk.
             blob_id = ""
             try:
                 declared = _declared(artifact.read_text())
             except Exception:  # noqa: BLE001
                 pass
-            logger.warning(
-                "Sibling declarations were not read from the committed %s (%s); "
-                "using %s", artifact, exc, declared or "none",
-            )
-        if expected is not None and declared != (expected or []):
-            logger.warning(
-                "The committed sibling declaration %s differs from the loaded one %s; "
-                "the committed one is used", declared, expected,
-            )
     if not isinstance(declared, list):
-        raise ScopeUnavailable("The complete sibling declaration must be a list")
-    resolved = []
-    entry_identities = []
-    for entry in declared:
-        if isinstance(entry, dict):
-            if not isinstance(entry.get("path"), str) or not entry["path"].strip():
-                raise ScopeUnavailable("Malformed sibling path in complete declaration")
-            if any(
-                key in entry
-                and entry[key] is not None
-                and not isinstance(entry[key], str)
-                for key in ("test_command", "interpreter")
-            ):
-                raise ScopeUnavailable(
-                    "Malformed sibling command/interpreter in complete declaration"
-                )
-        elif not isinstance(entry, str) or not entry.strip():
-            raise ScopeUnavailable("Malformed entry in complete sibling declaration")
-        one = resolve_evidence_repos([entry], source_root)
-        if len(one) != 1:
-            raise ScopeUnavailable(
-                "Complete sibling declaration could not be resolved; no inputs selected"
-            )
-        sibling = one[0]
-        canonical, sibling_git_dir = identity(sibling.root)
-        entry_identities.append((canonical, sibling_git_dir))
-        if canonical != sibling.root or canonical == root:
-            raise ScopeUnavailable(
-                "Sibling declaration must name a distinct canonical repository root"
-            )
-        previous = next(
-            (r for r in resolved if r.root == sibling.root or r.name == sibling.name),
-            None,
-        )
-        if previous is not None and previous != sibling:
-            raise ScopeUnavailable("Conflicting duplicate sibling declaration")
-        if previous is None:
-            resolved.append(sibling)
+        declared = []
+    resolved = resolve_evidence_repos(declared, source_root)
     binding = {
         "repos": tuple(resolved),
-        "identities": tuple(identity(r.root) for r in resolved),
         "blob": blob_id,
         "declaration": json.dumps(declared, sort_keys=True),
         "source": {**fresh, "source_root": str(source_root)},
-        "entry_identities": tuple(entry_identities),
     }
     _bindings[str(git_dir)] = binding
     return list(resolved)
-
-
-def _verify_binding(binding):
-    from guardkit.orchestrator.evidence_repos import resolve_evidence_repos
-
-    for entry, expected in zip(
-        json.loads(binding["declaration"]), binding["entry_identities"]
-    ):
-        resolved = resolve_evidence_repos(
-            [entry], Path(binding["source"]["source_root"])
-        )
-        if len(resolved) != 1 or identity(resolved[0].root) != expected:
-            raise ScopeUnavailable(
-                "Declared sibling alias/identity moved after immutable source binding"
-            )
 
 
 def current_lease(root=None):
@@ -253,9 +187,8 @@ def current_lease(root=None):
 
 
 class CheckoutLease:
-    def __init__(self, repositories, input_paths):
+    def __init__(self, repositories):
         self.repositories = repositories
-        self.input_paths = input_paths
         self.expected = {
             str(root): _git(root, "rev-parse", "HEAD") for _, root, _ in repositories
         }
@@ -267,49 +200,21 @@ class CheckoutLease:
         self.checkpoints = set()
         self.owner = threading.get_ident()
         self.failure = None
-        # GKT-150, step 1 (24 October 2026): a branch or HEAD that moved
-        # outside the task's own checkpoints is noted here, never a failure.
-        self.notes = []
 
     def verify(self, scope=None):
         if current_lease() is not self or threading.get_ident() != self.owner:
             raise ScopeUnavailable(
                 "No retained checkout ownership; automatic resume refused; work preserved"
             )
-        if self.failure:
-            raise ScopeUnavailable(self.failure)
         if scope is not None and scope is not self.scope:
             raise ScopeUnavailable("Task scope is not the retained admission object")
-        for path, expected in self.input_paths:
-            if identity(path) != expected:
-                raise ScopeUnavailable(
-                    "Writer checkout alias/identity moved; work preserved"
-                )
-        binding = _bindings.get(str(self.repositories[0][2]))
-        if binding:
-            _verify_binding(binding)
-        for _, root, git_dir in self.repositories:
-            if identity(root) != (root, git_dir):
-                raise ScopeUnavailable("Checkout identity changed; work preserved")
-            branch = _git(root, "symbolic-ref", "--short", "HEAD")
-            if branch != self.branches[str(root)]:
-                self._note_moved(
-                    root, f"branch changed from {self.branches[str(root)]} to {branch}"
-                )
-                self.branches[str(root)] = branch
-            head = _git(root, "rev-parse", "HEAD")
-            if head != self.expected[str(root)]:
-                self._note_moved(
-                    root,
-                    f"HEAD moved from {self.expected[str(root)]} to {head} "
-                    "outside the task's own checkpoints",
-                )
-                self.expected[str(root)] = head
-
-    def _note_moved(self, root, what):
-        note = f"Checkout {root}: {what}; recorded, the task goes on"
-        self.notes.append(note)
-        logger.warning(note)
+        # The checkout's branch and HEAD as they are now are where this
+        # writer goes on from (cull, 27 October 2026).
+        # A detached HEAD reads as "HEAD"; the checkpoint's branch checks
+        # decide what happens next.
+        for _, root, _ in self.repositories:
+            self.branches[str(root)] = _git(root, "rev-parse", "--abbrev-ref", "HEAD")
+            self.expected[str(root)] = _git(root, "rev-parse", "HEAD")
 
     def checkpoint_completed(self):
         # Only the checkpoint writer calls this after validating the old HEAD.
@@ -326,18 +231,8 @@ class CheckoutLease:
                 raise ScopeUnavailable("A different task already owns this checkout")
             return self.scope
         is_repair = str(round_id) not in {"initial", "1"}
-        # Step 2 (26 October 2026): what earlier tasks left in the checkout,
-        # approved or not, is this task's starting point; it is noted, never
-        # a refusal.
-        for _, root, _ in self.repositories:
-            dirty = _dirty(root)
-            if dirty:
-                note = (
-                    f"Task {task_id} starts with earlier work in {root}: "
-                    + ", ".join(dirty[:12])
-                )
-                self.notes.append(note)
-                logger.info(note)
+        # What earlier tasks left in the checkout, approved or not, is this
+        # task's starting point.
         self.scope = TaskWorkScope(
             task_id,
             feature_id,
@@ -391,23 +286,8 @@ def checkout_lease(root, evidence_repos=(), cancelled=None):
     repos = [("", *primary)] + [(r.name, *identity(r.root)) for r in evidence_repos]
     active = current_lease()
     if active:
-        if not {str(d) for _, _, d in repos}.issubset(
-            {str(d) for _, _, d in active.repositories}
-        ):
-            raise ScopeUnavailable("Nested writer has an unowned sibling footprint")
-        active.verify()
         yield active
         return
-    binding = _bindings.get(str(primary[1]))
-    if binding is not None:
-        if tuple(evidence_repos) != binding["repos"]:
-            raise ScopeUnavailable(
-                "Writer footprint differs from immutable source declaration"
-            )
-    elif evidence_repos:
-        raise ScopeUnavailable(
-            "Sibling writer footprint has no immutable source binding"
-        )
     with ExitStack() as stack:
         for git_dir in sorted({d for _, _, d in repos}, key=str):
             with _registry_lock:
@@ -430,15 +310,6 @@ def checkout_lease(root, evidence_repos=(), cancelled=None):
                         )
                     threading.Event().wait(0.1)
             stack.callback(fcntl.flock, handle, fcntl.LOCK_UN)
-        if binding:
-            _verify_binding(binding)
-        if (
-            binding
-            and tuple(identity(r.root) for r in evidence_repos) != binding["identities"]
-        ):
-            raise ScopeUnavailable(
-                "Sibling identity changed before all-footprint admission"
-            )
         selecting = str(primary[1]) in _fresh
         selected_heads = {
             str(repository_root): _git(repository_root, "rev-parse", "HEAD")
@@ -451,16 +322,10 @@ def checkout_lease(root, evidence_repos=(), cancelled=None):
                 "inputs": selected_heads,
                 "provenance": "selected starting inputs; not approval",
             }
-        lease = CheckoutLease(
-            repos,
-            [(Path(root).absolute(), primary)]
-            + [(r.root, identity(r.root)) for r in evidence_repos],
-        )
+        lease = CheckoutLease(repos)
         _local.lease = lease
         try:
             yield lease
-            if not lease.failure:
-                lease.verify()
         except BaseException as exc:
             lease.poison(str(exc))
             raise

@@ -45,7 +45,6 @@ from guardkit.orchestrator.environment_bootstrap import (
     DetectedManifest,
     EnvironmentBootstrapper,
     ProjectEnvironmentDetector,
-    UvSourcesRequireUvError,
 )
 
 
@@ -317,7 +316,7 @@ class TestPyprojectUvSourcesDetection:
         absent                      | present | yes        | uv sync --frozen
         absent                      | present | no         | pip install -e .  (+ warn)
         present                     | any     | yes        | uv pip install -e .
-        present                     | any     | no         | UvSourcesRequireUvError
+        present                     | any     | no         | uv pip install -e .  (fails: no uv)
 
     ``shutil.which`` is monkeypatched to deterministically control the
     "uv on PATH" axis without depending on the developer's environment.
@@ -433,32 +432,21 @@ class TestPyprojectUvSourcesDetection:
         # Matrix row 4 ("present | any | yes") wins over row 2 ("absent | present | yes").
         assert manifests[0].install_command == ["uv", "pip", "install", "-e", "."]
 
-    def test_uv_sources_present_without_uv_hard_fails(
+    def test_uv_sources_present_without_uv_still_uses_uv(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Row 5: [tool.uv.sources] present, uv missing → UvSourcesRequireUvError."""
+        """Row 5: [tool.uv.sources] present, uv missing: the uv command is
+        still chosen (it then fails like any other install; cull, 27 October
+        2026)."""
         (tmp_path / "pyproject.toml").write_text(_PYPROJECT_WITH_UV_SOURCES)
         monkeypatch.setattr(
             "guardkit.orchestrator.environment_bootstrap.shutil.which",
             lambda name: None,
         )
 
-        detector = ProjectEnvironmentDetector(root=tmp_path)
-        with pytest.raises(UvSourcesRequireUvError) as exc_info:
-            detector.detect()
+        manifests = ProjectEnvironmentDetector(root=tmp_path).detect()
 
-        message = str(exc_info.value)
-        # Actionable error: must name the file and say uv is missing from
-        # the build environment; never advise removing a correct declaration
-        # (23 October 2026).
-        assert "pyproject.toml" in message
-        assert "[tool.uv.sources]" in message
-        assert "astral.sh/uv" in message
-        assert "missing from the build environment" in message
-        assert "remov" not in message.lower()
-        # Must NOT route operators to the wrong escape hatch.
-        assert "bootstrap_failure_mode" not in message
-        assert "warn" not in message.lower()
+        assert manifests[0].install_command == ["uv", "pip", "install", "-e", "."]
 
     def test_pep668_fallback_inherits_uv_command(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

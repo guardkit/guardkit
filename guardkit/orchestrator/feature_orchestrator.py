@@ -34,7 +34,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional, Sequence, Set, Tuple
+from typing import Any, Dict, List, Literal, Optional, Set, Tuple
 
 from rich.console import Console
 from rich.panel import Panel
@@ -42,9 +42,6 @@ from rich.table import Table
 
 from guardkit.orchestrator.autobuild import AutoBuildOrchestrator, OrchestrationResult
 from guardkit.orchestrator.agent_invoker import DEFAULT_SDK_TIMEOUT
-from guardkit.orchestrator.permissive_double_advisory import (
-    split_findings as split_permissive_double_findings,
-)
 from guardkit.orchestrator.feature_loader import (
     Feature,
     FeatureLoader,
@@ -62,41 +59,19 @@ from guardkit.orchestrator.smoke_gates import (
     run_smoke_gate,
     should_fire_for_wave,
 )
-from guardkit.orchestrator.boot_smoke_gate import (
-    BLOCKING_ENV_VAR as BOOT_SMOKE_BLOCKING_ENV_VAR,
-    BootSmokeGateOutcome,
-    failure_summary as boot_smoke_failure_summary,
-    render_report as render_boot_smoke_report,
-    run_final_wave_boot_smoke,
-)
 from guardkit.orchestrator.stale_test_attribution import (
     extract_failing_test_lines,
     smoke_gate_header,
     stale_test_notes,
 )
-from guardkit.orchestrator.authored_files import (
-    NOT_CHECKED_REASON,
-    STATUS_NO_KEY,
-    STATUS_UNKNOWN,
-    read_authored_files,
-)
-from guardkit.orchestrator.twin_coverage import (
-    check_twin_coverage,
-    is_twin_coverage_enforced,
-    render_twin_coverage_lines,
-    twin_coverage_summary,
-    write_twin_coverage_receipt,
-)
 from guardkit.orchestrator.repair_round import RepairRound, begin_repair_round
 from guardkit.orchestrator.feature_check import (
-    claimed_machine_criteria,
     FeatureCheckAttempt,
     FeatureCheckOutcome,
     FeatureCheckRepair,
     stopped_because_line,
     build_feature_check_feedback,
     candidate_sha as feature_check_candidate_sha,
-    completion_verdict as feature_check_completion_verdict,
     feature_request_words,
     load_feature_check_declaration,
     merge_not_checked,
@@ -105,39 +80,23 @@ from guardkit.orchestrator.feature_check import (
     run_feature_check_command,
     scenario_titles as feature_scenario_titles,
     tail_lines as feature_check_tail,
-    update_feature_check_receipt,
     write_feature_check_receipt,
     OUTCOME_COULD_NOT_RUN as FEATURE_CHECK_COULD_NOT_RUN,
     OUTCOME_FAILED as FEATURE_CHECK_FAILED,
     OUTCOME_PASSED as FEATURE_CHECK_PASSED,
     FAILURE_KIND_COULD_NOT_START,
     FAILURE_KIND_EXIT_NONZERO,
-    FAILURE_KIND_MISSING_TWINS,
     FAILURE_KIND_TIMED_OUT,
     PUBLIC_LABEL as FEATURE_CHECK_LABEL,
     output_size as feature_check_output_size,
 )
-
-#: What the central guard says about an example it reports without blocking:
-#: the project marked it for a check file of its own and no such file is in the
-#: built tree, so nothing looked at it. No stack word appears here on purpose.
 from guardkit.orchestrator.code_checks import (
-    STATE_DOES_NOT_APPLY as CODE_CHECK_DOES_NOT_APPLY,
-    STATE_FOUND_SOMETHING as CODE_CHECK_FOUND_SOMETHING,
-    STATE_KIND_NOT_SUPPORTED as CODE_CHECK_KIND_NOT_SUPPORTED,
-    STATE_NOT_CHECKED as CODE_CHECK_NOT_CHECKED,
-    STATE_RAN_FOUND_NOTHING as CODE_CHECK_RAN_FOUND_NOTHING,
     build_code_checks_summary,
-    group_record as code_check_group_record,
     latest_review_record as code_checks_latest_review,
     summarise_task as summarise_code_checks_task,
     write_code_checks_summary,
 )
 
-GUARD_MISSING_CHECK_FILE_REASON = (
-    "not checked: this example is marked for a check file of its own and no "
-    "such file exists in the built tree"
-)
 from guardkit.orchestrator.baseline import (
     BASELINE_FAILED,
     BASELINE_PASSED,
@@ -168,20 +127,12 @@ from guardkit.orchestrator.feature_validator import (
     validate_feature_environment,
     format_preflight_report,
 )
-from guardkit.orchestrator.preflight import (
-    PreflightTypoError,
-    preflight_validate,
-)
 from guardkit.orchestrator.environment_bootstrap import (
     ProjectEnvironmentDetector,
     EnvironmentBootstrapper,
     BootstrapResult,
-    RequiresPythonMismatch,
-    UvSourcesRequireUvError,
     _create_worktree_uv_sources_symlinks,
     _resolve_uv_sources_symlinks,
-    check_requires_python_precheck,
-    probe_worktree_venv,
 )
 from guardkit.orchestrator.toolchain_declaration import ToolchainDeclarationError
 from guardkit.orchestrator.quality_gates.stack_test_execution import (
@@ -396,16 +347,6 @@ def _declared_probe_measured(
     )
 
 
-# TASK-FIX-DEFD: terminal task statuses that satisfy a dependency edge in
-# ``_dependencies_satisfied``. ``deferred`` is terminal-but-not-failed
-# (TASK-FPTC-003 contract for ``operator_handoff`` skips); dependents may
-# proceed but receive a logger.warning so the operator can cross-check that
-# the deferred predecessor's artefacts are not load-bearing for the
-# dependent's own scope. Single source of truth — do not duplicate the
-# string literals inside the predicate.
-TERMINAL_SATISFIED: frozenset[str] = frozenset({"completed", "deferred"})
-
-
 def _estimate_timeout_factor() -> float:
     """Safety factor applied to a task's own ``estimated_minutes`` when
     deriving the per-task timeout floor (red-baseline retro, L12 item 3).
@@ -461,23 +402,10 @@ class TaskExecutionResult:
     sdk_ceiling_hits: int = 0                                       # TASK-VPR-003
     sdk_total_invocations: int = 0                                  # TASK-VPR-003
     sdk_turns_per_invocation: List[int] = field(default_factory=list)  # TASK-VPR-003
-    # TASK-FIX-7A07: Stall sub-type label(s). Populated only when
-    # final_decision == "unrecoverable_stall". Example values:
-    # - "coach_agent_invocations_stall"
-    # - "coach_agent_invocations_stall + context_pollution_stall_no_checkpoint"
-    # - "coach_feedback_stall"
-    # None for approved / other decisions.
-    decision_subtype: Optional[str] = None
-    # TASK-FIX-7A07: List of every sub-type that co-fired (structured form).
-    decision_subtype_co_fires: List[str] = field(default_factory=list)
     # TASK-FPTC-003: Reason string for tasks short-circuited as deferred (e.g.
     # operator_handoff). Populated only when ``final_decision == "deferred"``;
     # surfaced in the wave-summary banner so the operator knows what to do.
     deferred_reason: Optional[str] = None
-    # 18 October 2026: the early stop's one plain sentence, when a
-    # whole-feature repair round stopped because the plan contradicts the
-    # project's check. None on every other outcome.
-    stopped_because: Optional[str] = None
     error_type: Optional[str] = None
     # Step 1 (24 October 2026): a real test or conformance command (such as
     # lint) is still red for this task, carried from the task runner, which
@@ -539,34 +467,6 @@ class SmokeGatePhaseOutcome:
 
     terminate: bool
     final_wave_result: WaveExecutionResult
-
-
-@dataclass
-class WiringGatePhaseOutcome:
-    """Outcome of the post-wave wiring-gate phase (TASK-AB-WIREGATE01).
-
-    Returned by :meth:`FeatureOrchestrator._run_post_wave_wiring_gate`
-    (mocked-seam-of-authored-service + composition-root ctor-arity). Since
-    step 2 (26 October 2026) the check is advice: it never re-runs the wave,
-    replaces its result or stops the build.
-
-    Attributes
-    ----------
-    findings_unresolved : bool
-        ``True`` when the check found mocked-seam or constructor-arity
-        findings (advice).
-    """
-
-    findings_unresolved: bool = False
-    #: ``True`` when at least one task in the wave has no recorded authored
-    #: file list, so the gate could not analyse the wave (2026-09-21). Never a
-    #: block; it keeps "the gate found nothing" apart from "the gate could not
-    #: look".
-    not_checked: bool = False
-    #: What this gate did, in the five words the end-of-build summary uses
-    #: (2026-09-21). Until today the result was printed and dropped, so the
-    #: summary had nothing to say about the groups. Never read as a verdict.
-    record: Optional[Dict[str, Any]] = None
 
 
 @dataclass
@@ -658,8 +558,8 @@ class FeatureOrchestrator:
     - Single shared worktree per feature (not per task)
     - Reuses AutoBuildOrchestrator for individual task execution
     - Updates feature YAML after each task completes
-    - A failed task never stops later waves or independent tasks; tasks
-      that depend on it are skipped (step 2, 26 October 2026)
+    - A failed task never stops later waves or other tasks, including the
+      tasks that depend on it (cull, 27 October 2026)
 
     Attributes
     ----------
@@ -705,8 +605,6 @@ class FeatureOrchestrator:
         skip_validation: bool = False,
         emitter: Optional[Any] = None,
         task_log_interval: int = 60,
-        honesty_early_abort_threshold: float = 0.3,
-        honesty_early_abort_window: int = 3,
         model: Optional[str] = None,
         coach_model: Optional[str] = None,
     ):
@@ -805,11 +703,6 @@ class FeatureOrchestrator:
         # the F17 verdict-emission reliability gap (HMIG-013, swap Coach to
         # gemma4:26b while Player stays on qwen36-workhorse).
         self.coach_model = coach_model
-        # TASK-FIX-HEAB: rolling-average honesty early-abort settings.
-        # Propagated to per-task AutoBuildOrchestrator so feature.yaml /
-        # CLI overrides flow down to every task in every wave.
-        self.honesty_early_abort_threshold = honesty_early_abort_threshold
-        self.honesty_early_abort_window = honesty_early_abort_window
         # TASK-AB-COACHRUNPARITY01 (arm a): bounded retry budget for the
         # post-wave smoke gate. On a real (non-gate_not_wired) smoke failure
         # the wave is re-entered with the smoke stderr fed back to the Player
@@ -838,11 +731,6 @@ class FeatureOrchestrator:
         # showed the reviewer on the turns it approved, in memory only (20
         # October 2026; repair_round.py). The next re-open carries them.
         self._repair_approvals: Dict[str, Set[str]] = {}
-        # 21 September 2026. What the check after each group of tasks found, or
-        # could not look at. Until today its result was printed and dropped, so
-        # by merge time nobody could tell "found nothing" from "never looked".
-        # Collected here and written into the end-of-build summary.
-        self._group_code_check_records: List[Dict[str, Any]] = []
         self.resume = resume
         self.fresh = fresh
         self.refresh = refresh
@@ -1567,47 +1455,17 @@ class FeatureOrchestrator:
 
         # Extract feature directory from first task's file_path
         # Example: tasks/backlog/feature-build-sdk-coordination/TASK-FBSDK-001.md
-        # -> feature-build-sdk-coordination
-        first_task = feature.tasks[0]
-        if not first_task.file_path:
-            raise FeatureValidationError(
-                f"Invalid task file_path in task {first_task.id}: file_path is empty. "
-                f"Expected format: tasks/backlog/<feature-slug>/TASK-XXX.md. "
-                f"Ensure --feature-slug was passed to generate-feature-yaml."
-            )
-
-        task_file_path = Path(first_task.file_path)
-
-        # Find "tasks" and "backlog" in the path parts
-        # Example: /path/to/repo/tasks/backlog/feature-name/TASK-001.md
-        parts = task_file_path.parts
-        try:
-            tasks_idx = parts.index("tasks")
-        except ValueError:
-            raise FeatureValidationError(
-                f"Invalid task file_path '{task_file_path}' in task {first_task.id}: "
-                f"'tasks' directory not found in path. "
-                f"Expected format: tasks/backlog/<feature-slug>/TASK-XXX.md. "
-                f"Ensure --feature-slug was passed to generate-feature-yaml."
-            )
-
-        if tasks_idx + 1 < len(parts) and parts[tasks_idx + 1] == "backlog":
-            if tasks_idx + 2 < len(parts):
-                feature_dir = parts[tasks_idx + 2]
-            else:
-                raise FeatureValidationError(
-                    f"Invalid task file_path '{task_file_path}' in task {first_task.id}: "
-                    f"missing feature directory after tasks/backlog/. "
-                    f"Expected format: tasks/backlog/<feature-slug>/TASK-XXX.md. "
-                    f"Ensure --feature-slug was passed to generate-feature-yaml."
-                )
-        else:
-            raise FeatureValidationError(
-                f"Invalid task file_path '{task_file_path}' in task {first_task.id}: "
-                f"expected 'backlog' after 'tasks' directory. "
-                f"Expected format: tasks/backlog/<feature-slug>/TASK-XXX.md. "
-                f"Ensure --feature-slug was passed to generate-feature-yaml."
-            )
+        # -> feature-build-sdk-coordination. A path of any other form has no
+        # feature directory to copy from, so nothing is copied.
+        parts = Path(feature.tasks[0].file_path or "").parts
+        tasks_idx = parts.index("tasks") if "tasks" in parts else -1
+        if not (
+            tasks_idx >= 0
+            and tasks_idx + 2 < len(parts)
+            and parts[tasks_idx + 1] == "backlog"
+        ):
+            return
+        feature_dir = parts[tasks_idx + 2]
         logger.debug(f"Detected feature directory: {feature_dir}")
 
         # Source: main repo's tasks/backlog/{feature_dir}/
@@ -1747,9 +1605,7 @@ class FeatureOrchestrator:
         Raises
         ------
         FeatureOrchestrationError
-            When the toolchain declaration cannot be read or declares a
-            component ``cwd`` that is refused, or when the bootstrap refused a
-            declared install input (one outside the worktree or unreadable).
+            When the toolchain declaration cannot be read.
         """
         try:
             python_extras: tuple[str, ...] = ()
@@ -1775,23 +1631,8 @@ class FeatureOrchestrator:
             stacks = sorted(set(m.stack for m in manifests))
             console.print(f"[cyan]\u2699[/cyan] Bootstrapping environment: {', '.join(stacks)}")
 
-            # TASK-REV-JMBP Workstream E: name an interpreter that does not
-            # meet requires-python before pip runs, so the warning says it up
-            # front rather than leaving users to decode pip's "requires a
-            # different Python" line. Advice only (step 2).
-            self._warn_requires_python(manifests)
-
             bootstrapper = EnvironmentBootstrapper(worktree.path)
             result = bootstrapper.bootstrap(manifests)
-
-            # A refused declared input (outside the worktree, or unreadable)
-            # stops the build in every failure mode: nothing was installed and
-            # the inputs are unknown.
-            refused = getattr(result, "refused", None)
-            if isinstance(refused, str) and refused:
-                logger.error("Bootstrap refused: %s", refused)
-                console.print(f"[red]\u2717[/red] Bootstrap refused: {refused}")
-                raise FeatureOrchestrationError(refused)
 
             if result.skipped and result.success:
                 console.print("[green]\u2713[/green] Environment already bootstrapped (hash match)")
@@ -1829,23 +1670,6 @@ class FeatureOrchestrator:
                 )
 
             return result
-        except FeatureOrchestrationError:
-            # A refused declared input: propagate. Don't swallow it in the
-            # generic except below.
-            raise
-        except UvSourcesRequireUvError as e:
-            # TASK-FIX-F09A2: pyproject declares [tool.uv.sources] but uv is
-            # missing from PATH. pip can't honour those overrides, so silently
-            # falling back would produce a broken env. Promote to a hard-fail
-            # before any pip work runs. The exception message names the file
-            # and the two actionable fixes (install uv, or remove the block) \u2014
-            # do NOT add the warn-mode hint here: warn-mode is the wrong
-            # escape hatch for an install-system mismatch.
-            logger.error("Bootstrap hard-fail (uv-sources require uv): %s", e)
-            console.print(
-                f"[red]\u2717[/red] Bootstrap hard-fail: uv-sources require uv\n{e}"
-            )
-            raise FeatureOrchestrationError(str(e)) from e
         except ToolchainDeclarationError as e:
             # Follow-up fixes 2026-10-13 (3b): an unreadable declaration or a
             # refused component ``cwd`` would otherwise drop the declaration
@@ -1856,38 +1680,9 @@ class FeatureOrchestrator:
             )
             raise FeatureOrchestrationError(str(e)) from e
         except Exception as e:
-            from guardkit.orchestrator.process_group import CleanupUnavailableError
-            if isinstance(e, CleanupUnavailableError):
-                raise
             logger.warning(f"Environment bootstrap failed: {e}")
             console.print(f"[yellow]\u26a0[/yellow] Environment bootstrap failed: {e}")
             return None
-
-    def _warn_requires_python(self, manifests: list) -> None:
-        """
-        Run the requires-python pre-check (TASK-REV-JMBP Workstream E).
-
-        Each mismatch is logged as a structured warning line (``Python X
-        does not satisfy requires-python=``) and execution continues; pip
-        remains authoritative. Since step 2 (26 October 2026) a mismatch
-        never stops the build.
-
-        Manifests without a ``requires-python`` constraint, non-Python
-        manifests, and environments missing ``packaging.specifiers`` are all
-        silently skipped — pip remains the authority for those cases.
-        """
-        mismatches = check_requires_python_precheck(manifests)
-        if not mismatches:
-            return
-
-        for m in mismatches:
-            warning = (
-                f"Python {m.active_version} does not satisfy "
-                f"requires-python=`{m.specifier}` for {m.manifest_path}; "
-                f"pip install is expected to fail."
-            )
-            logger.warning(warning)
-            console.print(f"[yellow]⚠[/yellow] {warning}")
 
     def _create_stub_implementation_plan(
         self,
@@ -2155,24 +1950,6 @@ The detailed specifications are in the task markdown file.
         FeatureLoader.save_feature(feature, self.repo_root)
         console.print("[green]✓[/green] Reset feature state")
 
-    def _preflight_check(self) -> bool:
-        """
-        Verify FalkorDB connectivity before launching wave execution.
-
-        Runs a quick health check on the Graphiti client. If the check fails
-        or times out, disables context loading for the entire feature run to
-        avoid per-task retry latency.
-
-        Returns
-        -------
-        bool
-            True if FalkorDB is reachable, False otherwise
-        """
-        # FEAT-MEM-09 WS-2c: the FalkorDB/Graphiti connectivity pre-flight is
-        # retired. Fleet-memory availability is env-driven and degrades to
-        # no-context internally, so there is no connectivity gate to run here.
-        return True
-
     def _wave_phase(
         self,
         feature: Feature,
@@ -2199,36 +1976,6 @@ The detailed specifications are in the task markdown file.
         )
         wave_results = []
 
-        # Path-existence preflight (TASK-GK-PR-001): probe every queued
-        # task's `## Files to Modify` declarations against repo_root and
-        # worktree before any Player turn fires. Catches task-author typos
-        # in <1s instead of letting them burn 25-35 minutes via the
-        # plan-audit gate at Player turn 4-5.
-        try:
-            typos = preflight_validate(
-                feature,
-                repo_root=self.repo_root,
-                worktree_path=worktree.path,
-                strict=feature.preflight_strict,
-            )
-        except PreflightTypoError:
-            console.print(
-                "[red]✗[/red] Preflight detected modify-axis typos "
-                "(preflight_strict=true). Aborting before wave dispatch."
-            )
-            raise
-        if typos:
-            console.print(
-                f"[yellow]![/yellow] Preflight: {len(typos)} task-author "
-                "typo(s) detected in `## Files to Modify`; orchestration "
-                "proceeding (preflight_strict=false). plan-audit will catch "
-                "these at turn 1."
-            )
-
-        # Pre-flight FalkorDB connectivity check (TASK-ASF-002)
-        # Detect unreachable FalkorDB upfront to avoid per-task retry latency
-        self._preflight_check()
-
         # Wave-0 baseline-green probe (red-baseline retro, L12 item 1):
         # run the feature suite ONCE before wave 1 so a pre-existing red is
         # surfaced as a wave-0 warning rather than masquerading as the first
@@ -2240,14 +1987,6 @@ The detailed specifications are in the task markdown file.
         # once-per-run banner below read this same map, so the number the
         # banner declares is the number `asyncio.wait_for` will enforce.
         effective_task_timeouts = self._resolve_wave_task_timeouts(feature)
-
-        # Wave-0 estimate-vs-timeout warnings (red-baseline retro, L12 item 3):
-        # surface any task whose own estimate exceeds its effective per-task
-        # budget BEFORE the run burns hours hitting a timeout that masks the
-        # real failure.
-        self._emit_wave0_timeout_warnings(
-            feature, effective_timeouts=effective_task_timeouts
-        )
 
         console.print()
         console.print(
@@ -2264,8 +2003,8 @@ The detailed specifications are in the task markdown file.
             if wave_number > 1:
                 self._bootstrap_pending = True
 
-            # A task whose dependency did not complete is skipped when its wave
-            # runs (``_execute_wave_parallel``); the rest of the wave runs.
+            # A task whose dependency did not complete still runs, on what
+            # the checkout holds (cull, 27 October 2026).
 
             # Display wave start via progress display.
             # TASK-FIX-MAXPARALLEL01: resolve the effective max_parallel (read
@@ -2341,22 +2080,6 @@ The detailed specifications are in the task markdown file.
                 if outcome.terminate:
                     break
 
-            # Post-wave wiring check (TASK-AB-WIREGATE01). Fires AFTER the
-            # smoke gate (skipped if smoke already terminated above) and BEFORE
-            # wave-completion is persisted. Statically analyzes the assembled
-            # feature; since step 2 (26 October 2026) its mocked-primary-seam
-            # and composition-root ctor-arity findings are advice in the
-            # group's record. The wave is not re-run and its result stands.
-            wiring_outcome = self._run_post_wave_wiring_gate(
-                wave_number, task_ids, feature, worktree
-            )
-            # Keep what this gate did (21 September 2026). It used to be
-            # printed and dropped, so the end-of-build summary could say
-            # nothing at all about the groups.
-            record = getattr(wiring_outcome, "record", None)
-            if isinstance(record, dict):
-                self._group_code_check_records.append(record)
-
             # TASK-AB-COACHRUNPARITY01 (C1): mark the wave completed only AFTER
             # the smoke phase resolves — gated on task success AND smoke success
             # (or no smoke gate fired for this wave). This is the single place
@@ -2364,9 +2087,6 @@ The detailed specifications are in the task markdown file.
             # whose tasks pass but whose smoke gate fails is therefore never
             # recorded as completed on disk, so a resume cannot skip an
             # unverified wave.
-            #
-            # TASK-AB-WIREGATE01: wiring findings do NOT block completion; they
-            # are advice (step 2, 26 October 2026).
             smoke_blocked = (
                 wave_result.smoke_gate_result is not None
                 and not wave_result.smoke_gate_result.passed
@@ -2374,19 +2094,10 @@ The detailed specifications are in the task markdown file.
             if wave_result.all_succeeded and not smoke_blocked:
                 self._mark_wave_completed(feature, wave_number)
 
-        # Start-up checks, after the last wave (WS3-S3 check 2d, spec §4.3).
-        # Everything above proves the tests pass. This proves the thing the
-        # build produced can actually be loaded and assembled. Advisory by
-        # default — see boot_smoke_gate for the flag that makes it blocking,
-        # and for why only the declaration committed BEFORE the build is read.
-        self._run_final_wave_boot_smoke(feature, worktree, wave_results)
-
         # The whole-feature check, after the last wave (B9 correction,
-        # 2026-09-19). Everything above proves the parts; the boot smoke
-        # proves the thing loads. This proves the FEATURE does what the
-        # person asked, at the surface they use, using the one command the
-        # project declared for exactly that. It runs after the boot smoke so
-        # a build the boot smoke already failed does not run it twice over.
+        # 2026-09-19). Everything above proves the parts. This proves the
+        # FEATURE does what the person asked, at the surface they use, using
+        # the one command the project declared for exactly that.
         self._run_feature_check(feature, worktree, wave_results)
 
         return wave_results
@@ -2398,10 +2109,9 @@ The detailed specifications are in the task markdown file.
         record, written once at the end of the build.
 
         Per task: the LAST review's result for each check, whether the
-        builder's file list was recorded, and how many shell commands ran. Per
-        group of tasks: what the check after that group did. Nothing here
-        refuses anything and nothing here raises — a build is never failed by
-        a summary of itself.
+        builder's file list was recorded, and how many shell commands ran.
+        Nothing here refuses anything and nothing here raises — a build is
+        never failed by a summary of itself.
         """
         try:
             from guardkit.orchestrator.paths import TaskArtifactPaths
@@ -2454,7 +2164,7 @@ The detailed specifications are in the task markdown file.
             summary = build_code_checks_summary(
                 feature_id=getattr(feature, "id", ""),
                 tasks=task_rows,
-                groups=list(self._group_code_check_records),
+                groups=[],
             )
             path = write_code_checks_summary(summary, root)
             if path is not None:
@@ -2466,17 +2176,17 @@ The detailed specifications are in the task markdown file.
             )
             return None
 
-    def _boot_smoke_skip_reason(
+    def _feature_check_skip_reason(
         self,
         feature: Feature,
         wave_results: List[WaveExecutionResult],
     ) -> Optional[str]:
-        """Why the start-up checks should not run, in words, or ``None`` to run.
+        """Why the whole-feature check should not run, in words, or ``None``.
 
-        The checks describe a FINISHED build. A build that stopped early, or
+        The check describes a FINISHED build. A build that stopped early, or
         whose tests failed, or whose own smoke gate already failed, explains
-        its own red — running start-up checks over a half-built working copy
-        would only add noise to it.
+        its own red — running the check over a half-built working copy would
+        only add noise to it.
         """
         planned_waves = len(feature.orchestration.parallel_groups)
         if not wave_results:
@@ -2494,92 +2204,6 @@ The detailed specifications are in the task markdown file.
         ):
             return "a smoke gate already failed this build"
         return None
-
-    def _run_final_wave_boot_smoke(
-        self,
-        feature: Feature,
-        worktree: Worktree,
-        wave_results: List[WaveExecutionResult],
-    ) -> Optional[BootSmokeGateOutcome]:
-        """Run the repository's declared start-up checks once, after the last wave.
-
-        Plain words: the build is finished, so before anyone calls it done,
-        actually load the program's entry points and build its main objects in
-        a separate process and see whether that works. The list of what to run
-        lives in the repository's ``.guardkit/seam-checks.yaml``, in the copy
-        committed BEFORE this build started — a list the build itself could
-        rewrite would not be a check. A repository without that file gets a
-        one-line nudge and nothing else.
-
-        This reports and, by default, changes nothing at all. It becomes able
-        to fail a feature only when the operator sets the environment variable
-        named by ``BOOT_SMOKE_BLOCKING_ENV_VAR`` and the declaration was
-        committed before the build started.
-
-        Returns
-        -------
-        Optional[BootSmokeGateOutcome]
-            The outcome, or ``None`` when the checks were skipped (a build that
-            did not finish, or an unexpected error — neither is allowed to
-            interfere with the build's own result).
-        """
-        skip_reason = self._boot_smoke_skip_reason(feature, wave_results)
-        if skip_reason is not None:
-            logger.info(
-                "Start-up checks skipped: %s, so this build already has its "
-                "own answer",
-                skip_reason,
-            )
-            return None
-
-        try:
-            venv_python = probe_worktree_venv(worktree.path)
-            outcome = self._checked_writer(worktree, run_final_wave_boot_smoke,
-                worktree.path,
-                venv_python=str(venv_python) if venv_python else None,
-                base_branch=worktree.base_branch,
-            )
-        except Exception as exc:  # noqa: BLE001 — advisory instrument, never fatal
-            logger.warning("Boot smoke could not run: %s", exc)
-            return None
-
-        for line in render_boot_smoke_report(outcome):
-            logger.info(line)
-            if not self.quiet:
-                # markup=False: these lines contain square brackets that mean
-                # exactly what they say ("[did not run]"). Rich would read them
-                # as style tags and delete the verdict from the operator's
-                # screen.
-                console.print(line, markup=False)
-
-        if outcome.blocks_build:
-            summary = boot_smoke_failure_summary(outcome)
-            last = wave_results[-1]
-            last.smoke_gate_result = SmokeGateResult(
-                passed=False,
-                exit_code=1,
-                stdout="",
-                stderr=summary,
-                timed_out=False,
-                command=(
-                    "start-up checks (.guardkit/seam-checks.yaml), failing the "
-                    f"build because {BOOT_SMOKE_BLOCKING_ENV_VAR} is set"
-                ),
-                timeout=0,
-                after_wave=last.wave_number,
-            )
-            # Same invariant the smoke gate keeps (C1 above): a wave whose gate
-            # failed is never left recorded as completed on disk, or a resume
-            # would skip it and the failed start-up checks would never re-run.
-            self._unmark_wave_completed(feature, last.wave_number)
-            logger.error(
-                "Start-up checks FAILED and %s is set, so this feature is "
-                "marked failed: %s",
-                BOOT_SMOKE_BLOCKING_ENV_VAR,
-                summary,
-            )
-
-        return outcome
 
     # -----------------------------------------------------------------------
     # The whole-feature check (B9 correction, 2026-09-19)
@@ -2599,15 +2223,15 @@ The detailed specifications are in the task markdown file.
         actually works. If it does not, hand the Player the command's own
         output, the words of the request and the scenarios the feature
         promised, re-enter the LAST wave, and try again — a bounded number of
-        times. When the budget is spent, this feature is failed: the failure
-        rides the same rail the start-up checks use (a failed gate result on
-        the last wave, and that wave un-marked so a resume re-runs it), so the
-        finaliser records ``failed`` and Forge never offers the card.
+        times. When the budget is spent, this feature is failed: a failed gate
+        result on the last wave, and that wave un-marked so a resume re-runs
+        it, so the finaliser records ``failed`` and Forge never offers the
+        card.
 
         Returns ``None`` when nothing ran: a build that did not finish (it has
         its own answer already), or a project that declared no check.
         """
-        skip_reason = self._boot_smoke_skip_reason(feature, wave_results)
+        skip_reason = self._feature_check_skip_reason(feature, wave_results)
         if skip_reason is not None:
             logger.info(
                 "Whole-feature check skipped: %s, so this build already has "
@@ -2763,22 +2387,9 @@ The detailed specifications are in the task markdown file.
                     "The repair round for the whole-feature check did not "
                     "pass its own checks, so this feature is failed."
                 )
-                # When a task stopped early because the plan contradicts the
-                # project's check, its sentence is the reason (18 October
-                # 2026). No further attempt runs, whatever the budget.
-                stopped_because = next(
-                    (
-                        r.stopped_because
-                        for r in wave_result.results
-                        if isinstance(getattr(r, "stopped_because", None), str)
-                        and r.stopped_because
-                    ),
-                    None,
-                )
                 return self._finish_feature_check(
                     feature, worktree, declaration, attempts, wave_results,
                     status=FEATURE_CHECK_FAILED,
-                    stopped_because=stopped_because,
                 )
 
     def _one_feature_check_attempt(self, attempt_number, declaration, feature, worktree):
@@ -2792,58 +2403,8 @@ The detailed specifications are in the task markdown file.
         feature: Feature,
         worktree: Worktree,
     ) -> FeatureCheckAttempt:
-        """One pass: twin coverage first, then the declared command.
-
-        Twin coverage runs FIRST and, when the repository enforces it, a
-        missing twin is a failure of this check — with the scenario titles in
-        the feedback, because "write the twin you promised" is an actionable
-        sentence and "exit 1" is not.
-
-        When the repository does NOT enforce it, the guard reports and the
-        command still runs — and since 21 September 2026 the examples it named
-        go onto the attempt's not-checked list rather than vanishing, because
-        an example with nothing to check it is not an example that passed.
-        """
+        """One pass of the declared command."""
         sha = feature_check_candidate_sha(Path(worktree.path))
-        twin_summary: Dict[str, Any] = {}
-        missing_twins: List[str] = []
-        reported_not_checked: List[Dict[str, str]] = []
-        try:
-            twin_report = check_twin_coverage(
-                feature_id=feature.id,
-                scenarios=getattr(feature, "scenarios", None) or {},
-                root=Path(worktree.path),
-                enforced=is_twin_coverage_enforced(self.repo_root),
-            )
-            twin_summary = twin_coverage_summary(twin_report)
-            if twin_report.blocks_build:
-                missing_twins = list(twin_report.missing)
-            elif twin_report.missing:
-                reported_not_checked = [
-                    {"name": str(name), "reason": GUARD_MISSING_CHECK_FILE_REASON}
-                    for name in twin_report.missing
-                ]
-        except Exception as exc:  # noqa: BLE001 — the twin check never crashes a build
-            logger.warning(
-                "Whole-feature check: twin coverage could not run: %s", exc
-            )
-
-        if missing_twins:
-            return FeatureCheckAttempt(
-                attempt=attempt_number,
-                command=declaration.command,
-                candidate_sha=sha,
-                passed=False,
-                outcome=FEATURE_CHECK_FAILED,
-                failure_reason=(
-                    f"{len(missing_twins)} scenario(s) marked for a frozen "
-                    "twin have no twin file, so the declared check was not run"
-                ),
-                failure_kind=FAILURE_KIND_MISSING_TWINS,
-                twin_coverage=twin_summary,
-                missing_twins=missing_twins,
-                ran_at=datetime.now().isoformat(),
-            )
 
         env_extra = {
             "GUARDKIT_FEATURE_ID": str(feature.id),
@@ -2912,7 +2473,7 @@ The detailed specifications are in the task markdown file.
         stdout_bytes, stdout_lines = feature_check_output_size(run["stdout"])
         stderr_bytes, stderr_lines = feature_check_output_size(run["stderr"])
 
-        not_checked = merge_not_checked(reported_not_checked, line.not_checked)
+        not_checked = merge_not_checked([], line.not_checked)
         return FeatureCheckAttempt(
             attempt=attempt_number,
             command=declaration.command,
@@ -2926,7 +2487,6 @@ The detailed specifications are in the task markdown file.
             stderr_tail=feature_check_tail(run["stderr"]),
             failure_reason=failure_reason,
             could_not_run_reason=line.could_not_run_reason,
-            twin_coverage=twin_summary,
             not_checked=not_checked,
             # How many examples nothing looked at. It is the MERGED list,
             # which counts a name once however many sources named it, plus
@@ -2977,8 +2537,7 @@ The detailed specifications are in the task markdown file.
         Neither half can fail the build.
         """
         failure_kind = attempt.failure_kind or (
-            FAILURE_KIND_MISSING_TWINS if attempt.missing_twins
-            else FAILURE_KIND_TIMED_OUT if attempt.timed_out
+            FAILURE_KIND_TIMED_OUT if attempt.timed_out
             else FAILURE_KIND_COULD_NOT_START if attempt.exit_code is None
             else FAILURE_KIND_EXIT_NONZERO
         )
@@ -3045,21 +2604,12 @@ The detailed specifications are in the task markdown file.
         wave_results: List[WaveExecutionResult],
         *,
         status: str,
-        stopped_because: Optional[str] = None,
     ) -> FeatureCheckOutcome:
         """Write the receipt and, on a FAILURE only, fail the feature.
 
-        ``stopped_because`` (18 October 2026) is the early stop's one plain
-        sentence, given only when the repair round stopped because the plan
-        contradicts the project's check. It becomes the receipt's ``reason``
-        and ``stopped_because``, the console summary, and one
-        ``GUARDKIT_STOPPED_BECAUSE`` line on stdout, the only place Forge
-        reads it from.
-
-        The failure rail is the start-up checks' rail, deliberately: a failed
-        gate result on the last wave (which the finaliser already reads as a
-        failed feature) and that wave un-marked on disk, so a resume re-runs
-        it rather than skipping an unproven wave.
+        The failure rail: a failed gate result on the last wave (which the
+        finaliser already reads as a failed feature) and that wave un-marked
+        on disk, so a resume re-runs it rather than skipping an unproven wave.
 
         A check that COULD NOT RUN takes neither rail: it is not a pass and it
         is not a fault of the build, so it writes its record, says why, and
@@ -3078,10 +2628,6 @@ The detailed specifications are in the task markdown file.
             )
         else:
             reason = last_attempt.failure_reason
-        if stopped_because and status == FEATURE_CHECK_FAILED:
-            reason = stopped_because
-        else:
-            stopped_because = None
         not_checked = list(last_attempt.not_checked)
         not_checked_total = last_attempt.not_checked_total
         if could_not_run:
@@ -3097,8 +2643,7 @@ The detailed specifications are in the task markdown file.
                     for title in feature_scenario_titles(feature)
                 ],
                 # The check could not run, so that is why each of these was
-                # not checked — including the ones an earlier source (the
-                # central guard) had already named for a reason of its own.
+                # not checked.
                 later_reason_wins=True,
             )
             not_checked = everything
@@ -3119,12 +2664,6 @@ The detailed specifications are in the task markdown file.
                 last_attempt.could_not_run_reason if could_not_run else None
             ),
             notes=list(last_attempt.notes),
-            # The receipt names the criteria the task Coaches still list as
-            # claimed (never raises; absent evidence reads as no claims).
-            claimed_machine_criteria=claimed_machine_criteria(
-                Path(worktree.path), [t.id for t in feature.tasks]
-            ),
-            stopped_because=stopped_because,
         )
         try:
             receipt_path = write_feature_check_receipt(
@@ -3143,24 +2682,6 @@ The detailed specifications are in the task markdown file.
             f"the whole-feature check failed ({last_attempt.failure_reason}) "
             f"after {len(attempts)} attempt(s): {FEATURE_CHECK_LABEL}"
         )
-        if stopped_because:
-            # The plain early stop (18 October 2026): its sentence IS the
-            # summary. One machine-readable line goes to stdout with a plain
-            # print — never the rich console, which wraps long lines — for
-            # Forge, which reads it from this run's own output only.
-            summary = stopped_because
-            try:
-                print(stopped_because_line(feature.id, stopped_because), flush=True)
-            except Exception as exc:  # noqa: BLE001 — a line never fails a build
-                logger.warning(
-                    "The early stop's stdout line could not be written: %s",
-                    type(exc).__name__,
-                )
-        if last_attempt.missing_twins:
-            summary += (
-                " — scenarios with no twin: "
-                + "; ".join(last_attempt.missing_twins)
-            )
         last = wave_results[-1] if wave_results else None
         if last is not None:
             last.smoke_gate_result = SmokeGateResult(
@@ -3431,576 +2952,6 @@ The detailed specifications are in the task markdown file.
 
             # Loop: re-run the smoke gate against the re-executed wave.
 
-    # -----------------------------------------------------------------------
-    # Post-wave wiring gate (TASK-AB-WIREGATE01)
-    # -----------------------------------------------------------------------
-
-    def _wave_authored_files(
-        self, task_ids: List[str]
-    ) -> Tuple[List[str], List[str]]:
-        """Union the worktree-relative files authored across a whole wave.
-
-        Reads each task's ``task_work_results.json`` (across every direct /
-        worktree autobuild dir via ``_autobuild_candidate_dirs``) and unions the
-        authored set under the one rule in
-        :mod:`guardkit.orchestrator.authored_files`, exactly as
-        ``coach_validator._compute_authored_set`` does per task. This is the
-        assembled-feature write surface the per-task Coach aperture is too
-        narrow to see (evidence-boundary-narrower-than-write-surface).
-
-        Returns ``(files, not_recorded_task_ids)``. A task in the second list
-        has no recorded file list at all (2026-09-21): the union is therefore
-        incomplete, and the caller must report "not checked" rather than treat
-        the wave as analysed. The legacy no-key branch — a record written
-        before ``files_authored`` existed — keeps its old fallback union of
-        ``files_created ∪ files_modified`` and is NOT reported as unknown.
-
-        Never raises: an unreadable / missing results file contributes nothing.
-        """
-        authored: List[str] = []
-        seen: set = set()
-        not_recorded: List[str] = []
-        for task_id in task_ids:
-            data: Optional[Dict[str, Any]] = None
-            for d in self._autobuild_candidate_dirs(task_id):
-                results_path = d / "task_work_results.json"
-                if not results_path.exists():
-                    continue
-                try:
-                    data = json.loads(results_path.read_text())
-                    break
-                except (OSError, ValueError) as exc:
-                    logger.debug(
-                        f"[{task_id}] task_work_results read skipped in {d}: {exc}"
-                    )
-            if not isinstance(data, dict):
-                continue
-            files, status = read_authored_files(data)
-            if status == STATUS_UNKNOWN:
-                not_recorded.append(str(task_id))
-                continue
-            if status == STATUS_NO_KEY:
-                files = [
-                    str(f)
-                    for f in list(data.get("files_created") or [])
-                    + list(data.get("files_modified") or [])
-                ]
-            for f in files:
-                if f not in seen:
-                    seen.add(f)
-                    authored.append(f)
-        return authored, not_recorded
-
-    @staticmethod
-    def _collect_turn_rejecting_wiring_findings(
-        wiring_result: Optional[Dict[str, Any]],
-    ) -> List[Dict[str, Any]]:
-        """Extract the turn-rejecting findings from an ``analyze_wiring`` dict.
-
-        Only the two high-confidence correctness signals are turn-rejecting
-        (operator decision, TASK-AB-WIREGATE01):
-
-        * a MOCKED_SEAM finding with ``authored_this_turn=True`` — an
-          integration-tier test mocking a *primary in-repo* service seam;
-        * any CTOR_ARITY finding — a composition root constructing a first-party
-          service with the wrong arity.
-
-        UNWIRED_PATH findings stay advisory (already surfaced to Coach as
-        evidence; lower-confidence heuristic) and are NOT returned here.
-
-        Absence-of-failure-safe: ``None`` / ``error`` / ``unsupported_stack`` /
-        ``parse_degraded`` (or any non-``ran`` sub-result) yields ``[]`` — an
-        absent signal is never turn-rejecting.
-        """
-        if not isinstance(wiring_result, dict):
-            return []
-        if wiring_result.get("status") in {"error", "unsupported_stack"}:
-            return []
-        findings: List[Dict[str, Any]] = []
-
-        seam = wiring_result.get("mocked_seam") or {}
-        if seam.get("status") == "ran":
-            for f in seam.get("findings", []):
-                if f.get("authored_this_turn") is True:
-                    findings.append(f)
-
-        ctor = wiring_result.get("ctor_arity") or {}
-        if ctor.get("status") == "ran":
-            findings.extend(ctor.get("findings", []))
-
-        # CALLSITE_DRIFT, APERTURE B ONLY — promoted to turn-rejecting on
-        # Rich's word, 2026-08-21, on the strength of two measurements.
-        #
-        # What it catches: a call passing an argument name the receiving
-        # function does not accept. That is a guaranteed crash the moment the
-        # line runs, and it is what broke forge's planning boot three times.
-        #
-        # WHY APERTURE B IS PROMOTED. Two independent measurements:
-        #   * 1,068 tracked non-test files across five repos — 67 warnings
-        #     before the source-reading repairs, of which only 2 were real
-        #     (97% false); 2 after, both genuine, and both since fixed. 0%.
-        #   * 125 real signature-changing commits replayed from history — 6
-        #     findings, all 6 real. One was a live crash in study-tutor's
-        #     voice command line (an audio client built with six named
-        #     settings when its constructor takes a single config object); a
-        #     human found and fixed it weeks later. B would have caught it at
-        #     the point it was written.
-        #
-        # WHY APERTURE A IS **NOT** PROMOTED, and this filter is the whole
-        # point of the line below. Aperture A is the other half: when a
-        # signature changes this turn it hunts for stale callers elsewhere in
-        # the repo. It had NEVER been run in any measurement before
-        # 2026-08-21 — the shared analyzer entry point passes no baseline
-        # ("aperture B only here") and only a real build supplies one, so the
-        # 97%->0% figure never covered it. Measured for the first time over
-        # those same 125 commits it produced ZERO findings, and it is not
-        # blind (10 of 10 synthetic stale callers caught; correctly silent
-        # when the same commit fixed its own callers). But it carries a named,
-        # unrepaired defect: it decides WHICH functions changed by bare name
-        # across the whole repository while deciding WHETHER A CALL MATCHES
-        # per module. Those disagree. 30 of its 203 change-claims were about
-        # functions that never changed — two unrelated files sharing a name —
-        # so 224 of the 277 call sites it examined (81%) had nothing to do
-        # with the change being built. It found nothing there only because
-        # none happened to hold a latent bug. Promote it and a build could one
-        # day be stopped over a defect it did not cause and cannot fix.
-        #
-        # So: B blocks, A stays advisory (still surfaced to the Coach as
-        # evidence). Re-measure A after that name-resolution defect is fixed;
-        # it is the more valuable half in principle and worth having.
-        drift = wiring_result.get("callsite_drift") or {}
-        if drift.get("status") == "ran":
-            findings.extend(
-                f
-                for f in drift.get("findings", [])
-                if f.get("aperture") == "B"
-            )
-
-        return findings
-
-    def _surface_advisory_seam_findings(
-        self,
-        wiring_result: Optional[Dict[str, Any]],
-        authored: List[str],
-        worktree: Any,
-        wave_number: int,
-    ) -> None:
-        """Surface CALLSITE_DRIFT + SYS_MODULES_TAMPER + PERMISSIVE_DOUBLE (§8).
-
-        All three are ADVISORY: they are written to the run log for a person to
-        read, and none of them can reject the turn.
-
-        CALLSITE_DRIFT aperture B is already in ``wiring_result`` (analyze_wiring
-        runs it without a baseline). Aperture A (changed-signature × stale-site)
-        needs the feature-base file contents, resolved here and passed to
-        ``analyze_callsite_drift``; the merged findings are attached back onto
-        ``wiring_result["callsite_drift"]`` for Coach evidence and logged as an
-        advisory. Never turn-rejecting until the §8 promotion gate flips it.
-        Fail-open: any error leaves the aperture-B result untouched.
-
-        PERMISSIVE_DOUBLE (added 2026-08-21) needs no extra analysis pass: the
-        factory already computes it into ``wiring_result["permissive_double"]``
-        on every run, and until now nothing on the guardkit side read the value.
-        In plain terms, a "permissive double" is a stand-in object a test uses
-        in place of the real thing, which accepts ANY arguments at all — so the
-        test still passes even when the real function would reject the call
-        because the argument names are wrong. That is the exact defect class
-        that shipped Mode P dead on arrival (post-merge review
-        ``forge/docs/reviews/feat-spl-002-post-merge-review-2026-07-06.md``).
-
-        There are far too many findings to print them all, so the log sorts
-        them into a SHARP group and a BROAD group and prints the sharp ones
-        line by line and the broad ones as a count.
-
-        THAT SPLIT IS A VOLUME FILTER, NOT A DEFECT JUDGEMENT — see
-        :py:mod:`guardkit.orchestrator.permissive_double_advisory`, which owns
-        the rule and the reasoning. Short version: the Mode P regression above
-        produced 24 findings and every one of them was BROAD, because the
-        sharp path needs the stand-in's name to match a real symbol and that
-        file's class was named ``RecordingFake``.
-
-        Measured over the estate on 2026-08-21 (guardkit / forge /
-        specialist-agent / guardkitfactory): 3,156 findings in total, of which
-        46 were sharp and 3,110 broad. They fell in 325 distinct test files,
-        and 305 of those 325 (94%) contained only broad findings. Note the
-        denominator: 94% is the share of files that HAVE a finding, not the
-        share of all test files in the estate — that figure was never measured.
-        """
-        if not isinstance(wiring_result, dict):
-            return
-        try:
-            advisory: List[Dict[str, Any]] = []
-            cd = wiring_result.get("callsite_drift") or {}
-            if cd.get("status") == "ran":
-                advisory.extend(cd.get("findings", []))
-            # Aperture A: feature-base sources of the authored files.
-            base_sources = self._feature_base_sources(worktree, authored)
-            if base_sources:
-                try:
-                    from guardkitfactory.wiring.callsite_drift import (
-                        analyze_callsite_drift,
-                    )
-                    cd_a = analyze_callsite_drift(
-                        authored, worktree.path, "feature",
-                        baseline_sources=base_sources, stack=None,
-                    )
-                    if cd_a and cd_a.get("status") == "ran":
-                        existing = {
-                            (f.get("file"), f.get("lineno"), f.get("form"))
-                            for f in advisory
-                        }
-                        for f in cd_a.get("findings", []):
-                            key = (f.get("file"), f.get("lineno"), f.get("form"))
-                            if key not in existing:
-                                advisory.append(f)
-                                existing.add(key)
-                        # Attach the merged (A∪B) result for downstream evidence.
-                        wiring_result["callsite_drift"] = cd_a
-                        cd_a["findings"] = advisory
-                except Exception as exc:  # noqa: BLE001
-                    logger.debug("aperture-A callsite drift skipped: %s", exc)
-
-            env = wiring_result.get("env_tamper") or {}
-            env_findings = env.get("findings", []) if env.get("status") == "ran" else []
-
-            pd_sharp, pd_broad = self._split_permissive_double_findings(wiring_result)
-
-            if advisory or env_findings or pd_sharp or pd_broad:
-                logger.warning(
-                    "[wave %s] advisory findings — none of these can reject the "
-                    "turn: %d call sites whose function signature moved under "
-                    "them (CALLSITE_DRIFT); %d tests that reach into "
-                    "sys.modules (SYS_MODULES_TAMPER); %d test stand-ins that "
-                    "accept any arguments, so a test using one stays green "
-                    "after the real function's arguments change "
-                    "(PERMISSIVE_DOUBLE) — %d sharp, %d broad",
-                    wave_number, len(advisory), len(env_findings),
-                    len(pd_sharp) + len(pd_broad), len(pd_sharp), len(pd_broad),
-                )
-                for f in advisory[:10]:
-                    logger.warning(
-                        "  CALLSITE_DRIFT %s:%s %s — %s",
-                        f.get("file"), f.get("lineno"), f.get("form"), f.get("why", ""),
-                    )
-                for f in env_findings[:10]:
-                    logger.warning(
-                        "  SYS_MODULES_TAMPER %s:%s %s",
-                        f.get("file"), f.get("lineno"), f.get("module_key"),
-                    )
-                for f in pd_sharp[:10]:
-                    logger.warning(
-                        "  PERMISSIVE_DOUBLE %s:%s %s '%s' — %s",
-                        f.get("file"), f.get("lineno"), f.get("form"),
-                        f.get("symbol"), f.get("why", ""),
-                    )
-                if pd_broad:
-                    logger.warning(
-                        "  PERMISSIVE_DOUBLE broad group: %d ordinary "
-                        "patch(\"module.function\") stand-ins, listed as a "
-                        "count because there are usually too many to read. "
-                        "Broad does NOT mean safe — sharp/broad is a volume "
-                        "filter, not a defect judgement, and the worst known "
-                        "regression of this class (forge Mode P) was 24 "
-                        "findings that were ALL broad. If this wave changed a "
-                        "function's arguments, grep the run's wiring JSON for "
-                        "that function name.",
-                        len(pd_broad),
-                    )
-        except Exception as exc:  # noqa: BLE001 — advisory must never break the gate
-            logger.debug("advisory seam surfacing failed: %s", exc)
-
-    @staticmethod
-    def _split_permissive_double_findings(
-        wiring_result: Optional[Dict[str, Any]],
-    ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
-        """Sort the analyzer's permissive-double findings into sharp and broad.
-
-        Thin delegation to :py:func:`permissive_double_advisory.split_findings`,
-        which is the single implementation of the rule. The run log (here) and
-        the reviewing model's prompt (in ``agent_invoker``) both go through it,
-        so the two can never drift apart and describe the same run differently.
-
-        Read that module's docstring before changing anything: the split is a
-        VOLUME FILTER for a reader's attention, not a judgement about which
-        findings are real defects.
-        """
-        return split_permissive_double_findings(wiring_result)
-
-    def _feature_base_sources(
-        self, worktree: Any, authored: List[str]
-    ) -> Dict[str, bytes]:
-        """Read the feature-base version of each authored source file (aperture A).
-
-        Resolves the feature-base commit (§1.3) and returns
-        ``{rel_path: bytes}`` for the authored files that existed at base. Empty
-        on any failure (aperture A simply does not run — fail-open).
-        """
-        try:
-            import subprocess
-
-            from guardkit.orchestrator.seam_checks import resolve_feature_base
-            wt = Path(worktree.path)
-            ref = resolve_feature_base(wt)
-            if not ref:
-                return {}
-            sources: Dict[str, bytes] = {}
-            for rel in authored:
-                if not rel.endswith(".py"):
-                    continue
-                proc = run_git(
-                    ["show", f"{ref}:{rel}"],
-                    cwd=str(wt), timeout=15, text=False,
-                )
-                if proc.returncode == 0 and proc.stdout:
-                    sources[rel] = proc.stdout
-            return sources
-        except Exception as exc:  # noqa: BLE001
-            logger.debug("feature-base source read failed: %s", exc)
-            return {}
-
-    @staticmethod
-    def _advisory_wiring_findings(
-        wiring_result: Optional[Dict[str, Any]],
-    ) -> List[Dict[str, Any]]:
-        """The findings this gate reports without asking for a re-run.
-
-        They are still findings: a summary that listed only the re-run-worthy
-        ones would say "found nothing" about a group where something was
-        found. Never raises.
-        """
-        if not isinstance(wiring_result, dict):
-            return []
-        findings = wiring_result.get("findings")
-        return [f for f in findings if isinstance(f, dict)] if isinstance(findings, list) else []
-
-    @staticmethod
-    def _wiring_gate_record(
-        wave_number: int,
-        wiring_result: Optional[Dict[str, Any]],
-        advisory: Sequence[Dict[str, Any]],
-    ) -> Dict[str, Any]:
-        """This gate's own state, in the five words the summary uses.
-
-        The check's own status word decides: a check that says it does not
-        cover this kind of project is not a check that found nothing. When it
-        says it could not read part of what it was given, how much travels
-        beside the state as a number, because the part it could not read is
-        part nothing looked at.
-
-        12 October 2026: a check that could not read part of what it was given
-        (``parse_degraded``, or files in a language no dialect reads, listed in
-        ``undialected_files`` with the word ``partly_unsupported``) is "not
-        checked" unless it found something; it used to read as "ran and found
-        nothing". A status word this gate does not know is "not checked" too.
-        """
-        status = ""
-        not_read: Optional[int] = None
-        if isinstance(wiring_result, dict) and isinstance(
-            wiring_result.get("status"), str
-        ):
-            status = wiring_result["status"].strip().lower()
-        if isinstance(wiring_result, dict):
-            unread_lists = [
-                wiring_result.get(key)
-                for key in ("degraded_files", "undialected_files")
-            ]
-            unread_lists = [
-                u for u in unread_lists if isinstance(u, (list, tuple))
-            ]
-            if unread_lists:
-                not_read = sum(len(u) for u in unread_lists)
-        if status == "unsupported_stack":
-            return code_check_group_record(
-                wave_number,
-                state=CODE_CHECK_KIND_NOT_SUPPORTED,
-                reason=str(wiring_result.get("skip_reason") or "")
-                or "this check does not cover this kind of project",
-            )
-        if status == "error":
-            return code_check_group_record(
-                wave_number,
-                state=CODE_CHECK_NOT_CHECKED,
-                reason="this check stopped on an error of its own",
-            )
-        partly_read = status in ("parse_degraded", "partly_unsupported") or bool(
-            not_read
-        )
-        if advisory:
-            return code_check_group_record(
-                wave_number,
-                state=CODE_CHECK_FOUND_SOMETHING,
-                reason="reported without asking for a re-run",
-                findings=list(advisory),
-                inputs_not_read=not_read if partly_read else None,
-            )
-        if partly_read:
-            return code_check_group_record(
-                wave_number,
-                state=CODE_CHECK_NOT_CHECKED,
-                reason=(
-                    f"some of what it was given could not be read "
-                    f"({not_read} of them)"
-                    if not_read
-                    else "some of what it was given could not be read"
-                ),
-                inputs_not_read=not_read,
-            )
-        if wiring_result is not None and status not in ("complete", "ran"):
-            return code_check_group_record(
-                wave_number,
-                state=CODE_CHECK_NOT_CHECKED,
-                reason=(
-                    f"this check reported '{status}', which is not a word "
-                    "this gate knows"
-                    if status
-                    else "this check recorded no word saying whether it ran"
-                ),
-            )
-        return code_check_group_record(
-            wave_number,
-            state=CODE_CHECK_RAN_FOUND_NOTHING,
-            reason="",
-        )
-
-    def _run_post_wave_wiring_gate(
-        self,
-        wave_number: int,
-        task_ids: List[str],
-        feature: Feature,
-        worktree: Worktree,
-    ) -> WiringGatePhaseOutcome:
-        """Run the post-wave wiring check once, as advice.
-
-        TASK-AB-WIREGATE01. After a wave, statically analyze the ASSEMBLED
-        feature (the wave-aggregate authored set) via
-        ``guardkitfactory.wiring.analyze_wiring``. Step 2 (26 October 2026):
-        findings (mocked-primary-seam + composition-root ctor-arity) are
-        advice. They are printed and kept in the group's code-check record
-        for the end-of-build summary; the wave is never re-run and its result
-        is never replaced.
-
-        * No findings (or an absent signal — analyzer unavailable, unsupported
-          stack, parse-degraded, probe didn't run): neutral record,
-          ``findings_unresolved=False``.
-        * Findings: a warning and a "found something" record,
-          ``findings_unresolved=True``.
-        """
-        # Lazy import: the orchestrator must import without guardkitfactory
-        # (pip install guardkit-py without the [autobuild] extra). Absent ⇒
-        # the gate is a no-op (absent signal, never a block).
-        try:
-            from guardkitfactory.wiring import analyze_wiring
-        except ImportError:
-            logger.debug(
-                "[wave %s] wiring gate skipped: guardkitfactory.wiring "
-                "unavailable", wave_number,
-            )
-            return WiringGatePhaseOutcome(
-                record=code_check_group_record(
-                    wave_number,
-                    state=CODE_CHECK_NOT_CHECKED,
-                    reason="this check's analyser was not installed in this build",
-                ),
-            )
-
-        authored, not_recorded = self._wave_authored_files(task_ids)
-        if not_recorded:
-            # 2026-09-21. At least one task's file list was never
-            # recorded, so the union is incomplete and this gate cannot
-            # say the assembled feature is wired. Report it; never treat
-            # it as "no findings", and never fall back to the
-            # modified-files list.
-            console.print(
-                f"[yellow]⚠ Wiring gate after wave {wave_number}: "
-                f"{NOT_CHECKED_REASON} for "
-                f"{', '.join(not_recorded)}[/yellow]"
-            )
-            logger.warning(
-                "[wave %s] wiring gate %s for %s",
-                wave_number,
-                NOT_CHECKED_REASON,
-                ", ".join(not_recorded),
-            )
-            return WiringGatePhaseOutcome(
-                not_checked=True,
-                record=code_check_group_record(
-                    wave_number,
-                    state=CODE_CHECK_NOT_CHECKED,
-                    reason=NOT_CHECKED_REASON,
-                    tasks_without_a_file_list=not_recorded,
-                ),
-            )
-        if not authored:
-            return WiringGatePhaseOutcome(
-                record=code_check_group_record(
-                    wave_number,
-                    state=CODE_CHECK_DOES_NOT_APPLY,
-                    reason=(
-                        "no task in this group recorded a file it wrote "
-                        "with its own file tools"
-                    ),
-                ),
-            )
-        try:
-            wiring_result = self._checked_writer(worktree, analyze_wiring,
-                authored_files=authored,
-                worktree_path=worktree.path,
-                task_type="feature",
-                stack=None,  # infer dialects from authored file extensions
-            )
-        except Exception as exc:  # fail-open: absent signal, never a block
-            logger.warning(
-                "[wave %s] wiring gate analyzer error (continuing): %s",
-                wave_number, exc, exc_info=exc,
-            )
-            return WiringGatePhaseOutcome(
-                record=code_check_group_record(
-                    wave_number,
-                    state=CODE_CHECK_NOT_CHECKED,
-                    reason="this check stopped on an error of its own",
-                ),
-            )
-
-        # WS3-S3 (advisory-only; §8 promotion gate not yet passed): surface
-        # CALLSITE_DRIFT (aperture A via feature-base sources + aperture B
-        # from analyze_wiring) and SYS_MODULES_TAMPER as advisory evidence.
-        # These are NOT added to the turn-rejecting set until the §8
-        # fixture+cohort gate flips them. Fail-open.
-        self._surface_advisory_seam_findings(
-            wiring_result, authored, worktree, wave_number
-        )
-
-        findings = self._collect_turn_rejecting_wiring_findings(wiring_result)
-        advisory = self._advisory_wiring_findings(wiring_result)
-        if not findings:
-            return WiringGatePhaseOutcome(
-                record=self._wiring_gate_record(
-                    wave_number, wiring_result, advisory
-                ),
-            )
-
-        # Step 2 (26 October 2026): advice. Printed and recorded; the wave's
-        # result stands and nothing is sent back.
-        console.print(
-            f"[yellow]⚠ Wiring check found {len(findings)} "
-            f"finding(s) after wave {wave_number}[/yellow] "
-            f"(advice; the build continues)."
-        )
-        for f in findings:
-            console.print(
-                f"[yellow]  - {f.get('pattern')} {f.get('file')}:"
-                f"{f.get('lineno')} {f.get('symbol')}[/yellow]"
-            )
-        return WiringGatePhaseOutcome(
-            findings_unresolved=True,
-            record=code_check_group_record(
-                wave_number,
-                state=CODE_CHECK_FOUND_SOMETHING,
-                reason="advice: found after the group, the build continued",
-                findings=list(findings) + list(advisory),
-            ),
-        )
-
     async def _execute_wave_parallel(
         self,
         wave_number: int,
@@ -4017,8 +2968,7 @@ The detailed specifications are in the task markdown file.
 
         This method creates parallel execution tasks using asyncio.to_thread()
         to achieve true parallelism with the blocking AutoBuildOrchestrator.
-        Tasks are filtered for already-completed and dependency-failed cases
-        before parallel execution.
+        Already-completed tasks are skipped before parallel execution.
 
         Parameters
         ----------
@@ -4045,12 +2995,6 @@ The detailed specifications are in the task markdown file.
         cancellation_events: Dict[str, threading.Event] = {}  # Per-task cancellation (TASK-ASF-007)
         timeout_events: Dict[str, threading.Event] = {}  # Per-task feature-level timeout (TASK-ABFIX-006)
         per_task_timeouts: Dict[str, int] = {}  # Resolved per-task timeout (TASK-ATR-001)
-        # TASK-FIX-A7B2: Wave-shared map of per-task file edits, populated as
-        # each Player finishes. Coach reads peer entries to detect source-file
-        # contention and refuse the TASK-ABFIX-005 conditional approval when
-        # the contention is real source-file damage (not transient infra).
-        wave_changed_files: Dict[str, Any] = {}
-        wave_files_lock: threading.Lock = threading.Lock()
         # The repair round each re-opened task starts (20 October 2026).
         repair_rounds: Dict[str, RepairRound] = {}
 
@@ -4074,7 +3018,7 @@ The detailed specifications are in the task markdown file.
             # 19 September 2026, found by driving the real runner: a task is
             # marked completed as soon as its Coach approves, BEFORE the
             # post-wave gates run. Every gate that re-enters the wave with
-            # feedback (the smoke gate, the wiring gate, the whole-feature
+            # feedback (the smoke gate, the whole-feature
             # check) therefore found all of its tasks "already completed",
             # skipped them, ran no Player turn, and re-ran the gate against an
             # unchanged candidate: the repair loop looked wired and repaired
@@ -4108,29 +3052,6 @@ The detailed specifications are in the task markdown file.
                         success=True,
                         total_turns=task.turns_completed,
                         final_decision="already_completed",
-                    )
-                )
-                continue
-
-            # Skip tasks whose dependencies failed
-            if not self._dependencies_satisfied(task, feature):
-                if self._wave_display:
-                    self._wave_display.update_task_status(
-                        task_id, "skipped", "dependency failed"
-                    )
-                else:
-                    console.print(
-                        f"  [yellow]⏭ Skipping {task_id} (dependency failed)[/yellow]"
-                    )
-                task.status = "skipped"
-                self._update_feature(feature, task_id, None, wave_number)
-                results.append(
-                    TaskExecutionResult(
-                        task_id=task_id,
-                        success=False,
-                        total_turns=0,
-                        final_decision="skipped",
-                        error="Dependency failed",
                     )
                 )
                 continue
@@ -4199,8 +3120,6 @@ The detailed specifications are in the task markdown file.
                     time_budget_seconds=task_budget,
                     wave_size=len(task_ids),
                     effective_task_timeout=effective_task_timeout,
-                    wave_changed_files=wave_changed_files,  # TASK-FIX-A7B2
-                    wave_files_lock=wave_files_lock,  # TASK-FIX-A7B2
                     seed_feedback=seed_feedback,  # TASK-AB-COACHRUNPARITY01 (arm a)
                     smoke_command=smoke_command,  # TASK-AB-COACHRUNPARITY01 (arm b)
                     smoke_expected_exit=smoke_expected_exit,  # TASK-AB-COACHRUNPARITY01 (arm b)
@@ -4264,7 +3183,13 @@ The detailed specifications are in the task markdown file.
                         shares_working_copy=False, effective_concurrency=1,
                         admission_event=lambda: loop.call_soon_threadsafe(admitted.set), **call_kwargs,
                     ))
-                    await admitted.wait()
+                    # The time limit starts at admission. A worker that ends
+                    # without ever being admitted ends the wait too.
+                    admission = asyncio.ensure_future(admitted.wait())
+                    await asyncio.wait(
+                        {worker, admission}, return_when=asyncio.FIRST_COMPLETED
+                    )
+                    admission.cancel()
                     return await asyncio.wait_for(asyncio.shield(worker), timeout=call_timeout)
                 except asyncio.TimeoutError:
                     for event_name in ("cancellation_event", "timeout_event"):
@@ -5333,62 +4258,6 @@ The detailed specifications are in the task markdown file.
             text += f"; effective per-task: {pairs}"
         return text
 
-    def _emit_wave0_timeout_warnings(
-        self,
-        feature: Feature,
-        effective_timeouts: Optional[Dict[str, int]] = None,
-    ) -> None:
-        """Wave-0 warning when a task's estimate exceeds its effective timeout.
-
-        Red-baseline retro (L12 item 3). Runs once before wave 1. For each
-        task, resolves the effective per-task timeout and warns (log +
-        console) when the task's own ``estimated_minutes`` exceeds that budget
-        — i.e. an explicit per-task override (or a hard cap) sits below the
-        estimate, so the task is at risk of a timeout that would MASK its real
-        failure. The default path applies the estimate-derived floor and so
-        never trips this; the warning catches the operator-under-budgeted case
-        (FEAT-VOICE-003 run 1: a 113-min task budgeted at the flat 50-min floor).
-
-        ``effective_timeouts`` is the map from
-        :meth:`_resolve_wave_task_timeouts`; when supplied it is reused so the
-        run resolves (and logs) each task's budget ONCE. When omitted the
-        budgets are resolved here, preserving the original behaviour.
-        """
-        multiplier = self.timeout_multiplier
-        precomputed = effective_timeouts or {}
-        for task_ids in feature.orchestration.parallel_groups:
-            for task_id in task_ids:
-                task = FeatureLoader.find_task(feature, task_id)
-                if task is None:
-                    continue
-                est = getattr(task, "estimated_minutes", None)
-                if not est or est <= 0:
-                    continue
-                effective = precomputed.get(task_id)
-                if effective is None:
-                    try:
-                        task_data = TaskLoader.load_task(
-                            task_id, repo_root=self.repo_root
-                        )
-                    except Exception:
-                        task_data = {}
-                    effective = self._resolve_task_timeout(
-                        task_data, task_id, estimated_minutes=est
-                    )
-                estimate_seconds = int(est * 60 * multiplier)
-                if estimate_seconds > effective:
-                    msg = (
-                        f"[{task_id}] estimated_minutes={est} "
-                        f"(~{estimate_seconds}s at multiplier {multiplier}) "
-                        f"exceeds its effective per-task timeout of "
-                        f"{effective}s — this task may time out before "
-                        f"completing, masking its real failure. Raise "
-                        f"frontmatter.autobuild.task_timeout or "
-                        f"GUARDKIT_AUTOBUILD_TASK_TIMEOUT_FLOOR."
-                    )
-                    logger.warning(msg)
-                    console.print(f"[yellow]⚠[/yellow] {msg}")
-
     def _resolve_task_timeout(
         self,
         task_data: Dict[str, Any],
@@ -5422,8 +4291,7 @@ The detailed specifications are in the task markdown file.
         overrides are rejected with a warning and the feature-level default
         (with the estimate floor applied) is used instead. An explicit
         override is NOT raised to the estimate floor — it is the operator's
-        choice — but the wave-0 warning (:meth:`_emit_wave0_timeout_warnings`)
-        surfaces it when it sits below the task's estimate.
+        choice.
 
         Successful overrides / floor-raises are logged at INFO so operators
         can audit the per-task budget that was applied.
@@ -5547,8 +4415,6 @@ The detailed specifications are in the task markdown file.
                 if admitted:
                     admitted()
                 result = self._execute_task_owned(task, feature, worktree, **kwargs)
-                if lease.failure and result.success:
-                    raise ScopeUnavailable(lease.failure)
                 stopped = any(event is not None and event.is_set() for event in
                               (kwargs.get("timeout_event"), kwargs.get("cancellation_event")))
                 if stopped and result.success:
@@ -5678,8 +4544,6 @@ The detailed specifications are in the task markdown file.
         time_budget_seconds: Optional[float] = None,
         wave_size: int = 1,
         effective_task_timeout: Optional[int] = None,
-        wave_changed_files: Optional[Dict[str, Any]] = None,
-        wave_files_lock: Optional[threading.Lock] = None,
         seed_feedback: Optional[str] = None,
         smoke_command: Optional[str] = None,
         smoke_expected_exit: int = 0,
@@ -5790,11 +4654,6 @@ The detailed specifications are in the task markdown file.
                 emitter=self._emitter,  # Forward emitter to task orchestrator (TASK-INST-013)
                 progress_logger=progress_logger,  # TASK-FIX-OBS2: Per-task progress logging
                 venv_python=self._bootstrap_venv_python,  # TASK-FIX-7A05
-                wave_changed_files=wave_changed_files,  # TASK-FIX-A7B2
-                wave_files_lock=wave_files_lock,  # TASK-FIX-A7B2
-                # TASK-FIX-HEAB: rolling-average honesty early-abort
-                honesty_early_abort_threshold=self.honesty_early_abort_threshold,
-                honesty_early_abort_window=self.honesty_early_abort_window,
                 # TASK-FIX-LGFM: thread --model down to LangGraph harness via
                 # AgentInvoker. Without this, model=None reaches LangGraphHarness
                 # and DeepAgents falls back to Anthropic (auth error under llama-swap).
@@ -5865,16 +4724,6 @@ The detailed specifications are in the task markdown file.
                 if tr.sdk_turns_used is not None
             ]
 
-            # TASK-FIX-7A07: Hoist stall sub-classification into the
-            # TaskExecutionResult so the review-summary renderer and memory
-            # seeding hook can surface per-task decision_subtype without
-            # re-walking the turn_history.
-            decision_subtype: Optional[str] = None
-            decision_co_fires: List[str] = []
-            if result.stall_classification is not None:
-                decision_subtype = result.stall_classification.decision_subtype
-                decision_co_fires = list(result.stall_classification.co_fires)
-
             return TaskExecutionResult(
                 task_id=task.id,
                 success=result.success,
@@ -5885,13 +4734,6 @@ The detailed specifications are in the task markdown file.
                 sdk_ceiling_hits=sdk_ceiling_hits,
                 sdk_total_invocations=sdk_total_invocations,
                 sdk_turns_per_invocation=sdk_turns_list,
-                decision_subtype=decision_subtype,
-                decision_subtype_co_fires=decision_co_fires,
-                stopped_because=(
-                    result.stopped_because
-                    if isinstance(getattr(result, "stopped_because", None), str)
-                    else None
-                ),
                 real_check_failed=(
                     not result.success and task_orchestrator.real_check_failed
                 ),
@@ -6254,165 +5096,24 @@ The detailed specifications are in the task markdown file.
             final_status = "paused"  # Partial completion (resume mode)
             success = False
 
-        # Hurl twin coverage (advisory-first, 2026-08-26). A plan can stamp
-        # every scenario "verifier: hurl" and the build can still finish
-        # without writing a single .hurl twin file — nothing between plan
-        # approval and here checked that the promised twin artifacts exist
-        # (the FEAT-0E07 hole: 5/5 complete, zero twins). Runs once, after
-        # the final task, only for a build that finished clean (a build that
-        # already failed has its own answer). Writes a plain receipt and a
-        # warning; fails the build ONLY when the repo opted in
-        # (qa.enforce_twin_coverage in .guardkit/config.yaml, read from the
-        # MAIN checkout so a build cannot switch its own gate off).
-        twin_error: Optional[str] = None
-        # 21 September 2026. Everything this phase learns that NOTHING LOOKED
-        # AT is collected here and written onto the whole-feature record before
-        # the build returns — which is before the runner exports that folder,
-        # so the record on disk is the complete one.
-        not_checked_additions: List[Dict[str, str]] = []
-        record_notes: List[str] = []
-        if final_status == "completed":
-            try:
-                twin_report = check_twin_coverage(
-                    feature_id=feature.id,
-                    scenarios=getattr(feature, "scenarios", None) or {},
-                    root=Path(worktree.path),
-                    enforced=is_twin_coverage_enforced(self.repo_root),
-                )
-                receipt_path = write_twin_coverage_receipt(
-                    twin_report, Path(worktree.path)
-                )
-                for line in render_twin_coverage_lines(
-                    twin_report, receipt_path
-                ):
-                    if twin_report.missing:
-                        logger.warning(line)
-                    else:
-                        logger.info(line)
-                    if not self.quiet:
-                        # markup=False: scenario titles may carry square
-                        # brackets; Rich would read them as style tags.
-                        console.print(line, markup=False)
-                if twin_report.blocks_build:
-                    final_status = "failed"
-                    success = False
-                    twin_error = (
-                        f"{len(twin_report.missing)} scenario(s) are marked "
-                        "for a Hurl twin but have no twin file (see "
-                        f"{receipt_path})"
-                    )
-                elif twin_report.missing:
-                    # The guard reported and did not block. The examples it
-                    # named still had nothing looking at them, so they are
-                    # said out loud rather than left to read as clean.
-                    not_checked_additions.extend(
-                        {
-                            "name": str(name),
-                            "reason": GUARD_MISSING_CHECK_FILE_REASON,
-                        }
-                        for name in twin_report.missing
-                    )
-            except Exception as exc:  # noqa: BLE001 — the check never crashes a build
-                logger.warning("Twin coverage check could not run: %s", exc)
-
-        # The completion rule for the whole-feature check (B9 correction,
-        # 2026-09-19). A project that declares a check cannot have a feature
-        # recorded as completed on a receipt that is missing, not passing, or
-        # about different code; and a promise the Coach could only record as
-        # CLAIMED (a behaviour at a delivered surface that nothing independent
-        # proved) counts only when the check itself named that scenario as
-        # covered. A project that declares no check is untouched by this.
-        feature_check_error: Optional[str] = None
-        if final_status == "completed":
-            try:
-                verdict = feature_check_completion_verdict(
-                    repo_root=self.repo_root,
-                    worktree_root=Path(worktree.path),
-                    feature=feature,
-                )
-            except Exception as exc:  # noqa: BLE001 — the rule never crashes a build
-                logger.warning(
-                    "The whole-feature check's completion rule could not run: "
-                    "%s",
-                    exc,
-                )
-                verdict = None
-            if verdict is not None and verdict.blocks:
-                final_status = "failed"
-                success = False
-                feature_check_error = verdict.reason
-                logger.error(
-                    "This feature is NOT completed: %s", verdict.reason
-                )
-                if not self.quiet:
-                    console.print(
-                        f"[red]✗ Not completed: {verdict.reason}[/red]",
-                        markup=True,
-                    )
-            elif verdict is not None and (verdict.not_checked or verdict.reason):
-                # The rule did not block, and it learned something the record
-                # does not say yet: names nothing looked at. They go on the
-                # not-checked list and never on the covered list.
-                not_checked_additions.extend(verdict.not_checked)
-                if verdict.reason:
-                    record_notes.append(verdict.reason)
-                logger.warning(
-                    "%d promise(s) go on the not-checked list: %s",
-                    len(verdict.not_checked),
-                    verdict.reason,
-                )
-                if not self.quiet:
-                    console.print(
-                        f"[yellow]⚠ Not checked: {verdict.reason}[/yellow]",
-                        markup=True,
-                    )
-
-        # Finish the whole-feature record on disk. This is the LAST thing in
-        # the build that learns anything about what was not looked at, and the
-        # runner exports ``.guardkit/autobuild-private`` after the build
-        # returns — so the record the card is built from is the complete one.
-        if not_checked_additions or record_notes:
-            try:
-                finished = update_feature_check_receipt(
-                    Path(worktree.path),
-                    not_checked=not_checked_additions,
-                    notes=record_notes,
-                )
-                if finished is not None:
-                    logger.info(
-                        "The whole-feature record now carries %d not-checked "
-                        "item(s): %s",
-                        len(not_checked_additions),
-                        finished,
-                    )
-            except Exception as exc:  # noqa: BLE001 — a record never fails a build
-                logger.warning(
-                    "The whole-feature record could not be finished: %s", exc
-                )
-
-        # What the per-task and per-group code checks did, in one summary
-        # beside that record (21 September 2026). Never raises, and a build is
-        # never failed by it.
+        # What the per-task code checks did, in one summary beside the
+        # whole-feature record (21 September 2026). Never raises, and a build
+        # is never failed by it.
         self._write_code_checks_summary(feature, worktree)
 
         # When the whole-feature check failed during the wave phase, the
         # feature is already failed by its gate result — say WHY in the
         # result's own words rather than letting it read as a smoke gate.
-        if feature_check_error is None:
-            for wave in wave_results:
-                gate = wave.smoke_gate_result
-                if (
-                    gate is not None
-                    and not gate.passed
-                    and str(gate.command).startswith("whole-feature check (")
-                ):
-                    feature_check_error = (
-                        gate.stderr or "the whole-feature check failed"
-                    )
-                    break
-
-        # The whole-feature check's own verdict (read by the approved part).
-        feature_check_verdict_error = feature_check_error
+        feature_check_error: Optional[str] = None
+        for wave in wave_results:
+            gate = wave.smoke_gate_result
+            if (
+                gate is not None
+                and not gate.passed
+                and str(gate.command).startswith("whole-feature check (")
+            ):
+                feature_check_error = gate.stderr or "the whole-feature check failed"
+                break
 
         # Update feature
         feature.status = final_status
@@ -6439,49 +5140,11 @@ The detailed specifications are in the task markdown file.
                 wave_results,
                 tasks_completed=tasks_completed,
                 smoke_gate_failed=smoke_gate_failed,
-                feature_check_error=feature_check_verdict_error,
+                feature_check_error=feature_check_error,
             )
         )
-        task_stopped_because: Optional[str] = None
-        if (
-            not success
-            and twin_error is None
-            and feature_check_error is None
-        ):
-            task_stopped_because = next(
-                (
-                    r.stopped_because
-                    for wave in wave_results
-                    for r in wave.results
-                    if not r.success
-                    and isinstance(getattr(r, "stopped_because", None), str)
-                    and r.stopped_because
-                ),
-                None,
-            )
-            if task_stopped_because:
-                logger.error(
-                    "Feature %s stopped: %s", feature.id, task_stopped_because
-                )
-                try:
-                    print(
-                        stopped_because_line(
-                            feature.id, task_stopped_because, approved_head
-                        ),
-                        flush=True,
-                    )
-                except Exception as exc:  # noqa: BLE001 — a line never fails a build
-                    logger.warning(
-                        "The stop reason's stdout line could not be written: %s",
-                        type(exc).__name__,
-                    )
-
         # Display summary
         self._display_summary(feature, wave_results, worktree, final_status)
-        if task_stopped_because and not self.quiet:
-            console.print(
-                f"Stopped: {task_stopped_because}", style="red", markup=False
-            )
 
         orchestration_result = FeatureOrchestrationResult(
             feature_id=feature.id,
@@ -6497,12 +5160,8 @@ The detailed specifications are in the task markdown file.
                 None
                 if success
                 else (
-                    twin_error
-                    if twin_error is not None
-                    else feature_check_error
+                    feature_check_error
                     if feature_check_error is not None
-                    else task_stopped_because
-                    if task_stopped_because
                     else (
                         "smoke gate failed between waves"
                         if smoke_gate_failed and tasks_failed == 0
@@ -6514,9 +5173,8 @@ The detailed specifications are in the task markdown file.
 
         # Step 1 (24 October 2026): the approved part of a feature that did
         # not finish goes to Forge on stdout, which survives a failed record
-        # write. Printed once; the line above already carried it when a task
-        # gave the stop its sentence.
-        if approved_head and not task_stopped_because:
+        # write.
+        if approved_head:
             try:
                 print(
                     stopped_because_line(
@@ -6654,60 +5312,6 @@ The detailed specifications are in the task markdown file.
         )
 
         return deferred_result
-
-    def _dependencies_satisfied(
-        self,
-        task: FeatureTask,
-        feature: Feature,
-    ) -> bool:
-        """
-        Check if all dependencies for a task are satisfied.
-
-        A dependency is satisfied if its status is in ``TERMINAL_SATISFIED``
-        (i.e. ``"completed"`` or ``"deferred"``). When a dependent proceeds
-        against a ``deferred`` predecessor, a ``logger.warning(...)`` is
-        emitted naming both task IDs and the predecessor's
-        ``deferred_reason`` — the dependent task is asserting that the
-        deferred predecessor's artefacts are not load-bearing for its own
-        scope (TASK-FIX-DEFD; closes the contract gap left by
-        TASK-FPTC-003 which introduced ``status="deferred"`` only on the
-        writer path).
-
-        Unknown predecessors (``find_task`` returns ``None``) are treated
-        as satisfied — preserves prior behaviour.
-
-        Parameters
-        ----------
-        task : FeatureTask
-            Task to check
-        feature : Feature
-            Parent feature
-
-        Returns
-        -------
-        bool
-            True if all dependencies are in a terminal-satisfied state
-        """
-        for dep_id in task.dependencies:
-            dep_task = FeatureLoader.find_task(feature, dep_id)
-            if dep_task is None:
-                continue  # unknown predecessor; preserve existing behaviour
-            if dep_task.status not in TERMINAL_SATISFIED:
-                return False
-            if dep_task.status == "deferred":
-                deferred_reason = (
-                    dep_task.result.get("deferred_reason")
-                    if dep_task.result is not None
-                    else None
-                )
-                logger.warning(
-                    "[%s] Proceeding against deferred predecessor [%s] "
-                    "(reason=%r). Dependent task assumes the deferred "
-                    "predecessor's artefacts are not load-bearing for its "
-                    "own scope.",
-                    task.id, dep_id, deferred_reason,
-                )
-        return True
 
     def _update_feature(
         self,

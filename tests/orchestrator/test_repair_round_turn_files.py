@@ -8,7 +8,9 @@ approved task, its ``*_turn_*.json`` files are MOVED, names unchanged, into
 are always the latest round, so every writer and reader is unchanged.
 
 Driven through the real re-open in ``FeatureOrchestrator._execute_wave_parallel``
-with only ``_execute_task`` standing in for the repair round's turns.
+and the real ``_execute_task`` (which moves the files under the checkout's
+writer lease), with only ``_execute_task_owned`` standing in for the repair
+round's turns.
 """
 
 from __future__ import annotations
@@ -26,7 +28,6 @@ from guardkit.orchestrator.feature_orchestrator import (
     FeatureOrchestrator,
     TaskExecutionResult,
 )
-from guardkit.orchestrator.review_summary import ReviewSummaryGenerator
 from guardkit.orchestrator.turn_rounds import archive_turn_files
 from guardkit.worktrees import Worktree
 
@@ -40,6 +41,10 @@ class _Layout:
     def __init__(self, tmp_path: Path) -> None:
         self.repo = tmp_path / "main"
         self.worktree = self.repo / ".guardkit" / "worktrees" / FEATURE_ID
+        # The task runs as the checkout's writer, which reads its git identity.
+        from tests.task_scope_fixtures import init_checkout
+
+        init_checkout(self.worktree)
         # turn_state the late-approval reader looks for, in the main checkout
         self.root_public = self.repo / ".guardkit" / "autobuild" / TASK_ID
         # the Player's records, in the build's worktree
@@ -56,10 +61,6 @@ class _Layout:
                 self.root_public / f"turn_state_turn_{turn}.json": {"turn_number": turn},
                 self.wt_public / f"player_turn_{turn}.json": {"turn": turn},
                 self.wt_public / f"turn_state_turn_{turn}.json": {"turn_number": turn},
-                self.wt_public / f"qav_shadow_turn_{turn}.json": {
-                    "status": "ok", "agree": False, "task_id": TASK_ID, "turn": turn,
-                    "round": label,
-                },
                 self.private / f"coach_turn_{turn}.json": {"decision": "approve"},
                 self.private / f"coach_evidence_turn_{turn}.json": {"turn": turn},
             }
@@ -100,7 +101,7 @@ def _reopen(layout: _Layout, feature: MagicMock, repair_turns: int, label: str) 
         path=layout.worktree, base_branch="main",
     )
 
-    def _execute_task(task, feature_, worktree_, **_kwargs):
+    def _execute_task_owned(task, feature_, worktree_, **_kwargs):
         layout.write_round(label, repair_turns)
         return TaskExecutionResult(
             task_id=task.id, success=True, total_turns=repair_turns,
@@ -108,7 +109,7 @@ def _reopen(layout: _Layout, feature: MagicMock, repair_turns: int, label: str) 
         )
 
     feature.tasks[0].status = "completed"
-    with patch.object(fo, "_execute_task", side_effect=_execute_task), \
+    with patch.object(fo, "_execute_task_owned", side_effect=_execute_task_owned), \
             patch("guardkit.orchestrator.feature_orchestrator.FeatureLoader.find_task",
                   side_effect=lambda f, tid: f.tasks[0]), \
             patch("guardkit.orchestrator.feature_orchestrator.FeatureLoader.save_feature"), \
@@ -177,12 +178,6 @@ class TestTheEarlierRoundIsKept:
         # The code-checks reader.
         review = latest_review_record(layout.private)
         assert review == layout.private / "coach_evidence_turn_1.json"
-        # The review summary's shadow tally sees only the live receipt.
-        generator = ReviewSummaryGenerator(
-            output_dir=layout.worktree / ".guardkit" / "autobuild" / FEATURE_ID
-        )
-        rendered = generator._render_qav_shadow(MagicMock())
-        assert "1 judged" in rendered, rendered
 
     def test_a_task_that_is_not_reopened_keeps_its_files(self, tmp_path: Path) -> None:
         """No gate re-entry (seed_feedback None): nothing is moved."""

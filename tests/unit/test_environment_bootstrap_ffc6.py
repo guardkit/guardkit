@@ -19,10 +19,6 @@ Three independent leak vectors covered here:
    ``sys.executable``'s ``sys.prefix``, **independent of**
    ``$VIRTUAL_ENV`` (covered by AC-010).
 
-Plus AC-012: the ``BootstrapEnvironmentLeakError`` invariant — bootstrap
-must refuse to claim success when the captured interpreter lies outside
-the worktree root.
-
 See:
     - .claude/reviews/TASK-REV-FFC6-review-report.md
     - .claude/rules/absence-of-failure-is-not-success.md
@@ -42,7 +38,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from guardkit.orchestrator.environment_bootstrap import (
-    BootstrapEnvironmentLeakError,
     DetectedManifest,
     EnvironmentBootstrapper,
 )
@@ -322,65 +317,6 @@ class TestNoLeakWhenUvSyncPath:
             assert env["PATH"].startswith(
                 str(worktree / ".venv" / "bin") + os.pathsep
             )
-
-
-# ---------------------------------------------------------------------------
-# AC-012: invariant raise when install lands outside worktree
-# ---------------------------------------------------------------------------
-
-
-class TestInvariantFailsWhenInstallLandsOutsideWorktree:
-    """AC-012 — bootstrap must refuse to claim success when the captured
-    interpreter lies outside the worktree root."""
-
-    def test_invariant_fails_when_install_lands_outside_worktree(
-        self, tmp_path: Path
-    ) -> None:
-        """Replaces the false-success block at environment_bootstrap.py:1239-1249.
-
-        Setup the bootstrapper to leave ``self._venv_python`` pointing at a
-        path OUTSIDE ``self._root`` after install. Expect
-        ``BootstrapEnvironmentLeakError``.
-        """
-        worktree = tmp_path / "worktree"
-        worktree.mkdir()
-        _make_worktree_venv_on_disk(worktree)
-        manifest = _make_pip_editable_manifest(worktree)
-
-        # Simulate a fictional parent venv outside the worktree.
-        parent_venv_python = tmp_path / "parent" / ".venv" / "bin" / "python"
-        parent_venv_python.parent.mkdir(parents=True)
-        parent_venv_python.write_text("#!/usr/bin/env python\n")
-        parent_venv_python.chmod(0o755)
-
-        bootstrapper = EnvironmentBootstrapper(root=worktree)
-
-        install_proc = MagicMock(returncode=0, stdout="installed\n", stderr="")
-
-        # Patch _ensure_worktree_venv to mis-route into the parent venv
-        # (simulates an arbitrary post-install code path that overrides
-        # self._venv_python with a parent-rooted interpreter — the
-        # historical false-success block did exactly this with
-        # sys.executable).
-        original_run_install = bootstrapper._run_install
-
-        def leaky_run_install(manifest):  # type: ignore[no-untyped-def]
-            ok = original_run_install(manifest)
-            bootstrapper._venv_python = parent_venv_python
-            return ok
-
-        with patch(
-            "guardkit.orchestrator.environment_bootstrap.subprocess.run",
-            return_value=install_proc,
-        ):
-            with patch.object(
-                bootstrapper, "_run_install", side_effect=leaky_run_install
-            ):
-                with pytest.raises(BootstrapEnvironmentLeakError) as exc_info:
-                    bootstrapper.bootstrap([manifest])
-
-        assert "outside worktree" in str(exc_info.value)
-        assert str(parent_venv_python) in str(exc_info.value)
 
 
 # ---------------------------------------------------------------------------

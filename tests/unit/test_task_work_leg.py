@@ -781,7 +781,7 @@ class TestDelegationConfiguration:
         assert isinstance(kwargs["timeout_event"], threading.Event)
         assert not kwargs["timeout_event"].is_set()
 
-    def test_the_real_factory_passes_the_five_switches(self, repo, monkeypatch):
+    def test_the_real_factory_passes_the_four_switches(self, repo, monkeypatch):
         """Drive ``_build_orchestrator`` itself, capturing the real ctor kwargs."""
         captured: Dict[str, Any] = {}
 
@@ -803,7 +803,6 @@ class TestDelegationConfiguration:
         )
         assert captured["enable_pre_loop"] is False
         assert captured["enable_checkpoints"] is False
-        assert captured["rollback_on_pollution"] is False
         assert captured["skip_arch_review"] is True
         assert captured["task_timeout"] == 1620
         assert captured["sdk_timeout"] == 420

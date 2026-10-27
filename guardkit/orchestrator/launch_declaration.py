@@ -23,7 +23,7 @@ so the same names are carried into it from here, again only when set.
 created on demand. The scratch folder is the one GuardKit already keeps per
 worktree inside its git directory (``paths.builder_scratch_dir``): outside the
 project tree, ``git status`` and the candidate. Without a scratch folder the
-command does not run; nothing falls back into the worktree. Forge reads only
+names are left as they are. Forge reads only
 ``settings`` and treats other keys in the block as ordinary, so one block holds
 both lists. (``XDG_CONFIG_HOME`` and ``NODE_COMPILE_CACHE`` in the example are
 there because Go keeps its telemetry under the user config folder and Node 22
@@ -33,12 +33,13 @@ folders outside it; declaring them still gives each tool its own folder.)
 
 A value the caller set itself is never replaced: a setting is only added when
 the caller's environment lacks it, and a scratch name whose value the caller
-chose (one that differs from this process's own) is refused. A value merely
+chose (one that differs from this process's own) keeps it. A value merely
 inherited from this process is replaced by the scratch folder.
 
-A MALFORMED block refuses the task (:class:`LaunchDeclarationError`); it is
-never logged and dropped, because dropping it sends tool caches into the
-worktree. Duplicate names are folded exactly as Forge folds them. No block, or
+A reserved or credential-shaped name refuses the task
+(:class:`LaunchDeclarationError`): the factory's own settings and credentials
+never reach a project command. Anything else that is not a usable name is
+left out. Duplicate names are folded exactly as Forge folds them. No block, or
 a block with neither list, changes nothing.
 
 Central code carries the names as text and knows nothing about what tool they
@@ -82,7 +83,6 @@ SCRATCH_SUBDIR = "toolchain"
 # ---- mirrored from forge.launch_environment (22 September 2026) ----------
 DECLARED_NAME_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 MAX_DECLARED_NAME_LENGTH = 128
-MAX_DECLARED_SETTINGS = 32
 RESERVED_PREFIXES: Tuple[str, ...] = (
     "FORGE_",
     "GUARDKIT_",
@@ -175,30 +175,17 @@ class LaunchDeclaration:
 
 
 def _names(block: Mapping[str, Any], key: str) -> Tuple[str, ...]:
-    """The declared names. Step 2 (26 October 2026): only a reserved or
-    credential-shaped name refuses (the safety fence); anything else
-    malformed is logged and left out."""
+    """The declared names. Only a reserved or credential-shaped name refuses
+    (the safety fence); anything else that is not a usable name is left out."""
     raw = block.get(key)
-    if raw is None:
-        return ()
     if isinstance(raw, str) or not isinstance(raw, (list, tuple)):
-        logger.warning(
-            "`launch.%s` should be a list of names (it reads as %s); it is ignored",
-            key, type(raw).__name__,
-        )
         return ()
-    if len(raw) > MAX_DECLARED_SETTINGS:
-        logger.warning(
-            "`launch.%s` names %d settings; about %d is the guide",
-            key, len(raw), MAX_DECLARED_SETTINGS,
-        )
     names: list = []
     for entry in raw:
         refusal = declared_setting_refusal(entry)
         if refusal is not None:
             if isinstance(entry, str) and _fence_refusal(entry.strip()):
                 raise ValueError(f"`launch.{key}`: {refusal}")
-            logger.warning("`launch.%s`: %s; it is left out", key, refusal)
             continue
         name = entry.strip()
         # Folded, not refused: Forge's reader keeps the first of a repeat.
@@ -211,27 +198,14 @@ def parse_launch_block(raw: Any) -> LaunchDeclaration:
     """Read a raw ``launch`` mapping. Raises ``ValueError`` only for a
     reserved or credential-shaped name (the safety fence).
 
-    ``None``, or any other value that is not a mapping, declares nothing
-    (logged, step 2, 26 October 2026).
+    ``None``, or any other value that is not a mapping, declares nothing.
+    A name in both lists is used as a scratch folder.
     """
-    if raw is None:
-        return LaunchDeclaration()
     if not isinstance(raw, dict):
-        logger.warning(
-            "`launch:` should be a mapping (it reads as %s); it is ignored",
-            type(raw).__name__,
-        )
         return LaunchDeclaration()
     settings = _names(raw, SETTINGS_KEY)
     scratch = _names(raw, SCRATCH_KEY)
-    both = sorted(set(settings) & set(scratch))
-    if both:
-        logger.warning(
-            "%s cannot be both passed through (`launch.settings`) and a scratch "
-            "folder (`launch.scratch`); each is used as a scratch folder",
-            ", ".join(both),
-        )
-        settings = tuple(name for name in settings if name not in both)
+    settings = tuple(name for name in settings if name not in scratch)
     return LaunchDeclaration(settings=settings, scratch=scratch)
 
 
@@ -256,25 +230,17 @@ def _read_regular_text(path: Path) -> Optional[str]:
         os.close(fd)
 
 
-def load_launch_declaration(
-    repo_root: Path, *, warn_unread_keys: bool = False
-) -> Optional[LaunchDeclaration]:
+def load_launch_declaration(repo_root: Path) -> Optional[LaunchDeclaration]:
     """Read ``launch:`` from ``<repo_root>/.guardkit/config.yaml``.
 
     ``None`` when the file or block is absent or declares nothing, and when
     the file itself cannot be read as YAML (the posture of every other reader
     of this file).
 
-    ``warn_unread_keys`` logs one warning naming keys under ``launch:`` that
-    are not read here; only the task-load check passes it, so the warning
-    appears once per task load rather than on every command.
-
     Raises
     ------
     LaunchDeclarationError
-        When the block is malformed. Unlike the toolchain reader this never
-        degrades to "absent": dropping the block would send tool caches into
-        the worktree, so the task is refused with the plain reason instead.
+        When the block names a reserved or credential-shaped setting.
     """
     from guardkit.orchestrator.toolchain_declaration import CONFIG_RELATIVE_PATH
 
@@ -295,21 +261,6 @@ def load_launch_declaration(
     if not isinstance(data, dict) or data.get(LAUNCH_KEY) is None:
         return None
     block = data[LAUNCH_KEY]
-    if warn_unread_keys and isinstance(block, dict):
-        # Not refused: Forge allows other settings in this block. But a typo
-        # such as `scrach:` would otherwise be silently ignored, so say it once
-        # (the task-load read passes this; the per-command reads do not).
-        unread = sorted(str(key) for key in block if key not in _READ_KEYS)
-        if unread:
-            logger.warning(
-                "The `launch:` block in %s has keys GuardKit does not read: %s "
-                "(it reads only `%s` and `%s`). If one is a typo, its names "
-                "are not applied.",
-                config_path,
-                ", ".join(unread),
-                SETTINGS_KEY,
-                SCRATCH_KEY,
-            )
     try:
         declaration = parse_launch_block(block)
     except ValueError as exc:
@@ -398,61 +349,24 @@ def load_launch_snapshot(
 
 
 def _private_directory(directory: Path) -> Path:
-    """Create ``directory`` (mode 0700) or reuse it; refuse anything else.
+    """Create ``directory`` (mode 0700), or reuse it and set it to 0700.
 
-    19 October 2026: an existing folder is not taken as it is. It is opened
-    without following a symlink, must belong to this process's user, and is
-    set to mode 0700 if it is not already, as a new one would be. A symlink,
-    a non-folder, another user's folder or one that cannot be made private
-    raises :class:`LaunchEnvironmentError`. (These are the project commands'
-    private ``HOME`` and ``TMPDIR`` and the declared scratch folders; the
-    factory's shell folders get the same treatment in guardkitfactory.)
-    Two callers making the same new folder at once both succeed.
+    These are the project commands' private ``HOME`` and ``TMPDIR`` and the
+    declared scratch folders. Two callers making the same new folder at once
+    both succeed. Raises :class:`LaunchEnvironmentError` when the folder
+    cannot be created or made private.
     """
     try:
-        if not os.path.lexists(directory):
-            try:
-                directory.mkdir(mode=0o700)
-            except FileExistsError:
-                pass
-        status = directory.lstat()
+        try:
+            directory.mkdir(mode=0o700)
+        except FileExistsError:
+            pass
+        if stat.S_IMODE(directory.stat().st_mode) != 0o700:
+            directory.chmod(0o700)
     except OSError as exc:
         raise LaunchEnvironmentError(
             f"the declared scratch folder could not be created at {directory}: {exc}"
         ) from exc
-    if stat.S_ISLNK(status.st_mode) or not stat.S_ISDIR(status.st_mode):
-        raise LaunchEnvironmentError(
-            f"the declared scratch folder is not a real folder: {directory}"
-        )
-    try:
-        descriptor = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
-    except OSError as exc:
-        raise LaunchEnvironmentError(
-            f"the declared scratch folder is not a real folder: {directory}"
-        ) from exc
-    try:
-        try:
-            opened = os.fstat(descriptor)
-        except OSError as exc:
-            raise LaunchEnvironmentError(
-                f"the declared scratch folder could not be inspected: {directory}"
-            ) from exc
-        # (LaunchEnvironmentError is an OSError, so it is raised outside the
-        # handlers that turn other OSErrors into a plain sentence.)
-        if opened.st_uid != os.geteuid():
-            raise LaunchEnvironmentError(
-                f"the declared scratch folder belongs to another user: {directory}"
-            )
-        if stat.S_IMODE(opened.st_mode) != 0o700:
-            try:
-                os.fchmod(descriptor, 0o700)
-            except OSError as exc:
-                raise LaunchEnvironmentError(
-                    f"the declared scratch folder could not be made private: "
-                    f"{directory}"
-                ) from exc
-    finally:
-        os.close(descriptor)
     return directory
 
 
@@ -472,14 +386,13 @@ def apply_launch_environment(
     process's environment when set there and not already in ``env``, and each
     ``scratch`` name set to ``<scratch folder>/toolchain/<NAME>`` for
     ``worktree``. A scratch name may replace a value inherited from this
-    process, never one the caller chose.
+    process, never one the caller chose. Without a scratch folder the
+    scratch names are left as they are.
 
     Raises
     ------
     LaunchEnvironmentError
-        When scratch names are declared and the worktree has no usable scratch
-        folder, a folder cannot be created, or the caller already chose a
-        value for a scratch name.
+        When a scratch folder cannot be created.
     """
     if declaration is None or declaration.is_empty:
         return env
@@ -488,31 +401,16 @@ def apply_launch_environment(
         value = os.environ.get(name)
         if value is not None and name not in result:
             result[name] = value
-    chosen = sorted(
-        name
-        for name in declaration.scratch
-        if name in result and result[name] != os.environ.get(name)
-    )
-    if chosen:
-        raise LaunchEnvironmentError(
-            f"the project declares `launch.scratch` names this command already "
-            f"sets itself ({', '.join(chosen)}), so it was not run with either "
-            "value."
-        )
     if declaration.scratch:
         from guardkit.orchestrator.paths import prepare_builder_scratch_dir
 
         folder = prepare_builder_scratch_dir(Path(worktree))
-        if folder is None:
-            raise LaunchEnvironmentError(
-                f"the project declares `launch.scratch` "
-                f"({', '.join(declaration.scratch)}), but the worktree {worktree} "
-                "has no scratch folder, so the command was not run. Nothing is "
-                "put inside the project instead."
-            )
-        base = _private_directory(folder / SCRATCH_SUBDIR)
-        for name in declaration.scratch:
-            result[name] = str(_private_directory(base / name))
+        if folder is not None:
+            base = _private_directory(folder / SCRATCH_SUBDIR)
+            for name in declaration.scratch:
+                if name in result and result[name] != os.environ.get(name):
+                    continue  # the caller chose this value itself
+                result[name] = str(_private_directory(base / name))
     return result
 
 

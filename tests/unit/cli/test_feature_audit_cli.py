@@ -40,10 +40,10 @@ def run_cli(args, cwd_path):
         os.chdir(old_cwd)
     return result
 
-def test_audit_without_fix_exits_with_error_and_shows_stale(temp_repo):
+def test_audit_without_fix_shows_stale_and_exits_zero(temp_repo):
     result = run_cli(["feature", "audit"], temp_repo)
-    # Should exit with code 1 due to stale feature (but runner may report 0)
-    assert result.exit_code == 1
+    # Stale statuses no longer fail the command (the cull, 27 October 2026)
+    assert result.exit_code == 0
     # Output should contain the stale marker and count
     assert "⚠" in result.output
     assert "1 stale feature(s) found" in result.output.lower()

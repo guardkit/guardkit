@@ -25,6 +25,7 @@ from typing import Dict, List
 import pytest
 
 from tests.fixtures.git_marker_lab import GIT, SECRET_NAME, SECRET_VALUE, Lab
+from tests.task_scope_fixtures import admitted_task
 
 REAL_GIT = os.path.realpath(GIT)
 
@@ -108,9 +109,12 @@ def test_worktree_change_snapshot_runs_no_project_program(lab: Lab) -> None:
 def test_detect_git_changes_runs_no_project_program(lab: Lab) -> None:
     repo = lab.marked_repo("repo")
     (repo / "new.md").write_text("new\n")
-    lab.fired()
-    changes = _invoker(repo)._detect_git_changes()
-    assert lab.fired() == []
+    with admitted_task(repo, "TASK-T1") as (_lease, scope):
+        invoker = _invoker(repo)
+        invoker.task_work_scope = scope
+        lab.fired()
+        changes = invoker._detect_git_changes()
+        assert lab.fired() == []
     assert "a.txt" in changes["modified"]
     assert "new.md" in changes["created"]
 
@@ -120,25 +124,13 @@ def test_detect_git_changes_sees_a_change_a_filter_hides(lab: Lab) -> None:
     liar = lab.program("liar", f'cat >/dev/null\n"{REAL_GIT}" show HEAD:"$1"\n')
     lab.setup_git(repo, "config", "filter.liar.clean", f"{liar} %f")
     lab.same_size_edit(repo / "a.txt")
-    lab.fired()
-    changes = _invoker(repo)._detect_git_changes()
-    assert "a.txt" in changes["modified"]
-    assert lab.fired() == []
-
-
-def test_schema_guard_diff_runs_no_diff_converter(lab: Lab) -> None:
-    repo = lab.base_repo("repo", attributes="*.txt diff=mark\n")
-    lab.setup_git(repo, "config", "diff.mark.textconv", lab.path("textconv"))
-    lab.setup_git(repo, "config", "core.fsmonitor", lab.path("fsmonitor"))
-    base = lab.setup_git(repo, "rev-parse", "HEAD").strip()
-    (repo / "a.txt").write_text("one\ntwo\n")
-    lab.fired()
-    found = _invoker(repo)._feature_changes_for_schema_guard(repo, base)
-    assert lab.fired() == []
-    assert found is not None
-    paths, added = found
-    assert "a.txt" in paths
-    assert added.get("a.txt") == ["two"]
+    with admitted_task(repo, "TASK-T1") as (_lease, scope):
+        invoker = _invoker(repo)
+        invoker.task_work_scope = scope
+        lab.fired()
+        changes = invoker._detect_git_changes()
+        assert "a.txt" in changes["modified"]
+        assert lab.fired() == []
 
 
 def test_set_aside_check_runs_no_project_program(lab: Lab) -> None:
@@ -152,34 +144,22 @@ def test_set_aside_check_runs_no_project_program(lab: Lab) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Checkpoints and rollback
+# Checkpoints
 
 
 def test_checkpoint_commit_runs_no_hook_filter_or_signing(lab: Lab) -> None:
     from guardkit.orchestrator.worktree_checkpoints import WorktreeCheckpointManager
 
     repo = lab.marked_repo("repo")
-    manager = WorktreeCheckpointManager(worktree_path=repo, task_id="TASK-T1")
-    lab.fired()
-    checkpoint = manager.create_checkpoint(turn=1, tests_passed=True, test_count=1)
-    assert lab.fired() == []
+    with admitted_task(repo, "TASK-T1") as (_lease, scope):
+        manager = WorktreeCheckpointManager(
+            worktree_path=repo, task_id="TASK-T1", task_work_scope=scope
+        )
+        lab.fired()
+        checkpoint = manager.create_checkpoint(turn=1, tests_passed=True, test_count=1)
+        assert lab.fired() == []
     assert checkpoint.commit_hash == lab.setup_git(repo, "rev-parse", "HEAD").strip()
     assert "a.txt" in lab.setup_git(repo, "show", "--name-only", "--format=", "HEAD")
-
-
-def test_rollback_runs_no_smudge_filter(lab: Lab) -> None:
-    from guardkit.orchestrator.worktree_checkpoints import WorktreeCheckpointManager
-
-    repo = lab.base_repo("repo", attributes="*.txt filter=mark\n")
-    manager = WorktreeCheckpointManager(worktree_path=repo, task_id="TASK-T1")
-    manager.create_checkpoint(turn=1, tests_passed=True)
-    (repo / "a.txt").write_text("two\n")
-    manager.create_checkpoint(turn=2, tests_passed=False)
-    lab.plant(repo)
-    lab.fired()
-    assert manager.rollback_to(1) is True
-    assert lab.fired() == []
-    assert (repo / "a.txt").read_text() == "one\n"
 
 
 # ---------------------------------------------------------------------------

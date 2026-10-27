@@ -32,10 +32,7 @@ from typing import Any, Dict, List
 import pytest
 
 from guardkit.orchestrator import work_runner
-from guardkit.orchestrator.environment_bootstrap import (
-    EnvironmentBootstrapper,
-    UvSourcesRequireUvError,
-)
+from guardkit.orchestrator.environment_bootstrap import EnvironmentBootstrapper
 from guardkit.orchestrator.work_runner import (
     BOOTSTRAP_STATE_RELPATH,
     INTERPRETER_SOURCES,
@@ -482,7 +479,7 @@ class TestBootstrapFailure:
         )
 
         def raising(self, manifests, relevant_stacks=None):
-            raise UvSourcesRequireUvError(message)
+            raise RuntimeError(message)
 
         monkeypatch.setattr(EnvironmentBootstrapper, "bootstrap", raising)
 
@@ -491,7 +488,7 @@ class TestBootstrapFailure:
 
         assert factory.calls
         assert message in caplog.text
-        assert "the environment bootstrap failed" in caplog.text
+        assert "the environment bootstrap raised RuntimeError" in caplog.text
 
     def test_a_python_marker_the_bootstrap_cannot_install_from_is_named(
         self, tmp_path, factory, install_spy, caplog
@@ -589,10 +586,9 @@ class TestRealFactory:
             venv_python="/somewhere/.venv/bin/python",
         )
         assert captured["venv_python"] == "/somewhere/.venv/bin/python"
-        # The five §2c switches are untouched by Part N.
+        # The four §2c switches are untouched by Part N.
         assert captured["enable_pre_loop"] is False
         assert captured["enable_checkpoints"] is False
-        assert captured["rollback_on_pollution"] is False
         assert captured["skip_arch_review"] is True
         assert captured["existing_worktree"].path == python_repo
 

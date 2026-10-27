@@ -284,22 +284,6 @@ class WorktreeManager:
         """
         return f"autobuild/{task_id}"
 
-    def _is_branch_exists_error(self, error: WorktreeError) -> bool:
-        """
-        Check if a WorktreeError indicates the branch already exists.
-
-        This helper method detects branch-already-exists errors to enable
-        automatic cleanup and retry during worktree creation.
-
-        Args:
-            error: The WorktreeError to check
-
-        Returns:
-            True if error indicates branch already exists, False otherwise
-        """
-        error_str = str(error).lower()
-        return "already exists" in error_str
-
     def _build_worktree_add_cmd(
         self,
         worktree_path: Path,
@@ -340,35 +324,6 @@ class WorktreeManager:
         except WorktreeError:
             return True
 
-    def _branch_exists(self, branch_name: str) -> bool:
-        """
-        Check if a branch exists.
-
-        Args:
-            branch_name: Name of the branch to check.
-
-        Returns:
-            True if branch exists, False otherwise.
-        """
-        try:
-            self._run_git(["rev-parse", "--verify", f"refs/heads/{branch_name}"])
-            return True
-        except WorktreeError:
-            return False
-
-    def _list_branches(self) -> list[str]:
-        """
-        List all local branches.
-
-        Returns:
-            List of branch names, or empty list on error.
-        """
-        try:
-            result = self._run_git(["branch", "--format=%(refname:short)"])
-            return [b.strip() for b in result.stdout.splitlines() if b.strip()]
-        except WorktreeError:
-            return []
-
     def create(
         self,
         task_id: str,
@@ -400,12 +355,6 @@ class WorktreeManager:
         """
         branch_name = self._build_branch_name(task_id)
         worktree_path = self.worktrees_dir / task_id
-
-        if worktree_path.exists() or self._branch_exists(branch_name):
-            raise WorktreeCreationError(
-                f"Existing checkout or branch for {task_id} is preserved. "
-                "A fresh pinned attempt requires a new build identity."
-            )
 
         # Ensure worktrees directory exists
         self.worktrees_dir.mkdir(parents=True, exist_ok=True)

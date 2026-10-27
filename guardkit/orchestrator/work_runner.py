@@ -21,8 +21,6 @@ looks like configuration is load-bearing:
   leg's work would then exist and be unfindable.
 * ``enable_checkpoints=False`` — the cwd is the CONDUCTOR's tree. Checkpointing
   would rewrite the pipeline's own git state turn by turn.
-* ``rollback_on_pollution=False`` — same reason: a rollback here resets somebody
-  else's HEAD.
 * ``enable_pre_loop=False`` — the pre-loop gates shell out to the attended
   ``/task-work`` design phase; the leg's dispositions (below) declare them
   absent rather than pretending they ran.
@@ -498,10 +496,8 @@ def bootstrap_worktree(worktree_root: Path) -> InterpreterProvision:
     Never raises. Every failure is a plain sentence naming what was run.
     """
     from guardkit.orchestrator.environment_bootstrap import (  # noqa: PLC0415
-        BootstrapEnvironmentLeakError,
         EnvironmentBootstrapper,
         ProjectEnvironmentDetector,
-        UvSourcesRequireUvError,
         probe_worktree_venv,
     )
 
@@ -510,11 +506,6 @@ def bootstrap_worktree(worktree_root: Path) -> InterpreterProvision:
 
     try:
         manifests = ProjectEnvironmentDetector(root, python_extras=()).detect()
-    except UvSourcesRequireUvError as exc:
-        return InterpreterProvision(
-            error=prefix
-            + f"the environment bootstrap refused before running any command ({exc})"
-        )
     except Exception as exc:  # noqa: BLE001
         return InterpreterProvision(
             error=prefix
@@ -540,18 +531,6 @@ def bootstrap_worktree(worktree_root: Path) -> InterpreterProvision:
     bootstrapper = EnvironmentBootstrapper(root)
     try:
         result = bootstrapper.bootstrap(manifests)
-    except (UvSourcesRequireUvError, BootstrapEnvironmentLeakError) as exc:
-        commands = _planned_commands(None)
-        return InterpreterProvision(
-            error=prefix
-            + f"the environment bootstrap failed ({exc})"
-            + (
-                "; the command(s) it runs for this worktree: "
-                + "; ".join(f"`{c}`" for c in commands)
-                if commands
-                else ""
-            )
-        )
     except Exception as exc:  # noqa: BLE001
         commands = _planned_commands(None)
         return InterpreterProvision(
@@ -1049,21 +1028,13 @@ def _build_orchestrator(
     """
     from guardkit.orchestrator.autobuild import (  # noqa: PLC0415
         AutoBuildOrchestrator,
-        discard_build_coverage_record,
     )
 
-    # 20 October 2026 (coach review 2): a work leg runs in a checkout that
-    # later legs reuse, handed in as the worktree, so the record of the
-    # coverage command a build first pinned would outlive this leg. Each leg
-    # is its own build: an earlier leg's record (perhaps from a rejected,
-    # rolled-back turn) is forgotten here.
-    discard_build_coverage_record(getattr(worktree, "path", None))
     return AutoBuildOrchestrator(
         repo_root=repo_root,
         existing_worktree=worktree,
         enable_pre_loop=False,
         enable_checkpoints=False,
-        rollback_on_pollution=False,
         max_turns=max_turns,
         sdk_timeout=sdk_timeout,
         task_timeout=leg_budget,
@@ -1161,13 +1132,13 @@ def run_work_leg(
 
     # --- Part N. The interpreter, before the orchestrator exists. -----------
     # Resolved the way the Coach verifier resolves it; bootstrapped when the
-    # worktree is a Python project with no interpreter (rule 58). Step 2 (26
-    # October 2026, GKT-152): a failure here is advice, not a stop. The leg
-    # runs; the Coach reports that the project's tests could not be run.
+    # worktree is a Python project with no interpreter (rule 58). A failure
+    # here does not stop the leg. The log carries what the project's own
+    # install said when it ran and failed.
     provision = provision_interpreter(repo_root, explicit=venv_python)
     if provision.error:
         logger.warning(
-            "work leg: advice, not a stop: the project's tests could not be run: %s",
+            "work leg: the project's tests could not be run: %s",
             provision.error,
         )
     if provision.path:
@@ -1214,17 +1185,7 @@ def run_work_leg(
 
         if current_lease() is None:
             # The conductor prepared this checkout; this step adopts it and
-            # runs under its own writer lease, as a feature task does. That
-            # lease covers this checkout only, so a task that declares sibling
-            # repositories is refused, never run with them unleased (review R1).
-            declared = (task.get("frontmatter") or {}).get("evidence_repos") or []
-            if declared:
-                from guardkit.orchestrator.task_work_scope import ScopeUnavailable  # noqa: PLC0415
-
-                raise ScopeUnavailable(
-                    "a repair step adopts only the conductor's checkout, and this "
-                    "task declares sibling repositories (evidence_repos); refused"
-                )
+            # runs under its own writer lease, as a feature task does.
             adopt_prepared_checkout(repo_root)
             with checkout_lease(repo_root) as lease:
                 lease.admit(task_id)

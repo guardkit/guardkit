@@ -23,14 +23,13 @@ WHAT THIS MODULE IS AND IS NOT
   script under a ``Makefile`` project is as first-class as pytest.
 * It parses NOTHING for a verdict. The one thing it reads out of the command's
   stdout is an OPTIONAL line of JSON naming the scenarios the command covered
-  — and that line can only ever make the completion rule stricter to satisfy,
-  never turn a non-zero exit into a pass.
+  — and that line can never turn a non-zero exit into a pass.
 
 THE DECLARATION IS READ FROM THE MAIN CHECKOUT
 ----------------------------------------------
 ``toolchain.feature_check`` is read from ``self.repo_root`` — the canonical
-tree the build never edits — exactly as twin coverage reads its enforcement
-flag. A build that could rewrite its own final check would not be checked.
+tree the build never edits. A build that could rewrite its own final check
+would not be checked.
 """
 
 from __future__ import annotations
@@ -38,7 +37,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-import subprocess
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -88,7 +86,6 @@ PUBLIC_LABEL = "the project's declared feature check"
 FAILURE_KIND_EXIT_NONZERO = "exit_nonzero"
 FAILURE_KIND_TIMED_OUT = "timed_out"
 FAILURE_KIND_COULD_NOT_START = "could_not_start"
-FAILURE_KIND_MISSING_TWINS = "missing_twins"
 
 #: The three outcomes of one attempt, by name (2026-09-21). "Not checked" is
 #: never one of them: it is a LIST carried beside the outcome, and nothing that
@@ -194,7 +191,7 @@ def candidate_sha(worktree_root: Path) -> str:
 
 @dataclass
 class FeatureCheckAttempt:
-    """One run of the declared check (or one twin-coverage refusal)."""
+    """One run of the declared check."""
 
     attempt: int
     command: str
@@ -206,8 +203,6 @@ class FeatureCheckAttempt:
     stdout_tail: str = ""
     stderr_tail: str = ""
     failure_reason: Optional[str] = None
-    twin_coverage: Dict[str, Any] = field(default_factory=dict)
-    missing_twins: List[str] = field(default_factory=list)
     scenarios_covered: List[str] = field(default_factory=list)
     ran_at: str = ""
     #: One of :data:`OUTCOME_PASSED`, :data:`OUTCOME_FAILED`,
@@ -289,8 +284,6 @@ class FeatureCheckAttempt:
             "stdout_tail": self.stdout_tail,
             "stderr_tail": self.stderr_tail,
             "failure_reason": self.failure_reason,
-            "twin_coverage": self.twin_coverage,
-            "missing_twins": list(self.missing_twins),
             "scenarios_covered": self.covered_minus_not_checked(also_not_checked),
             "ran_at": self.ran_at,
             "run_evidence": dict(self.run_evidence),
@@ -309,20 +302,14 @@ class FeatureCheckOutcome:
     timeout: Optional[int] = None
     attempts: List[FeatureCheckAttempt] = field(default_factory=list)
     reason: Optional[str] = None
-    claimed_machine_criteria: List[str] = field(default_factory=list)
-    #: Everything nothing looked at, by name and reason. Fed from the central
-    #: guard, from the project's own line and from the completion rule. A name
-    #: on this list is NEVER on :attr:`scenarios_covered`.
+    #: Everything nothing looked at, by name and reason, from the project's
+    #: own line. A name on this list is NEVER on :attr:`scenarios_covered`.
     not_checked: List[Dict[str, str]] = field(default_factory=list)
     not_checked_total: int = 0
     observations: List[Dict[str, str]] = field(default_factory=list)
     observations_total: int = 0
     could_not_run_reason: Optional[str] = None
     notes: List[str] = field(default_factory=list)
-    #: One plain sentence, set only when a repair round stopped early because
-    #: the plan contradicts the project's own check (18 October 2026). It is
-    #: also the receipt's ``reason``. Written to the receipt only when set.
-    stopped_because: Optional[str] = None
 
     @property
     def passed(self) -> bool:
@@ -386,18 +373,10 @@ class FeatureCheckOutcome:
             ),
             "could_not_run_reason": self.could_not_run_reason,
             "record_notes": list(self.notes),
-            "criteria_still_claimed": list(self.claimed_machine_criteria),
             # Every attempt's covered list is filtered by the record's
             # not-checked list as well as its own, so the two lists never
             # both claim the same example anywhere in the record.
             "attempts": [a.to_dict(self.not_checked) for a in self.attempts],
-            # Only when the repair round stopped early: every other receipt
-            # keeps exactly the keys it had before this field existed.
-            **(
-                {"stopped_because": self.stopped_because}
-                if self.stopped_because
-                else {}
-            ),
         }
 
 
@@ -409,77 +388,6 @@ def write_feature_check_receipt(outcome: FeatureCheckOutcome, root: Path) -> Pat
         json.dumps(outcome.to_dict(), indent=2) + "\n", encoding="utf-8"
     )
     return receipt_path
-
-
-def update_feature_check_receipt(
-    root: Path,
-    *,
-    not_checked: Optional[Sequence[Dict[str, str]]] = None,
-    notes: Optional[Sequence[str]] = None,
-) -> Optional[Path]:
-    """Finish the record on disk, after the last thing that learns anything.
-
-    The record is written inside the build, before the completion rule and the
-    end-of-build guard have run. Those two are the last sources of "nothing
-    looked at this", so the record on disk would be incomplete without this
-    call — and the runner exports it straight afterwards. Adding a name here
-    also REMOVES it from ``scenarios_covered``: the two lists can never both
-    claim the same example.
-
-    Never raises: a record that cannot be read or written is logged and the
-    build is unaffected. Returns the path when it wrote, ``None`` otherwise.
-    """
-    path = Path(root) / RECEIPT_RELATIVE_PATH
-    additions = list(not_checked or [])
-    extra_notes = [str(n) for n in (notes or []) if str(n).strip()]
-    if not additions and not extra_notes:
-        return None
-    try:
-        if not path.is_file():
-            logger.warning(
-                "feature check: no record at %s to finish, so the "
-                "not-checked list could not be recorded", path,
-            )
-            return None
-        data = json.loads(path.read_text(encoding="utf-8"))
-        if not isinstance(data, dict):
-            return None
-        merged = merge_not_checked(data.get("not_checked"), additions)
-        data["not_checked"] = merged
-        data["not_checked_total"] = max(
-            int(data.get("not_checked_total") or 0), len(merged)
-        )
-        blocked = {e["name"].strip().lower() for e in merged}
-
-        def _minus_blocked(names: Any) -> Any:
-            if not isinstance(names, list):
-                return names
-            return [
-                name
-                for name in names
-                if not (isinstance(name, str) and name.strip().lower() in blocked)
-            ]
-
-        data["scenarios_covered"] = _minus_blocked(data.get("scenarios_covered"))
-        # The copy inside each attempt follows the same rule: a reader that
-        # picks up the attempt rather than the top of the record must not be
-        # told an example was covered that this list says nothing looked at.
-        attempts = data.get("attempts")
-        if isinstance(attempts, list):
-            for entry in attempts:
-                if isinstance(entry, dict):
-                    entry["scenarios_covered"] = _minus_blocked(
-                        entry.get("scenarios_covered")
-                    )
-        if extra_notes:
-            existing_notes = data.get("record_notes")
-            existing_notes = existing_notes if isinstance(existing_notes, list) else []
-            data["record_notes"] = existing_notes + extra_notes
-        path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
-        return path
-    except Exception as exc:  # noqa: BLE001 — finishing a record never fails a build
-        logger.warning("feature check: could not finish %s: %s", path, exc)
-        return None
 
 
 def read_feature_check_receipt(root: Path) -> Optional[Dict[str, Any]]:
@@ -1195,12 +1103,7 @@ def build_feature_check_feedback(
     scenario titles are in the feedback, not only the output tail — a Player
     told only "exit 1" will fix the command, not the feature.
     """
-    if attempt.missing_twins:
-        reason = (
-            "the scenarios below are marked for a frozen twin and no twin "
-            "file exists in the built tree"
-        )
-    elif attempt.timed_out:
+    if attempt.timed_out:
         reason = "it timed out"
     elif attempt.exit_code is None:
         reason = "it could not run"
@@ -1220,13 +1123,6 @@ def build_feature_check_feedback(
         "",
         f"Result: {reason}",
     ]
-
-    if attempt.missing_twins:
-        sections += [
-            "",
-            "Scenarios with no twin file:\n"
-            + "\n".join(f"  - {title}" for title in attempt.missing_twins),
-        ]
 
     output = "\n\n".join(
         part
@@ -1253,317 +1149,6 @@ def build_feature_check_feedback(
     return "\n".join(sections).strip()
 
 
-# =========================================================================
-# The completion rule (reads Lane C's word "claimed", defensively)
-# =========================================================================
-
-#: Keys a criterion record might carry its verdict under.
-_STATUS_KEYS = ("status", "result", "verdict", "state")
-#: Keys a criterion record might carry its pass-bar class under.
-_CLASS_KEYS = ("pass_bar_class", "criterion_class", "bar_class", "class", "klass")
-#: Keys a criterion record might carry its own name under.
-_NAME_KEYS = ("criterion", "name", "title", "text", "description", "id")
-
-
-def _criterion_name(record: Dict[str, Any]) -> Optional[str]:
-    for key in _NAME_KEYS:
-        value = record.get(key)
-        if isinstance(value, str) and value.strip():
-            return value.strip()
-    return None
-
-
-def _walk_for_claimed(node: Any, found: List[str]) -> None:
-    if isinstance(node, dict):
-        status = next(
-            (
-                node.get(key)
-                for key in _STATUS_KEYS
-                if isinstance(node.get(key), str)
-            ),
-            None,
-        )
-        klass = next(
-            (
-                node.get(key)
-                for key in _CLASS_KEYS
-                if isinstance(node.get(key), str)
-            ),
-            None,
-        )
-        if (
-            isinstance(status, str)
-            and status.strip().lower() == "claimed"
-            and isinstance(klass, str)
-            and klass.strip().lower() == "machine"
-        ):
-            name = _criterion_name(node)
-            if name and name not in found:
-                found.append(name)
-        for value in node.values():
-            _walk_for_claimed(value, found)
-    elif isinstance(node, list):
-        for value in node:
-            _walk_for_claimed(value, found)
-
-
-def pass_bar_machine_criteria(
-    worktree_root: Path, task_ids: Sequence[str]
-) -> List[str]:
-    """The machine-class promises the feature's own pass bars register.
-
-    WHY THIS READER EXISTS (19 September 2026, found at integration). In the
-    plans the factory actually writes, the promises at the delivered surface
-    are not the task documents' acceptance criteria at all: they are the
-    approved scenarios, registered per task in ``qa/pass-bar-<TASK-ID>.yaml``
-    with ``class: machine`` and the scenario's title as ``text``. The task
-    Coach never evaluates those rows, so no task receipt ever says "claimed"
-    about them — and a completion rule that waited for such a receipt never
-    fired. In the failed B9 build every one of these rows went unproved while
-    five task Coaches approved.
-
-    So the rule reads the pass bars themselves: every ``class: machine`` row
-    of every task in the feature is a promise that only the whole-feature
-    check can prove, and it counts as claimed until that check names it as
-    covered. Read as plain YAML on purpose — no schema import, no raise: a
-    missing, unreadable or oddly shaped pass bar registers nothing, because
-    absent evidence is not evidence of a claim. ``class: operator`` rows are
-    a person's to prove and are never consumed here.
-    """
-    names: List[str] = []
-    try:
-        import yaml
-    except Exception:  # noqa: BLE001 — no parser, no claims
-        return names
-    for task_id in task_ids or []:
-        try:
-            path = Path(worktree_root) / "qa" / f"pass-bar-{task_id}.yaml"
-            if not path.is_file():
-                continue
-            data = yaml.safe_load(path.read_text(encoding="utf-8"))
-        except Exception:  # noqa: BLE001 — unreadable is absence
-            continue
-        rows = data.get("criteria") if isinstance(data, dict) else None
-        if not isinstance(rows, list):
-            continue
-        for row in rows:
-            if not isinstance(row, dict):
-                continue
-            klass = row.get("class", row.get("criterion_class"))
-            if not isinstance(klass, str) or klass.strip().lower() != "machine":
-                continue
-            text = row.get("text")
-            if isinstance(text, str) and text.strip() and text.strip() not in names:
-                names.append(text.strip())
-    return names
-
-
-def claimed_machine_criteria(
-    worktree_root: Path, task_ids: Sequence[str]
-) -> List[str]:
-    """Criteria a task's Coach recorded as ``claimed`` at machine class.
-
-    DEFENSIVE BY DESIGN. The word ``claimed`` is written by the Coach's own
-    evidence (the separate correction that stops a Player's promise counting
-    as proof). This reader must survive a factory where that correction is not
-    installed, where the receipt's shape differs, or where no receipts were
-    written at all: in every one of those cases it answers "no claimed
-    criteria", because absent evidence is not evidence of a claim. It never
-    raises and never blocks a build on its own uncertainty.
-    """
-    found: List[str] = []
-    # The feature's own pass bars come first: a criterion a pass bar marks
-    # ``class: machine`` is a promise at a delivered surface, and no task turn
-    # proves it on its own (see ``pass_bar_machine_criteria``).
-    for name in pass_bar_machine_criteria(worktree_root, task_ids):
-        if name not in found:
-            found.append(name)
-    root = Path(worktree_root) / ".guardkit" / "autobuild-private"
-    for task_id in task_ids or []:
-        directory = root / str(task_id)
-        try:
-            if not directory.is_dir():
-                continue
-            paths = sorted(directory.glob("*.json"))
-        except Exception:  # noqa: BLE001 — absence, not a failure
-            continue
-        for path in paths:
-            try:
-                data = json.loads(path.read_text(encoding="utf-8"))
-            except Exception:  # noqa: BLE001 — an unreadable receipt is absence
-                continue
-            try:
-                _walk_for_claimed(data, found)
-            except Exception:  # noqa: BLE001 — defensive to the last
-                continue
-    return found
-
-
-def _covers(covered: Sequence[str], name: str) -> bool:
-    target = name.strip().lower()
-    return any(
-        isinstance(item, str) and item.strip().lower() == target for item in covered
-    )
-
-
-@dataclass(frozen=True)
-class CompletionVerdict:
-    """Whether the finaliser may record this feature as completed.
-
-    ``not_checked`` is what the rule learned and the record does not yet say:
-    names nothing looked at, each with a reason. The caller adds them to the
-    record before it leaves the build. They are never added to the covered
-    list, and the record never calls them passed.
-    """
-
-    blocks: bool
-    reason: Optional[str] = None
-    not_checked: List[Dict[str, str]] = field(default_factory=list)
-
-
-def completion_verdict(
-    *,
-    repo_root: Path,
-    worktree_root: Path,
-    feature: Any,
-) -> CompletionVerdict:
-    """May a feature with a declared whole-feature check be called completed?
-
-    Three questions, in plain words:
-
-    1. Did the declared check actually run and pass? No receipt, or a receipt
-       that does not say passed, is not a pass.
-    2. Was that pass about THIS candidate — the code in the worktree now?
-    3. Are there criteria the Coach could only record as claimed (a promise at
-       a delivered surface that nothing independent proved)? If so, the check
-       must have named those scenarios as covered.
-
-    A project that declared no check is unchanged: no receipt is required and
-    this always answers "does not block".
-
-    2026-09-21, two changes, and only two. A record that says the check COULD
-    NOT RUN does not block: there was nothing for anyone to repair, so every
-    example goes on the not-checked list with that reason instead. And a
-    promise that was only claimed and never covered no longer blocks either —
-    it comes back on the not-checked list, by name, so the reader is told what
-    was not looked at rather than the build being refused over it. Everything
-    else blocks exactly as before: no record, a record that did not pass, a
-    pass about different code.
-
-    Step 1 (24 October 2026, GKT-163): only a check that ran and FAILED
-    blocks. A missing receipt, a receipt in an unknown state, and a pass
-    about different code are advice: every example goes on the not-checked
-    list with the reason, and the build is not refused over the record.
-    """
-    declaration = load_feature_check_declaration(repo_root)
-    if declaration is None:
-        return CompletionVerdict(blocks=False)
-
-    def not_checked(reason: str, summary: str) -> CompletionVerdict:
-        every_example = list(scenario_titles(feature))
-        for name in claimed_machine_criteria(
-            worktree_root,
-            [getattr(t, "id", "") for t in getattr(feature, "tasks", []) or []],
-        ):
-            if name not in every_example:
-                every_example.append(name)
-        return CompletionVerdict(
-            blocks=False,
-            reason=summary,
-            not_checked=[
-                {"name": name, "reason": reason} for name in every_example
-            ],
-        )
-
-    receipt = read_feature_check_receipt(worktree_root)
-    if receipt is None:
-        # Named by the fixed label, never the command (13 October 2026):
-        # this reason reaches the log, the console and the build's record.
-        reason = (
-            "this project declares a whole-feature check "
-            f"({PUBLIC_LABEL}) and no receipt of it was written"
-        )
-        return not_checked(reason, reason)
-    status = receipt.get("status")
-    if status == OUTCOME_COULD_NOT_RUN:
-        reason = receipt.get("could_not_run_reason")
-        reason = (
-            reason.strip()
-            if isinstance(reason, str) and reason.strip()
-            else COULD_NOT_RUN_WITHOUT_REASON
-        )
-        return not_checked(reason, f"the project's check could not run: {reason}")
-    if status == OUTCOME_FAILED:
-        return CompletionVerdict(
-            blocks=True,
-            reason=(
-                "the declared whole-feature check did not pass "
-                f"(receipt status: {status!r})"
-            ),
-        )
-    if status != OUTCOME_PASSED:
-        reason = (
-            "the whole-feature check's receipt does not say passed or failed "
-            f"(receipt status: {status!r})"
-        )
-        return not_checked(reason, reason)
-
-    attempts = receipt.get("attempts")
-    recorded_sha = None
-    if isinstance(attempts, list):
-        for entry in reversed(attempts):
-            if isinstance(entry, dict) and entry.get("passed"):
-                recorded_sha = entry.get("candidate_sha")
-                break
-    current_sha = candidate_sha(worktree_root)
-    if (
-        isinstance(recorded_sha, str)
-        and recorded_sha not in ("", "unknown")
-        and current_sha not in ("", "unknown")
-        and recorded_sha != current_sha
-    ):
-        reason = (
-            "the whole-feature check passed on "
-            f"{recorded_sha[:12]} but the candidate is now "
-            f"{current_sha[:12]}, so the pass is about different code"
-        )
-        return not_checked(reason, reason)
-
-    claimed = claimed_machine_criteria(
-        worktree_root, [getattr(t, "id", "") for t in getattr(feature, "tasks", []) or []]
-    )
-    if not claimed:
-        return CompletionVerdict(blocks=False)
-
-    covered = receipt.get("scenarios_covered")
-    covered_list = covered if isinstance(covered, list) else []
-    uncovered = [name for name in claimed if not _covers(covered_list, name)]
-    if uncovered:
-        # Not a block any more (21 September 2026): these names go back to the
-        # caller and onto the record's not-checked list, by name. They are
-        # never added to the covered list and the record never calls them
-        # passed — "nothing looked at this" is said out loud instead.
-        return CompletionVerdict(
-            blocks=False,
-            reason=(
-                "these promises were only claimed, never independently "
-                "proved, and the whole-feature check did not name them as "
-                "covered: " + "; ".join(uncovered)
-            ),
-            not_checked=[
-                {
-                    "name": name,
-                    "reason": (
-                        "only claimed by the build; the project's check did "
-                        "not name it as covered"
-                    ),
-                }
-                for name in uncovered
-            ],
-        )
-    return CompletionVerdict(blocks=False)
-
-
 __all__ = [
     "MAX_RETRIES_ENV",
     "DEFAULT_MAX_RETRIES",
@@ -1583,16 +1168,11 @@ __all__ = [
     "cut",
     "merge_not_checked",
     "parse_project_check_line",
-    "update_feature_check_receipt",
-    "CompletionVerdict",
     "FeatureCheckAttempt",
     "FeatureCheckDeclaration",
     "FeatureCheckOutcome",
     "build_feature_check_feedback",
     "candidate_sha",
-    "claimed_machine_criteria",
-    "pass_bar_machine_criteria",
-    "completion_verdict",
     "feature_request_words",
     "load_feature_check_declaration",
     "parse_scenarios_covered",

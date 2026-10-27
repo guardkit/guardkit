@@ -75,7 +75,7 @@ the biggest single process, so the whole build was lost. Three changes:
   later, mid-run, ends that command the same way (the group by its pinned
   number, the rest through pidfds) instead of falling back to a reduced or
   silently empty clean-up. A person's own run keeps the reduced clean-up
-  below, with one warning.
+  below.
 * On a factory launch, any point where the clean-up cannot do its full check
   (``/proc`` missing or inaccessible, ``os.waitid`` or a pidfd refused, a
   record unreadable) raises :class:`CleanupUnavailableError`, keeping the
@@ -93,7 +93,6 @@ the biggest single process, so the whole build was lost. Three changes:
 from __future__ import annotations
 
 import errno
-from functools import wraps
 import logging
 import os
 import select
@@ -1041,7 +1040,7 @@ def _is_factory_launch() -> bool:
     ``GUARDKIT_FACTORY_LAUNCH`` at all, whitespace included; only unset or
     exactly empty is a person's own run) whose clean-up self-test has not
     failed. Step 2 (26 October 2026): after a failed self-test the commands
-    run with a person's run's reduced clean-up, with one warning, as in
+    run with a person's run's reduced clean-up, as in
     guardkitfactory (one rule, one place)."""
     return is_factory_launch() and not _SELF_TEST_FAILED
 
@@ -1093,39 +1092,6 @@ def _refused(call: str, wrapper: bool, exc: OSError) -> str:
     )
 
 
-def _missing_capability() -> Optional[str]:
-    """Why this system cannot end everything a command leaves, as a plain
-    clause, or ``None``.
-
-    Ending a process that left the command's group needs ``/proc`` (to find
-    it), ``os.waitid`` (to keep the leader uncollected meanwhile) and a pidfd
-    that can be opened and signalled through (to signal that one process and
-    no other). Both are tried on this process itself, through the Python
-    wrappers or, where this Python build lacks them, the system calls
-    themselves.
-    """
-    if not _proc_available():
-        return "/proc is missing (it is needed to find a command's processes)"
-    waitid_problem = _waitid_problem()
-    if waitid_problem is not None:
-        return waitid_problem
-    try:
-        handle = _pidfd_open(os.getpid())
-    except OSError as exc:
-        return _refused("pidfd_open", _has_wrapper("os"), exc)
-    try:
-        # Signal 0 checks that signalling through a pidfd is allowed too (a
-        # filter may allow opening one and refuse sending).
-        _pidfd_send_signal(handle, 0)
-    except OSError as exc:
-        return _refused("pidfd_send_signal", _has_wrapper("signal"), exc)
-    finally:
-        os.close(handle)
-    return None
-
-
-_CAPABILITY: List[Optional[str]] = []
-_WARNED: List[bool] = []
 #: The self-test's success, once per process (a later failure mid-run ends
 #: that command, so a stale success is safe).
 _SELF_TEST_PASSED: List[bool] = []
@@ -1358,35 +1324,20 @@ def _self_test() -> Optional[str]:
 def _check_capability() -> None:
     """Before a command starts. On a factory launch the real clean-up runs
     its end-to-end self-test once in this process; when it passes, any
-    failure later, mid-run, ends that command.
-    When it fails, or on a person's own run, what is missing is warned about
-    once and the reduced clean-up goes on (step 2, 26 October 2026: advice,
-    never a refusal before the command starts)."""
+    failure later, mid-run, ends that command. When it fails, the commands
+    run with a person's run's reduced clean-up (step 2, 26 October 2026)."""
     if getattr(_IN_SELF_TEST, "active", False):
         return
-    if _is_factory_launch():
-        if _SELF_TEST_PASSED:
+    if not _is_factory_launch() or _SELF_TEST_PASSED:
+        return
+    with _SELF_TEST_LOCK:
+        if _SELF_TEST_PASSED or _SELF_TEST_FAILED:
             return
-        with _SELF_TEST_LOCK:
-            if _SELF_TEST_PASSED:
-                return
-            reason = _self_test()
-            if reason is None:
-                _SELF_TEST_PASSED.append(True)
-                return
+        reason = _self_test()
+        if reason is None:
+            _SELF_TEST_PASSED.append(True)
+        else:
             _SELF_TEST_FAILED.append(reason)
-            if not _CAPABILITY:
-                _CAPABILITY.append(reason)
-    if not _CAPABILITY:
-        _CAPABILITY.append(_missing_capability())
-    missing = _CAPABILITY[0]
-    if missing is not None and not _WARNED:
-        _WARNED.append(True)
-        logger.warning(
-            "Here %s, so a process a project command moves out of its process "
-            "group may be left running after the command.",
-            missing,
-        )
 
 
 def _waitid_problem() -> Optional[str]:
@@ -1579,34 +1530,6 @@ def _run_without_waitid(
         raise
 
 
-def preserve_cleanup_failure(exc: BaseException) -> None:
-    """Keep uncertain child termination authoritative despite advisory catches."""
-    if isinstance(exc, CleanupUnavailableError):
-        from guardkit.orchestrator.task_work_scope import current_lease
-
-        lease = current_lease()
-        if lease is not None:
-            lease.poison(f"{type(exc).__name__}: {exc}")
-
-
-def _retain_checkout_on_cleanup_failure(run):
-    @wraps(run)
-    def owned_run(*args, **kwargs):
-        from guardkit.orchestrator.task_work_scope import current_lease, ScopeUnavailable
-
-        lease = current_lease()
-        if lease is not None and lease.failure:
-            raise ScopeUnavailable(lease.failure)
-        try:
-            return run(*args, **kwargs)
-        except CleanupUnavailableError as exc:
-            preserve_cleanup_failure(exc)
-            raise
-
-    return owned_run
-
-
-@_retain_checkout_on_cleanup_failure
 def run_in_own_group(
     args: Union[str, Sequence[str]],
     *,
@@ -1648,7 +1571,6 @@ def run_in_own_group(
     return GroupRun(proc.returncode, stdout or "", stderr or "")
 
 
-@_retain_checkout_on_cleanup_failure
 def run_project_command(
     args: Union[str, Sequence[str]],
     *,

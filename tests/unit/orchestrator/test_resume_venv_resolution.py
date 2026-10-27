@@ -18,8 +18,8 @@ Pins the fix hop by hop:
    ONE WARNING naming the probed locations and the fallback interpreter
    (AC-003).
 4. ``resolved_interpreter`` forensic evidence lands on
-   ``IndependentTestResult`` → ``CoachValidationResult.to_dict`` (including
-   None) and on the deterministic Phase-4 block (AC-003/AC-004).
+   ``IndependentTestResult`` → ``CoachEvidenceBundle.to_dict`` (including
+   None) (AC-003/AC-004).
 
 Coverage Target: >=85%
 """
@@ -35,7 +35,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from guardkit.orchestrator import specialist_invocations as si
 from guardkit.orchestrator.coach_verification import (
     CoachVerifier,
     InterpreterResolutionError,
@@ -46,8 +45,8 @@ from guardkit.orchestrator.environment_bootstrap import (
     EnvironmentBootstrapper,
     probe_worktree_venv,
 )
+from guardkit.orchestrator.quality_gates.coach_evidence import CoachEvidenceBundle
 from guardkit.orchestrator.quality_gates.coach_validator import (
-    CoachValidationResult,
     CoachValidator,
     IndependentTestResult,
 )
@@ -264,25 +263,6 @@ class TestInterpreterResolutionSplitPosture:
         # Default (interactive) construction still succeeds.
         CoachValidator(str(tmp_path))
 
-    def test_deterministic_phase4_does_not_run_under_the_wrong_interpreter(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """The deterministic Phase-4 runner neither raises nor degrades to the
-        LLM specialist: it reports the run that could not happen."""
-        (tmp_path / "pyproject.toml").write_text("[project]\nname = 'x'\n")
-        monkeypatch.setenv("GUARDKIT_PHASE4_TEST_EXECUTION", "subprocess")
-        agent_invoker = MagicMock()
-        agent_invoker._venv_python = None
-        result = si._run_deterministic_phase_4(
-            worktree_path=tmp_path,
-            task_id="TASK-TEST-0001",
-            agent_invoker=agent_invoker,
-            sdk_timeout=300,
-            turn=1,
-            wave_size=1,
-        )
-        assert result is not None
-
 
 # ---------------------------------------------------------------------------
 # AC-002 — hash-match skip path threads a usable venv_python
@@ -416,26 +396,18 @@ def _independent(resolved_interpreter: Optional[str]) -> IndependentTestResult:
 
 class TestResolvedInterpreterEvidence:
     def test_to_dict_carries_resolved_interpreter(self) -> None:
-        result = CoachValidationResult(
-            task_id="TASK-AB-RESUMEVENV01",
-            turn=1,
-            decision="approve",
+        bundle = CoachEvidenceBundle(
             independent_tests=_independent("/wt/.venv/bin/python"),
         )
-        d = result.to_dict()
+        d = bundle.to_dict()
         assert (
-            d["validation_results"]["independent_tests"]["resolved_interpreter"]
+            d["independent_tests"]["resolved_interpreter"]
             == "/wt/.venv/bin/python"
         )
 
     def test_to_dict_preserves_none_resolved_interpreter(self) -> None:
-        result = CoachValidationResult(
-            task_id="TASK-AB-RESUMEVENV01",
-            turn=1,
-            decision="approve",
-            independent_tests=_independent(None),
-        )
-        ind = result.to_dict()["validation_results"]["independent_tests"]
+        bundle = CoachEvidenceBundle(independent_tests=_independent(None))
+        ind = bundle.to_dict()["independent_tests"]
         # Key PRESENT and None — unknown stays unknown through serialization.
         assert "resolved_interpreter" in ind
         assert ind["resolved_interpreter"] is None
@@ -458,54 +430,3 @@ class TestResolvedInterpreterEvidence:
             result = validator.run_independent_tests()
         assert result.resolved_interpreter == validator._pytest_interpreter()
 
-    def test_deterministic_phase_4_block_carries_resolved_interpreter(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """The Phase-4 specialist record carries the interpreter for both a
-        pass and a genuine ran-and-failed verdict (one-grep forensics)."""
-
-        outcomes = {
-            "passed": IndependentTestResult(
-                tests_passed=True,
-                test_command="pytest -q",
-                test_output_summary="4 passed",
-                duration_seconds=0.2,
-                raw_output="4 passed",
-                resolved_interpreter="/wt/.venv/bin/python",
-            ),
-            "failed": IndependentTestResult(
-                tests_passed=False,
-                test_command="pytest -q",
-                test_output_summary="1 failed, 3 passed",
-                duration_seconds=0.2,
-                raw_output="1 failed, 3 passed",
-                resolved_interpreter="/wt/.venv/bin/python",
-            ),
-        }
-
-        for expected_status, outcome in outcomes.items():
-
-            class _FakeCoachValidator:
-                def __init__(self, **kwargs):
-                    pass
-
-                def run_independent_tests(self, **kwargs):
-                    return outcome
-
-            monkeypatch.setattr(
-                "guardkit.orchestrator.quality_gates.coach_validator."
-                "CoachValidator",
-                _FakeCoachValidator,
-            )
-            invoker = MagicMock()
-            invoker._venv_python = None
-            block = si._run_deterministic_phase_4(
-                worktree_path=tmp_path,
-                task_id="TASK-AB-RESUMEVENV01",
-                agent_invoker=invoker,
-                sdk_timeout=300,
-                turn=1,
-            )
-            assert block is not None
-            assert block["status"] == expected_status
-            assert block["resolved_interpreter"] == "/wt/.venv/bin/python"
