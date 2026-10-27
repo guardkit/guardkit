@@ -1,11 +1,11 @@
 """
 Unit tests for TASK-PCTD-5208 quick wins:
   R1 - Enhanced _summarize_test_output() with error context
-  R2 - Normalized feedback text for stall detection
+  R2 - (normalized feedback text for stall detection: deleted with the
+       stall detectors, 27 October 2026)
   R3 - Fixed duplicate path deduplication in test detection
 
 Coverage Target: >=85%
-Test Count: 25 tests
 """
 
 import pytest
@@ -17,7 +17,6 @@ import sys
 _test_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(_test_root))
 
-from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
 from guardkit.orchestrator.quality_gates import CoachValidator
 
 
@@ -38,15 +37,6 @@ def tmp_worktree(tmp_path):
 def validator(tmp_worktree):
     """Create a CoachValidator with a temporary worktree."""
     return CoachValidator(worktree_path=str(tmp_worktree))
-
-
-@pytest.fixture
-def orchestrator():
-    """Create an AutoBuildOrchestrator for stall detection tests."""
-    return AutoBuildOrchestrator(
-        repo_root=Path.cwd(),
-        max_turns=5,
-    )
 
 
 # ============================================================================
@@ -170,190 +160,6 @@ class TestSummarizeTestOutput:
         result = validator._summarize_test_output(output)
         assert "Error detail:" in result
         assert "OperationalError" in result
-
-
-# ============================================================================
-# R2: _normalize_feedback_for_stall and _is_feedback_stalled tests
-# ============================================================================
-
-
-class TestNormalizeFeedbackForStall:
-    """Tests for _normalize_feedback_for_stall method."""
-
-    def test_strips_test_paths(self, orchestrator):
-        """Test paths like tests/users/test_users.py::TestClass::test_method become FILE::TEST."""
-        raw = "tests/users/test_users.py::TestUserCreate::test_create_user failed"
-        normalized = orchestrator._normalize_feedback_for_stall(raw)
-        assert "FILE::TEST" in normalized
-        assert "test_users.py" not in normalized
-        assert "TestUserCreate" not in normalized
-
-    def test_strips_root_level_test_paths(self, orchestrator):
-        """Root-level test files without tests/ prefix are also normalized."""
-        raw = "test_main.py::TestApp::test_startup failed"
-        normalized = orchestrator._normalize_feedback_for_stall(raw)
-        assert "FILE::TEST" in normalized
-        assert "test_main.py" not in normalized
-        assert "TestApp" not in normalized
-
-    def test_strips_line_numbers(self, orchestrator):
-        """Line numbers like 'line 45' become 'line N'."""
-        raw = "AssertionError at line 45 in test_auth.py"
-        normalized = orchestrator._normalize_feedback_for_stall(raw)
-        assert "line N" in normalized
-        assert "line 45" not in normalized
-
-    def test_strips_percentages(self, orchestrator):
-        """Percentages like '85.5%' become 'N%'."""
-        raw = "Coverage is only 85.5%, needs to be at least 80%"
-        normalized = orchestrator._normalize_feedback_for_stall(raw)
-        assert "N%" in normalized
-        assert "85.5%" not in normalized
-
-    def test_strips_durations(self, orchestrator):
-        """Durations like 'in 1.7s' become 'in Ns'."""
-        raw = "3 failed in 1.7s"
-        normalized = orchestrator._normalize_feedback_for_stall(raw)
-        assert "in Ns" in normalized
-        assert "in 1.7s" not in normalized
-
-    def test_strips_test_counts(self, orchestrator):
-        """Test counts like '5 passed' become 'N passed'."""
-        raw = "5 passed, 2 failed, 1 error"
-        normalized = orchestrator._normalize_feedback_for_stall(raw)
-        assert "N passed" in normalized
-        assert "N failed" in normalized
-        assert "N error" in normalized
-        assert "5 passed" not in normalized
-
-    def test_strips_worktree_paths(self, orchestrator):
-        """Worktree absolute paths are normalized."""
-        raw = "File not found: /home/user/.guardkit/worktrees/TASK-001/src/app.py"
-        normalized = orchestrator._normalize_feedback_for_stall(raw)
-        assert "/WORKTREE/" in normalized
-        assert "/home/user/.guardkit/worktrees/TASK-001/" not in normalized
-
-
-class TestIsFeedbackStalledWithNormalization:
-    """Tests for _is_feedback_stalled using normalized feedback (R2 regression)."""
-
-    def test_stall_fires_on_same_category_different_detail(self):
-        """
-        Key regression test: feedback with same category but different test
-        class names / tracebacks should trigger stall after threshold turns.
-
-        This is the TASK-DB-003 pattern: Coach keeps saying "test X failed"
-        where X changes each turn, but it's the same underlying issue.
-        """
-        orchestrator = AutoBuildOrchestrator(
-            repo_root=Path.cwd(),
-            max_turns=5,
-        )
-
-        # Three turns of same-category feedback but with different test details
-        # After normalization, these should all hash the same.
-        base_feedback = (
-            "The following tests failed:\n"
-            "tests/{test_file}::TestClass::test_method failed\n"
-            "line {line} in test body\n"
-            "3 failed in 1.5s\n"
-        )
-
-        fb1 = base_feedback.format(test_file="test_users.py", line=42)
-        fb2 = base_feedback.format(test_file="test_orders.py", line=99)
-        fb3 = base_feedback.format(test_file="test_products.py", line=17)
-
-        r1 = orchestrator._is_feedback_stalled(fb1, 0)
-        r2 = orchestrator._is_feedback_stalled(fb2, 0)
-        r3 = orchestrator._is_feedback_stalled(fb3, 0)
-
-        assert r1 is False
-        assert r2 is False
-        assert r3 is True, (
-            "Stall should fire: after normalization all three feedback strings "
-            "are identical in category"
-        )
-
-    def test_no_false_positive_genuinely_different_feedback(self):
-        """Different feedback categories should NOT trigger false-positive stall."""
-        orchestrator = AutoBuildOrchestrator(
-            repo_root=Path.cwd(),
-            max_turns=5,
-        )
-
-        fb1 = "Missing docstrings in src/auth.py — add module-level docstring"
-        fb2 = "Coverage is below threshold — add tests for edge cases"
-        fb3 = "Type hints missing on get_user() function in models.py"
-
-        r1 = orchestrator._is_feedback_stalled(fb1, 0)
-        r2 = orchestrator._is_feedback_stalled(fb2, 0)
-        r3 = orchestrator._is_feedback_stalled(fb3, 0)
-
-        assert r1 is False
-        assert r2 is False
-        assert r3 is False, "Genuinely different feedback must not trigger stall"
-
-
-class TestStallDetectionRegressionDB003:
-    """
-    Replay the TASK-DB-003 turn sequence pattern.
-
-    The real failure: Player gets stuck and Coach repeatedly reports
-    test failures in different test files each turn but with the same
-    underlying category.  After normalization, turns 3-5 should be
-    identical and fire stall at Turn 5 (after 3 consecutive matches).
-    """
-
-    def test_db003_pattern_stall_fires_at_turn_5(self):
-        """
-        TASK-DB-003 regression: Stall fires after 3 consecutive
-        normalized-identical turns even if raw feedback differs.
-
-        Turn 1-2: different feedback (different categories)
-        Turn 3-5: same-category feedback (connection error, different details)
-        -> stall fires at Turn 5
-        """
-        orchestrator = AutoBuildOrchestrator(
-            repo_root=Path.cwd(),
-            max_turns=5,
-        )
-
-        # Turns 1-2: genuinely different feedback
-        r1 = orchestrator._is_feedback_stalled(
-            "Missing authentication middleware in middleware.py",
-            0,
-        )
-        r2 = orchestrator._is_feedback_stalled(
-            "Add unit tests for the UserRepository class",
-            0,
-        )
-
-        # Turns 3-5: same error category but different test file details
-        connection_template = (
-            "Database connection failed in tests/{f}::TestDB::test_query\n"
-            "E   OperationalError: could not connect to server\n"
-            "1 failed in {t}s\n"
-        )
-        r3 = orchestrator._is_feedback_stalled(
-            connection_template.format(f="test_users.py", t="0.12"),
-            0,
-        )
-        r4 = orchestrator._is_feedback_stalled(
-            connection_template.format(f="test_orders.py", t="0.34"),
-            0,
-        )
-        r5 = orchestrator._is_feedback_stalled(
-            connection_template.format(f="test_products.py", t="0.27"),
-            0,
-        )
-
-        assert r1 is False
-        assert r2 is False
-        assert r3 is False
-        assert r4 is False
-        assert r5 is True, (
-            "Stall must fire at turn 5 when turns 3-5 have same normalized signature"
-        )
 
 
 # ============================================================================

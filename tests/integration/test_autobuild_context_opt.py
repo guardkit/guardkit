@@ -8,7 +8,7 @@ optimization feature suite (TASK-ACO-001 through TASK-ACO-005).
 Coverage Target: >=85%
 
 Test Organization:
-    1. Schema Compatibility Tests - Validate JSON schemas and dataclass population
+    1. Schema Compatibility Tests - Validate dataclass population
     2. Parser Compatibility Tests - Verify TaskWorkStreamParser regex patterns
     3. Prompt Builder Integration Tests - Test protocol loading and substitution
     4. SDK Session Configuration Tests - Validate setting_sources configuration
@@ -35,7 +35,6 @@ import json
 import pytest
 import sys
 from pathlib import Path
-from typing import Dict, Any, List
 from dataclasses import asdict
 
 # Add guardkit to path
@@ -46,8 +45,6 @@ sys.path.insert(0, str(_test_root))
 from guardkit.orchestrator.agent_invoker import (
     AgentInvoker,
     TaskWorkStreamParser,
-    PLAYER_REPORT_SCHEMA,
-    COACH_DECISION_SCHEMA,
     DEFAULT_SDK_TIMEOUT,
     MAX_SDK_TIMEOUT,
     TASK_WORK_SDK_MAX_TURNS,
@@ -122,97 +119,7 @@ def task_work_interface(temp_worktree):
 
 
 class TestSchemaCompatibility:
-    """Tests for Player report and Coach decision schema validation."""
-
-    def test_player_report_schema_has_required_fields(self):
-        """
-        Given PLAYER_REPORT_SCHEMA constant
-        When schema is inspected
-        Then all required fields are present with correct types
-
-        Validates schema structure for Player JSON reports.
-        """
-        required_fields = {
-            "task_id": str,
-            "turn": int,
-            "files_modified": list,
-            "files_created": list,
-            "tests_written": list,
-            "tests_run": bool,
-            "tests_passed": bool,
-            "implementation_notes": str,
-            "concerns": list,
-            "requirements_addressed": list,
-            "requirements_remaining": list,
-        }
-
-        assert PLAYER_REPORT_SCHEMA == required_fields, \
-            "PLAYER_REPORT_SCHEMA must match expected structure"
-
-    def test_coach_decision_schema_has_required_fields(self):
-        """
-        Given COACH_DECISION_SCHEMA constant
-        When schema is inspected
-        Then all required fields are present with correct types
-
-        Validates schema structure for Coach JSON decisions.
-        """
-        required_fields = {
-            "task_id": str,
-            "turn": int,
-            "decision": str,
-        }
-
-        assert COACH_DECISION_SCHEMA == required_fields, \
-            "COACH_DECISION_SCHEMA must match expected structure"
-
-    def test_player_report_validates_against_schema(self):
-        """
-        Given a valid Player report JSON
-        When validated against PLAYER_REPORT_SCHEMA
-        Then all fields match expected types
-
-        Ensures Player report structure is compatible.
-        """
-        sample_report = {
-            "task_id": "TASK-TEST-001",
-            "turn": 1,
-            "files_modified": ["src/auth.py"],
-            "files_created": ["src/oauth.py", "tests/test_oauth.py"],
-            "tests_written": ["tests/test_oauth.py"],
-            "tests_run": True,
-            "tests_passed": True,
-            "implementation_notes": "Implemented OAuth flow with PKCE",
-            "concerns": ["Token storage uses in-memory dict"],
-            "requirements_addressed": ["OAuth2 authentication", "Token refresh"],
-            "requirements_remaining": [],
-        }
-
-        # Validate each field type
-        for field, expected_type in PLAYER_REPORT_SCHEMA.items():
-            assert field in sample_report, f"Field {field} missing from report"
-            assert isinstance(sample_report[field], expected_type), \
-                f"Field {field} has wrong type: {type(sample_report[field])} != {expected_type}"
-
-    def test_coach_decision_validates_against_schema(self):
-        """
-        Given a valid Coach decision JSON
-        When validated against COACH_DECISION_SCHEMA
-        Then all fields match expected types
-
-        Ensures Coach decision structure is compatible.
-        """
-        sample_decision = {
-            "task_id": "TASK-TEST-001",
-            "turn": 1,
-            "decision": "approve",
-        }
-
-        # Validate each field type
-        for field, expected_type in COACH_DECISION_SCHEMA.items():
-            assert field in sample_decision, f"Field {field} missing from decision"
-            assert isinstance(sample_decision[field], expected_type), \
-                f"Field {field} has wrong type: {type(sample_decision[field])} != {expected_type}"
+    """Tests for the design-phase result dataclass."""
 
     def test_design_phase_result_dataclass_structure(self):
         """

@@ -41,8 +41,11 @@ bound the turns.
 from __future__ import annotations
 
 import logging
-from dataclasses import replace as dataclass_replace
-from typing import Any, Callable, Dict, Optional, Tuple
+from typing import (
+    Any,
+    Dict,
+    Optional,
+)
 
 from guardkit.models.task_types import TaskType, get_profile, normalise_task_type
 
@@ -166,53 +169,3 @@ def required_suite_override(
     return {"rationale": rationale, "issue": issue}
 
 
-def enforce_on_validation_result(
-    result: Any,
-    *,
-    task_type: Optional[str],
-    classify: Optional[Callable[[Optional[str]], Tuple[Optional[str], Optional[str]]]] = None,
-) -> Any:
-    """Apply the rule to a legacy ``CoachValidationResult``.
-
-    Returns the result unchanged when its approval may stand, or a copy turned
-    to ``feedback`` with the override issue first. ``classify`` maps the run's
-    raw output to ``(failure_class, confidence)`` for the feedback words only;
-    when it is absent or raises, the words say no classification was recorded.
-    """
-    if getattr(result, "decision", None) != "approve":
-        return result
-    independent = getattr(result, "independent_tests", None)
-    if not ran_and_failed(independent):
-        return result
-    failure_class: Optional[str] = None
-    confidence: Optional[str] = None
-    if classify is not None:
-        try:
-            failure_class, confidence = classify(
-                getattr(independent, "raw_output", None)
-            )
-        except Exception as exc:  # noqa: BLE001 — wording only; the block stands
-            logger.debug("required-suite rule: classification failed: %s", exc)
-    override = required_suite_override(
-        task_type=task_type,
-        independent_tests=independent,
-        failure_class=failure_class,
-        confidence=confidence,
-    )
-    if override is None:
-        return result
-    logger.warning(
-        "Required-suite rule: overriding legacy Coach approval->feedback for "
-        "%s turn %s — the required suite ran and failed (classification=%s).",
-        getattr(result, "task_id", "?"),
-        getattr(result, "turn", "?"),
-        failure_class,
-    )
-    return dataclass_replace(
-        result,
-        decision="feedback",
-        rationale=override["rationale"],
-        issues=[override["issue"], *list(getattr(result, "issues", []) or [])],
-        approved_without_independent_tests=False,
-        environment_conditional_approval=False,
-    )

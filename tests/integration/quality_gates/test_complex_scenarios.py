@@ -14,13 +14,10 @@ Coverage Target: >=85%
 """
 
 import pytest
-from pathlib import Path
 
 from .conftest import (
     make_player_result,
     make_coach_result,
-    assert_quality_gates_passed,
-    assert_worktree_preserved,
 )
 
 

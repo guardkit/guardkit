@@ -157,7 +157,7 @@ jobs:
           python - <<'EOF'
           import importlib, sys
           missing = []
-          for name in ("guardkitfactory", "guardkitfactory.wiring",
+          for name in ("guardkitfactory",
                        "guardkitfactory.harness", "langchain_core"):
               try:
                   importlib.import_module(name)

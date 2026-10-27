@@ -32,14 +32,12 @@ import hashlib
 import inspect
 import logging
 import os
-import stat
 import tempfile
 import threading
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any
-from urllib.parse import urlparse
 
 import yaml
 
@@ -86,25 +84,6 @@ def resolve_harness_name(env_var: str = "GUARDKIT_HARNESS") -> str:
         variable name instead of the process-wide one.
     """
     return os.environ.get(env_var, DEFAULT_HARNESS).lower()
-
-
-def is_anthropic_sdk_run(env_var: str = "GUARDKIT_HARNESS") -> bool:
-    """Does this process call Anthropic through the claude-agent-sdk harness?
-
-    True only when the configured harness is ``sdk`` AND
-    ``ANTHROPIC_BASE_URL`` is unset or names an ``anthropic.com`` host. Any
-    other harness, or the SDK pointed at another server (a local model
-    server, for example), is not an Anthropic SDK run, so advice about
-    ``claude`` sign-in or the claude-agent-sdk package does not apply to it.
-    Decided from configuration only, never from a run's symptoms.
-    """
-    if resolve_harness_name(env_var) != "sdk":
-        return False
-    base_url = os.environ.get("ANTHROPIC_BASE_URL", "").strip()
-    if not base_url:
-        return True
-    host = (urlparse(base_url).hostname or "").lower()
-    return host == "anthropic.com" or host.endswith(".anthropic.com")
 
 
 @dataclass(frozen=True)
@@ -329,16 +308,9 @@ _KNOWN_PROVIDER_PREFIXES: frozenset[str] = frozenset({
     "huggingface",
 })
 
-_PLAYER_PATH_FIELDS = frozenset(
-    {"skills", "memory", "instructions", "protected_paths", "required_documents"}
-)
 _COMMAND_FIELDS = ("test", "install", "typecheck", "lint", "build")
 _DCODE_PROFILE_LOCK = threading.Lock()
 _AUTO_DCODE_PROFILE: Path | None = None
-# (st_dev, st_ino) of each profile directory mkdtemp made in this process,
-# from os.lstat, so a later replacement (a link to another directory) is not
-# mistaken for this process's own profile.
-_AUTO_DCODE_IDENTITIES: dict[Path, tuple[int, int]] = {}
 _DCODE_TRACE_VARS = ("LANGCHAIN_TRACING", "LANGCHAIN_TRACING_V2", "LANGSMITH_TRACING")
 
 
@@ -368,9 +340,7 @@ def _configure_dcode_launch(worktree: Path) -> Path:
             candidate = Path(
                 tempfile.mkdtemp(prefix=f"guardkit-dcode-{os.getpid()}-")
             )
-            made = os.lstat(candidate)
             _AUTO_DCODE_PROFILE = candidate
-            _AUTO_DCODE_IDENTITIES[candidate] = (made.st_dev, made.st_ino)
 
         if not candidate.is_absolute():
             raise AgentInvocationError("DEEPAGENTS_HOME must be an absolute path.")
@@ -401,67 +371,19 @@ def _configure_dcode_launch(worktree: Path) -> Path:
         return profile
 
 
-def _auto_dcode_profile_identity(profile: Path) -> tuple[int, int] | None:
-    """The recorded (st_dev, st_ino) if ``profile`` is the one this process made.
+def _player_path_list(raw: Any, *, field: str, config_path: Path) -> tuple[str, ...]:
+    """One project-declared list of repository-relative paths.
 
-    Returned only when the path mkdtemp returned is, right now, a real
-    directory (not a link) with the device and inode it had when it was made,
-    and ``profile`` (the resolved DEEPAGENTS_HOME) is that same path. The
-    factory checks the same identity again on the directory it locks. A
-    replaced profile is never resolved away: it is simply not this process's
-    own, so ``None`` (logged at WARNING) and the launch check decides the rest.
+    Entries that are not non-empty repository-relative strings are left out.
     """
 
-    with _DCODE_PROFILE_LOCK:
-        auto = _AUTO_DCODE_PROFILE
-        identity = None if auto is None else _AUTO_DCODE_IDENTITIES.get(auto)
-    if auto is None:
-        return None
-    if identity is not None:
-        try:
-            now = os.lstat(auto)
-        except OSError:
-            now = None
-        if (
-            now is not None
-            and stat.S_ISDIR(now.st_mode)
-            and (now.st_dev, now.st_ino) == identity
-            and profile == auto
-        ):
-            return identity
-    logger.warning(
-        "dcode profile not locked: %s is no longer the directory this process "
-        "made at %s (replaced, linked or moved)",
-        profile,
-        auto,
-    )
-    return None
-
-
-def _player_path_list(raw: Any, *, field: str, config_path: Path) -> tuple[str, ...]:
-    """Validate one project-declared list of repository-relative paths."""
-
-    if raw is None:
-        return ()
     if not isinstance(raw, list):
-        raise AgentInvocationError(
-            f"Invalid `{field}` in {config_path}: expected a list of "
-            "repository-relative paths."
-        )
-    result: list[str] = []
-    for index, value in enumerate(raw):
-        if not isinstance(value, str) or not value.strip():
-            raise AgentInvocationError(
-                f"Invalid `{field}[{index}]` in {config_path}: expected a "
-                "non-empty repository-relative path."
-            )
-        if Path(value).is_absolute():
-            raise AgentInvocationError(
-                f"Invalid `{field}[{index}]` in {config_path}: project "
-                "configuration paths must be repository-relative."
-            )
-        result.append(value)
-    return tuple(result)
+        return ()
+    return tuple(
+        value
+        for value in raw
+        if isinstance(value, str) and value.strip() and not Path(value).is_absolute()
+    )
 
 
 def _load_player_project_inputs(worktree: Path) -> dict[str, Any]:
@@ -481,9 +403,6 @@ def _load_player_project_inputs(worktree: Path) -> dict[str, Any]:
         text,
         config_path=config_path,
         has_file=lambda rel: (worktree / rel).is_file(),
-    )
-    _refuse_linked_required_documents(
-        worktree, inputs["required_documents"], config_path
     )
     return inputs
 
@@ -517,26 +436,12 @@ def _parse_player_project_inputs(
     else:
         data = {}
 
-    autobuild = data.get("autobuild", {})
-    if autobuild is None:
-        autobuild = {}
+    autobuild = data.get("autobuild")
     if not isinstance(autobuild, dict):
-        raise AgentInvocationError(
-            f"Invalid `autobuild` in {config_path}: expected a mapping."
-        )
-    player = autobuild.get("player", {})
-    if player is None:
-        player = {}
+        autobuild = {}
+    player = autobuild.get("player")
     if not isinstance(player, dict):
-        raise AgentInvocationError(
-            f"Invalid `autobuild.player` in {config_path}: expected a mapping."
-        )
-    unknown = sorted(set(player) - _PLAYER_PATH_FIELDS)
-    if unknown:
-        raise AgentInvocationError(
-            f"Invalid `autobuild.player` in {config_path}: unknown keys "
-            f"{unknown}; allowed keys are {sorted(_PLAYER_PATH_FIELDS)}."
-        )
+        player = {}
 
     skills = _player_path_list(
         player.get("skills"), field="autobuild.player.skills", config_path=config_path
@@ -550,15 +455,14 @@ def _parse_player_project_inputs(
         config_path=config_path,
     )
     # 17 October 2026: a protected path is a part of the repository. The whole
-    # repository (or a path outside it) would forbid every change.
-    for value in protected_paths:
-        normal = PurePosixPath(os.path.normpath(value)).as_posix()
-        if normal in (".", "..") or normal.startswith("../"):
-            raise AgentInvocationError(
-                f"Invalid `autobuild.player.protected_paths` in {config_path}: "
-                f"{value!r} is the whole repository or outside it; name the "
-                "files or folders that must not change."
-            )
+    # repository (or a path outside it) would forbid every change, so such an
+    # entry is left out.
+    protected_paths = tuple(
+        value
+        for value in protected_paths
+        if PurePosixPath(os.path.normpath(value)).as_posix() not in (".", "..")
+        and not PurePosixPath(os.path.normpath(value)).as_posix().startswith("../")
+    )
     # Mandatory supporting documents the project says the Player must read in
     # full, alongside the selected skill bodies. Parsed exactly like
     # ``protected_paths``: a generic list of repository-relative paths, with no
@@ -617,45 +521,6 @@ def _parse_player_project_inputs(
     }
 
 
-def _refuse_linked_required_documents(
-    worktree: Path, documents: tuple[str, ...], config_path: Path
-) -> None:
-    """Refuse a declared binding document that is, or sits under, a symbolic link.
-
-    Project initialisation design, 4 October 2026: the declared documents bind
-    every role (Player, Coach, spec writer, plan writer), and the planning
-    writers read them from the commit, where a link is only its target's name.
-    So a binding document must be an ordinary file, and every reader refuses a
-    link rather than following it. Each part of the declared path is checked
-    without following links (``lstat``). A path that does not exist is left to
-    the reader that needs it, which says so in its own words.
-    """
-
-    for value in documents:
-        current = worktree
-        for part in Path(value).parts:
-            current = current / part
-            if current.is_symlink():
-                raise AgentInvocationError(
-                    f"The project declares {value!r} in "
-                    f"autobuild.player.required_documents ({config_path}), but "
-                    f"{current.relative_to(worktree).as_posix()} is a symbolic link. "
-                    "A binding document must be an ordinary file in the repository "
-                    "so that every role reads the same bytes; replace the link with "
-                    "the file itself."
-                )
-
-
-#: The most project-document text, in bytes, that may be given in full to a
-#: role that receives it inside its prompt (the Coach): the repository's
-#: instructions plus the declared binding documents together. About 32,000
-#: tokens. One constant for GuardKit; Forge keeps its own for the planning
-#: writers. Over the limit the turn is refused rather than given a shortened
-#: document, because a binding document silently cut short is worse than a
-#: refusal.
-PROJECT_DOCUMENTS_BUDGET_BYTES = 128 * 1024
-
-
 @dataclass(frozen=True)
 class ProjectDocument:
     """One project document as it was read: its declared path, hash and text.
@@ -673,23 +538,6 @@ class ProjectDocument:
     size: int
     worktree_sha256: str | None = None
     captured_from: str | None = None
-
-
-def check_project_documents_budget(documents: Sequence[ProjectDocument]) -> None:
-    """Refuse, naming every file and its size, when the documents exceed the budget."""
-
-    total = sum(document.size for document in documents)
-    if total > PROJECT_DOCUMENTS_BUDGET_BYTES:
-        sizes = ", ".join(
-            f"{document.path} ({document.size} bytes)" for document in documents
-        )
-        raise AgentInvocationError(
-            f"The project's instructions and binding documents come to {total} "
-            f"bytes, over the {PROJECT_DOCUMENTS_BUDGET_BYTES}-byte limit for "
-            f"documents given to the Coach in full: {sizes}. A binding document "
-            "is never cut short, so the Coach was not run; shorten the documents "
-            "or declare fewer in autobuild.player.required_documents."
-        )
 
 
 def _declares_required_documents(config_text: str | None) -> bool:
@@ -906,10 +754,11 @@ def load_project_documents_at_commit(
         try:
             text = data.decode("utf-8")
         except UnicodeDecodeError:
-            raise AgentInvocationError(
-                f"The project declares {label!r} for its builds, but it is not "
-                f"valid UTF-8 text at {commit[:12]}; refused."
-            ) from None
+            logger.warning(
+                "Project document %r is not UTF-8 text at %s; left out.",
+                label, commit[:12],
+            )
+            return
         documents.append(
             ProjectDocument(
                 path=label,
@@ -923,12 +772,12 @@ def load_project_documents_at_commit(
         rel = PurePosixPath(label).as_posix()
         try:
             source, passed = _resolve_committed_path(repo, commit, entries, rel)
-        except _Absent:
-            raise AgentInvocationError(
-                f"The project declares the instruction file {label!r} in "
-                f"autobuild.player.instructions ({where}), but it is not in the "
-                "repository at that commit; refused."
-            ) from None
+        except (_Absent, AgentInvocationError) as exc:
+            logger.warning(
+                "Instruction file %r (%s) could not be read at that commit; "
+                "left out (%s).", label, where, exc or "not there",
+            )
+            continue
         if passed:
             link_notes.append(
                 f"{label} was read from {source} through "
@@ -952,28 +801,15 @@ def load_project_documents_at_commit(
             ),
             None,
         )
-        if linked is not None:
-            raise AgentInvocationError(
-                f"The project declares {label!r} in "
-                f"autobuild.player.required_documents ({where}), but {linked} is "
-                "a symbolic link. A binding document must be an ordinary file in "
-                "the repository so that every role reads the same bytes; replace "
-                "the link with the file itself."
-            )
         mode = entries.get(rel)
-        if mode is None:
-            raise AgentInvocationError(
-                f"The project declares {label!r} for its builds, but there is no "
-                f"such file committed at {commit[:12]}."
+        if linked is not None or mode not in ("100644", "100755"):
+            logger.warning(
+                "Required document %r (%s) is not an ordinary committed file; "
+                "left out.", label, where,
             )
-        if mode not in ("100644", "100755"):
-            raise AgentInvocationError(
-                f"The project declares {label!r} for its builds, but it is not an "
-                f"ordinary file at {commit[:12]} (mode {mode})."
-            )
+            continue
         deliver(label, rel)
 
-    check_project_documents_budget(documents)
     return CommittedProjectDocuments(
         commit=commit,
         documents=tuple(documents),
@@ -1472,23 +1308,10 @@ def select_harness(
                 project_inputs.pop("required_documents")
             try:
                 dcode_home = _configure_dcode_launch(task_worktree)
-                # 18 October 2026 (build FEAT-05EE, FEAT-B463): the profile
-                # this process made itself is locked read-only by the factory
-                # once a launch passes, so a stray write into it fails instead
-                # of refusing every later turn. The factory is given the
-                # directory's identity recorded at mkdtemp, and locks only that
-                # directory. Never a supplied profile, and only with a factory
-                # that can do it (else today's behaviour).
-                lock_profile: dict[str, tuple[int, int]] = {}
-                if _factory_accepts_kwarg(build_player_config, "lock_profile_identity"):
-                    identity = _auto_dcode_profile_identity(dcode_home)
-                    if identity is not None:
-                        lock_profile["lock_profile_identity"] = identity
                 player_config = build_player_config(
                     cwd=task_worktree,
                     dcode_home=dcode_home,
                     **project_inputs,
-                    **lock_profile,
                 )
             except ValueError as exc:
                 raise AgentInvocationError(

@@ -1,22 +1,18 @@
 """
 Unit tests for infrastructure vs code test failure classification (TASK-PCTD-9BEB).
 
-Tests the _classify_test_failure method and its integration with the Coach
-feedback path when independent test verification fails.
+Tests the _classify_test_failure method and the classification
+``gather_evidence`` attaches to the evidence bundle when the project's tests
+ran and failed (it only shapes the words the Player is sent).
 
 Coverage Target: >=90%
-Test Count: 14 tests
 """
 
 from pathlib import Path
-from typing import Any, Dict
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pytest
 
-from guardkit.orchestrator.quality_gates.required_suite import (
-    enforce_on_validation_result,
-)
 from guardkit.orchestrator.quality_gates.coach_validator import (
     CoachValidator,
     IndependentTestResult,
@@ -181,75 +177,7 @@ class TestClassifyTestFailure:
 
 
 # ============================================================================
-# 2. _is_psycopg2_asyncpg_mismatch unit tests (TASK-FIX-4415)
-# ============================================================================
-
-
-class TestIsPsycopg2AsyncpgMismatch:
-    """Unit tests for the _is_psycopg2_asyncpg_mismatch helper."""
-
-    PSYCOPG2_OUTPUT = (
-        "FAILED tests/test_db.py::test_connect\n"
-        "ModuleNotFoundError: No module named 'psycopg2'\n"
-    )
-
-    def test_returns_true_for_psycopg2_error_with_asyncpg_in_requires_infrastructure(
-        self, coach_validator: CoachValidator
-    ) -> None:
-        assert coach_validator._is_psycopg2_asyncpg_mismatch(
-            self.PSYCOPG2_OUTPUT,
-            task={"requires_infrastructure": ["asyncpg"]},
-        ) is True
-
-    def test_returns_true_for_psycopg2_error_with_asyncpg_in_bootstrap_packages(
-        self, coach_validator: CoachValidator
-    ) -> None:
-        assert coach_validator._is_psycopg2_asyncpg_mismatch(
-            self.PSYCOPG2_OUTPUT,
-            task={"bootstrap_packages": ["asyncpg"]},
-        ) is True
-
-    def test_returns_false_when_no_asyncpg_signal(
-        self, coach_validator: CoachValidator
-    ) -> None:
-        assert coach_validator._is_psycopg2_asyncpg_mismatch(
-            self.PSYCOPG2_OUTPUT,
-            task={"requires_infrastructure": ["postgresql"]},
-        ) is False
-
-    def test_returns_false_when_task_is_none(
-        self, coach_validator: CoachValidator
-    ) -> None:
-        assert coach_validator._is_psycopg2_asyncpg_mismatch(
-            self.PSYCOPG2_OUTPUT, task=None
-        ) is False
-
-    def test_returns_false_when_output_is_none(
-        self, coach_validator: CoachValidator
-    ) -> None:
-        assert coach_validator._is_psycopg2_asyncpg_mismatch(
-            None, task={"requires_infrastructure": ["asyncpg"]}
-        ) is False
-
-    def test_returns_false_when_different_module_missing(
-        self, coach_validator: CoachValidator
-    ) -> None:
-        output = "ModuleNotFoundError: No module named 'requests'\n"
-        assert coach_validator._is_psycopg2_asyncpg_mismatch(
-            output, task={"requires_infrastructure": ["asyncpg"]}
-        ) is False
-
-    def test_returns_true_for_sqlalchemy_asyncio_signal(
-        self, coach_validator: CoachValidator
-    ) -> None:
-        assert coach_validator._is_psycopg2_asyncpg_mismatch(
-            self.PSYCOPG2_OUTPUT,
-            task={"requires_infrastructure": ["sqlalchemy[asyncio]"]},
-        ) is True
-
-
-# ============================================================================
-# 3. IndependentTestResult raw_output field tests
+# 2. IndependentTestResult raw_output field tests
 # ============================================================================
 
 
@@ -279,39 +207,12 @@ class TestIndependentTestResultRawOutput:
 
 
 # ============================================================================
-# 3. Feedback path integration tests
+# 3. The classification in the evidence bundle
 # ============================================================================
 
 
-class TestFeedbackPathClassification:
-    """Tests verifying the feedback path produces correct messages."""
-
-    def _make_task_work_results(self) -> Dict[str, Any]:
-        """Create minimal task_work_results that pass quality gates."""
-        return {
-            "quality_gates": {
-                "all_passed": True,
-                "tests_passed": 10,
-                "tests_failed": 0,
-                # B9 Lane C (2026-09-19): a coverage NUMBER is not a verdict.
-                # These fixtures exist to pass the gates, so they now say
-                # plainly that coverage was measured and met.
-                "coverage_met": True,
-                "coverage": 85.0,
-                "branch_coverage": 80.0,
-            },
-            "code_review": {"score": 80},
-            "plan_audit": {"violations": 0},
-            "requirements_met": ["AC-001: Feature works"],
-            "completion_promises": [
-                {
-                    "criterion_id": "AC-001",
-                    "criterion_text": "Feature works",
-                    "status": "complete",
-                    "evidence": "Tests pass",
-                },
-            ],
-        }
+class TestEvidenceBundleClassification:
+    """gather_evidence attaches the classification of a red run."""
 
     def _make_infra_test_result(self) -> IndependentTestResult:
         """Create a failed test result with infrastructure error."""
@@ -341,576 +242,57 @@ class TestFeedbackPathClassification:
             ),
         )
 
-    def test_infrastructure_failure_produces_actionable_feedback(
-        self, coach_validator: CoachValidator
-    ) -> None:
-        """Infrastructure failure produces feedback with remediation options."""
-        task_work_results = self._make_task_work_results()
-        infra_result = self._make_infra_test_result()
-
+    def _gather(
+        self, coach_validator: CoachValidator, test_result: IndependentTestResult
+    ):
         with (
             patch.object(
-                coach_validator, "read_quality_gate_results",
-                return_value=task_work_results,
+                coach_validator, "read_quality_gate_results", return_value={},
             ),
             patch.object(
                 coach_validator, "run_independent_tests",
-                return_value=infra_result,
+                return_value=test_result,
             ),
         ):
-            result = coach_validator.validate(
+            return coach_validator.gather_evidence(
                 task_id="TASK-TEST-001",
                 turn=1,
-                task={
-                    "acceptance_criteria": ["AC-001: Feature works"],
-                },
+                task={"acceptance_criteria": ["AC-001: Feature works"]},
             )
 
-        assert result.decision == "feedback"
-        assert len(result.issues) >= 1
-        issue = result.issues[0]
-        assert issue["failure_classification"] == "infrastructure"
-        assert issue["failure_confidence"] == "high"
-        assert "mock fixtures" in issue["description"]
-        assert "SQLite" in issue["description"]
-        assert "infrastructure" in result.rationale
-
-    def test_code_failure_produces_standard_feedback(
+    def test_infrastructure_failure_is_classified_in_the_bundle(
         self, coach_validator: CoachValidator
     ) -> None:
-        """Code failure produces standard feedback without remediation options."""
-        task_work_results = self._make_task_work_results()
-        code_result = self._make_code_test_result()
+        """A ran-and-failed run with an infrastructure error is classified
+        as infrastructure, with the output excerpt for the Player."""
+        bundle = self._gather(coach_validator, self._make_infra_test_result())
 
-        with (
-            patch.object(
-                coach_validator, "read_quality_gate_results",
-                return_value=task_work_results,
-            ),
-            patch.object(
-                coach_validator, "run_independent_tests",
-                return_value=code_result,
-            ),
-        ):
-            result = coach_validator.validate(
-                task_id="TASK-TEST-001",
-                turn=1,
-                task={
-                    "acceptance_criteria": ["AC-001: Feature works"],
-                },
-            )
+        classification = bundle.independent_test_classification
+        assert classification is not None
+        assert classification.failure_class == "infrastructure"
+        assert classification.confidence == "high"
+        assert "ConnectionRefusedError" in classification.raw_output_excerpt
 
-        assert result.decision == "feedback"
-        assert len(result.issues) >= 1
-        issue = result.issues[0]
-        assert issue["failure_classification"] == "code"
-        assert issue["description"] == "Independent test verification failed"
-        assert "infrastructure" not in result.rationale
-
-    def test_psycopg2_error_in_asyncpg_project_gives_specific_feedback(
+    def test_code_failure_is_classified_in_the_bundle(
         self, coach_validator: CoachValidator
     ) -> None:
-        """psycopg2 missing in asyncpg project → specific, actionable feedback (TASK-FIX-4415).
+        bundle = self._gather(coach_validator, self._make_code_test_result())
 
-        When the task declares asyncpg as a dependency and psycopg2 is the
-        missing module, the Coach must give a specific message directing the
-        Player to remove the psycopg2 import.  The generic mock-fixtures /
-        SQLite remediation options must NOT appear.
-        """
-        task_work_results = self._make_task_work_results()
-        psycopg2_result = IndependentTestResult(
-            tests_passed=False,
-            test_command="pytest tests/ -v",
-            test_output_summary="1 failed - ModuleNotFoundError",
-            duration_seconds=1.5,
-            raw_output=(
-                "FAILED tests/test_db.py::test_connect\n"
-                "ModuleNotFoundError: No module named 'psycopg2'\n"
-                "1 failed in 0.45s"
-            ),
-        )
+        classification = bundle.independent_test_classification
+        assert classification is not None
+        assert classification.failure_class == "code"
+        assert classification.confidence == "n/a"
 
-        with (
-            patch.object(
-                coach_validator, "read_quality_gate_results",
-                return_value=task_work_results,
-            ),
-            patch.object(
-                coach_validator, "run_independent_tests",
-                return_value=psycopg2_result,
-            ),
-        ):
-            result = coach_validator.validate(
-                task_id="TASK-TEST-001",
-                turn=1,
-                task={
-                    "acceptance_criteria": ["AC-001: Feature works"],
-                    "requires_infrastructure": ["asyncpg"],
-                },
-            )
-
-        assert result.decision == "feedback"
-        assert len(result.issues) >= 1
-        issue = result.issues[0]
-        assert "psycopg2" in issue["description"]
-        assert "asyncpg" in issue["description"]
-        assert "Remove" in issue["description"]
-        assert "mock fixtures" not in issue["description"]
-        assert "SQLite" not in issue["description"]
-
-    def test_psycopg2_error_without_asyncpg_project_uses_generic_feedback(
+    def test_a_passing_run_is_not_classified(
         self, coach_validator: CoachValidator
     ) -> None:
-        """psycopg2 missing with no asyncpg signal → generic infrastructure feedback (TASK-FIX-4415).
-
-        When the project does not declare asyncpg, a missing psycopg2 module
-        should NOT produce the asyncpg-specific message (AC4).
-        """
-        task_work_results = self._make_task_work_results()
-        psycopg2_result = IndependentTestResult(
-            tests_passed=False,
-            test_command="pytest tests/ -v",
-            test_output_summary="1 failed - ModuleNotFoundError",
-            duration_seconds=1.5,
-            raw_output=(
-                "FAILED tests/test_db.py::test_connect\n"
-                "ModuleNotFoundError: No module named 'psycopg2'\n"
-                "1 failed in 0.45s"
-            ),
-        )
-
-        with (
-            patch.object(
-                coach_validator, "read_quality_gate_results",
-                return_value=task_work_results,
-            ),
-            patch.object(
-                coach_validator, "run_independent_tests",
-                return_value=psycopg2_result,
-            ),
-        ):
-            result = coach_validator.validate(
-                task_id="TASK-TEST-001",
-                turn=1,
-                task={
-                    "acceptance_criteria": ["AC-001: Feature works"],
-                    # No asyncpg in requires_infrastructure
-                },
-            )
-
-        assert result.decision == "feedback"
-        assert len(result.issues) >= 1
-        issue = result.issues[0]
-        # Must NOT contain the asyncpg-specific message
-        assert "Remove `import psycopg2`" not in issue["description"]
-
-
-# ============================================================================
-# 4. Conditional approval tests (TASK-INFR-24DB)
-# ============================================================================
-
-
-class TestConditionalApproval:
-    """Tests for infrastructure-aware conditional approval fallback (TASK-INFR-24DB)."""
-
-    def _make_task_work_results(self) -> Dict[str, Any]:
-        """Create minimal task_work_results that pass quality gates."""
-        return {
-            "quality_gates": {
-                "all_passed": True,
-                "tests_passed": 10,
-                "tests_failed": 0,
-                # B9 Lane C (2026-09-19): a coverage NUMBER is not a verdict.
-                # These fixtures exist to pass the gates, so they now say
-                # plainly that coverage was measured and met.
-                "coverage_met": True,
-                "coverage": 85.0,
-                "branch_coverage": 80.0,
-            },
-            "code_review": {"score": 80},
-            "plan_audit": {"violations": 0},
-            "requirements_met": ["AC-001: Feature works"],
-            "completion_promises": [
-                {
-                    "criterion_id": "AC-001",
-                    "criterion_text": "Feature works",
-                    "status": "complete",
-                    "evidence": "Tests pass",
-                },
-            ],
-        }
-
-    def _make_infra_test_result(self) -> IndependentTestResult:
-        """Create a failed test result with high-confidence infrastructure error."""
-        return IndependentTestResult(
-            tests_passed=False,
-            test_command="pytest tests/ -v",
-            test_output_summary="1 failed - ConnectionRefusedError",
-            duration_seconds=3.0,
-            raw_output=(
-                "FAILED tests/test_db.py::test_create_user\n"
-                "E   ConnectionRefusedError: [Errno 111] Connection refused\n"
-                "1 failed in 2.31s"
-            ),
-        )
-
-    def test_high_confidence_infra_declared_deps_docker_unavailable_approves(
-        self, coach_validator: CoachValidator
-    ) -> None:
-        """High-confidence infra + declared deps + Docker unavailable -> conditional approve."""
-        task_work_results = self._make_task_work_results()
-        infra_result = self._make_infra_test_result()
-
-        with (
-            patch.object(coach_validator, "read_quality_gate_results", return_value=task_work_results),
-            patch.object(coach_validator, "run_independent_tests", return_value=infra_result),
-        ):
-            result = coach_validator.validate(
-                task_id="TASK-TEST-001",
-                turn=1,
-                task={
-                    "acceptance_criteria": ["AC-001: Feature works"],
-                    "requires_infrastructure": ["postgresql"],
-                    "_docker_available": False,
-                },
-            )
-
-        assert result.decision == "approve"
-        assert result.approved_without_independent_tests is True
-
-        # The shared required-suite rule, applied by the Coach path that calls
-        # validate(), turns this ran-and-failed run into ordinary feedback
-        # (reliability repair 1, 12 October 2026).
-        final = enforce_on_validation_result(result, task_type=None)
-        assert final.decision == "feedback"
-        assert final.is_configuration_error is False
-        assert final.approved_without_independent_tests is False
-
-    def test_high_confidence_infra_no_declared_deps_returns_feedback(
-        self, coach_validator: CoachValidator
-    ) -> None:
-        """High-confidence infra + no declared deps -> feedback (not approve)."""
-        task_work_results = self._make_task_work_results()
-        infra_result = self._make_infra_test_result()
-
-        with (
-            patch.object(coach_validator, "read_quality_gate_results", return_value=task_work_results),
-            patch.object(coach_validator, "run_independent_tests", return_value=infra_result),
-        ):
-            result = coach_validator.validate(
-                task_id="TASK-TEST-001",
-                turn=1,
-                task={
-                    "acceptance_criteria": ["AC-001: Feature works"],
-                    "requires_infrastructure": [],  # empty = not declared
-                    "_docker_available": False,
-                },
-            )
-
-        assert result.decision == "feedback"
-        assert result.approved_without_independent_tests is False
-
-    def test_ambiguous_infra_declared_deps_returns_feedback(
-        self, coach_validator: CoachValidator
-    ) -> None:
-        """Ambiguous infra + declared deps -> feedback (not approve)."""
-        task_work_results = self._make_task_work_results()
-        # Use an ImportError with a non-high-confidence module name so that
-        # classification returns ("infrastructure", "ambiguous"), not "high"
-        ambiguous_result = IndependentTestResult(
-            tests_passed=False,
-            test_command="pytest tests/ -v",
-            test_output_summary="1 failed - ImportError",
-            duration_seconds=1.0,
-            raw_output="ImportError: No module named 'some_missing_package'",
-        )
-
-        with (
-            patch.object(coach_validator, "read_quality_gate_results", return_value=task_work_results),
-            patch.object(coach_validator, "run_independent_tests", return_value=ambiguous_result),
-        ):
-            result = coach_validator.validate(
-                task_id="TASK-TEST-001",
-                turn=1,
-                task={
-                    "acceptance_criteria": ["AC-001: Feature works"],
-                    "requires_infrastructure": ["postgresql"],
-                    "_docker_available": False,
-                },
-            )
-
-        assert result.decision == "feedback"
-        assert result.approved_without_independent_tests is False
-
-    def test_high_confidence_infra_docker_available_returns_feedback(
-        self, coach_validator: CoachValidator
-    ) -> None:
-        """High-confidence infra + Docker available -> should not reach conditional approval."""
-        task_work_results = self._make_task_work_results()
-        infra_result = self._make_infra_test_result()
-
-        with (
-            patch.object(coach_validator, "read_quality_gate_results", return_value=task_work_results),
-            patch.object(coach_validator, "run_independent_tests", return_value=infra_result),
-        ):
-            result = coach_validator.validate(
-                task_id="TASK-TEST-001",
-                turn=1,
-                task={
-                    "acceptance_criteria": ["AC-001: Feature works"],
-                    "requires_infrastructure": ["postgresql"],
-                    "_docker_available": True,  # Docker IS available
-                },
-            )
-
-        assert result.decision == "feedback"
-        assert result.approved_without_independent_tests is False
-
-    def test_gates_failed_no_conditional_approval(
-        self, coach_validator: CoachValidator
-    ) -> None:
-        """Quality gates fail -> feedback (gates must pass for conditional approval)."""
-        task_work_results = self._make_task_work_results()
-        task_work_results["quality_gates"]["all_passed"] = False
-        task_work_results["quality_gates"]["coverage"] = 50.0  # Below threshold
-
-        infra_result = self._make_infra_test_result()
-
-        with (
-            patch.object(coach_validator, "read_quality_gate_results", return_value=task_work_results),
-            patch.object(coach_validator, "run_independent_tests", return_value=infra_result),
-        ):
-            result = coach_validator.validate(
-                task_id="TASK-TEST-001",
-                turn=1,
-                task={
-                    "acceptance_criteria": ["AC-001: Feature works"],
-                    "requires_infrastructure": ["postgresql"],
-                    "_docker_available": False,
-                },
-            )
-
-        # gates_status.all_gates_passed will be False, so it returns feedback from gates check
-        # before even reaching the independent test check
-        assert result.decision == "feedback"
-
-    def test_conditional_approval_in_to_dict(
-        self, coach_validator: CoachValidator
-    ) -> None:
-        """approved_without_independent_tests appears in to_dict output."""
-        task_work_results = self._make_task_work_results()
-        infra_result = self._make_infra_test_result()
-
-        with (
-            patch.object(coach_validator, "read_quality_gate_results", return_value=task_work_results),
-            patch.object(coach_validator, "run_independent_tests", return_value=infra_result),
-        ):
-            result = coach_validator.validate(
-                task_id="TASK-TEST-001",
-                turn=1,
-                task={
-                    "acceptance_criteria": ["AC-001: Feature works"],
-                    "requires_infrastructure": ["postgresql"],
-                    "_docker_available": False,
-                },
-            )
-
-        result_dict = result.to_dict()
-        assert "approved_without_independent_tests" in result_dict
-        assert result_dict["approved_without_independent_tests"] is True
-
-        # After the shared required-suite rule the flag is cleared.
-        final = enforce_on_validation_result(result, task_type=None).to_dict()
-        assert final["decision"] == "feedback"
-        assert final["approved_without_independent_tests"] is False
-
-    def test_normal_approval_has_false_flag(
-        self, coach_validator: CoachValidator
-    ) -> None:
-        """Normal approval (tests pass) has approved_without_independent_tests=False."""
-        task_work_results = self._make_task_work_results()
-        passing_result = IndependentTestResult(
+        passed = IndependentTestResult(
             tests_passed=True,
             test_command="pytest tests/ -v",
             test_output_summary="5 passed",
             duration_seconds=1.0,
+            raw_output="5 passed in 0.10s",
         )
+        bundle = self._gather(coach_validator, passed)
 
-        with (
-            patch.object(coach_validator, "read_quality_gate_results", return_value=task_work_results),
-            patch.object(coach_validator, "run_independent_tests", return_value=passing_result),
-        ):
-            result = coach_validator.validate(
-                task_id="TASK-TEST-001",
-                turn=1,
-                task={
-                    "acceptance_criteria": ["AC-001: Feature works"],
-                },
-            )
-
-        assert result.decision == "approve"
-        assert result.approved_without_independent_tests is False
-
-
-# ============================================================================
-# 5. Collection error conditional approval tests (TASK-FIX-1D70)
-# ============================================================================
-
-
-class TestCollectionErrorConditionalApproval:
-    """Tests for collection_error conditional approval path (TASK-FIX-1D70)."""
-
-    def _make_task_work_results(self) -> Dict[str, Any]:
-        """Create minimal task_work_results that pass quality gates."""
-        return {
-            "quality_gates": {
-                "all_passed": True,
-                "tests_passed": 10,
-                "tests_failed": 0,
-                # B9 Lane C (2026-09-19): a coverage NUMBER is not a verdict.
-                # These fixtures exist to pass the gates, so they now say
-                # plainly that coverage was measured and met.
-                "coverage_met": True,
-                "coverage": 85.0,
-                "branch_coverage": 80.0,
-            },
-            "code_review": {"score": 80},
-            "plan_audit": {"violations": 0},
-            "requirements_met": ["AC-001: Feature works"],
-            "completion_promises": [
-                {
-                    "criterion_id": "AC-001",
-                    "criterion_text": "Feature works",
-                    "status": "complete",
-                    "evidence": "Tests pass",
-                },
-            ],
-        }
-
-    def _make_collection_error_result(self) -> IndependentTestResult:
-        """Create a failed test result simulating a pytest collection error."""
-        return IndependentTestResult(
-            tests_passed=False,
-            test_command="pytest tests/ -v",
-            test_output_summary="2 errors during collection",
-            duration_seconds=0.5,
-            raw_output=(
-                "ImportError while importing test module 'tests/test_feature.py'.\n"
-                "Interrupted: 2 errors during collection\n"
-                "short test summary info\n"
-                "ERROR tests/test_feature.py"
-            ),
-        )
-
-    def test_collection_error_with_all_gates_passed_approves(
-        self, coach_validator: CoachValidator
-    ) -> None:
-        """collection_error + all gates passed -> conditional approve."""
-        task_work_results = self._make_task_work_results()
-        collection_result = self._make_collection_error_result()
-
-        with (
-            patch.object(coach_validator, "read_quality_gate_results", return_value=task_work_results),
-            patch.object(coach_validator, "run_independent_tests", return_value=collection_result),
-        ):
-            result = coach_validator.validate(
-                task_id="TASK-TEST-001",
-                turn=1,
-                task={
-                    "acceptance_criteria": ["AC-001: Feature works"],
-                },
-            )
-
-        assert result.decision == "approve"
-        assert result.approved_without_independent_tests is True
-        assert "collection" in result.rationale.lower()
-
-    def test_collection_error_rationale_contains_expected_text(
-        self, coach_validator: CoachValidator
-    ) -> None:
-        """collection_error conditional approval rationale matches expected text."""
-        task_work_results = self._make_task_work_results()
-        collection_result = self._make_collection_error_result()
-
-        with (
-            patch.object(coach_validator, "read_quality_gate_results", return_value=task_work_results),
-            patch.object(coach_validator, "run_independent_tests", return_value=collection_result),
-        ):
-            result = coach_validator.validate(
-                task_id="TASK-TEST-001",
-                turn=1,
-                task={
-                    "acceptance_criteria": ["AC-001: Feature works"],
-                },
-            )
-
-        assert "Conditionally approved — test collection errors in independent verification" in result.rationale
-
-    def test_collection_error_with_failed_gate_returns_feedback(
-        self, coach_validator: CoachValidator
-    ) -> None:
-        """collection_error + gates NOT all passed -> feedback (not approved)."""
-        task_work_results = self._make_task_work_results()
-        task_work_results["quality_gates"]["all_passed"] = False
-        task_work_results["quality_gates"]["coverage"] = 50.0
-        collection_result = self._make_collection_error_result()
-
-        with (
-            patch.object(coach_validator, "read_quality_gate_results", return_value=task_work_results),
-            patch.object(coach_validator, "run_independent_tests", return_value=collection_result),
-        ):
-            result = coach_validator.validate(
-                task_id="TASK-TEST-001",
-                turn=1,
-                task={
-                    "acceptance_criteria": ["AC-001: Feature works"],
-                },
-            )
-
-        # Gates failed means feedback before reaching independent test check
-        assert result.decision == "feedback"
-        assert result.approved_without_independent_tests is False
-
-    def test_infrastructure_approval_path_unchanged(
-        self, coach_validator: CoachValidator
-    ) -> None:
-        """Existing infrastructure approval path continues to work (no regression)."""
-        task_work_results = self._make_task_work_results()
-        infra_result = IndependentTestResult(
-            tests_passed=False,
-            test_command="pytest tests/ -v",
-            test_output_summary="1 failed - ConnectionRefusedError",
-            duration_seconds=3.0,
-            raw_output=(
-                "FAILED tests/test_db.py::test_create_user\n"
-                "E   ConnectionRefusedError: [Errno 111] Connection refused\n"
-                "1 failed in 2.31s"
-            ),
-        )
-
-        with (
-            patch.object(coach_validator, "read_quality_gate_results", return_value=task_work_results),
-            patch.object(coach_validator, "run_independent_tests", return_value=infra_result),
-        ):
-            result = coach_validator.validate(
-                task_id="TASK-TEST-001",
-                turn=1,
-                task={
-                    "acceptance_criteria": ["AC-001: Feature works"],
-                    "requires_infrastructure": ["postgresql"],
-                    "_docker_available": False,
-                },
-            )
-
-        assert result.decision == "approve"
-        assert result.approved_without_independent_tests is True
-        assert "infrastructure" in result.rationale.lower()
-        assert "collection" not in result.rationale.lower()
-
-        # The shared required-suite rule, applied by the Coach path that calls
-        # validate(), turns this ran-and-failed run into ordinary feedback
-        # (reliability repair 1, 12 October 2026).
-        final = enforce_on_validation_result(result, task_type=None)
-        assert final.decision == "feedback"
-        assert final.is_configuration_error is False
-        assert final.approved_without_independent_tests is False
+        assert bundle.independent_test_classification is None

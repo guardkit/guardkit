@@ -306,10 +306,8 @@ class TestTaskWorkResultsMerge:
     """Test suite for design results merge logic in _write_task_work_results."""
 
     @patch.object(AgentInvoker, "_generate_summary")
-    @patch.object(AgentInvoker, "_validate_file_count_constraint")
     def test_write_task_work_results_merges_design_results(
         self,
-        mock_validate,
         mock_summary,
         agent_invoker,
         valid_task_work_data,
@@ -341,10 +339,8 @@ class TestTaskWorkResultsMerge:
         assert content["quality_gates"]["all_passed"] is True
 
     @patch.object(AgentInvoker, "_generate_summary")
-    @patch.object(AgentInvoker, "_validate_file_count_constraint")
     def test_write_task_work_results_works_without_design_results(
         self,
-        mock_validate,
         mock_summary,
         agent_invoker,
         valid_task_work_data,
@@ -367,10 +363,8 @@ class TestTaskWorkResultsMerge:
         # architectural_review may be absent or have default values from task_work_data
 
     @patch.object(AgentInvoker, "_generate_summary")
-    @patch.object(AgentInvoker, "_validate_file_count_constraint")
     def test_write_task_work_results_design_merge_overwrites(
         self,
-        mock_validate,
         mock_summary,
         agent_invoker,
         valid_design_data,

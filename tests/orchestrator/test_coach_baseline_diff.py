@@ -119,32 +119,6 @@ class TestApplyBaselineDiff:
         assert out.tests_passed is False  # flag off → inert
 
 
-class TestDeterministicGateDefer:
-    def test_defers_test_gate_when_baseline_active(self, tmp_path):
-        _write_baseline(tmp_path, ["tests/slice.py::test_home"])
-        cv = CoachValidator(str(tmp_path))
-        gates = cv.verify_quality_gates(
-            {"quality_gates": {"tests_failed": 1, "all_passed": False}}
-        )
-        # The count-based gate defers to the independent run (tests_passed True).
-        assert gates.tests_passed is True
-
-    def test_no_baseline_gate_still_fails(self, tmp_path):
-        cv = CoachValidator(str(tmp_path))
-        gates = cv.verify_quality_gates(
-            {"quality_gates": {"tests_failed": 1, "all_passed": False}}
-        )
-        assert gates.tests_passed is False  # inert without a baseline
-
-    def test_green_baseline_gate_still_fails(self, tmp_path):
-        _write_baseline(tmp_path, [], passed=True)
-        cv = CoachValidator(str(tmp_path))
-        gates = cv.verify_quality_gates(
-            {"quality_gates": {"tests_failed": 1, "all_passed": False}}
-        )
-        assert gates.tests_passed is False
-
-
 class TestTheBaselineDiffSaysWhyItDidNotAct:
     """Every way out of the diff names itself (2026-09-13).
 

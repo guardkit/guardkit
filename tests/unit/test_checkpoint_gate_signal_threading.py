@@ -1,6 +1,11 @@
 """
 Regression tests for TASK-AB-CKPTGATE01.
 
+Since the cull of 27 October 2026 the only test signal threaded is the
+project's own test run (``independent_tests``); the quality-gate status, the
+requirements rows and the Phase 4 counts the Player reported are gone, and
+so is the checkpoint rollback they fed.
+
 Thread the deterministic Coach gate test signal into the LLM-Coach report so a
 genuinely-passing turn is recorded as ``pass`` (not ``unknown``).
 
@@ -44,15 +49,7 @@ sys.path.insert(0, str(_test_root))
 from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
 from guardkit.orchestrator.quality_gates.coach_evidence import CoachEvidenceBundle
 from guardkit.orchestrator.quality_gates.coach_validator import (
-    CriterionResult,
     IndependentTestResult,
-    QualityGateStatus,
-    RequirementsValidation,
-)
-from guardkit.orchestrator.specialist_invocations import _parse_pytest_counts
-from guardkit.orchestrator.worktree_checkpoints import (
-    Checkpoint,
-    WorktreeCheckpointManager,
 )
 
 
@@ -65,29 +62,6 @@ from guardkit.orchestrator.worktree_checkpoints import (
 def orchestrator():
     """AutoBuildOrchestrator for exercising the merge helper + extractor."""
     return AutoBuildOrchestrator(repo_root=Path.cwd(), max_turns=5)
-
-
-@pytest.fixture
-def mock_git_executor():
-    """Git executor that returns a stable hash for every command."""
-    executor = Mock()
-    executor.execute.return_value = Mock(returncode=0, stdout="deadbeef\n", stderr="")
-    return executor
-
-
-@pytest.fixture
-def checkpoint_manager(tmp_path, mock_git_executor):
-    """Checkpoint manager backed by a mock git executor (no evidence repos)."""
-    worktree_path = tmp_path / "worktree"
-    worktree_path.mkdir()
-    (worktree_path / ".guardkit" / "autobuild" / "TASK-CKPTGATE-001").mkdir(
-        parents=True
-    )
-    return WorktreeCheckpointManager(
-        worktree_path=worktree_path,
-        task_id="TASK-CKPTGATE-001",
-        git_executor=mock_git_executor,
-    )
 
 
 def _llm_coach_report(decision: str = "approve") -> dict:
@@ -110,24 +84,11 @@ def _llm_coach_report(decision: str = "approve") -> dict:
 
 def _bundle(
     *,
-    gate_tests_passed: bool | None = True,
     indep_tests_passed: bool | None = True,
     indep_signal_absent: bool = False,
-    include_gates: bool = True,
     include_independent: bool = True,
-    tests_run: int | None = 5,
-    tests_failed: int | None = None,
-    requirements: RequirementsValidation | None = None,
 ) -> CoachEvidenceBundle:
-    """Construct a real CoachEvidenceBundle carrying the requested test signal."""
-    gates = None
-    if include_gates and gate_tests_passed is not None:
-        gates = QualityGateStatus(
-            tests_passed=gate_tests_passed,
-            coverage_met=True,
-            arch_review_passed=True,
-            plan_audit_passed=True,
-        )
+    """Construct a real CoachEvidenceBundle carrying the requested test run."""
     independent = None
     if include_independent:
         independent = IndependentTestResult(
@@ -137,16 +98,7 @@ def _bundle(
             duration_seconds=1.0,
             signal_absent=indep_signal_absent,
         )
-    tests = {"tests_run": tests_run} if tests_run is not None else None
-    if tests is not None and tests_failed is not None:
-        tests["tests_failed"] = tests_failed
-    return CoachEvidenceBundle(
-        honesty=Mock(),  # not read by the merge helper
-        quality_gates=gates,
-        independent_tests=independent,
-        tests=tests,
-        requirements=requirements,
-    )
+    return CoachEvidenceBundle(independent_tests=independent)
 
 
 def _turn_record(report: dict) -> Mock:
@@ -179,23 +131,24 @@ def _capture_state(orchestrator, report: dict, tmp_path: Path) -> dict:
 
 
 # ============================================================================
-# AC-001 / AC-006: passing gate signal threaded → recorded as pass
+# AC-001 / AC-006: the project's passing test run threaded → recorded as pass
 # ============================================================================
 
 
 class TestGateSignalThreadedAsPass:
     def test_llm_report_without_validation_results_becomes_pass(self, orchestrator):
         """FEAT-9DDE reproducer: pre-merge the report extracts to UNKNOWN; after
-        merging a tests=True bundle it extracts to True (pass)."""
+        merging a passing test run it extracts to True (pass)."""
         report = _llm_coach_report()
         # Before the merge: no validation_results → UNKNOWN.
         assert orchestrator._extract_tests_passed(_turn_record(report)) is None
 
         merged = orchestrator._merge_evidence_test_signal_into_report(
-            report, _bundle(gate_tests_passed=True)
+            report, _bundle(indep_tests_passed=True)
         )
         assert (
-            merged["validation_results"]["quality_gates"]["tests_passed"] is True
+            merged["validation_results"]["independent_tests"]["tests_passed"]
+            is True
         )
         assert orchestrator._extract_tests_passed(_turn_record(merged)) is True
 
@@ -209,103 +162,49 @@ class TestGateSignalThreadedAsPass:
 
 
 # ============================================================================
-# AC-002: threaded pass is a find_last_passing_checkpoint rollback target
-# ============================================================================
-
-
-class TestRollbackTargetRestored:
-    def test_threaded_pass_is_rollback_target(
-        self, orchestrator, checkpoint_manager
-    ):
-        """End-to-end: merge tests=True → extract True → checkpoint pass →
-        find_last_passing_checkpoint returns it."""
-        merged = orchestrator._merge_evidence_test_signal_into_report(
-            _llm_coach_report(), _bundle(gate_tests_passed=True)
-        )
-        signal = orchestrator._extract_tests_passed(_turn_record(merged))
-        assert signal is True
-
-        checkpoint_manager.create_checkpoint(turn=1, tests_passed=signal, test_count=5)
-        # A later UNKNOWN turn must not erase the rollback target.
-        checkpoint_manager.create_checkpoint(turn=2, tests_passed=None, test_count=0)
-
-        assert checkpoint_manager.find_last_passing_checkpoint() == 1
-
-    def test_without_threading_there_is_no_rollback_target(
-        self, orchestrator, checkpoint_manager
-    ):
-        """Demonstrates the residual gap this task closes: an unmerged
-        LLM-Coach pass turn is UNKNOWN and is NOT a rollback target."""
-        signal = orchestrator._extract_tests_passed(
-            _turn_record(_llm_coach_report())
-        )
-        assert signal is None
-        checkpoint_manager.create_checkpoint(turn=1, tests_passed=signal, test_count=0)
-        assert checkpoint_manager.find_last_passing_checkpoint() is None
-
-
-# ============================================================================
 # AC-003: absent independent signal still resolves to UNKNOWN
 # ============================================================================
 
 
 class TestAbsenceOfFailurePreserved:
-    def test_absent_independent_overrides_passing_gate(self, orchestrator):
-        """signal_absent=True must win over quality_gates.tests_passed=True
-        (the regression guard for TASK-FIX-CKPTTESTRED01)."""
+    def test_absent_independent_overrides_a_reported_pass(self, orchestrator):
+        """signal_absent=True wins over a quality_gates.tests_passed=True the
+        report already carried (the regression guard for
+        TASK-FIX-CKPTTESTRED01)."""
+        report = _llm_coach_report()
+        report["validation_results"] = {"quality_gates": {"tests_passed": True}}
         merged = orchestrator._merge_evidence_test_signal_into_report(
-            _llm_coach_report(),
-            _bundle(gate_tests_passed=True, indep_signal_absent=True),
-        )
-        # Both signals are present in the merged report ...
-        assert (
-            merged["validation_results"]["quality_gates"]["tests_passed"] is True
+            report, _bundle(indep_signal_absent=True)
         )
         assert (
             merged["validation_results"]["independent_tests"]["signal_absent"]
             is True
         )
-        # ... but signal_absent is read first → UNKNOWN.
+        # signal_absent is read first → UNKNOWN.
         assert orchestrator._extract_tests_passed(_turn_record(merged)) is None
 
-    def test_absent_independent_with_no_gates_is_unknown(self, orchestrator):
-        """An absent independent signal with no quality_gates → UNKNOWN."""
+    def test_absent_independent_is_unknown(self, orchestrator):
+        """An absent independent signal on its own → UNKNOWN."""
         merged = orchestrator._merge_evidence_test_signal_into_report(
             _llm_coach_report(),
-            _bundle(include_gates=False, indep_signal_absent=True),
+            _bundle(indep_signal_absent=True),
         )
         assert orchestrator._extract_tests_passed(_turn_record(merged)) is None
 
 
 # ============================================================================
-# AC-004: genuine ran-and-failed gate stays False and feeds pollution tally
+# AC-004: a genuine ran-and-failed run stays False
 # ============================================================================
 
 
 class TestGenuineFailurePreserved:
-    def test_failed_gate_recorded_as_false(self, orchestrator):
-        """tests=False from the bundle is threaded and extracts to False."""
+    def test_failed_run_recorded_as_false(self, orchestrator):
+        """A failed test run from the bundle is threaded and extracts to False."""
         merged = orchestrator._merge_evidence_test_signal_into_report(
             _llm_coach_report(decision="feedback"),
-            _bundle(gate_tests_passed=False, indep_tests_passed=False),
+            _bundle(indep_tests_passed=False),
         )
         assert orchestrator._extract_tests_passed(_turn_record(merged)) is False
-
-    def test_three_threaded_failures_still_stall(
-        self, orchestrator, checkpoint_manager
-    ):
-        """Three genuine ran-and-failed turns still trigger rollback."""
-        for turn in (1, 2, 3):
-            merged = orchestrator._merge_evidence_test_signal_into_report(
-                _llm_coach_report(decision="feedback"),
-                _bundle(gate_tests_passed=False, indep_tests_passed=False),
-            )
-            signal = orchestrator._extract_tests_passed(_turn_record(merged))
-            assert signal is False
-            checkpoint_manager.create_checkpoint(
-                turn=turn, tests_passed=signal, test_count=5
-            )
-        assert checkpoint_manager.should_rollback() is True
 
 
 # ============================================================================
@@ -314,16 +213,19 @@ class TestGenuineFailurePreserved:
 
 
 class TestNonClobberAndNoOp:
-    def test_existing_quality_gate_not_overwritten(self, orchestrator):
-        """A report already carrying quality_gates.tests_passed=False wins over
-        a bundle that says True (non-clobbering)."""
+    def test_existing_independent_result_not_overwritten(self, orchestrator):
+        """A report already carrying independent_tests.tests_passed=False wins
+        over a bundle that says True (non-clobbering)."""
         report = _llm_coach_report()
-        report["validation_results"] = {"quality_gates": {"tests_passed": False}}
+        report["validation_results"] = {
+            "independent_tests": {"tests_passed": False}
+        }
         merged = orchestrator._merge_evidence_test_signal_into_report(
-            report, _bundle(gate_tests_passed=True)
+            report, _bundle(indep_tests_passed=True)
         )
         assert (
-            merged["validation_results"]["quality_gates"]["tests_passed"] is False
+            merged["validation_results"]["independent_tests"]["tests_passed"]
+            is False
         )
         assert orchestrator._extract_tests_passed(_turn_record(merged)) is False
 
@@ -344,11 +246,11 @@ class TestNonClobberAndNoOp:
     def test_bundle_without_signals_creates_empty_validation_results(
         self, orchestrator
     ):
-        """A bundle with neither gates nor independent tests is harmless: the
-        report still extracts to UNKNOWN."""
+        """A bundle with no independent test run is harmless: the report
+        still extracts to UNKNOWN."""
         merged = orchestrator._merge_evidence_test_signal_into_report(
             _llm_coach_report(),
-            _bundle(include_gates=False, include_independent=False),
+            _bundle(include_independent=False),
         )
         assert orchestrator._extract_tests_passed(_turn_record(merged)) is None
 
@@ -366,37 +268,9 @@ class TestNonClobberAndNoOp:
         assert report["criteria_verification"] is original_criteria
 
 
-def _requirements(count: int) -> RequirementsValidation:
-    rows = [
-        CriterionResult(
-            criterion_id=f"AC-{index:03d}",
-            criterion_text=f"criterion {index}",
-            result="verified",
-            status="verified",
-            evidence=f"evidence {index}",
-        )
-        for index in range(1, count + 1)
-    ]
-    return RequirementsValidation(
-        criteria_total=count,
-        criteria_met=count,
-        all_criteria_met=True,
-        criteria_results=rows,
-    )
-
-
 class TestEvidenceMetadataThreading:
-    def test_phase_four_test_count_reaches_checkpoint_consumer(self, orchestrator):
-        merged = orchestrator._merge_evidence_test_signal_into_report(
-            _llm_coach_report(),
-            _bundle(tests_run=848),
-        )
-
-        assert merged["validation_results"]["tests"]["tests_run"] == 848
-        assert orchestrator._extract_test_count(_turn_record(merged)) == 848
-
-    def test_direct_mode_count_comes_from_independent_summary(self, orchestrator):
-        bundle = _bundle(tests_run=None)
+    def test_count_comes_from_independent_summary(self, orchestrator):
+        bundle = _bundle()
         bundle.independent_tests.test_output_summary = "849 passed in 12.3s"
         merged = orchestrator._merge_evidence_test_signal_into_report(
             _llm_coach_report(),
@@ -406,7 +280,7 @@ class TestEvidenceMetadataThreading:
         assert orchestrator._extract_test_count(_turn_record(merged)) == 849
 
     def test_absent_signal_never_manufactures_count_from_summary(self, orchestrator):
-        bundle = _bundle(tests_run=None, indep_signal_absent=True)
+        bundle = _bundle(indep_signal_absent=True)
         bundle.independent_tests.test_output_summary = "849 passed in 12.3s"
         merged = orchestrator._merge_evidence_test_signal_into_report(
             _llm_coach_report(),
@@ -421,33 +295,12 @@ class TestEvidenceMetadataThreading:
 
         assert orchestrator._extract_test_count(_turn_record(report)) == 0
 
-    def test_requirements_rows_reach_progress_consumer(
-        self, orchestrator, caplog
-    ):
-        report = _llm_coach_report()
-        report["criteria_verification"] = []
-        merged = orchestrator._merge_evidence_test_signal_into_report(
-            report,
-            _bundle(requirements=_requirements(4)),
-        )
-        record = _turn_record(merged)
-        record.turn = 1
-        record.player_result = None
-
-        with caplog.at_level("INFO"):
-            orchestrator._display_criteria_progress(
-                record,
-                [f"criterion {index}" for index in range(1, 5)],
-            )
-
-        assert "4/4 verified" in caplog.text
-
     def test_green_tests_do_not_manufacture_criteria(self, orchestrator):
         report = _llm_coach_report()
         report["criteria_verification"] = []
         merged = orchestrator._merge_evidence_test_signal_into_report(
             report,
-            _bundle(requirements=None, tests_run=858),
+            _bundle(),
         )
 
         assert orchestrator._criteria_verifications_from_report(merged) == []
@@ -472,7 +325,7 @@ class TestEvidenceMetadataThreading:
 
         merged = orchestrator._merge_evidence_test_signal_into_report(
             report,
-            _bundle(tests_run=848, requirements=_requirements(4)),
+            _bundle(),
         )
 
         assert merged["validation_results"]["tests"]["tests_run"] == 7
@@ -501,31 +354,10 @@ class TestPersistedEvidenceMetadata:
 
         assert state["acceptance_criteria_status"] == {"AC-001": "verified"}
 
-    def test_synthetic_feedback_criteria_survive_turn_state(
-        self, orchestrator, tmp_path
-    ):
-        result = orchestrator._emit_synthetic_coach_feedback(
-            task_id="TASK-CKPTGATE-001",
-            turn=1,
-            worktree=SimpleNamespace(path=tmp_path),
-            rationale="Missing sibling evidence",
-            start_time=0.0,
-            requirements=_requirements(1),
-        )
-
-        state = _capture_state(orchestrator, result.report, tmp_path)
-
-        assert state["acceptance_criteria_status"] == {"AC-001": "verified"}
-
     def test_failed_actual_counts_survive_turn_state(
         self, orchestrator, tmp_path
     ):
-        bundle = _bundle(
-            gate_tests_passed=False,
-            indep_tests_passed=False,
-            tests_run=10,
-            tests_failed=2,
-        )
+        bundle = _bundle(indep_tests_passed=False)
         bundle.independent_tests.test_output_summary = "8 passed, 2 failed"
         merged = orchestrator._merge_evidence_test_signal_into_report(
             {"decision": "feedback", "criteria_verification": []},
@@ -562,15 +394,10 @@ class TestPersistedEvidenceMetadata:
             _turn_record(report)
         ) == (8, 2)
 
-    def test_incomplete_failed_counts_remain_unknown(
+    def test_unparseable_failed_counts_remain_unknown(
         self, orchestrator, tmp_path
     ):
-        bundle = _bundle(
-            gate_tests_passed=False,
-            indep_tests_passed=False,
-            tests_run=10,
-            tests_failed=None,
-        )
+        bundle = _bundle(indep_tests_passed=False)
         bundle.independent_tests.test_output_summary = "unparseable output"
         merged = orchestrator._merge_evidence_test_signal_into_report(
             {"decision": "feedback", "criteria_verification": []},
@@ -589,30 +416,22 @@ class TestPersistedEvidenceMetadata:
         assert orchestrator._extract_test_count(_turn_record(report)) == 0
 
     @pytest.mark.parametrize(
-        ("summary", "expected_run", "expected_passed", "expected_failed"),
+        ("summary", "expected_passed", "expected_failed"),
         [
-            ("8 passed, 2 xfailed", 10, 8, 0),
-            ("8 passed, 2 skipped", 8, 8, 0),
-            ("8 passed, 2 errors", 10, 8, 2),
+            ("8 passed, 2 xfailed", 8, 0),
+            ("8 passed, 2 skipped", 8, 0),
+            ("8 passed, 2 errors", 8, 2),
         ],
     )
-    def test_real_phase_four_categories_persist_observed_outcomes(
+    def test_real_run_categories_persist_observed_outcomes(
         self,
         orchestrator,
         tmp_path,
         summary,
-        expected_run,
         expected_passed,
         expected_failed,
     ):
-        tests_run, tests_failed, _ = _parse_pytest_counts(summary)
-        assert (tests_run, tests_failed) == (expected_run, expected_failed)
         bundle = _bundle()
-        bundle.tests = {
-            "tests_run": tests_run,
-            "tests_passed": True,
-            "tests_failed": tests_failed,
-        }
         bundle.independent_tests.test_output_summary = summary
         merged = orchestrator._merge_evidence_test_signal_into_report(
             {"decision": "approve", "criteria_verification": []},

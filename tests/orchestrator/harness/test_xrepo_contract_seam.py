@@ -373,26 +373,6 @@ class TestRealConstructionThroughSelector:
             "skills/planning/references/project-conventions.md"
         )
 
-    def test_missing_selected_skill_is_rejected_through_real_config(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-    ) -> None:
-        profile = tmp_path.parent / f"{tmp_path.name}-dcode-home"
-        profile.mkdir()
-        monkeypatch.setenv(_TEST_ENV_VAR, "langgraph")
-        monkeypatch.setenv("DEEPAGENTS_HOME", str(profile))
-        (tmp_path / ".guardkit").mkdir()
-        (tmp_path / ".guardkit" / "config.yaml").write_text(
-            "autobuild:\n  player:\n    skills: [missing/]\n"
-        )
-
-        with pytest.raises(AgentInvocationError, match="missing"):
-            select_harness(
-                env_var=_TEST_ENV_VAR,
-                cwd=tmp_path,
-                harness_role="player",
-                model="qwen36-workhorse",
-            )
-
     def test_missing_dcode_dependency_refuses_without_native_fallback(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:

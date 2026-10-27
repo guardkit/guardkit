@@ -301,22 +301,22 @@ class TestAutobuildSnapshotPin:
             _TASK_ID, SimpleNamespace(path=None)
         )  # must not raise
 
-    def test_the_call_sits_at_the_pre_turn_1_conformance_pin(self):
-        """Structural pin: the toolchain snapshot is invoked in
-        ``orchestrate`` immediately after ``_snapshot_spec_conformance``, in
-        the fresh-start branch — i.e. after the worktree exists and BEFORE any
-        Player activity."""
+    def test_the_call_sits_right_after_setup_before_turn_1(self):
+        """Structural pin: the toolchain snapshot is invoked in the
+        fresh-start branch immediately after ``_setup_phase`` creates the
+        worktree, and BEFORE any Player activity."""
         import inspect
 
         from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
 
-        source = inspect.getsource(AutoBuildOrchestrator.orchestrate)
-        conformance = source.index("self._snapshot_spec_conformance(task_id, worktree)")
+        source = inspect.getsource(AutoBuildOrchestrator._orchestrate_owned)
+        setup = source.index("self._setup_phase(task_id, base_branch)")
         toolchain = source.index(
             "self._snapshot_toolchain_declaration(task_id, worktree)"
         )
-        assert toolchain > conformance
-        # nothing that could run the Player sits between them
-        between = source[conformance:toolchain]
+        loop = source.index("self._loop_phase(")
+        assert setup < toolchain < loop
+        # nothing that could run the Player sits between setup and the pin
+        between = source[setup:toolchain]
         for forbidden in ("_loop_phase", "invoke_", "_execute_turn", "await "):
             assert forbidden not in between

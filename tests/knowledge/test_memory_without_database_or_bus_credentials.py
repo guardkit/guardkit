@@ -94,10 +94,17 @@ def refused_connections(monkeypatch) -> list:
 
 @pytest.fixture
 def store_never_opened(monkeypatch) -> list:
-    """fleet-memory's database store, replaced by one that refuses and records."""
-    import fleet_memory.store as fleet_memory_store
+    """fleet-memory's database store, replaced by one that refuses and records.
 
+    Without fleet-memory installed (the repository's GitHub test run installs
+    only the dev extra) there is no store to open, so there is nothing to
+    replace and the tests run as they are.
+    """
     calls: list = []
+    try:
+        import fleet_memory.store as fleet_memory_store
+    except ImportError:
+        return calls
 
     def refuse(*args, **kwargs):
         calls.append("async_store_context")
@@ -409,6 +416,16 @@ def test_no_database_address_never_falls_back_to_a_code_default(
 # ---------------------------------------------------------------------------
 
 
+# The stand-in door is a real MCP server, which needs the memory extra's
+# fastmcp and uvicorn; the repository's GitHub test run installs only dev.
+NEEDS_THE_DOOR = pytest.mark.skipif(
+    importlib.util.find_spec("fastmcp") is None
+    or importlib.util.find_spec("uvicorn") is None,
+    reason="the stand-in memory door needs fastmcp and uvicorn (the memory extra)",
+)
+
+
+@NEEDS_THE_DOOR
 def test_reads_go_through_the_door_without_a_database_address(
     memory_env, monkeypatch, refused_connections, store_never_opened, query_log
 ):
@@ -459,6 +476,7 @@ def test_reads_go_through_the_door_without_a_database_address(
     assert refused_connections == []
 
 
+@NEEDS_THE_DOOR
 def test_door_mode_set_up_health_check_close_and_read_back(
     memory_env, refused_connections, store_never_opened
 ):
@@ -642,6 +660,7 @@ def _on_a_fresh_thread(work):
     return outcome["value"]
 
 
+@NEEDS_THE_DOOR
 def test_the_autobuild_loader_reads_through_the_door(
     memory_env, tmp_path, refused_connections, store_never_opened, query_log
 ):

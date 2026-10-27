@@ -24,6 +24,26 @@ from plan_audit import (
     PlanAuditError,
     format_audit_report
 )
+from tests.task_scope_fixtures import RetainedTaskAdmission
+
+
+@pytest.fixture
+def admit():
+    """Admit a task scope on a clean fixture checkout at its current HEAD.
+
+    The auditor reads what changed from the admitted task scope, so a test
+    admits one right after its base commit and passes it to the auditor.
+    """
+    opened = []
+
+    def _admit(root, task_id="TASK-PLAN-AUDIT"):
+        admission = RetainedTaskAdmission(Path(root), task_id, register=True)
+        opened.append(admission)
+        return admission.scope
+
+    yield _admit
+    for admission in reversed(opened):
+        admission.close()
 
 
 class TestPlanAuditor:
@@ -370,7 +390,7 @@ class TestPlanAuditor:
         run("git", "config", "user.name", "Test")
         run("git", "config", "commit.gpgsign", "false")
 
-    def test_scan_modified_files_uses_git_diff(self, tmp_path):
+    def test_scan_modified_files_uses_git_diff(self, tmp_path, admit):
         """AC-1: _scan_modified_files returns git-modified files."""
         self._init_git_repo(tmp_path)
         target = tmp_path / "src" / "feature.py"
@@ -384,10 +404,11 @@ class TestPlanAuditor:
             ["git", "commit", "-q", "-m", "initial"], cwd=tmp_path, check=True,
             capture_output=True,
         )
+        scope = admit(tmp_path)
         # Modify the committed file
         target.write_text("def foo():\n    return 2\n")
 
-        auditor = PlanAuditor(workspace_root=tmp_path)
+        auditor = PlanAuditor(workspace_root=tmp_path, task_work_scope=scope)
         modified = auditor._scan_modified_files({"plan": {}})
 
         assert "src/feature.py" in modified
@@ -400,7 +421,7 @@ class TestPlanAuditor:
 
         assert modified == []
 
-    def test_scan_modified_files_counts_tests_and_drops_caches(self, tmp_path):
+    def test_scan_modified_files_counts_tests_and_drops_caches(self, tmp_path, admit):
         """A changed test file is counted; a cache file never is."""
         self._init_git_repo(tmp_path)
         a_test = tmp_path / "tests" / "test_thing.py"
@@ -419,13 +440,14 @@ class TestPlanAuditor:
             ["git", "commit", "-q", "-m", "initial"], cwd=tmp_path, check=True,
             capture_output=True,
         )
+        scope = admit(tmp_path)
 
         # Change all three
         a_test.write_text("def test_a():\n    assert True\n")
         cached.write_text("still not bytecode\n")
         kept.write_text("def foo():\n    return 2\n")
 
-        auditor = PlanAuditor(workspace_root=tmp_path)
+        auditor = PlanAuditor(workspace_root=tmp_path, task_work_scope=scope)
         modified = auditor._scan_modified_files({"plan": {}})
 
         assert "src/feature.py" in modified
@@ -728,17 +750,18 @@ class TestAuditAgainstARealGitHistory:
         )
 
     def test_files_made_come_from_git_and_not_from_a_list_of_languages(
-        self, tmp_path
+        self, tmp_path, admit
     ):
         """A file in a language nobody listed is still a file this task made."""
         self._repo(tmp_path)
         self._write(tmp_path, "src/existing.py", "x = 1\n")
         self._commit(tmp_path, "base")
+        scope = admit(tmp_path)
 
         self._write(tmp_path, "src/router.kt", "fun main() {}\n")
         self._write(tmp_path, "db/0001_add_table.sql", "CREATE TABLE t (id int);\n")
 
-        auditor = PlanAuditor(workspace_root=tmp_path)
+        auditor = PlanAuditor(workspace_root=tmp_path, task_work_scope=scope)
         made = auditor._scan_created_files({"plan": {}})
 
         assert made == ["db/0001_add_table.sql", "src/router.kt"]
@@ -746,7 +769,7 @@ class TestAuditAgainstARealGitHistory:
             "a file this task never touched must not be counted as made"
         )
 
-    def test_a_checkpoint_commit_no_longer_hides_what_changed(self, tmp_path):
+    def test_a_checkpoint_commit_no_longer_hides_what_changed(self, tmp_path, admit):
         """Turn two must still see what turn one did.
 
         The loop commits at the end of every turn, so asking what differs from
@@ -757,6 +780,7 @@ class TestAuditAgainstARealGitHistory:
         self._write(tmp_path, "src/a.py", "a = 1\n")
         self._write(tmp_path, "src/b.py", "b = 1\n")
         self._commit(tmp_path, "base")
+        scope = admit(tmp_path, task_id)
 
         # Turn one: change a.py and commit the checkpoint.
         self._write(tmp_path, "src/a.py", "a = 2\n")
@@ -766,7 +790,7 @@ class TestAuditAgainstARealGitHistory:
         # Turn two: change b.py, not yet committed.
         self._write(tmp_path, "src/b.py", "b = 2\n")
 
-        auditor = PlanAuditor(workspace_root=tmp_path)
+        auditor = PlanAuditor(workspace_root=tmp_path, task_work_scope=scope)
         edited = auditor._scan_modified_files({"plan": {}}, task_id)
 
         assert edited == ["src/a.py", "src/b.py"], (
@@ -789,12 +813,13 @@ class TestAuditAgainstARealGitHistory:
             "a count nobody took must never be published as a count of nothing"
         )
 
-    def test_the_task_document_declaration_is_the_planned_set(self, tmp_path):
+    def test_the_task_document_declaration_is_the_planned_set(self, tmp_path, admit):
         """What the task document declared is what the build is judged against."""
         task_id = "TASK-DECL-001"
         self._repo(tmp_path)
         self._write(tmp_path, "src/users/crud.py", "def read(): ...\n")
         self._commit(tmp_path, "base")
+        scope = admit(tmp_path, task_id)
 
         # The build: the declared file, plus three nobody declared - one of
         # them a test, one of them a migration, both of which used to be
@@ -805,7 +830,7 @@ class TestAuditAgainstARealGitHistory:
         self._write(tmp_path, "tests/test_analytics.py", "def test_x(): ...\n")
         self._write(tmp_path, "migrations/0001_add.py", "up = 1\n")
 
-        auditor = PlanAuditor(workspace_root=tmp_path)
+        auditor = PlanAuditor(workspace_root=tmp_path, task_work_scope=scope)
         report = auditor.audit_implementation(
             task_id,
             declared=DeclaredFiles(
@@ -831,16 +856,17 @@ class TestAuditAgainstARealGitHistory:
         ], "a task document declares files, so the audit says nothing about deps"
 
     def test_a_section_that_says_none_is_a_claim_and_an_absent_one_is_not(
-        self, tmp_path
+        self, tmp_path, admit
     ):
         """Empty is not the same as absent."""
         task_id = "TASK-DECL-002"
         self._repo(tmp_path)
         self._write(tmp_path, "src/a.py", "a = 1\n")
         self._commit(tmp_path, "base")
+        scope = admit(tmp_path, task_id)
         self._write(tmp_path, "src/a.py", "a = 2\n")
 
-        auditor = PlanAuditor(workspace_root=tmp_path)
+        auditor = PlanAuditor(workspace_root=tmp_path, task_work_scope=scope)
 
         says_nothing = auditor.audit_implementation(
             task_id, declared=DeclaredFiles(to_create=[], to_modify=[])
@@ -860,12 +886,13 @@ class TestAuditAgainstARealGitHistory:
             if "unplanned modification" in d.message
         ], "a task that made no claim about changes is not judged on changes"
 
-    def test_the_players_own_note_is_reported_and_does_not_grade(self, tmp_path):
+    def test_the_players_own_note_is_reported_and_does_not_grade(self, tmp_path, admit):
         """The note that used to grade the build is now only reported."""
         task_id = "TASK-DECL-003"
         self._repo(tmp_path)
         self._write(tmp_path, "src/a.py", "a = 1\n")
         self._commit(tmp_path, "base")
+        scope = admit(tmp_path, task_id)
         self._write(tmp_path, "src/sprawl_one.py", "one = 1\n")
         self._write(tmp_path, "src/sprawl_two.py", "two = 1\n")
         self._write(tmp_path, "src/sprawl_three.py", "three = 1\n")
@@ -893,7 +920,7 @@ class TestAuditAgainstARealGitHistory:
             ),
         )
 
-        auditor = PlanAuditor(workspace_root=tmp_path)
+        auditor = PlanAuditor(workspace_root=tmp_path, task_work_scope=scope)
         report = auditor.audit_implementation(
             task_id, declared=DeclaredFiles(to_create=[], to_modify=[])
         )

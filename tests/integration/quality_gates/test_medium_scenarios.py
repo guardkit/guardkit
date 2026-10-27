@@ -16,13 +16,11 @@ Coverage Target: >=85%
 import itertools
 
 import pytest
-from pathlib import Path
 
 from .conftest import (
     make_player_result,
     make_coach_result,
     assert_quality_gates_passed,
-    assert_complexity_based_turns,
     assert_worktree_preserved,
 )
 

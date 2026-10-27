@@ -39,14 +39,11 @@ from guardkit.orchestrator.failing_test_feedback import (
     describe_independent_suite_failure,
     first_failing_lines,
     must_fix_items,
-    without_independent_suite_failure,
 )
 from guardkit.orchestrator.quality_gates.coach_evidence import CoachEvidenceBundle
 from guardkit.orchestrator.quality_gates.coach_validator import (
-    CoachValidationResult,
     IndependentTestResult,
 )
-from guardkit.orchestrator.coach_verification import HonestyVerification
 
 
 TASK_ID = "TASK-7010-003"
@@ -232,9 +229,6 @@ def test_the_turn_4_player_feedback_names_turn_4_and_the_dns_failure(
 ) -> None:
     """The model repeats turn three's prose; the Player still sees turn four."""
     bundle = CoachEvidenceBundle(
-        honesty=HonestyVerification(
-            verified=True, discrepancies=[], honesty_score=1.0, resolved_paths=[]
-        ),
         gathering_status="complete",
         independent_tests=_turn_4_run(),
     )
@@ -274,25 +268,6 @@ def test_the_turn_4_player_feedback_names_turn_4_and_the_dns_failure(
     assert TURN_4_DNS_LINE in player_prompt
 
 
-def test_a_legacy_coach_report_carries_the_same_facts() -> None:
-    """The deterministic Coach's report reaches the same summary."""
-    result = CoachValidationResult(
-        task_id=TASK_ID,
-        turn=4,
-        decision="feedback",
-        independent_tests=_turn_4_run(),
-        issues=[{"severity": "must_fix", "description": "Tests failed"}],
-        rationale="Independent tests failed.",
-    )
-    orchestrator = AutoBuildOrchestrator.__new__(AutoBuildOrchestrator)
-
-    text = orchestrator._turn_feedback_text(result.to_dict(), 4)
-
-    assert "(turn 4)" in text
-    assert TURN_4_DNS_LINE in text
-    assert "Exit status: 1" in text
-
-
 @pytest.mark.parametrize(
     "run",
     [
@@ -315,9 +290,6 @@ def test_a_legacy_coach_report_carries_the_same_facts() -> None:
 )
 def test_no_summary_unless_the_run_ran_and_failed(run) -> None:
     bundle = CoachEvidenceBundle(
-        honesty=HonestyVerification(
-            verified=True, discrepancies=[], honesty_score=1.0, resolved_paths=[]
-        ),
         gathering_status="complete",
         independent_tests=run,
     )
@@ -351,9 +323,6 @@ def _planted_report() -> Dict[str, Any]:
 def test_a_planted_receipt_in_the_models_report_is_replaced() -> None:
     """Only this turn's run supplies the facts, never the model's report."""
     bundle = CoachEvidenceBundle(
-        honesty=HonestyVerification(
-            verified=True, discrepancies=[], honesty_score=1.0, resolved_paths=[]
-        ),
         gathering_status="complete",
         independent_tests=_turn_4_run(),
     )
@@ -370,9 +339,6 @@ def test_a_planted_receipt_in_the_models_report_is_replaced() -> None:
 def test_a_planted_receipt_with_no_run_this_turn_is_removed(with_bundle) -> None:
     """No independent result this turn: no facts at all, planted ones gone."""
     bundle = CoachEvidenceBundle(
-        honesty=HonestyVerification(
-            verified=True, discrepancies=[], honesty_score=1.0, resolved_paths=[]
-        ),
         gathering_status="complete",
     ) if with_bundle else None
     report = _planted_report()
@@ -383,39 +349,6 @@ def test_a_planted_receipt_with_no_run_this_turn_is_removed(with_bundle) -> None
     assert SUITE_RECEIPT_KEY not in report
     assert TURN_3_TEXT not in text
     assert "facts are copied" not in text
-
-
-def test_the_legacy_fallback_drops_a_planted_receipt(tmp_path: Path) -> None:
-    """GUARDKIT_COACH_LEGACY=1 and the validator fails: the model Coach runs."""
-    from unittest.mock import AsyncMock, patch
-
-    from guardkit.orchestrator.agent_invoker import AgentInvocationResult
-
-    invoker = MagicMock()
-    invoker.invoke_coach = AsyncMock(return_value=AgentInvocationResult(
-        task_id=TASK_ID, turn=4, agent_type="coach", success=True,
-        report=_planted_report(), duration_seconds=1.0, error=None,
-    ))
-    orchestrator = AutoBuildOrchestrator(
-        repo_root=tmp_path, agent_invoker=invoker, worktree_manager=MagicMock(),
-        progress_display=MagicMock(), pre_loop_gates=MagicMock(),
-    )
-    worktree = MagicMock(path=tmp_path)
-    with patch.object(
-        orchestrator, "_load_coach_config", side_effect=RuntimeError("boom")
-    ):
-        result = orchestrator._invoke_coach_legacy(
-            task_id=TASK_ID, turn=4, requirements="r", player_report={},
-            worktree=worktree, acceptance_criteria=None, task_type=None,
-            skip_arch_review=True, requires_infrastructure=None,
-            consumer_context=None, remaining_budget=None, wave_size=1,
-            peer_changed_files=None, context_prompt="", start_time=0.0,
-        )
-
-    assert invoker.invoke_coach.await_count == 1
-    assert SUITE_RECEIPT_KEY not in result.report
-    text = orchestrator._turn_feedback_text(result.report, 4)
-    assert TURN_3_TEXT not in text
 
 
 def test_the_coach_memory_context_omits_earlier_coaches_rejection_words() -> None:
@@ -440,20 +373,6 @@ def test_the_coach_memory_context_omits_earlier_coaches_rejection_words() -> Non
     assert TURN_3_TEXT in player
 
 
-def test_the_stall_tally_still_compares_only_the_reviewers_words() -> None:
-    """The summary names the turn; the feedback-stall signature ignores it."""
-    orchestrator = AutoBuildOrchestrator.__new__(AutoBuildOrchestrator)
-    coach_text = f"- MUST FIX: {TURN_3_ISSUE}"
-    receipt = _turn_4_run().failure_receipt()
-    turn_3 = f"{describe_independent_suite_failure(3, receipt)}\n\n{coach_text}"
-    turn_4 = f"{describe_independent_suite_failure(4, receipt)}\n\n{coach_text}"
-
-    assert without_independent_suite_failure(turn_4) == coach_text
-    assert orchestrator._normalize_feedback_for_stall(turn_3) == (
-        orchestrator._normalize_feedback_for_stall(turn_4)
-    )
-
-
 def test_more_matching_lines_than_shown_keeps_the_last_one() -> None:
     output = "\n".join([f"error {i}" for i in range(20)] + ["3 failed, 9 passed"])
     picked = first_failing_lines(output)
@@ -469,11 +388,7 @@ def test_a_command_with_blank_lines_is_still_stripped_whole() -> None:
         "failing_lines": ["boom\n\nbang"],
     }
     summary = describe_independent_suite_failure(4, receipt)
-    coach_text = "- MUST FIX: something"
     assert "\n\n" not in summary
-    assert without_independent_suite_failure(
-        f"{summary}\n\n{coach_text}"
-    ) == coach_text
 
 
 def test_failing_lines_are_picked_by_ordinary_words_and_bounded() -> None:

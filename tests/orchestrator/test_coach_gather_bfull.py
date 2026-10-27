@@ -26,7 +26,6 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
-from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
@@ -53,28 +52,17 @@ def _make_invoker(worktree: Path) -> AgentInvoker:
     invoker.worktree_path = worktree
     invoker.sdk_timeout_seconds = 600
     invoker._calculate_sdk_timeout = MagicMock(return_value=600)  # type: ignore[method-assign]
-    invoker._verify_player_claims = MagicMock(  # type: ignore[method-assign]
-        return_value=SimpleNamespace(
-            verified=True, honesty_score=1.0, discrepancies=[]
-        )
-    )
     return invoker
 
 
 def _make_bundle():
     """Minimal complete CoachEvidenceBundle so invoke_coach takes the synthesis
     path (synthesis — and therefore the gather — is gated on bundle presence)."""
-    from guardkit.orchestrator.coach_verification import HonestyVerification
     from guardkit.orchestrator.quality_gates.coach_evidence import (
         CoachEvidenceBundle,
     )
 
-    return CoachEvidenceBundle(
-        honesty=HonestyVerification(
-            verified=True, discrepancies=[], honesty_score=1.0, resolved_paths=[]
-        ),
-        gathering_status="complete",
-    )
+    return CoachEvidenceBundle(gathering_status="complete")
 
 
 def _verdict_events(task_id: str, turn: int = 1, decision: str = "approve"):
@@ -138,7 +126,6 @@ class TestGatherPrompt:
             turn=1,
             requirements="do the thing",
             player_report={"files_modified": ["src/foo.py"]},
-            honesty_verification=None,
             evidence_bundle=_make_bundle(),
             acceptance_criteria=[
                 {"id": "AC-001", "text": "feature works"},

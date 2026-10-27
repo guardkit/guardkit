@@ -350,7 +350,6 @@ def test_coach_prompt_includes_visual_verification_when_design_context(
         turn=1,
         requirements="Implement Button and Input components",
         player_report=sample_player_report,
-        honesty_verification=None,
         acceptance_criteria=None,
         design_context=sample_design_context,  # NEW PARAMETER - will cause failure
     )
@@ -430,7 +429,6 @@ def test_coach_prompt_unchanged_when_no_design_context(
         turn=1,
         requirements="Implement Button and Input components",
         player_report=sample_player_report,
-        honesty_verification=None,
         acceptance_criteria=None,
         design_context=None,  # Explicitly no design context
     )

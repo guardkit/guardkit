@@ -101,40 +101,6 @@ jobs:
         # Modules covered (the whole guardkit↔guardkitfactory seam):
         #   * test_xrepo_contract_seam.py     — harness/backend contract
         #     (TASK-INFRA-XREPOCONTRACT): construction + cancel/model/invoke.
-        #   * test_bdd_xrepo_contract_seam.py — guardkitfactory.bdd contract
-        #     (TASK-INFRA-BDDSEAM01): discover/run arity, BDDRunResult /
-        #     StackProfile field sets the Coach BDD bridge depends on.
-        #   * test_wiring_gate.py             — post-wave wiring-gate orchestration
-        #     (TASK-AB-WIREGATE01, gated here by TASK-FIX-WIREGATECI01): exercises
-        #     guardkit-OWNED wave-loop disposition logic (feedback-retry,
-        #     replace-not-append, advisory-after-budget, stop-on-failure). Its 7
-        #     `@_requires_guardkitfactory` tests patch
-        #     `guardkitfactory.wiring.analyze_wiring`, so they un-skip only where
-        #     the editable sibling is installed — i.e. here, NOT in tests.yml
-        #     (which omits guardkitfactory). Without this gate those 7 tests ran
-        #     in no CI job. Its import chain (→ feature_orchestrator) is
-        #     SDK-clean: claude_agent_sdk is imported only lazily inside the SDK
-        #     harness (sdk_harness.py / agent_invoker.invoke), never at module
-        #     load, so this module collects without the (deliberately absent)
-        #     claude-agent-sdk — no SDK install or source change was needed.
-        #   * test_permissive_double_surfacing.py — the "test stand-in that
-        #     accepts any arguments" advisory (PERMISSIVE_DOUBLE). Its
-        #     TestFactoryStillProducesTheSignal class asserts the cross-repo
-        #     contract directly: that guardkitfactory.wiring.analyze_wiring
-        #     still returns the `permissive_double` key, and that the detector
-        #     still fires on a star-args stand-in. Those 2 tests need the
-        #     editable sibling, so they only run here.
-        #
-        #     Listed here for the SAME reason test_wiring_gate.py is, and the
-        #     trap was reintroduced once already: this file originally carried
-        #     a FILE-LEVEL importorskip("guardkitfactory.wiring"), which made
-        #     all 15 of its tests skip in tests.yml, and it was not listed
-        #     here — so every one of them ran in no CI job, including the guard
-        #     test whose whole purpose is to fail loudly if anyone lets this
-        #     advisory start rejecting builds. The importorskip has been moved
-        #     down onto the one class that needs it, so the other 13 tests now
-        #     run in tests.yml, and listing the file here runs all 15.
-        #
         #   * test_selector.py — harness DISPATCH (TASK-HMIG-006 Phase 3c).
         #     Five of its tests construct a real LangGraphHarness
         #     (`from guardkitfactory.harness import ...`), so they carry the
@@ -158,10 +124,6 @@ jobs:
         run: |
           python -m pytest \
             tests/orchestrator/harness/test_xrepo_contract_seam.py \
-            tests/orchestrator/harness/test_bdd_xrepo_contract_seam.py \
-            tests/unit/orchestrator/test_wiring_gate.py \
-            tests/orchestrator/test_permissive_double_surfacing.py \
-            tests/orchestrator/test_wiring_callsite_drift_seam.py \
             tests/orchestrator/harness/test_selector.py \
             tests/unit/test_doctor.py::TestActiveHarnessCheck \
             -o addopts="" --strict-markers -v

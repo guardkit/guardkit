@@ -58,7 +58,11 @@ PINNED_TEMPLATES = {
         # specialist-agent's pin. The memory searches name the memory project
         # instead of "guardkit", and the guide is the installed copy.
         # Instruction text only; still 3017 lines.
-        "0cf5bf8515f9cd5aa9ee620d3d95a27a7d789a2bfbf5e6fa42038e8fb596c51c"
+        #
+        # 2026-10-27: mirror corrected to specialist-agent's current pin
+        # (pins.py, re-pinned 2026-10-24 for guardkit b85b8e80: planning
+        # guidance). Only this mirror was stale. 3,015 lines.
+        "a029fbffa5a9531b2656882f59ddfd5b572b75cb4f7e3ab0188fc6fc27e2690f"
     ),
 }
 

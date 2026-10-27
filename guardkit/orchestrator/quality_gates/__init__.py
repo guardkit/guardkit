@@ -16,11 +16,8 @@ Architecture:
     - Phase 2.7: Complexity Evaluation
     - Phase 2.8: Human Checkpoint
 
-    Coach Validation (via task-work results):
-    - Reads Phase 4.5 test results
-    - Reads Phase 5 code review scores
-    - Reads Phase 5.5 plan audit results
-    - Runs independent test verification
+    Coach evidence:
+    - Runs the project's own tests and declared checks (CoachValidator)
 
 Example:
     >>> from guardkit.orchestrator.quality_gates import PreLoopQualityGates, CoachValidator
@@ -29,10 +26,9 @@ Example:
     >>> gates = PreLoopQualityGates("/path/to/worktree")
     >>> result = gates.execute("TASK-001", {"no_questions": True})
     >>>
-    >>> # Coach: Validate task-work results
+    >>> # Coach: run the project's own checks for a turn
     >>> validator = CoachValidator("/path/to/worktree")
-    >>> coach_result = validator.validate("TASK-001", turn=1, task={"acceptance_criteria": [...]})
-    >>> print(f"Decision: {coach_result.decision}")
+    >>> bundle = validator.gather_evidence("TASK-001", turn=1, task={"acceptance_criteria": [...]})
 """
 
 from guardkit.orchestrator.quality_gates.pre_loop import PreLoopQualityGates
@@ -43,15 +39,7 @@ from guardkit.orchestrator.quality_gates.coach_evidence import (
 )
 from guardkit.orchestrator.quality_gates.coach_validator import (
     CoachValidator,
-    CoachValidationResult,
-    CriterionResult,
-    QualityGateStatus,
     IndependentTestResult,
-    RequirementsValidation,
-)
-from guardkit.orchestrator.quality_gates.command_models import (
-    CommandExecutionResult,
-    CommandVerificationResult,
 )
 from guardkit.orchestrator.quality_gates.exceptions import (
     QualityGateError,
@@ -68,17 +56,10 @@ __all__ = [
     "TaskWorkInterface",
     # Coach validator
     "CoachValidator",
-    "CoachValidationResult",
-    "CriterionResult",
-    "QualityGateStatus",
     "IndependentTestResult",
-    "RequirementsValidation",
     # Coach evidence bundle (TASK-HMIG-008R Revision 3)
     "CoachEvidenceBundle",
     "GatheringStatus",
-    # Command models
-    "CommandExecutionResult",
-    "CommandVerificationResult",
     # Exceptions
     "QualityGateError",
     "QualityGateBlocked",

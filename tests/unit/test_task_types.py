@@ -96,99 +96,6 @@ class TestTaskTypeEnum:
 class TestQualityGateProfileCreation:
     """Test creating QualityGateProfile instances."""
 
-    def test_create_feature_profile(self):
-        """Test creating a feature task profile."""
-        profile = QualityGateProfile(
-            arch_review_required=True,
-            arch_review_threshold=60,
-            coverage_required=True,
-            coverage_threshold=80.0,
-            tests_required=True,
-            plan_audit_required=True,
-        )
-        assert profile.arch_review_required is True
-        assert profile.arch_review_threshold == 60
-        assert profile.coverage_required is True
-        assert profile.coverage_threshold == 80.0
-        assert profile.tests_required is True
-        assert profile.plan_audit_required is True
-
-    def test_create_scaffolding_profile(self):
-        """Test creating a scaffolding task profile."""
-        profile = QualityGateProfile(
-            arch_review_required=False,
-            arch_review_threshold=0,
-            coverage_required=False,
-            coverage_threshold=0.0,
-            tests_required=False,
-            plan_audit_required=True,
-        )
-        assert profile.arch_review_required is False
-        assert profile.coverage_required is False
-        assert profile.tests_required is False
-        assert profile.plan_audit_required is True
-
-    def test_create_infrastructure_profile(self):
-        """Test creating an infrastructure task profile."""
-        profile = QualityGateProfile(
-            arch_review_required=False,
-            arch_review_threshold=0,
-            coverage_required=False,
-            coverage_threshold=0.0,
-            tests_required=True,
-            plan_audit_required=True,
-        )
-        assert profile.arch_review_required is False
-        assert profile.tests_required is True
-        assert profile.plan_audit_required is True
-
-    def test_create_documentation_profile(self):
-        """Test creating a documentation task profile."""
-        profile = QualityGateProfile(
-            arch_review_required=False,
-            arch_review_threshold=0,
-            coverage_required=False,
-            coverage_threshold=0.0,
-            tests_required=False,
-            plan_audit_required=False,
-        )
-        assert profile.arch_review_required is False
-        assert profile.coverage_required is False
-        assert profile.tests_required is False
-        assert profile.plan_audit_required is False
-
-    def test_create_testing_profile(self):
-        """Test creating a testing task profile."""
-        profile = QualityGateProfile(
-            arch_review_required=False,
-            arch_review_threshold=0,
-            coverage_required=False,
-            coverage_threshold=0.0,
-            tests_required=False,
-            plan_audit_required=True,
-        )
-        assert profile.arch_review_required is False
-        assert profile.coverage_required is False
-        assert profile.tests_required is False
-        assert profile.plan_audit_required is True
-
-    def test_create_refactor_profile(self):
-        """Test creating a refactor task profile."""
-        profile = QualityGateProfile(
-            arch_review_required=True,
-            arch_review_threshold=60,
-            coverage_required=True,
-            coverage_threshold=80.0,
-            tests_required=True,
-            plan_audit_required=True,
-        )
-        assert profile.arch_review_required is True
-        assert profile.arch_review_threshold == 60
-        assert profile.coverage_required is True
-        assert profile.coverage_threshold == 80.0
-        assert profile.tests_required is True
-        assert profile.plan_audit_required is True
-
     def test_create_profile_with_default_values(self):
         """Test that all fields are required (no defaults)."""
         # This test documents that QualityGateProfile requires all fields
@@ -204,217 +111,13 @@ class TestQualityGateProfileCreation:
                 arch_review_threshold=60,
             )
 
-    def test_profile_with_zero_coverage_threshold(self):
-        """Test profile with zero coverage threshold."""
-        profile = QualityGateProfile(
-            arch_review_required=True,
-            arch_review_threshold=60,
-            coverage_required=False,
-            coverage_threshold=0.0,
-            tests_required=True,
-            plan_audit_required=True,
-        )
-        assert profile.coverage_threshold == 0.0
-
-    def test_profile_with_float_coverage_threshold(self):
-        """Test profile with float coverage threshold."""
-        profile = QualityGateProfile(
-            arch_review_required=True,
-            arch_review_threshold=60,
-            coverage_required=True,
-            coverage_threshold=75.5,
-            tests_required=True,
-            plan_audit_required=True,
-        )
-        assert profile.coverage_threshold == 75.5
-
-
 # ============================================================================
 # 3. QualityGateProfile Validation Tests (10 tests)
 # ============================================================================
 
-class TestQualityGateProfileValidation:
-    """Test QualityGateProfile validation in __post_init__."""
-
-    def test_arch_review_threshold_below_range_raises_error(self):
-        """Test that arch_review_threshold below 0 raises ValueError."""
-        with pytest.raises(ValueError, match="arch_review_threshold must be 0-100"):
-            QualityGateProfile(
-                arch_review_required=True,
-                arch_review_threshold=-1,
-                coverage_required=False,
-                coverage_threshold=0.0,
-                tests_required=True,
-                plan_audit_required=True,
-            )
-
-    def test_arch_review_threshold_above_range_raises_error(self):
-        """Test that arch_review_threshold above 100 raises ValueError."""
-        with pytest.raises(ValueError, match="arch_review_threshold must be 0-100"):
-            QualityGateProfile(
-                arch_review_required=True,
-                arch_review_threshold=101,
-                coverage_required=False,
-                coverage_threshold=0.0,
-                tests_required=True,
-                plan_audit_required=True,
-            )
-
-    def test_coverage_threshold_below_range_raises_error(self):
-        """Test that coverage_threshold below 0 raises ValueError."""
-        with pytest.raises(ValueError, match="coverage_threshold must be 0-100"):
-            QualityGateProfile(
-                arch_review_required=True,
-                arch_review_threshold=60,
-                coverage_required=True,
-                coverage_threshold=-1.0,
-                tests_required=True,
-                plan_audit_required=True,
-            )
-
-    def test_coverage_threshold_above_range_raises_error(self):
-        """Test that coverage_threshold above 100 raises ValueError."""
-        with pytest.raises(ValueError, match="coverage_threshold must be 0-100"):
-            QualityGateProfile(
-                arch_review_required=True,
-                arch_review_threshold=60,
-                coverage_required=True,
-                coverage_threshold=100.1,
-                tests_required=True,
-                plan_audit_required=True,
-            )
-
-    def test_arch_review_threshold_nonzero_when_not_required_raises_error(self):
-        """Test that non-zero arch_review_threshold when not required raises error."""
-        with pytest.raises(
-            ValueError, match="arch_review_threshold should be 0 when"
-        ):
-            QualityGateProfile(
-                arch_review_required=False,
-                arch_review_threshold=60,
-                coverage_required=False,
-                coverage_threshold=0.0,
-                tests_required=True,
-                plan_audit_required=True,
-            )
-
-    def test_coverage_threshold_nonzero_when_not_required_raises_error(self):
-        """Test that non-zero coverage_threshold when not required raises error."""
-        with pytest.raises(ValueError, match="coverage_threshold should be 0 when"):
-            QualityGateProfile(
-                arch_review_required=True,
-                arch_review_threshold=60,
-                coverage_required=False,
-                coverage_threshold=80.0,
-                tests_required=True,
-                plan_audit_required=True,
-            )
-
-    def test_arch_review_threshold_boundary_0(self):
-        """Test arch_review_threshold boundary value 0."""
-        profile = QualityGateProfile(
-            arch_review_required=False,
-            arch_review_threshold=0,
-            coverage_required=False,
-            coverage_threshold=0.0,
-            tests_required=True,
-            plan_audit_required=True,
-        )
-        assert profile.arch_review_threshold == 0
-
-    def test_arch_review_threshold_boundary_100(self):
-        """Test arch_review_threshold boundary value 100."""
-        profile = QualityGateProfile(
-            arch_review_required=True,
-            arch_review_threshold=100,
-            coverage_required=False,
-            coverage_threshold=0.0,
-            tests_required=True,
-            plan_audit_required=True,
-        )
-        assert profile.arch_review_threshold == 100
-
-    def test_coverage_threshold_boundary_0(self):
-        """Test coverage_threshold boundary value 0."""
-        profile = QualityGateProfile(
-            arch_review_required=True,
-            arch_review_threshold=60,
-            coverage_required=False,
-            coverage_threshold=0.0,
-            tests_required=True,
-            plan_audit_required=True,
-        )
-        assert profile.coverage_threshold == 0.0
-
-    def test_coverage_threshold_boundary_100(self):
-        """Test coverage_threshold boundary value 100."""
-        profile = QualityGateProfile(
-            arch_review_required=True,
-            arch_review_threshold=60,
-            coverage_required=True,
-            coverage_threshold=100.0,
-            tests_required=True,
-            plan_audit_required=True,
-        )
-        assert profile.coverage_threshold == 100.0
-
-
 # ============================================================================
 # 4. QualityGateProfile.for_type() Tests (4 tests)
 # ============================================================================
-
-class TestQualityGateProfileForType:
-    """Test QualityGateProfile.for_type() class method."""
-
-    def test_for_type_returns_feature_profile(self):
-        """Test that for_type returns feature profile."""
-        profile = QualityGateProfile.for_type(TaskType.FEATURE)
-        assert profile.arch_review_required is True
-        assert profile.arch_review_threshold == 60
-        assert profile.coverage_required is True
-        assert profile.coverage_threshold == 80.0
-
-    def test_for_type_returns_scaffolding_profile(self):
-        """Test that for_type returns scaffolding profile."""
-        profile = QualityGateProfile.for_type(TaskType.SCAFFOLDING)
-        assert profile.arch_review_required is False
-        assert profile.coverage_required is False
-
-    def test_for_type_returns_infrastructure_profile(self):
-        """Test that for_type returns infrastructure profile."""
-        profile = QualityGateProfile.for_type(TaskType.INFRASTRUCTURE)
-        assert profile.arch_review_required is False
-        assert profile.tests_required is True
-
-    def test_for_type_returns_documentation_profile(self):
-        """Test that for_type returns documentation profile."""
-        profile = QualityGateProfile.for_type(TaskType.DOCUMENTATION)
-        assert profile.arch_review_required is False
-        assert profile.coverage_required is False
-        assert profile.tests_required is False
-        assert profile.plan_audit_required is False
-
-    def test_for_type_returns_testing_profile(self):
-        """Test that for_type returns testing profile."""
-        profile = QualityGateProfile.for_type(TaskType.TESTING)
-        assert profile.arch_review_required is False
-        assert profile.coverage_required is False
-        # TASK-ABFIX-012: a TESTING task's deliverable IS passing tests, so the
-        # Coach runs them independently and blocks a real code failure.
-        assert profile.tests_required is True
-        assert profile.zero_test_blocking is True
-        assert profile.plan_audit_required is True
-
-    def test_for_type_returns_refactor_profile(self):
-        """Test that for_type returns refactor profile."""
-        profile = QualityGateProfile.for_type(TaskType.REFACTOR)
-        assert profile.arch_review_required is True
-        assert profile.arch_review_threshold == 60
-        assert profile.coverage_required is True
-        assert profile.coverage_threshold == 80.0
-        assert profile.tests_required is True
-        assert profile.plan_audit_required is True
-
 
 # ============================================================================
 # 5. DEFAULT_PROFILES Registry Tests (7 tests)
@@ -429,70 +132,6 @@ class TestDefaultProfiles:
         for task_type in TaskType:
             assert task_type in DEFAULT_PROFILES
 
-    def test_default_profiles_scaffolding_configuration(self):
-        """Test DEFAULT_PROFILES scaffolding profile configuration."""
-        profile = DEFAULT_PROFILES[TaskType.SCAFFOLDING]
-        assert profile.arch_review_required is False
-        assert profile.arch_review_threshold == 0
-        assert profile.coverage_required is False
-        assert profile.coverage_threshold == 0.0
-        assert profile.tests_required is False
-        assert profile.plan_audit_required is True
-
-    def test_default_profiles_feature_configuration(self):
-        """Test DEFAULT_PROFILES feature profile configuration."""
-        profile = DEFAULT_PROFILES[TaskType.FEATURE]
-        assert profile.arch_review_required is True
-        assert profile.arch_review_threshold == 60
-        assert profile.coverage_required is True
-        assert profile.coverage_threshold == 80.0
-        assert profile.tests_required is True
-        assert profile.plan_audit_required is True
-
-    def test_default_profiles_infrastructure_configuration(self):
-        """Test DEFAULT_PROFILES infrastructure profile configuration."""
-        profile = DEFAULT_PROFILES[TaskType.INFRASTRUCTURE]
-        assert profile.arch_review_required is False
-        assert profile.arch_review_threshold == 0
-        assert profile.coverage_required is False
-        assert profile.coverage_threshold == 0.0
-        assert profile.tests_required is True
-        assert profile.plan_audit_required is True
-
-    def test_default_profiles_documentation_configuration(self):
-        """Test DEFAULT_PROFILES documentation profile configuration."""
-        profile = DEFAULT_PROFILES[TaskType.DOCUMENTATION]
-        assert profile.arch_review_required is False
-        assert profile.arch_review_threshold == 0
-        assert profile.coverage_required is False
-        assert profile.coverage_threshold == 0.0
-        assert profile.tests_required is False
-        assert profile.plan_audit_required is False
-
-    def test_default_profiles_testing_configuration(self):
-        """Test DEFAULT_PROFILES testing profile configuration."""
-        profile = DEFAULT_PROFILES[TaskType.TESTING]
-        assert profile.arch_review_required is False
-        assert profile.arch_review_threshold == 0
-        assert profile.coverage_required is False
-        assert profile.coverage_threshold == 0.0
-        # TASK-ABFIX-012: tests are now required for TESTING tasks (deliverable IS
-        # passing tests) and a zero-test TESTING task is blocking-suspect.
-        assert profile.tests_required is True
-        assert profile.zero_test_blocking is True
-        assert profile.plan_audit_required is True
-
-    def test_default_profiles_refactor_configuration(self):
-        """Test DEFAULT_PROFILES refactor profile configuration."""
-        profile = DEFAULT_PROFILES[TaskType.REFACTOR]
-        assert profile.arch_review_required is True
-        assert profile.arch_review_threshold == 60
-        assert profile.coverage_required is True
-        assert profile.coverage_threshold == 80.0
-        assert profile.tests_required is True
-        assert profile.plan_audit_required is True
-
-
 # ============================================================================
 # 6. get_profile() Function Tests (8 tests)
 # ============================================================================
@@ -500,53 +139,10 @@ class TestDefaultProfiles:
 class TestGetProfile:
     """Test get_profile() function."""
 
-    def test_get_profile_returns_feature_by_default(self):
-        """Test that get_profile() without args returns FEATURE profile."""
-        profile = get_profile()
-        assert profile.arch_review_required is True
-        assert profile.arch_review_threshold == 60
-
-    def test_get_profile_with_none_returns_feature(self):
-        """Test that get_profile(None) returns FEATURE profile."""
-        profile = get_profile(None)
-        assert profile.arch_review_required is True
-        assert profile.arch_review_threshold == 60
-
-    def test_get_profile_with_scaffolding(self):
-        """Test get_profile with SCAFFOLDING type."""
-        profile = get_profile(TaskType.SCAFFOLDING)
-        assert profile.arch_review_required is False
-
-    def test_get_profile_with_feature(self):
-        """Test get_profile with FEATURE type."""
-        profile = get_profile(TaskType.FEATURE)
-        assert profile.arch_review_required is True
-
-    def test_get_profile_with_infrastructure(self):
-        """Test get_profile with INFRASTRUCTURE type."""
-        profile = get_profile(TaskType.INFRASTRUCTURE)
-        assert profile.arch_review_required is False
-        assert profile.tests_required is True
-
     def test_get_profile_with_documentation(self):
         """Test get_profile with DOCUMENTATION type."""
         profile = get_profile(TaskType.DOCUMENTATION)
         assert profile.tests_required is False
-
-    def test_get_profile_with_testing(self):
-        """Test get_profile with TESTING type."""
-        profile = get_profile(TaskType.TESTING)
-        assert profile.arch_review_required is False
-        # TASK-ABFIX-012: a TESTING task's deliverable IS passing tests.
-        assert profile.tests_required is True
-        assert profile.plan_audit_required is True
-
-    def test_get_profile_with_refactor(self):
-        """Test get_profile with REFACTOR type."""
-        profile = get_profile(TaskType.REFACTOR)
-        assert profile.arch_review_required is True
-        assert profile.tests_required is True
-
 
 # ============================================================================
 # 7. Backward Compatibility Tests (2 tests)
@@ -554,17 +150,6 @@ class TestGetProfile:
 
 class TestBackwardCompatibility:
     """Test backward compatibility with task_type field."""
-
-    def test_get_profile_default_matches_feature_profile(self):
-        """Test that default profile matches explicit FEATURE profile."""
-        default_profile = get_profile()
-        feature_profile = get_profile(TaskType.FEATURE)
-        assert default_profile.arch_review_required == feature_profile.arch_review_required
-        assert default_profile.arch_review_threshold == feature_profile.arch_review_threshold
-        assert default_profile.coverage_required == feature_profile.coverage_required
-        assert default_profile.coverage_threshold == feature_profile.coverage_threshold
-        assert default_profile.tests_required == feature_profile.tests_required
-        assert default_profile.plan_audit_required == feature_profile.plan_audit_required
 
     def test_old_tasks_without_task_type_use_feature_gates(self):
         """Test that old tasks without task_type field get FEATURE gates."""
@@ -578,212 +163,13 @@ class TestBackwardCompatibility:
 # 8. Profile Equality and Immutability Tests (2 tests)
 # ============================================================================
 
-class TestProfileImmutabilityAndEquality:
-    """Test profile immutability and equality."""
-
-    def test_profiles_are_immutable_after_creation(self):
-        """Test that profiles are immutable (frozen dataclass behavior)."""
-        profile = DEFAULT_PROFILES[TaskType.FEATURE]
-        original_value = profile.arch_review_threshold
-        # Dataclasses are mutable by default; test attempts to modify
-        # This documents the current behavior
-        try:
-            profile.arch_review_threshold = 70
-            # Note: If frozen=True is added in future, this should raise FrozenInstanceError
-            assert profile.arch_review_threshold == 70  # Currently mutable
-        finally:
-            # IMPORTANT: Restore the original value to avoid test pollution
-            # This is a shared global object that other tests depend on
-            profile.arch_review_threshold = original_value
-
-    def test_same_profile_type_configurations_are_equal(self):
-        """Test that profiles created with same config are equal."""
-        profile1 = QualityGateProfile(
-            arch_review_required=True,
-            arch_review_threshold=60,
-            coverage_required=True,
-            coverage_threshold=80.0,
-            tests_required=True,
-            plan_audit_required=True,
-        )
-        profile2 = QualityGateProfile(
-            arch_review_required=True,
-            arch_review_threshold=60,
-            coverage_required=True,
-            coverage_threshold=80.0,
-            tests_required=True,
-            plan_audit_required=True,
-        )
-        assert profile1 == profile2
-
-
 # ============================================================================
 # 9. Integration Tests (3 tests)
 # ============================================================================
 
-class TestIntegration:
-    """Integration tests for complete workflows."""
-
-    def test_workflow_scaffolding_task(self):
-        """Test complete workflow for scaffolding task."""
-        # Get profile for scaffolding task
-        profile = get_profile(TaskType.SCAFFOLDING)
-
-        # Verify quality gates are appropriately relaxed
-        assert profile.arch_review_required is False
-        assert profile.coverage_required is False
-        assert profile.tests_required is False
-        # But plan audit is still required
-        assert profile.plan_audit_required is True
-
-    def test_workflow_feature_task(self):
-        """Test complete workflow for feature task."""
-        # Get profile for feature task
-        profile = get_profile(TaskType.FEATURE)
-
-        # Verify all quality gates are enforced
-        assert profile.arch_review_required is True
-        assert profile.coverage_required is True
-        assert profile.tests_required is True
-        assert profile.plan_audit_required is True
-
-    def test_workflow_infrastructure_task(self):
-        """Test complete workflow for infrastructure task."""
-        # Get profile for infrastructure task
-        profile = get_profile(TaskType.INFRASTRUCTURE)
-
-        # Verify tests are required but architecture review is not
-        assert profile.arch_review_required is False
-        assert profile.tests_required is True
-        assert profile.plan_audit_required is True
-
-    def test_workflow_testing_task(self):
-        """Test complete workflow for testing task."""
-        # Get profile for testing task
-        profile = get_profile(TaskType.TESTING)
-
-        # Verify minimal gates for test-writing tasks
-        assert profile.arch_review_required is False
-        assert profile.coverage_required is False
-        # TASK-ABFIX-012: tests ARE required (the deliverable IS passing tests).
-        assert profile.tests_required is True
-        # But plan audit is still required
-        assert profile.plan_audit_required is True
-
-    def test_workflow_refactor_task(self):
-        """Test complete workflow for refactor task."""
-        # Get profile for refactor task
-        profile = get_profile(TaskType.REFACTOR)
-
-        # Verify full quality gates for refactoring
-        assert profile.arch_review_required is True
-        assert profile.coverage_required is True
-        assert profile.tests_required is True
-        assert profile.plan_audit_required is True
-
-
 # ============================================================================
 # 10. Seam Test Recommendation Tests (TASK-SFT-009)
 # ============================================================================
-
-class TestSeamTestRecommendation:
-    """Test seam_tests_recommended field on QualityGateProfile."""
-
-    def test_seam_tests_recommended_field_exists(self):
-        """AC-001: QualityGateProfile has seam_tests_recommended field."""
-        profile = QualityGateProfile(
-            arch_review_required=True,
-            arch_review_threshold=60,
-            coverage_required=True,
-            coverage_threshold=80.0,
-            tests_required=True,
-            plan_audit_required=True,
-        )
-        # Field should exist with default value False
-        assert hasattr(profile, "seam_tests_recommended")
-        assert profile.seam_tests_recommended is False
-
-    def test_seam_tests_recommended_explicit_true(self):
-        """Test explicitly setting seam_tests_recommended=True."""
-        profile = QualityGateProfile(
-            arch_review_required=True,
-            arch_review_threshold=60,
-            coverage_required=True,
-            coverage_threshold=80.0,
-            tests_required=True,
-            plan_audit_required=True,
-            seam_tests_recommended=True,
-        )
-        assert profile.seam_tests_recommended is True
-
-    def test_seam_tests_recommended_explicit_false(self):
-        """Test explicitly setting seam_tests_recommended=False."""
-        profile = QualityGateProfile(
-            arch_review_required=True,
-            arch_review_threshold=60,
-            coverage_required=True,
-            coverage_threshold=80.0,
-            tests_required=True,
-            plan_audit_required=True,
-            seam_tests_recommended=False,
-        )
-        assert profile.seam_tests_recommended is False
-
-    def test_feature_profile_seam_tests_recommended_true(self):
-        """AC-002: FEATURE profile has seam_tests_recommended=True."""
-        profile = DEFAULT_PROFILES[TaskType.FEATURE]
-        assert profile.seam_tests_recommended is True
-
-    def test_refactor_profile_seam_tests_recommended_true(self):
-        """AC-002: REFACTOR profile has seam_tests_recommended=True."""
-        profile = DEFAULT_PROFILES[TaskType.REFACTOR]
-        assert profile.seam_tests_recommended is True
-
-    def test_scaffolding_profile_seam_tests_recommended_false(self):
-        """AC-003: SCAFFOLDING profile has seam_tests_recommended=False."""
-        profile = DEFAULT_PROFILES[TaskType.SCAFFOLDING]
-        assert profile.seam_tests_recommended is False
-
-    def test_documentation_profile_seam_tests_recommended_false(self):
-        """AC-003: DOCUMENTATION profile has seam_tests_recommended=False."""
-        profile = DEFAULT_PROFILES[TaskType.DOCUMENTATION]
-        assert profile.seam_tests_recommended is False
-
-    def test_testing_profile_seam_tests_recommended_false(self):
-        """AC-003: TESTING profile has seam_tests_recommended=False."""
-        profile = DEFAULT_PROFILES[TaskType.TESTING]
-        assert profile.seam_tests_recommended is False
-
-    def test_infrastructure_profile_seam_tests_recommended_false(self):
-        """INFRASTRUCTURE profile has seam_tests_recommended=False."""
-        profile = DEFAULT_PROFILES[TaskType.INFRASTRUCTURE]
-        assert profile.seam_tests_recommended is False
-
-    def test_integration_profile_seam_tests_recommended_false(self):
-        """INTEGRATION profile has seam_tests_recommended=False."""
-        profile = DEFAULT_PROFILES[TaskType.INTEGRATION]
-        assert profile.seam_tests_recommended is False
-
-    def test_get_profile_feature_has_seam_tests_recommended(self):
-        """Test get_profile for FEATURE returns profile with seam_tests_recommended=True."""
-        profile = get_profile(TaskType.FEATURE)
-        assert profile.seam_tests_recommended is True
-
-    def test_get_profile_scaffolding_has_seam_tests_not_recommended(self):
-        """Test get_profile for SCAFFOLDING returns profile with seam_tests_recommended=False."""
-        profile = get_profile(TaskType.SCAFFOLDING)
-        assert profile.seam_tests_recommended is False
-
-    def test_for_type_feature_has_seam_tests_recommended(self):
-        """Test QualityGateProfile.for_type(FEATURE) has seam_tests_recommended=True."""
-        profile = QualityGateProfile.for_type(TaskType.FEATURE)
-        assert profile.seam_tests_recommended is True
-
-    def test_for_type_refactor_has_seam_tests_recommended(self):
-        """Test QualityGateProfile.for_type(REFACTOR) has seam_tests_recommended=True."""
-        profile = QualityGateProfile.for_type(TaskType.REFACTOR)
-        assert profile.seam_tests_recommended is True
-
 
 # ============================================================================
 # 11. INTEGRATION Task Type Tests (TASK-FIX-93C1)
@@ -800,72 +186,9 @@ class TestIntegrationTaskType:
         """Test looking up INTEGRATION by value string."""
         assert TaskType("integration") == TaskType.INTEGRATION
 
-    def test_integration_profile_configuration(self):
-        """AC-002: INTEGRATION profile has correct field values."""
-        profile = DEFAULT_PROFILES[TaskType.INTEGRATION]
-        assert profile.tests_required is True
-        assert profile.zero_test_blocking is False
-        assert profile.arch_review_required is False
-        assert profile.arch_review_threshold == 0
-        assert profile.coverage_required is False
-        assert profile.coverage_threshold == 0.0
-        assert profile.plan_audit_required is True
-
-    def test_get_profile_with_integration(self):
-        """AC-008: get_profile(TaskType.INTEGRATION) returns correct profile."""
-        profile = get_profile(TaskType.INTEGRATION)
-        assert profile.arch_review_required is False
-        assert profile.tests_required is True
-        assert profile.zero_test_blocking is False
-        assert profile.coverage_required is False
-
-    def test_for_type_returns_integration_profile(self):
-        """Test QualityGateProfile.for_type(TaskType.INTEGRATION) works."""
-        profile = QualityGateProfile.for_type(TaskType.INTEGRATION)
-        assert profile.tests_required is True
-        assert profile.zero_test_blocking is False
-        assert profile.arch_review_required is False
-
-    def test_get_profile_none_still_returns_feature(self):
-        """AC-009: get_profile(None) still returns FEATURE profile."""
-        profile = get_profile(None)
-        assert profile == DEFAULT_PROFILES[TaskType.FEATURE]
-        assert profile.zero_test_blocking is True  # FEATURE has blocking
-
     def test_default_profiles_contains_integration(self):
         """Test DEFAULT_PROFILES includes INTEGRATION entry."""
         assert TaskType.INTEGRATION in DEFAULT_PROFILES
-
-    def test_integration_profile_differs_from_feature(self):
-        """Test INTEGRATION profile is less strict than FEATURE."""
-        integration = get_profile(TaskType.INTEGRATION)
-        feature = get_profile(TaskType.FEATURE)
-        assert integration.zero_test_blocking is False
-        assert feature.zero_test_blocking is True
-        assert integration.arch_review_required is False
-        assert feature.arch_review_required is True
-        assert integration.coverage_required is False
-        assert feature.coverage_required is True
-
-    def test_integration_profile_similar_to_infrastructure(self):
-        """Test INTEGRATION profile is similar to INFRASTRUCTURE."""
-        integration = get_profile(TaskType.INTEGRATION)
-        infrastructure = get_profile(TaskType.INFRASTRUCTURE)
-        assert integration.arch_review_required == infrastructure.arch_review_required
-        assert integration.coverage_required == infrastructure.coverage_required
-        assert integration.tests_required == infrastructure.tests_required
-        assert integration.plan_audit_required == infrastructure.plan_audit_required
-
-    def test_workflow_integration_task(self):
-        """Test complete workflow for integration task."""
-        profile = get_profile(TaskType.INTEGRATION)
-        # Tests should pass if they exist
-        assert profile.tests_required is True
-        # But missing tests should not block
-        assert profile.zero_test_blocking is False
-        # Plan audit ensures integration is complete
-        assert profile.plan_audit_required is True
-
 
 # ============================================================================
 # 12. normalise_task_type() Tests (TASK-FIX-7534)
@@ -943,68 +266,12 @@ class TestDeclarativeTaskType:
         """Test looking up DECLARATIVE by value string."""
         assert TaskType("declarative") == TaskType.DECLARATIVE
 
-    def test_default_profiles_declarative_configuration(self):
-        """Confirm all DECLARATIVE profile field values."""
-        profile = DEFAULT_PROFILES[TaskType.DECLARATIVE]
-        assert profile.arch_review_required is False
-        assert profile.arch_review_threshold == 0
-        assert profile.coverage_required is False
-        assert profile.coverage_threshold == 0.0
-        assert profile.tests_required is True
-        assert profile.plan_audit_required is True
-        assert profile.zero_test_blocking is False
-        assert profile.seam_tests_recommended is False
-
-    def test_get_profile_with_declarative(self):
-        """get_profile(TaskType.DECLARATIVE) returns correct profile."""
-        profile = get_profile(TaskType.DECLARATIVE)
-        assert profile.arch_review_required is False
-        assert profile.tests_required is True
-        assert profile.coverage_required is False
-        assert profile.plan_audit_required is True
-        assert profile.zero_test_blocking is False
-
-    def test_for_type_returns_declarative_profile(self):
-        """QualityGateProfile.for_type(TaskType.DECLARATIVE) works."""
-        profile = QualityGateProfile.for_type(TaskType.DECLARATIVE)
-        assert profile.tests_required is True
-        assert profile.arch_review_required is False
-        assert profile.coverage_required is False
-
-    def test_declarative_profile_differs_from_feature(self):
-        """DECLARATIVE profile is less strict than FEATURE."""
-        declarative = get_profile(TaskType.DECLARATIVE)
-        feature = get_profile(TaskType.FEATURE)
-        assert declarative.arch_review_required is False
-        assert feature.arch_review_required is True
-        assert declarative.coverage_required is False
-        assert feature.coverage_required is True
-        assert declarative.zero_test_blocking is False
-        assert feature.zero_test_blocking is True
-        assert declarative.seam_tests_recommended is False
-        assert feature.seam_tests_recommended is True
-
     def test_declarative_profile_differs_from_scaffolding(self):
         """DECLARATIVE requires tests while SCAFFOLDING does not."""
         declarative = get_profile(TaskType.DECLARATIVE)
         scaffolding = get_profile(TaskType.SCAFFOLDING)
         assert declarative.tests_required is True
         assert scaffolding.tests_required is False
-
-    def test_workflow_declarative_task(self):
-        """Integration test for declarative task workflow."""
-        profile = get_profile(TaskType.DECLARATIVE)
-        # No arch review needed for pure data models
-        assert profile.arch_review_required is False
-        # No coverage needed for declarative code
-        assert profile.coverage_required is False
-        # Tests still required to catch import errors
-        assert profile.tests_required is True
-        # Plan audit ensures completeness
-        assert profile.plan_audit_required is True
-        # Missing tests should not block (declarative code may not need them)
-        assert profile.zero_test_blocking is False
-
 
 # ============================================================================
 # 14. OPERATOR_HANDOFF Task Type Tests (TASK-FPTC-002)
@@ -1020,33 +287,6 @@ class TestOperatorHandoffTaskType:
     def test_operator_handoff_constructs_without_error(self):
         """AC-FPTC-002-03: TaskType('operator_handoff') constructs without error."""
         assert TaskType("operator_handoff") == TaskType.OPERATOR_HANDOFF
-
-    def test_default_profiles_operator_handoff_skips_everything(self):
-        """AC-FPTC-002-02: OPERATOR_HANDOFF profile disables every gate."""
-        profile = DEFAULT_PROFILES[TaskType.OPERATOR_HANDOFF]
-        assert profile.arch_review_required is False
-        assert profile.arch_review_threshold == 0
-        assert profile.coverage_required is False
-        assert profile.coverage_threshold == 0.0
-        assert profile.tests_required is False
-        assert profile.plan_audit_required is False
-        assert profile.zero_test_blocking is False
-        assert profile.seam_tests_recommended is False
-
-    def test_get_profile_operator_handoff_skips_everything(self):
-        """AC-FPTC-002-03: get_profile(OPERATOR_HANDOFF) returns the skip-everything profile."""
-        profile = get_profile(TaskType.OPERATOR_HANDOFF)
-        assert profile.arch_review_required is False
-        assert profile.coverage_required is False
-        assert profile.tests_required is False
-        assert profile.plan_audit_required is False
-
-    def test_for_type_returns_operator_handoff_profile(self):
-        """QualityGateProfile.for_type(OPERATOR_HANDOFF) returns the skip-everything profile."""
-        profile = QualityGateProfile.for_type(TaskType.OPERATOR_HANDOFF)
-        assert profile.arch_review_required is False
-        assert profile.tests_required is False
-        assert profile.plan_audit_required is False
 
     def test_operator_handoff_not_in_aliases(self):
         """Implementation note: OPERATOR_HANDOFF must not have fuzzy alias matches."""
@@ -1105,29 +345,6 @@ class TestGlueWiringTaskType:
         assert TaskType("wiring") == TaskType.WIRING
 
     @pytest.mark.parametrize("task_type", [TaskType.GLUE, TaskType.WIRING])
-    def test_glue_wiring_profile_is_strictest(self, task_type):
-        """Both GLUE and WIRING carry the strictest (clause-5) posture."""
-        profile = DEFAULT_PROFILES[task_type]
-        for field, expected in self._STRICT_FIELDS.items():
-            assert getattr(profile, field) == expected, field
-
-    @pytest.mark.parametrize("task_type", [TaskType.GLUE, TaskType.WIRING])
-    def test_get_profile_glue_wiring(self, task_type):
-        """get_profile resolves the strict profile for GLUE and WIRING."""
-        profile = get_profile(task_type)
-        assert profile.tests_required is True
-        assert profile.zero_test_blocking is True
-        assert profile.seam_tests_recommended is True
-        assert profile.arch_review_required is True
-
-    @pytest.mark.parametrize("task_type", [TaskType.GLUE, TaskType.WIRING])
-    def test_for_type_glue_wiring(self, task_type):
-        """QualityGateProfile.for_type resolves the strict profile."""
-        profile = QualityGateProfile.for_type(task_type)
-        assert profile.zero_test_blocking is True
-        assert profile.seam_tests_recommended is True
-
-    @pytest.mark.parametrize("task_type", [TaskType.GLUE, TaskType.WIRING])
     def test_default_profiles_contains_glue_wiring(self, task_type):
         """DEFAULT_PROFILES registry includes GLUE and WIRING entries."""
         assert task_type in DEFAULT_PROFILES
@@ -1135,19 +352,6 @@ class TestGlueWiringTaskType:
     def test_glue_wiring_share_one_posture(self):
         """DF-016 names 'glue/wiring' ONE class — the two profiles are equal."""
         assert DEFAULT_PROFILES[TaskType.GLUE] == DEFAULT_PROFILES[TaskType.WIRING]
-
-    def test_glue_is_stricter_than_integration(self):
-        """The whole point of DF-016: glue is stricter than INTEGRATION.
-
-        INTEGRATION's relaxed gates (no arch review, no coverage, no zero-test
-        blocking) are what let the glue-class escapes through (POC-006, SMP-002).
-        """
-        glue = get_profile(TaskType.GLUE)
-        integration = get_profile(TaskType.INTEGRATION)
-        assert glue.arch_review_required and not integration.arch_review_required
-        assert glue.coverage_required and not integration.coverage_required
-        assert glue.zero_test_blocking and not integration.zero_test_blocking
-        assert glue.seam_tests_recommended and not integration.seam_tests_recommended
 
     @pytest.mark.parametrize("value", ["glue", "wiring"])
     def test_normalise_glue_wiring_passes_through(self, value):
@@ -1158,3 +362,30 @@ class TestGlueWiringTaskType:
     def test_glue_wiring_not_aliases(self, value):
         """GLUE/WIRING are canonical enum values, not legacy aliases."""
         assert value not in TASK_TYPE_ALIASES
+
+
+class TestTestsRequiredByType:
+    """The one profile setting left: whether the project's tests run for a type."""
+
+    @pytest.mark.parametrize(
+        "task_type,expected",
+        [
+            (TaskType.FEATURE, True),
+            (TaskType.REFACTOR, True),
+            (TaskType.TESTING, True),
+            (TaskType.INFRASTRUCTURE, True),
+            (TaskType.INTEGRATION, True),
+            (TaskType.DECLARATIVE, True),
+            (TaskType.GLUE, True),
+            (TaskType.WIRING, True),
+            (TaskType.SCAFFOLDING, False),
+            (TaskType.DOCUMENTATION, False),
+            (TaskType.OPERATOR_HANDOFF, False),
+        ],
+    )
+    def test_tests_required(self, task_type, expected):
+        assert get_profile(task_type).tests_required is expected
+        assert QualityGateProfile.for_type(task_type).tests_required is expected
+
+    def test_no_type_means_feature(self):
+        assert get_profile(None) == get_profile(TaskType.FEATURE)

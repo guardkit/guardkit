@@ -1,7 +1,6 @@
 """AgentInvoker handles Claude Agents SDK invocation for Player and Coach agents."""
 
 import asyncio
-from copy import deepcopy
 import hashlib
 import json
 import logging
@@ -16,11 +15,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, AsyncGenerator, Dict, FrozenSet, List, Literal, Optional, Sequence, Set, Tuple, Union
 
-from guardkit.orchestrator.permissive_double_advisory import (
-    coach_advisory_text as permissive_double_advisory_text,
-    split_findings as split_permissive_double_findings,
-)
-from guardkit.orchestrator import zero_test_gate
 from guardkit.lib.project_git import run_git
 
 if TYPE_CHECKING:
@@ -65,35 +59,9 @@ from guardkit.orchestrator.paths import (
 from guardkit.orchestrator.docker_fixtures import render_player_recipes
 from guardkit.orchestrator.launch_declaration import load_launch_snapshot
 from guardkit.orchestrator.prompts import load_protocol
-from guardkit.orchestrator.coach_verification import (
-    CoachVerifier,
-    HonestyVerification,
-    InterpreterResolutionError,
-    format_verification_context,
-)
-from guardkit.orchestrator.coach_narrative_reconciler import (
-    DETERMINISTIC_SOURCE,
-    MUST_FIX_DISCREPANCY_SEVERITIES,
-    is_must_fix_class,
-)
 from guardkit.orchestrator import evidence_repos as evidence_repos_lib
 from guardkit.orchestrator.evidence_repos import EvidenceRepo
-from guardkit.orchestrator.failing_test_feedback import (
-    FAILING_TESTS_BASIS_NEW,
-    FAILURE_SUMMARY_LIMIT,
-    PHASE_4_FAILING_TESTS,
-    PHASE_4_FAILING_TESTS_BASIS,
-    PHASE_4_FAILING_TESTS_TOTAL,
-    QG_FAILING_TESTS,
-    QG_FAILING_TESTS_BASIS,
-    QG_FAILING_TESTS_TOTAL,
-    QG_FAILURE_SUMMARY,
-    QG_TEST_PHASE_RAN_AND_FAILED,
-    RAN_AND_FAILED,
-    must_fix_items,
-    phase_4_ran_and_failed,
-    split_must_fix_item,
-)
+from guardkit.orchestrator.failing_test_feedback import must_fix_items, split_must_fix_item
 from guardkit.orchestrator.synthetic_report import (
     SHARED_WORKING_COPY_FIELD,
     mark_shared_working_copy,
@@ -357,15 +325,6 @@ def _build_task_work_runtime_evidence(
 # TASK-FIX-3C9D: without this wiring the Player can emit a results file
 # claiming any phases were completed and no deterministic check catches it
 # before Coach reads the file.
-from installer.core.commands.lib import (
-    AgentInvocationTracker,
-    validate_agent_invocations,
-    ValidationError as AgentInvocationValidationError,
-)
-from installer.core.commands.lib.agent_invocation_validator import (
-    get_expected_phases,
-    identify_missing_phases,
-)
 
 # TASK-FIX-RWOP1.3.2: Plan-audit gate on the producer path. The
 # deterministic auditor in installer.core.commands.lib.plan_audit compares
@@ -373,13 +332,6 @@ from installer.core.commands.lib.agent_invocation_validator import (
 # `plan_audit` block in task_work_results.json is the Player's self-report
 # and can trivially claim "violations: []" while the worktree has extras.
 # The producer fold makes Coach see the auditor's verdict, not the Player's.
-from installer.core.commands.lib.phase_execution import (
-    execute_phase_5_5_plan_audit,
-)
-from installer.core.commands.lib.plan_audit import (
-    _APPROVED_BY_A_REPAIR_MESSAGE as _PLAN_AUDIT_APPROVED_BY_A_REPAIR,
-    _FOR_THE_REVIEWER_MESSAGE as _PLAN_AUDIT_FOR_THE_REVIEWER,
-)
 
 # TASK-FIX-RWOP1.4a: Assumption-confidence warn-mode gate on the producer
 # path. feature-spec.md's "Gating rule" claims the Coach verifies low-confidence
@@ -394,20 +346,6 @@ from installer.core.commands.lib.plan_audit import (
 
 # Logger for agent invocations
 logger = logging.getLogger(__name__)
-
-# Reverse-map TaskWorkStreamParser phase keys (phase_2.5) to the validator's
-# canonical phase IDs (2.5B). The parser regex caps at \d+(?:\.\d+)?, so
-# "Phase 2.5B" in task-work output becomes "phase_2.5" in the parser —
-# this map reconstructs the ID that get_expected_phase_list('standard')
-# emits in agent_invocation_validator.
-_PARSER_PHASE_TO_VALIDATOR_PHASE = {
-    "phase_2": "2",
-    "phase_2.5": "2.5B",
-    "phase_2.7": "2.7",
-    "phase_3": "3",
-    "phase_4": "4",
-    "phase_5": "5",
-}
 
 
 # =========================================================================
@@ -871,49 +809,6 @@ MAX_SDK_STREAM_RETRIES = 1
 SDK_STREAM_RETRY_BACKOFF = 30  # seconds
 
 
-#: The field a builder writes into its own report to say the tree already
-#: satisfies the task. Carried verbatim to the orchestrator, which asks the
-#: reviewer to verify it; nothing on this side reads or judges the claim.
-ALREADY_SATISFIED_FIELD = "already_satisfied"
-
-#: What the builder is told, on its FIRST turn only, about the third way a
-#: task can end. Asking on turn one is the whole point: a task the tree
-#: already satisfies then costs one turn instead of five wasted ones.
-#:
-#: STACK-AGNOSTIC: it asks for prose citing files and places — never for a
-#: language, a symbol kind, a test runner or a package manager — so it reads
-#: the same in a Python, TypeScript, Go or any other repository.
-ALREADY_SATISFIED_PROMPT_SECTION = """
-## Before you write anything
-
-First read the code this task names and decide one thing: does the repository
-ALREADY satisfy every one of the acceptance criteria above?
-
-If it does, DO NOT write, change or delete anything. Say so instead, by adding
-this field to your report and stopping:
-
-  "already_satisfied": {
-    "claimed": true,
-    "citations": [
-      {
-        "criterion_id": "AC-001",
-        "file": "the file that already satisfies this criterion",
-        "location": "where in that file - lines, or the name of the thing",
-        "evidence": "one sentence saying how it satisfies the criterion"
-      }
-    ]
-  }
-
-Cite EVERY acceptance criterion: one entry each, naming the file and the place
-in it. A claim that cites nothing is refused, and so is one that cites only
-some of the criteria. The reviewer then checks your claim against the tree; if
-it cannot confirm it, the turn counts as failed and you carry on as normal.
-
-If ANY criterion is not already satisfied, do not use this field at all —
-implement the task in the usual way.
-"""
-
-
 def turn_pressure(turn: int, max_turns: int) -> Tuple[bool, bool]:
     """The ONE rule for "is the Player running out of turns?".
 
@@ -1030,10 +925,6 @@ def write_coach_project_documents_record(
     were declared but not used. Best-effort, like the evidence bundle beside
     it: a failed write is logged and never blocks the turn.
     """
-    from guardkit.orchestrator.harness.selector import (
-        PROJECT_DOCUMENTS_BUDGET_BYTES,
-    )
-
     record = {
         "task_id": task_id,
         "turn": turn,
@@ -1042,7 +933,6 @@ def write_coach_project_documents_record(
             for d in documents
         ],
         "total_bytes": sum(d.size for d in documents),
-        "budget_bytes": PROJECT_DOCUMENTS_BUDGET_BYTES,
         "section_sha256": section_sha256,
         "captured_from": sorted(
             {d.captured_from for d in documents if getattr(d, "captured_from", None)}
@@ -1202,42 +1092,6 @@ _PROMISE_SCHEMA_FIELDS = {
 }
 
 # =========================================================================
-# TASK-AB-INVARIANTTEST01: Transient-assertion ("invariant-not-snapshot")
-# detection phrase shared by Coach and Player
-# =========================================================================
-# This exact wording appears verbatim in BOTH the Coach-side advisory guard
-# (#8 in _render_absence_of_failure_guards) and the Player's anti-patterns
-# entry in installer/core/agents/autobuild-player.md, per
-# .claude/rules/player-prompt-reinforce-coach-constraint-in-three-locations.md
-# (the anti-patterns entry must quote the Coach's detection wording verbatim
-# so the Player recognises the failure in the Coach's terms). Keep the two
-# byte-identical — tests/unit/test_transient_assertion_guidance.py pins it.
-TRANSIENT_ASSERTION_DETECTION_PHRASE = (
-    "a new test asserts a transient point-in-time state of the current task "
-    "boundary (e.g. that a method raises NotImplementedError, or that a "
-    "directory/table/config is empty or absent) for functionality a later "
-    "task in this feature implements"
-)
-
-# =========================================================================
-# TASK-AB-HERMETICTEST01: Hermetic-environment detection phrase shared by
-# Coach and Player
-# =========================================================================
-# Same three-locations contract as TRANSIENT_ASSERTION_DETECTION_PHRASE
-# above: this exact wording appears verbatim in BOTH the Coach-side advisory
-# guard (#10 in _render_absence_of_failure_guards) and the Player's
-# anti-patterns entry in installer/core/agents/autobuild-player.md. Keep the
-# two byte-identical — tests/unit/test_hermetic_env_guidance.py pins it.
-# ABL-001 run-3 origin: a test asserted a monkeypatched DSN while the loader
-# read the ambient env — non-hermetic (host-dependent outcome) AND a leak
-# channel (the failing diff printed a live credential).
-HERMETIC_ENV_DETECTION_PHRASE = (
-    "a new test asserts configuration values whose loader reads environment "
-    "variables the test does not pin with monkeypatch.setenv/delenv across "
-    "the full relevant env-var surface"
-)
-
-# =========================================================================
 # SDK Async Generator Cleanup Noise Suppression (TASK-FIX-k3l4)
 # =========================================================================
 # When the SDK's query() async generator is closed between turns, AnyIO's
@@ -1272,63 +1126,6 @@ def _install_sdk_cleanup_handler(loop: asyncio.AbstractEventLoop) -> None:
 
     loop.set_exception_handler(handler)
     _patched_loops.add(id(loop))
-
-
-# Player report schema - required fields
-PLAYER_REPORT_SCHEMA = {
-    "task_id": str,
-    "turn": int,
-    "files_modified": list,
-    "files_created": list,
-    "tests_written": list,
-    "tests_run": bool,
-    "tests_passed": bool,
-    "implementation_notes": str,
-    "concerns": list,
-    "requirements_addressed": list,
-    "requirements_remaining": list,
-}
-
-# Coach decision schema - required fields
-COACH_DECISION_SCHEMA = {
-    "task_id": str,
-    "turn": int,
-    "decision": str,  # "approve" or "feedback"
-}
-
-# Documentation level to max files mapping
-# Used to enforce file count constraints based on documentation_level setting
-DOCUMENTATION_LEVEL_MAX_FILES = {
-    "minimal": 2,
-    "standard": 2,
-    "comprehensive": None,  # No limit
-}
-
-# TASK-GK-DOC-001: Paths the doc-level file-count check ignores. These are
-# orchestrator bookkeeping artefacts (turn dumps, bdd oracle output, task
-# plans) that the Player legitimately writes alongside real new code, plus
-# empty package markers. Counting them produces false-positive scope
-# warnings — see FEAT-PEBR turn-1 log for the original symptom.
-_DOC_LEVEL_EXCLUDED_PATTERNS: Tuple[str, ...] = (
-    ".guardkit/autobuild/",
-    ".guardkit/bdd/",
-    ".claude/task-plans/",
-)
-
-
-def _is_doc_level_excluded(path: str) -> bool:
-    """Return True if `path` is an orchestrator artefact that should not
-    count against the documentation-level file-count constraint.
-
-    Matches absolute and relative paths anchored on the excluded prefix,
-    plus empty-package `__init__.py` markers (bare or nested).
-    """
-    if path == "__init__.py" or path.endswith("/__init__.py"):
-        return True
-    return any(
-        path.startswith(prefix) or f"/{prefix}" in path
-        for prefix in _DOC_LEVEL_EXCLUDED_PATTERNS
-    )
 
 
 # =========================================================================
@@ -2223,7 +2020,6 @@ class AgentInvocationResult:
     session_id: Optional[str] = None           # TASK-RFX-B20B: SDK session ID for resumption
 
 
-
 # TASK-CMIR-002 (coordinator fix-and-re-verify): the NORMATIVE v4 Decision Format
 # block — byte-parity with the training corpus instruction (adf build_v4_sft.py
 # V4_DECISION_FORMAT) and docs/coach-contract-mirror-scope-and-buildplan.md §4 Fix B.
@@ -2838,26 +2634,6 @@ class AgentInvoker:
         """
         start_time = time.time()
 
-        # TASK-FIX-CAUD-PREFLIGHT-C3B0: Pre-turn-1 git check-ignore fail-fast
-        # gate. Walks the task's planned target list through ``git
-        # check-ignore`` in the worktree before any SDK turn runs. If a
-        # planned target IS ignored, raises ``AgentInvocationError`` with
-        # the exact matched rule so the operator can either rebase the
-        # worktree (if the rule is from project-root .gitignore) or pick
-        # a non-ignored target. Skipped when no plan or frontmatter list
-        # is available (identical to the no-plan branch in plan-audit).
-        if turn == 1:
-            # Step 2 (26 October 2026, GKT-129): advice, never a stop. The
-            # one line goes to the builder (this turn's feedback) and to the
-            # reviewer (the Player report's concerns, in invoke_coach).
-            ignore_advice = self._run_preflight_ignore_gate(task_id)
-            self._preflight_ignore_advice = ignore_advice
-            if ignore_advice:
-                if not feedback:
-                    feedback = ignore_advice
-                elif isinstance(feedback, str):
-                    feedback = f"{ignore_advice}\n\n{feedback}"
-
         # TASK-FIX-VL06: Record baseline commit before SDK invocation
         # to prevent cross-task file attribution in parallel waves
         if self._baseline_commit is None:
@@ -2939,7 +2715,6 @@ class AgentInvoker:
 
                     # Load the Player report from file (now exists)
                     report = self._load_agent_report(task_id, turn, "player")
-                    self._validate_player_report(report)
 
                     # TASK-VPR-003: Extract SDK turn data from TaskWorkResult
                     from guardkit.orchestrator.sdk_ceiling import detect_ceiling_hit
@@ -3013,7 +2788,6 @@ class AgentInvoker:
 
                 # Load and validate Player report
                 report = self._load_agent_report(task_id, turn, "player")
-                self._validate_player_report(report)
 
                 duration = time.time() - start_time
 
@@ -3090,7 +2864,6 @@ class AgentInvoker:
         player_report: Dict[str, Any],
         remaining_budget: Optional[float] = None,
         evidence_bundle: Optional["CoachEvidenceBundle"] = None,
-        behavioural_oracle_declaration: Optional[Dict[str, Any]] = None,
         coach_context: Optional[str] = None,
         acceptance_criteria: Optional[List[Dict[str, str]]] = None,
         project_documents: Optional[Sequence["ProjectDocument"]] = None,
@@ -3113,17 +2886,10 @@ class AgentInvoker:
                 When provided, sdk_timeout_seconds is capped at this value for
                 this invocation then restored. Used to honour per-turn budgets
                 and Coach grace periods. (TASK-ABFIX-004)
-            evidence_bundle: Optional ``CoachEvidenceBundle`` produced by
-                ``CoachValidator.gather_evidence`` upstream (TASK-HMIG-008R Part B).
-                When provided, the bundle's pre-computed ``HonestyVerification``
-                is used as the canonical honesty channel — ``_verify_player_claims``
-                is NOT re-run. This avoids duplicate honesty verification and
-                preserves Layer-1 ``resolved_paths`` annotations that
-                ``gather_evidence`` produced via state_bridge identity resolution
-                (TASK-FIX-1B4A). The bundle is also rendered into the Coach
-                prompt as structured evidence so the LLM Coach can read
-                deterministic gate outputs (coverage, plan_audit, bdd,
-                arch_review, tests) without re-deriving them.
+            evidence_bundle: Optional ``CoachEvidenceBundle`` from
+                ``CoachValidator.gather_evidence``: the project's own check
+                results, rendered into the prompt and read by the guards that
+                may send the turn back.
             coach_context: Optional memory / coach context string. Passed
                 through to ``_build_coach_prompt`` for inclusion in the prompt.
             acceptance_criteria: Optional structured ACs (``[{"id","text"}]``)
@@ -3138,10 +2904,10 @@ class AgentInvoker:
                 documents (``harness.selector.load_project_documents_at_commit``: path,
                 SHA-256 and full text each), rendered as their own
                 ``## Project documents`` section beside the requirements. The
-                section is never trimmed; if it would not reach the model whole,
-                or the documents exceed the inline budget, the turn is refused
-                before any model call. The paths, hashes and the hash of the
-                section actually sent are recorded beside ``coach_turn_N.json``.
+                section is never trimmed; if it would not reach the model whole
+                it is left out and the reviewer still runs. The paths, hashes
+                and the hash of the section actually sent (``None`` when it was
+                left out) are recorded beside ``coach_turn_N.json``.
                 ``None`` or empty gives today's prompt unchanged.
 
         Returns:
@@ -3155,53 +2921,13 @@ class AgentInvoker:
         """
         start_time = time.time()
 
-        # Step 2 (26 October 2026, GKT-129): the git-ignore advice reaches the
-        # reviewer once, as one of the Player report's concerns.
-        ignore_advice = getattr(self, "_preflight_ignore_advice", None)
-        if ignore_advice and isinstance(player_report, dict):
-            concerns = player_report.get("concerns")
-            if not isinstance(concerns, list):
-                concerns = []
-                player_report["concerns"] = concerns
-            if ignore_advice not in concerns:
-                concerns.append(ignore_advice)
-            self._preflight_ignore_advice = None
-
         # TASK-ABFIX-004: Cap SDK timeout at remaining budget (mirrors invoke_player pattern)
         effective_timeout = self._calculate_sdk_timeout(task_id, remaining_budget=remaining_budget)
         original_timeout = self.sdk_timeout_seconds
         self.sdk_timeout_seconds = effective_timeout
 
         try:
-            # Project initialisation design (4 October 2026): the project's
-            # binding documents travel to the Coach whole or not at all. Over
-            # the inline budget the turn is refused here, before the Phase-A
-            # gather or the verdict call reaches any model.
             documents = tuple(project_documents or ())
-            if documents:
-                from guardkit.orchestrator.harness.selector import (
-                    check_project_documents_budget,
-                )
-
-                try:
-                    check_project_documents_budget(documents)
-                except AgentInvocationError as exc:
-                    return self._refuse_coach_turn_for_documents(
-                        task_id, turn, start_time, documents, str(exc)
-                    )
-
-            # TASK-HMIG-008R Part C: honesty channel unification.
-            # When evidence_bundle is provided (autobuild primary path),
-            # use the bundle's pre-computed HonestyVerification — it was
-            # generated by CoachValidator.gather_evidence with state_bridge
-            # identity resolution (Layer 1 / TASK-FIX-1B4A) and is richer
-            # than what _verify_player_claims would produce here.
-            # When evidence_bundle is None (legacy callers, GUARDKIT_COACH_LEGACY=1
-            # fallback path), compute honesty internally as before.
-            if evidence_bundle is not None:
-                honesty_verification = evidence_bundle.honesty
-            else:
-                honesty_verification = self._verify_player_claims(player_report)
 
             # TASK-ARCH-COACHSPLIT (D-3): default to TOOLLESS, grammar-enforced
             # verdict synthesis over the deterministic evidence bundle. The
@@ -3213,17 +2939,8 @@ class AgentInvoker:
             # eliminates the run-18 tool-parse HTTP 500. GUARDKIT_COACH_SYNTHESIS=0
             # restores the legacy tool-using Coach.
             #
-            # Synthesis is gated on the bundle ACTUALLY existing: a toolless
-            # "synthesise over the evidence bundle" prompt is incoherent (and an
-            # absence-of-failure false-green hazard — the prompt would assert a
-            # bundle that was never rendered and the structured guards would be
-            # dropped) when no bundle was gathered. Callers without a bundle —
-            # the GUARDKIT_COACH_LEGACY=1 fallback after a CoachValidator
-            # exception (autobuild.py `_invoke_coach_legacy`), or any direct
-            # invoke_coach caller — keep the tool-using Coach so it can
-            # investigate with Read/Bash/Grep/Glob in place of the absent
-            # deterministic evidence. The autobuild PRIMARY path always passes a
-            # bundle (gather_evidence), so it always synthesises.
+            # Synthesis needs the evidence bundle; a caller without one
+            # keeps the tool-using Coach so it can look at the work itself.
             synthesis_enabled = (
                 _coach_synthesis_enabled() and evidence_bundle is not None
             )
@@ -3254,7 +2971,6 @@ class AgentInvoker:
                     turn=turn,
                     requirements=requirements,
                     player_report=player_report,
-                    honesty_verification=honesty_verification,
                     evidence_bundle=evidence_bundle,
                     acceptance_criteria=acceptance_criteria,
                     gather_timeout=gather_timeout,
@@ -3269,7 +2985,7 @@ class AgentInvoker:
 
             # Build prompt for Coach with verification context.
             prompt = self._build_coach_prompt(
-                task_id, turn, requirements, player_report, honesty_verification,
+                task_id, turn, requirements, player_report,
                 acceptance_criteria=acceptance_criteria,
                 evidence_bundle=evidence_bundle,
                 coach_context=coach_context,
@@ -3278,131 +2994,24 @@ class AgentInvoker:
                 project_documents=documents,
             )
 
-            # A repair round's section must reach the model whole (20 October
-            # 2026): in a repair round the plan audit leaves the extra files to
-            # the reviewer, so a reviewer that has not seen them all, and the
-            # failing check, must not judge the turn.
-            repair_sections = self._repair_round_sections(self._repair_review)
-            if repair_sections and not any(
-                section in prompt for section in repair_sections
-            ):
-                sentence = (
-                    "This repair round's review section could not be kept whole "
-                    "in the Coach prompt (the prompt limit would have cut it), so "
-                    "the Coach was not run: the reviewer must see every file the "
-                    "round changed, and the failing check, before the turn can "
-                    "be judged. Raise GUARDKIT_COACH_SYNTHESIS_MAX_CHARS, or "
-                    "shorten the task's requirements, so the prompt fits."
-                )
-                logger.error("[%s] Coach turn %s refused: %s", task_id, turn, sentence)
-                return AgentInvocationResult(
-                    task_id=task_id,
-                    turn=turn,
-                    agent_type="coach",
-                    success=False,
-                    report={},
-                    duration_seconds=time.time() - start_time,
-                    error=sentence,
-                )
-
-            # The documents section must reach the model byte for byte: the
-            # synthesis trimmer protects it, and this check proves it after
-            # trimming, by hash, before the model is called.
+            # The project's documents, as sent, are recorded beside the turn.
             if documents:
                 section = self._render_project_documents_section(documents)
-                section_sha256 = _sha256_text(section)
                 start = prompt.find(section)
-                sent_sha256 = (
-                    _sha256_text(prompt[start:start + len(section)])
-                    if start != -1
-                    else None
-                )
-                if sent_sha256 != section_sha256:
-                    return self._refuse_coach_turn_for_documents(
-                        task_id,
-                        turn,
-                        start_time,
-                        documents,
-                        "The project's binding documents could not be kept whole "
-                        "in the Coach prompt (the prompt limit would have cut "
-                        "them), so the Coach was not run; shorten the documents, "
-                        "or the task's requirements, so the prompt fits.",
-                    )
                 self._record_coach_project_documents(
-                    task_id, turn, documents, section_sha256=section_sha256
+                    task_id,
+                    turn,
+                    documents,
+                    section_sha256=(
+                        _sha256_text(prompt[start:start + len(section)])
+                        if start != -1
+                        else None
+                    ),
                 )
-
-            # Invoke the Coach. In both paths return_events=True so the typed
-            # HarnessEvent stream comes back for coach_output_parser
-            # (TASK-FIX-COACHOUT01 Shape A) — the verdict is parsed from the
-            # response text and the orchestrator writes coach_turn_N.json
-            # itself; Coach never writes (ADR FB-004, read-only invariant).
-            if synthesis_enabled:
-                # Load the GBNF verdict grammar; degrade to prompt-only (still
-                # toolless) if the packaged grammar can't be read so a
-                # packaging glitch never hard-fails the Coach.
-                # Contract-aware: resolves GUARDKIT_COACH_CONTRACT > config >
-                # default and selects the matching grammar file (TASK-CMIR-003).
-                grammar: Optional[str] = None
-                try:
-                    from guardkit.orchestrator.coach_grammar import (
-                        load_coach_verdict_grammar,
-                    )
-
-                    grammar = load_coach_verdict_grammar(
-                        contract=None,  # resolve at call site
-                    )
-                except Exception as exc:  # noqa: BLE001 — degrade, never hard-fail
-                    logger.warning(
-                        "TASK-ARCH-COACHSPLIT: failed to load Coach verdict "
-                        "grammar (%s); running TOOLLESS synthesis WITHOUT a "
-                        "grammar constraint (prompt-only). The verdict schema "
-                        "is then only prompt-enforced, not grammar-guaranteed.",
-                        exc,
-                    )
-
-                # allowed_tools=[] makes the harness toolless on EVERY
-                # substrate (the SDK harness reads its tool surface from the
-                # constructor allowed_tools, which select_harness threads from
-                # here). synthesis=True dispatches through invoke_synthesis.
-                result_tuple = await self._invoke_with_role(
-                    prompt=prompt,
-                    agent_type="coach",
-                    allowed_tools=[],
-                    permission_mode="bypassPermissions",
-                    task_id=task_id,
-                    turn=turn,
-                    return_events=True,
-                    synthesis=True,
-                    grammar=grammar,
-                )
-            else:
-                # Legacy tool-using Coach (GUARDKIT_COACH_SYNTHESIS disabled).
-                # Read-only tools; verdict still parsed from response text.
-                result_tuple = await self._invoke_with_role(
-                    prompt=prompt,
-                    agent_type="coach",
-                    allowed_tools=["Read", "Bash", "Grep", "Glob"],
-                    permission_mode="bypassPermissions",
-                    task_id=task_id,
-                    turn=turn,
-                    return_events=True,
-                )
-            assert result_tuple is not None, (
-                "_invoke_with_role(return_events=True) must return a tuple "
-                "on success; got None"
-            )
-            _, harness_events = result_tuple
 
             # TASK-FIX-COACHOUT01 Shape A: extract the structured verdict from
             # Coach's response text and persist coach_turn_N.json from the
-            # orchestrator side. The parser raises CoachDecisionNotFoundError
-            # / CoachDecisionInvalidError with messages COACHSF01 greps for
-            # (autobuild.py:5676-5678) on every failure path — the exceptions
-            # propagate to the existing except block at the bottom of this
-            # method, which converts them to AgentInvocationResult(
-            # success=False, error=str(e)). COACHSF01 then fires the
-            # synthetic-feedback safety net unchanged.
+            # orchestrator side.
             from guardkit.orchestrator.coach_output_parser import (
                 extract_and_write as _coach_extract_and_write,
             )
@@ -3415,130 +3024,110 @@ class AgentInvoker:
             coach_output_path = TaskArtifactPaths.private_artifact_path(
                 task_id, f"coach_turn_{turn}.json", self.worktree_path
             )
-            _coach_extract_and_write(
-                harness_events=harness_events,
-                task_id=task_id,
-                turn=turn,
-                output_path=coach_output_path,
+            try:
+                # Invoke the Coach. In both paths return_events=True so the typed
+                # HarnessEvent stream comes back for coach_output_parser
+                # (TASK-FIX-COACHOUT01 Shape A) — the verdict is parsed from the
+                # response text and the orchestrator writes coach_turn_N.json
+                # itself; Coach never writes (ADR FB-004, read-only invariant).
+                if synthesis_enabled:
+                    # Load the GBNF verdict grammar; degrade to prompt-only (still
+                    # toolless) if the packaged grammar can't be read so a
+                    # packaging glitch never hard-fails the Coach.
+                    # Contract-aware: resolves GUARDKIT_COACH_CONTRACT > config >
+                    # default and selects the matching grammar file (TASK-CMIR-003).
+                    grammar: Optional[str] = None
+                    try:
+                        from guardkit.orchestrator.coach_grammar import (
+                            load_coach_verdict_grammar,
+                        )
+
+                        grammar = load_coach_verdict_grammar(
+                            contract=None,  # resolve at call site
+                        )
+                    except Exception as exc:  # noqa: BLE001 — degrade, never hard-fail
+                        logger.warning(
+                            "TASK-ARCH-COACHSPLIT: failed to load Coach verdict "
+                            "grammar (%s); running TOOLLESS synthesis WITHOUT a "
+                            "grammar constraint (prompt-only). The verdict schema "
+                            "is then only prompt-enforced, not grammar-guaranteed.",
+                            exc,
+                        )
+
+                    # allowed_tools=[] makes the harness toolless on EVERY
+                    # substrate (the SDK harness reads its tool surface from the
+                    # constructor allowed_tools, which select_harness threads from
+                    # here). synthesis=True dispatches through invoke_synthesis.
+                    result_tuple = await self._invoke_with_role(
+                        prompt=prompt,
+                        agent_type="coach",
+                        allowed_tools=[],
+                        permission_mode="bypassPermissions",
+                        task_id=task_id,
+                        turn=turn,
+                        return_events=True,
+                        synthesis=True,
+                        grammar=grammar,
+                    )
+                else:
+                    # Legacy tool-using Coach (GUARDKIT_COACH_SYNTHESIS disabled).
+                    # Read-only tools; verdict still parsed from response text.
+                    result_tuple = await self._invoke_with_role(
+                        prompt=prompt,
+                        agent_type="coach",
+                        allowed_tools=["Read", "Bash", "Grep", "Glob"],
+                        permission_mode="bypassPermissions",
+                        task_id=task_id,
+                        turn=turn,
+                        return_events=True,
+                    )
+                assert result_tuple is not None, (
+                    "_invoke_with_role(return_events=True) must return a tuple "
+                    "on success; got None"
+                )
+                _, harness_events = result_tuple
+
+                _coach_extract_and_write(
+                    harness_events=harness_events,
+                    task_id=task_id,
+                    turn=turn,
+                    output_path=coach_output_path,
+                )
+                decision = self._load_agent_report_from(
+                    task_id, turn, "coach", coach_output_path
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001 — the reviewer is advice
+                # The reviewer's verdict is advice (27 October 2026): when its
+                # call fails, or gives no readable verdict, the turn goes on
+                # with no reviewer findings.
+                logger.warning(
+                    "[%s] Turn %s: the reviewer gave no readable verdict (%s); "
+                    "the turn goes on without its findings.",
+                    task_id, turn, exc,
+                )
+                decision = {
+                    "task_id": task_id,
+                    "turn": turn,
+                    "decision": "approve",
+                    "issues": [],
+                    "rationale": f"The reviewer gave no readable verdict: {exc}",
+                }
+            if not isinstance(decision.get("issues"), list):
+                decision["issues"] = []
+
+            # The reviewer's verdict is advice (Rich, 27 October 2026). Its
+            # findings stay in this record; the turn is sent back only when
+            # the project's own tests or declared checks ran and failed, or a
+            # repair round changed a protected file (the four calls below).
+            decision["reviewer_decision"] = decision.get("decision")
+            decision["decision"] = "approve"
+            self._persist_coach_decision(
+                decision, coach_output_path, tag="reviewer-advice", kind="annotated"
             )
 
-            # Load and validate Coach decision — the file on disk was just
-            # written by the parser to the private dir, so this re-read keeps
-            # the existing consumer contract intact. _validate_coach_decision
-            # still owns the deep schema check (criteria_verification, severity
-            # values, decision-specific field presence) the parser doesn't
-            # replicate.
-            decision = self._load_agent_report_from(task_id, turn, "coach", coach_output_path)
-            self._validate_coach_decision(decision)
-
-            # TASK-AB-NULLEVID01: deterministic fail-closed backstop for the
-            # absence-of-failure guard #5 (the GATHERING-STATUS GUARD in
-            # _build_coach_prompt). When gather_evidence aborts early (e.g.
-            # partial_honesty_abort) the bundle has everything downstream None
-            # and signal_absent is never set, so the guard-#6 backstop below
-            # no-ops — leaving guard #5 as prompt text only. This override
-            # makes guard #5 load-bearing CODE. Ordering is deliberate: it
-            # runs FIRST among the verdict-override guards because incomplete
-            # gathering is upstream of every leg-specific signal — on an
-            # aborted gather the legs the guards below read (independent_tests,
-            # spec_gap, runtime_parity, classification) are all None, so they
-            # would no-op anyway; firing first means the feedback names the
-            # root cause (the aborted gathering stage), not a downstream
-            # symptom. Contract: only `approve` verdicts are ever FLIPPED to
-            # feedback; guard #6 (_reconcile_absent_independent_test_signal)
-            # additionally ANNOTATES feedback verdicts with the
-            # verifier-infrastructure marker (idempotent, re-persisted to
-            # disk — TASK-AB-ZEROTESTLOUD01) without touching the decision.
-            # Ordering still guarantees the flip happens before the
-            # annotation-capable guards run.
-            self._reconcile_incomplete_evidence_gathering(
-                decision=decision,
-                evidence_bundle=evidence_bundle,
-                task_id=task_id,
-                turn=turn,
-                coach_output_path=coach_output_path,
-            )
-
-            # TASK-FIX-COACHFG01: deterministic fail-closed backstop for the
-            # absence-of-failure guard #6 (the INDEPENDENT-TEST ABSENT GUARD in
-            # _build_coach_prompt). The toolless-synthesis Coach is *told* not
-            # to approve when the independent-test oracle produced no signal,
-            # but that instruction is advisory — run-19 showed the local model
-            # emit `approve` anyway after its own trust-but-verify pytest run
-            # timed out (300s). This override makes guard #6 load-bearing CODE,
-            # not a prompt the model may ignore. It fires after the verdict is
-            # loaded + schema-validated and before the AgentInvocationResult is
-            # returned (the natural seam). Narrow: only an `approve` over an
-            # `independent_tests.signal_absent` bundle is overridden.
-            self._reconcile_absent_independent_test_signal(
-                decision=decision,
-                evidence_bundle=evidence_bundle,
-                task_id=task_id,
-                turn=turn,
-                coach_output_path=coach_output_path,
-            )
-
-            # TASK-FIX-COACHMISREAD01: the exact inverse of guard #6 above.
-            # When the record shows the independent test run was skipped ON
-            # PURPOSE (signal_absent=false, test_command='skipped', and the
-            # task type's profile does not require tests) and the Coach
-            # rejected the turn claiming that signal was ABSENT, the objection
-            # contradicts the Coach's own evidence — build-FEAT-44A8 /
-            # TASK-44A8-004, 2026-09-04, all three turns. The false finding is
-            # voided and, when nothing else was objected to, the verdict is
-            # promoted feedback->approve.
-            #
-            # Ordering is deliberate and is the safety property: it runs
-            # BEFORE every remaining fail-closed guard, so a promotion made
-            # here is still offered to each of them and any one of them can
-            # flip it straight back to feedback. Those guards only ever act on
-            # an `approve`, so promoting AFTER them could unblock a turn one
-            # of them would have blocked. It runs AFTER guard #6 because that
-            # guard owns the opposite (genuinely absent) signal, and after
-            # guard #5, whose incomplete-gather case this one refuses outright.
-            self._reconcile_contradicted_absent_test_claim(
-                decision=decision,
-                evidence_bundle=evidence_bundle,
-                task_id=task_id,
-                turn=turn,
-                coach_output_path=coach_output_path,
-            )
-
-            # TASK-QAWE-004: SPEC_GAP whole-file deselection hard-gate.
-            # Modelled on _reconcile_absent_independent_test_signal; fires
-            # when spec_gap.whole_file_deselection is True (ground truth > 0,
-            # scenarios_attempted present and zero). AC-013.
-            self._apply_spec_gap_absent_guard(
-                decision=decision,
-                evidence_bundle=evidence_bundle,
-                task_id=task_id,
-                turn=turn,
-                coach_output_path=coach_output_path,
-            )
-
-            # TASK-AB-COACHRUNPARITY01 (arm b): runtime-parity hard-gate.
-            # Modelled on _apply_spec_gap_absent_guard; fires when the
-            # deliverable's declared runtime entry point ran and FAILED
-            # (runtime_parity.ran and not passed). A "passes pytest but does
-            # not run" deliverable is blocked pre-approval. Absent / skipped /
-            # ran-and-passed signals are no-ops (absence-of-failure safety).
-            self._apply_runtime_parity_guard(
-                decision=decision,
-                evidence_bundle=evidence_bundle,
-                task_id=task_id,
-                turn=turn,
-                coach_output_path=coach_output_path,
-            )
-
-            # TASK-ABFIX-012, widened by reliability repair 1 (12 October 2026):
-            # the required-suite hard-gate. Overrides approve->feedback when a
-            # task whose profile requires tests had its independent suite run
-            # and FAIL, whatever the task type and whatever the failure class,
-            # unless the baseline exception verified every failure. Absent
-            # signals are owned by the absent guard above. The legacy path
-            # applies the same rule (required_suite.py). Runs in the same
-            # deterministic verdict-override seam, before narrative
-            # reconciliation.
+            # The project's required test suite ran and failed.
             self._apply_independent_test_code_failure_guard(
                 decision=decision,
                 evidence_bundle=evidence_bundle,
@@ -3547,40 +3136,26 @@ class AgentInvoker:
                 coach_output_path=coach_output_path,
             )
 
-            # TASK-QAV-004: behavioural round-trip oracle hard-gate.
-            # Deterministic backstop for the L4 behavioural oracle: when the
-            # Coach's behavioural_oracle bundle reports ran-and-failed, override
-            # approve→feedback. Timeout → ran-and-failed. Failed-to-start →
-            # absent (no override). None-safety: no-op when bundle/oracle is
-            # None or outcome is not ran-and-failed.
+            # The feature's declared smoke command ran and failed.
+            self._apply_runtime_parity_guard(
+                decision=decision,
+                evidence_bundle=evidence_bundle,
+                task_id=task_id,
+                turn=turn,
+                coach_output_path=coach_output_path,
+            )
+
+            # The declared behavioural check ran and failed.
             self._apply_behavioural_oracle_guard(
                 decision=decision,
                 evidence_bundle=evidence_bundle,
-                behavioural_oracle_declaration=behavioural_oracle_declaration,
                 task_id=task_id,
                 turn=turn,
                 coach_output_path=coach_output_path,
             )
 
-            # 2026-09-06: a model change without a migration. Deterministic,
-            # modelled on _apply_spec_gap_absent_guard. On a repository with
-            # an Alembic tree, when the feature as a whole has added a column
-            # or table line to a Python file outside tests/ and the migrations
-            # tree, and has added or changed nothing under the migrations'
-            # versions/ directory, override approve->feedback. build-FEAT-8388
-            # got through the coach and the July-image oracle this way (the
-            # model change came in on TASK-8388-001 turn 1, a turn sent back
-            # for another reason and then committed by that turn's
-            # checkpoint; every later verdict approved a clean tree) and was
-            # refused at the Docker Sandbox deploy (users table had no
-            # "domain" column on a fresh database). Reads the worktree's
-            # difference from the FEATURE'S BASE COMMIT (resolved the way the
-            # seam checks resolve it), not from HEAD and not from the bundle,
-            # so a change committed by an earlier turn's checkpoint is still
-            # seen; no-ops, logging why, when the base cannot be resolved or
-            # git cannot run. Only approve is ever flipped; runs after the
-            # oracle guard and before narrative reconciliation like the rest.
-            self._apply_schema_change_without_migration_guard(
+            # The secrets check found a secret in this task's changes.
+            self._apply_security_check_guard(
                 decision=decision,
                 evidence_bundle=evidence_bundle,
                 task_id=task_id,
@@ -3588,66 +3163,7 @@ class AgentInvoker:
                 coach_output_path=coach_output_path,
             )
 
-            # FEAT-SCG (SCG-002): mechanical spec-conformance hard-gate.
-            # Deterministic backstop modelled on _apply_behavioural_oracle_guard.
-            # When the spec_conformance leg reports a failed declarative rule
-            # (byte_parity / token_coverage / assert_command against the frozen
-            # pre-turn-1 snapshot) — or the opt-in ac_paths presence check over
-            # the threaded structured ACs finds an AC-cited path missing —
-            # override approve->feedback with one must_fix per failure. Only
-            # approve is ever flipped; feedback verdicts and absent/passed legs
-            # are no-ops (absence-of-failure safety). Runs AFTER the behavioural
-            # oracle guard and BEFORE narrative reconciliation.
-            self._apply_spec_conformance_guard(
-                decision=decision,
-                evidence_bundle=evidence_bundle,
-                task_id=task_id,
-                turn=turn,
-                coach_output_path=coach_output_path,
-                acceptance_criteria=acceptance_criteria,
-            )
-
-            # Zero-test observation (2026-08-21, Rich's ruling). Unlike every
-            # guard above it, this one RECORDS and does not block: when the
-            # zero-test rule fires it writes down what was observed, and it
-            # changes a verdict only when GUARDKIT_ZERO_TEST_BLOCKING is set.
-            # Runs here, in the same deterministic seam as the guards above,
-            # so the row records the FINAL post-override decision.
-            #
-            # THIS CALL IS THE ENTIRE PRODUCTION WIRING. Because it records
-            # rather than blocks, deleting this line produces NO build-visible
-            # symptom — the instrument would simply stop recording, silently.
-            # tests/orchestrator/test_zero_test_gate.py pins it by name:
-            #   test_invoke_coach_really_calls_the_zero_test_recorder
-            #   test_a_real_invoke_coach_turn_records_a_ledger_row
-            # Both go red if this call is removed, bypassed, or moved out of
-            # the path a real turn takes.
-            self._record_zero_test_observation(
-                decision=decision,
-                evidence_bundle=evidence_bundle,
-                task_id=task_id,
-                turn=turn,
-                coach_output_path=coach_output_path,
-            )
-
-            # TASK-FIX-COACHNARR01: keep the synthesized narrative faithful to
-            # the deterministic records. Embeds honesty discrepancies verbatim
-            # and strips fabricated "does not exist on disk" claims (the
-            # FEAT-C332 run-2 B-min hallucination). Narrative-only — does not
-            # flip the verdict direction the two guards above own.
-            self._reconcile_coach_narrative_with_records(
-                decision=decision,
-                evidence_bundle=evidence_bundle,
-                task_id=task_id,
-                turn=turn,
-                coach_output_path=coach_output_path,
-            )
-
-            # Last, so no guard above can promote past it (20 October 2026):
-            # a repair round that made, changed or deleted a protected file
-            # the task document does not name, or whose record of what changed
-            # could not be read, is refused, whatever the reviewer said and
-            # whatever audit path the task took.
+            # A repair round that changed a protected file.
             self._enforce_repair_round_protected(
                 decision=decision,
                 review=self._repair_review,
@@ -3655,13 +3171,6 @@ class AgentInvoker:
                 turn=turn,
                 coach_output_path=coach_output_path,
             )
-
-            # Add honesty verification to decision for tracking
-            decision["honesty_verification"] = {
-                "verified": honesty_verification.verified,
-                "honesty_score": honesty_verification.honesty_score,
-                "discrepancy_count": len(honesty_verification.discrepancies),
-            }
 
             duration = time.time() - start_time
 
@@ -3718,7 +3227,6 @@ class AgentInvoker:
         turn: int,
         requirements: str,
         player_report: Dict[str, Any],
-        honesty_verification: Optional[HonestyVerification],
         evidence_bundle: Optional["CoachEvidenceBundle"],
         acceptance_criteria: Optional[List[Dict[str, str]]],
         gather_timeout: int,
@@ -3770,7 +3278,6 @@ class AgentInvoker:
                 turn=turn,
                 requirements=requirements,
                 player_report=player_report,
-                honesty_verification=honesty_verification,
                 evidence_bundle=evidence_bundle,
                 acceptance_criteria=acceptance_criteria,
             )
@@ -3842,7 +3349,6 @@ class AgentInvoker:
         turn: int,
         requirements: str,
         player_report: Dict[str, Any],
-        honesty_verification: Optional[HonestyVerification],
         evidence_bundle: Optional["CoachEvidenceBundle"],
         acceptance_criteria: Optional[List[Dict[str, str]]],
     ) -> str:
@@ -3851,7 +3357,7 @@ class AgentInvoker:
         Frames the turn as an INVESTIGATION whose output is findings text — a
         per-AC compliance checklist (the Block paper's ✅/❌ + notes) — and
         explicitly NOT a fenced JSON verdict (that is Phase B's job). The
-        deterministic evidence bundle and honesty verification are rendered as
+        deterministic evidence bundle is rendered as
         the starting dossier so the Coach knows what has already been checked
         and where to focus its probing (read changed files, run the focused
         test, confirm an AC it cannot confirm from the dossier alone).
@@ -3861,24 +3367,6 @@ class AgentInvoker:
         if evidence_bundle is not None:
             evidence_section = self._render_evidence_bundle_section(
                 evidence_bundle
-            )
-
-        honesty_for_section = honesty_verification
-        if (
-            evidence_bundle is not None
-            and evidence_bundle.honesty is not None
-        ):
-            honesty_for_section = evidence_bundle.honesty
-        honesty_section = ""
-        if evidence_bundle is not None and honesty_for_section is not None:
-            honesty_section = self._render_bundle_honesty_section(
-                honesty_for_section
-            )
-        elif honesty_for_section:
-            honesty_section = (
-                "\n## Honesty Verification (Pre-Validated)\n\n"
-                + format_verification_context(honesty_for_section)
-                + "\n"
             )
 
         # Per-AC checklist the gather must work through.
@@ -3925,7 +3413,7 @@ verify the work on disk rather than trusting the Player's report:
 {criteria_section}## Player's Report
 
 {json.dumps(player_report, indent=2)}
-{evidence_section}{honesty_section}
+{evidence_section}
 ## What to Produce
 
 A per-criterion compliance checklist — for EACH acceptance criterion, one line:
@@ -4044,17 +3532,6 @@ Please address all feedback points in this turn.
 {",".join(example_promises)}
   ],'''
 
-        # The third outcome, offered once, on the first turn only (see
-        # ALREADY_SATISFIED_PROMPT_SECTION). From turn two on the builder is
-        # answering the reviewer, not deciding whether to start.
-        already_satisfied_section = (
-            # Not offered on a gate-driven re-entry: turn-1 feedback means a
-            # check that ran AFTER this task was approved has failed, so the
-            # task's own criteria really are satisfied and "change nothing"
-            # would be a truthful answer that leaves the failure unrepaired.
-            # The builder is answering a reviewer, not deciding whether to start.
-            ALREADY_SATISFIED_PROMPT_SECTION if turn == 1 and not feedback else ""
-        )
 
         # TASK-AB-INVARIANTTEST01: responsibility 2 carries the
         # invariant-not-snapshot constraint (location 1 of the three
@@ -4070,7 +3547,7 @@ Turn: {turn}
 ## Requirements
 
 {requirements}
-{criteria_section}{already_satisfied_section}{feedback_section}
+{criteria_section}{feedback_section}
 
 ## Your Responsibilities
 
@@ -4195,7 +3672,6 @@ Follow the report format specified in your agent definition.
         turn: int,
         requirements: str,
         player_report: Dict[str, Any],
-        honesty_verification: Optional[HonestyVerification] = None,
         acceptance_criteria: Optional[List[Dict[str, str]]] = None,
         design_context: Optional["DesignContext"] = None,
         evidence_bundle: Optional["CoachEvidenceBundle"] = None,
@@ -4211,25 +3687,12 @@ Follow the report format specified in your agent definition.
             turn: Turn number
             requirements: Original task requirements
             player_report: Player's report from current turn
-            honesty_verification: Optional verification results for Player claims.
-                When ``evidence_bundle`` is also provided, the bundle's
-                ``honesty`` field is the canonical source (channel unification
-                per plan §4); this parameter then serves only as a legacy
-                fallback path for callers that pass it directly.
             acceptance_criteria: Optional list of acceptance criteria with id and text
             design_context: Optional design context for visual verification
             evidence_bundle: Optional ``CoachEvidenceBundle`` from
                 ``CoachValidator.gather_evidence`` (TASK-HMIG-008R Part C).
                 When provided, the bundle is JSON-rendered into a
-                ``<evidence_bundle>...</evidence_bundle>`` section so the
-                LLM Coach can read deterministic gate outputs (coverage,
-                plan_audit, bdd, arch_review, tests) plus the Layer-1/
-                Layer-2 severity recommendations. The five
-                absence-of-failure guards (AC-009 + gathering_status guard)
-                are emitted in an ``<absence_of_failure_guards>`` section
-                so the Coach has explicit instructions for treating absent
-                evidence as ABSENT SIGNAL rather than approving on
-                absence-of-failure.
+                ``<evidence_bundle>...</evidence_bundle>`` section.
             coach_context: Optional memory / coach context string. When
                 provided, surfaced in a ``## Coach Context`` section.
             synthesis: When ``True`` (TASK-ARCH-COACHSPLIT D-3), render the
@@ -4258,65 +3721,17 @@ Follow the report format specified in your agent definition.
         Returns:
             Formatted prompt string for Coach agent
         """
-        # TASK-HMIG-008R Part C: when an evidence bundle is provided, its
-        # `honesty` field is the canonical honesty channel — overriding the
-        # legacy honesty_verification parameter to avoid duplicate honesty
-        # sections in the prompt. The bundle's honesty was computed by
-        # gather_evidence with state_bridge identity resolution and carries
-        # resolved_paths annotations that the legacy parameter would lack.
-        if evidence_bundle is not None and evidence_bundle.honesty is not None:
-            honesty_verification = evidence_bundle.honesty
-
-        # Build honesty verification section. Under the bundle path the
-        # section is rendered as structured JSON inside an XML-like tag
-        # so the LLM Coach can parse it deterministically and apply the
-        # absence-of-failure guards below against specific fields. The
-        # legacy free-text format is retained for back-compat callers
-        # (no bundle, just honesty_verification).
-        honesty_section = ""
-        if evidence_bundle is not None and honesty_verification is not None:
-            # Bundle path: emit structured XML-tagged JSON section.
-            honesty_section = self._render_bundle_honesty_section(
-                honesty_verification
-            )
-        elif honesty_verification:
-            # Legacy path: emit prose section. LANE-WF: the banner is keyed to
-            # the TURN-REJECTING (critical) records, not to "any record" — an
-            # advisory claim_audit record must never be announced to the Coach
-            # as a critical discrepancy (the FEAT-STV1-20260801195639 shape).
-            if self._turn_rejecting_discrepancies(honesty_verification):
-                honesty_banner = (
-                    "⚠️ CRITICAL DISCREPANCIES DETECTED - Factor this into "
-                    "your decision!"
-                )
-            elif honesty_verification.discrepancies:
-                honesty_banner = (
-                    "⚠ ADVISORY honesty record(s) only (no critical "
-                    "discrepancy) — warnings that MUST NOT change your verdict."
-                )
-            else:
-                honesty_banner = "✓ Player claims verified."
-            honesty_section = f"""
-## Honesty Verification (Pre-Validated)
-
-{format_verification_context(honesty_verification)}
-
-{honesty_banner}
-"""
-
         # TASK-CMIR-002: contract resolution — must happen before any
         # contract-aware rendering (guards, criteria, decision format).
         contract = _resolve_coach_contract()
         is_v4 = contract == "v4"
 
-        # Build evidence bundle section + absence-of-failure guards (Part C).
+        # Build the evidence bundle section (Part C).
         evidence_section = ""
-        guards_section = ""
         if evidence_bundle is not None:
             evidence_section = self._render_evidence_bundle_section(
                 evidence_bundle
             )
-            guards_section = self._render_absence_of_failure_guards(contract)
 
         # Coach context section (memory / external context).
         coach_context_section = ""
@@ -4330,9 +3745,7 @@ Follow the report format specified in your agent definition.
         # TASK-ARCH-COACHBFULL: Phase-A investigation findings section. Rendered
         # only when the B-full gather ran and produced findings; advisory input
         # the toolless synthesis grounds its per-AC verdict on. Absent findings
-        # (B-min path) omit the section — never a new false-green: the
-        # synthesis banner + absence-of-failure guards still treat
-        # unverifiable evidence as FEEDBACK, not approval.
+        # (B-min path) omit the section.
         gather_findings_section = ""
         if gather_findings and gather_findings.strip():
             # TASK-PERF-COACHSYNTH (AC-4): bound the findings text injected into
@@ -4437,8 +3850,7 @@ Quality Gates:
                 # facts.  Keep their attribution explicit so a generic
                 # independent check cannot be narrated as proof of unrelated
                 # Player-reported counts or coverage.
-                _v4_feedback_not_approval_bundle = ""
-                synthesis_banner = f"""\
+                synthesis_banner = """\
 **TOOLLESS SYNTHESIS** — You have NO tools available (no Read, Bash, Grep, or
 Glob). Do not attempt to run tests or read files; you cannot. The Deterministic
 Evidence Bundle above contains execution receipts and report-derived facts;
@@ -4448,9 +3860,7 @@ records. Player-reported test counts and coverage remain Player-reported unless
 an independent receipt records those measurements. A non-required or relaxed
 gate is not a measurement, and an exit-zero generic check does not certify an
 unrelated suite count or coverage percentage. Base your verdict ENTIRELY on
-that evidence, the acceptance criteria, the Player's report, and the honesty verification{
-    _v4_feedback_not_approval_bundle
-}.
+that evidence, the acceptance criteria and the Player's report.
 
 """
             else:
@@ -4459,11 +3869,11 @@ that evidence, the acceptance criteria, the Player's report, and the honesty ver
                     if is_v4
                     else "that is FEEDBACK, not approval"
                 )
-                synthesis_banner = """\
+                synthesis_banner = f"""\
 **TOOLLESS SYNTHESIS** — You have NO tools available (no Read, Bash, Grep, or
 Glob). Do not attempt to run tests or read files; you cannot. No deterministic
-evidence bundle was provided, so you have ONLY the acceptance criteria, the
-Player's report, and the honesty verification to reason from. Absent or
+evidence bundle was provided, so you have ONLY the acceptance criteria and the
+Player's report to reason from. Absent or
 unverifiable evidence is NOT a pass — when you cannot confirm a criterion from
 the information here, {_v4_feedback_not_approval}.
 
@@ -4472,11 +3882,6 @@ the information here, {_v4_feedback_not_approval}.
                 "Either APPROVE or REJECT with specific findings"
                 if is_v4
                 else "Either APPROVE or provide specific FEEDBACK"
-            )
-            _v4_feedback_not_approval_responsibilities = (
-                "that is a REJECT, not approval"
-                if is_v4
-                else "that is FEEDBACK, not approval"
             )
             _v4_findings_instruction = (
                 "verify each criterion against the evidence"
@@ -4499,16 +3904,8 @@ the information here, {_v4_feedback_not_approval}.
                 "Judge the exact criterion supplied here unless an "
                 "authoritative amended criterion is present; do not recommend "
                 "restoring unsafe behaviour merely to match stale text\n"
-                f"5. Honour the absence-of-failure guards: an ABSENT or "
-                f"zero-cardinality oracle is NOT a pass — when the evidence "
-                f"for a criterion is missing, {_v4_feedback_not_approval_responsibilities}\n"
-                f"6. {_v4_findings_instruction}\n"
-                "7. "
-                + (
-                    "CONSIDER HONESTY DISCREPANCIES in your decision"
-                    if self._turn_rejecting_discrepancies(honesty_verification)
-                    else _v4_approve_or_feedback
-                )
+                f"5. {_v4_findings_instruction}\n"
+                "6. " + _v4_approve_or_feedback
             )
         else:
             synthesis_banner = ""
@@ -4532,12 +3929,7 @@ the information here, {_v4_feedback_not_approval}.
                 "authoritative amended criterion is present; do not recommend "
                 "restoring unsafe behaviour merely to match stale text\n"
                 f"5. {_v4_findings_instruction}\n"
-                "6. "
-                + (
-                    "CONSIDER HONESTY DISCREPANCIES in your decision"
-                    if self._turn_rejecting_discrepancies(honesty_verification)
-                    else _v4_approve_or_feedback
-                )
+                "6. " + _v4_approve_or_feedback
             )
 
        # TASK-CMIR-002: contract-aware Decision Format block.
@@ -4631,7 +4023,7 @@ Turn: {turn}
 ## Player's Report
 
 {json.dumps(player_report, indent=2)}
-{evidence_section}{honesty_section}{guards_section}{gather_findings_section}{coach_context_section}{visual_verification_section}
+{evidence_section}{gather_findings_section}{coach_context_section}{visual_verification_section}
 {responsibilities}
 {decision_format_block}
 """
@@ -4785,7 +4177,7 @@ Turn: {turn}
         def _unavailable(reason: str) -> Dict[str, Any]:
             logger.warning(
                 "[%s] The repair round's record of what changed could not be "
-                "read (%s); the turn will be refused.", task_id, reason,
+                "read (%s).", task_id, reason,
             )
             return {"unavailable": reason}
 
@@ -4899,42 +4291,30 @@ Turn: {turn}
         turn: int,
         coach_output_path: "Path",
     ) -> None:
-        """Refuse a repair-round turn that touched a protected file, or whose
-        record of what changed could not be read.
+        """Send back a repair-round turn that touched a protected file.
 
         Deterministic, and the last guard: an ``approve`` becomes
         ``feedback`` with a must_fix, and a ``feedback`` gains the same
         must_fix. Re-persisted to ``coach_turn_N.json``. Outside a repair
-        round (no ``RepairRound`` on this invoker) it does nothing.
-
-        In a repair round the plan audit leaves extra files to the reviewer,
-        so a turn whose changes could not be read (``review`` is ``None`` or
-        carries ``unavailable``) is never approved (20 October 2026).
+        round, or when the round's record of what changed could not be read,
+        it does nothing.
         """
         if getattr(self, "repair_round", None) is None:
             return
         if review is None or review.get("unavailable"):
-            category = "repair_round_unreadable"
-            description = (
-                "The repair round's record of what changed could not be read, "
-                "so this turn cannot be approved."
-            )
-            reason = (review or {}).get("unavailable") or "no review"
-            details: Dict[str, Any] = {"reason": reason}
-            log_reason = f"its record of what changed could not be read ({reason})"
-        else:
-            protected = list(review.get("protected") or [])
-            if not protected:
-                return
-            category = "repair_round_protected"
-            description = (
-                f"This repair round made, changed or deleted {len(protected)} "
-                "protected file(s) the task document does not name: "
-                + ", ".join(protected)
-                + ". A repair round never does; put them back as they were."
-            )
-            details = {"protected": protected}
-            log_reason = "it touched protected file(s) " + ", ".join(protected)
+            return
+        protected = list(review.get("protected") or [])
+        if not protected:
+            return
+        category = "repair_round_protected"
+        description = (
+            f"This repair round made, changed or deleted {len(protected)} "
+            "protected file(s) the task document does not name: "
+            + ", ".join(protected)
+            + ". A repair round never does; put them back as they were."
+        )
+        details: Dict[str, Any] = {"protected": protected}
+        log_reason = "it touched protected file(s) " + ", ".join(protected)
         issue = {
             "severity": "must_fix",
             "category": category,
@@ -5103,39 +4483,9 @@ Turn: {turn}
             section_sha256=section_sha256, refused=refused,
         )
 
-    def _refuse_coach_turn_for_documents(
-        self,
-        task_id: str,
-        turn: int,
-        start_time: float,
-        documents: Sequence["ProjectDocument"],
-        sentence: str,
-    ) -> AgentInvocationResult:
-        """Refuse the Coach turn before any model call, in one plain sentence."""
-        logger.error("[%s] Coach turn %s refused: %s", task_id, turn, sentence)
-        self._record_coach_project_documents(
-            task_id, turn, documents, refused=sentence
-        )
-        return AgentInvocationResult(
-            task_id=task_id,
-            turn=turn,
-            agent_type="coach",
-            success=False,
-            report={},
-            duration_seconds=time.time() - start_time,
-            error=sentence,
-        )
-
     # ------------------------------------------------------------------
     # TASK-HMIG-008R Part C — Coach prompt rendering helpers.
     # ------------------------------------------------------------------
-
-    # Token-budget truncation thresholds (plan §4 "Token budget"):
-    _COACH_BDD_DISCOVERIES_LIMIT = 20
-    _COACH_BDD_ERRORS_LIMIT = 10
-    _COACH_HONESTY_DISCREPANCIES_LIMIT = 20
-    # Wave-1 (TASK-QAWE-002): wiring / mocked_seam / spec_gap findings limit.
-    _COACH_WIRING_FINDINGS_LIMIT = 20
 
     # TASK-PERF-COACHSYNTH (AC-4 / Lever C): cap the Phase-A gather findings
     # text rendered into the Phase-B synthesis prompt. The gather is already
@@ -5211,13 +4561,10 @@ Turn: {turn}
     _VERDICT_BEARING_MARKERS = (
         "## Original Requirements",
         "## Acceptance Criteria to Verify",
-        "## Honesty Verification",
-        "<honesty_verification>",
         "stub_scan",
         "behavioural_oracle",
         "<evidence_bundle>",
         "## Deterministic Evidence Bundle",
-        "<absence_of_failure_guards>",
         "## Project documents",
     )
 
@@ -5262,10 +4609,7 @@ Turn: {turn}
 
         When ``synthesis=True`` the Coach receives the full rendered prompt
         (requirements, acceptance criteria, player report, evidence bundle,
-        honesty verification, absence-of-failure guards, etc.). Individual
-        fields have per-list truncation (discoveries: 20, errors: 10,
-        discrepancies: 20) but the *total* rendered prompt can still exceed
-        the model's crash-tested window.
+        etc.), which can exceed the model's crash-tested window.
 
         This method enforces a hard ceiling of ``budget`` characters
         (``GUARDKIT_COACH_SYNTHESIS_MAX_CHARS``, default 300,000 chars ≈ 85k
@@ -5509,61 +4853,6 @@ Turn: {turn}
 
         return trimmed
 
-    @classmethod
-    def _truncate_findings(
-        cls,
-        findings_container: Optional[Dict[str, Any]],
-        limit: int,
-    ) -> None:
-        """Truncate the ``findings`` list inside a wiring result dict.
-
-        Keeps the first ``limit`` entries and appends a ``"... and N more"``
-        marker when the list exceeds the limit. Mirrors the
-        ``bdd.discoveries`` truncation pattern. Wave-1, TASK-QAWE-002.
-
-        Parameters
-        ----------
-        findings_container : Optional[Dict[str, Any]]
-            A dict with a ``"findings"`` key (e.g. wiring / mocked_seam /
-            spec_gap result). May be ``None``.
-        limit : int
-            Maximum number of findings to keep.
-        """
-        if not isinstance(findings_container, dict):
-            return
-        findings = findings_container.get("findings")
-        if isinstance(findings, list) and len(findings) > limit:
-            remainder = len(findings) - limit
-            findings_container["findings"] = (
-                findings[:limit]
-                + [f"... and {remainder} more (truncated for token budget)"]
-            )
-
-    @staticmethod
-    def _count_permissive_doubles(
-        wiring_container: Optional[Dict[str, Any]],
-    ) -> Tuple[int, int]:
-        """Count permissive-double findings as ``(sharp, broad)``.
-
-        A "permissive double" is a stand-in object a test uses in place of the
-        real thing which accepts any arguments at all, so the test stays green
-        even after the real function's argument names have changed underneath
-        it. The analyzer writes these into
-        ``bundle.wiring["permissive_double"]["findings"]``.
-
-        Delegates to :py:func:`permissive_double_advisory.split_findings` —
-        the single implementation of the sharp/broad rule, shared with the run
-        log in ``feature_orchestrator`` so the two can never disagree about the
-        same run. That module's docstring is the place to read WHY the split
-        exists: it is a volume filter for a reader's attention, not a judgement
-        about which findings are real.
-
-        Absence-safe: a missing key or any unexpected shape counts as ``(0, 0)``
-        rather than raising — this must never break prompt construction.
-        """
-        sharp, broad = split_permissive_double_findings(wiring_container)
-        return len(sharp), len(broad)
-
     def _render_evidence_bundle_section(
         self,
         evidence_bundle: "CoachEvidenceBundle",
@@ -5571,59 +4860,21 @@ Turn: {turn}
         """Render the CoachEvidenceBundle as a structured prompt section.
 
         Emits the bundle as JSON inside ``<evidence_bundle>...</evidence_bundle>``
-        XML-like tags so the LLM Coach can locate it deterministically and
-        apply the absence-of-failure guards against specific fields.
-
-        Truncation rules (plan §4):
-
-        * ``evidence_bundle.bdd.discoveries`` — keep first 20 entries.
-        * ``evidence_bundle.bdd.errors``     — keep first 10 entries.
-        * ``evidence_bundle.honesty.discrepancies`` — keep first 20 entries.
-        * ``evidence_bundle.wiring.findings`` — keep first 20 entries.
-        * ``evidence_bundle.mocked_seam.findings`` — keep first 20 entries.
-        * ``evidence_bundle.spec_gap.findings`` — keep first 20 entries.
-        * ``evidence_bundle.stub_scan.findings`` — keep first 20 entries.
-        * ``evidence_bundle.coverage.findings`` — keep first 20 entries.
-        * ``evidence_bundle.behavioural_oracle.findings`` — keep first 20 entries.
-        * ``evidence_bundle.wiring.{permissive_double,callsite_drift,env_tamper,
-          ctor_arity}.findings`` — keep first 20 entries each. These four lists
-          are nested INSIDE the wiring result; before 2026-08-21 they were the
-          only finding lists written into the prompt unbounded.
-
-        Each truncation appends a ``"... and N more"`` marker so the Coach
-        knows the list was bounded. Non-list fields are bounded by gate
-        computation and pass through unchanged.
-
-        An advisory paragraph is appended after the JSON, naming
-        ``wiring.permissive_double``, explaining in plain words what a
-        permissive double is, and saying explicitly that its sharp/broad split
-        is a volume filter rather than a defect judgement. The wording comes
-        from :py:func:`permissive_double_advisory.coach_advisory_text`. It is
-        advisory text only: no gate and no verdict branch reads those counts.
-
-        The bundle's honesty channel is NOT duplicated here — it lives in
-        the separate ``<honesty_verification>`` section emitted by
-        :py:meth:`_render_bundle_honesty_section`. Both sections read from
-        the same bundle.honesty value, but rendering them separately lets
-        the absence-of-failure guards reference each by tag.
+        XML-like tags. The run records (source manifests, environment
+        inventory) stay in ``coach_evidence_turn_N.json`` and are kept out of
+        the prompt.
         """
         try:
             bundle_dict = evidence_bundle.to_dict()
         except Exception as exc:  # noqa: BLE001 — never block prompt build
             logger.error(
-                "Failed to serialise evidence_bundle for Coach prompt: %s. "
-                "Emitting empty bundle section so the Coach prompt still "
-                "carries the absence-of-failure guards.",
-                exc,
+                "Failed to serialise evidence_bundle for Coach prompt: %s.", exc,
             )
             bundle_dict = {
                 "gathering_status": "partial_exception",
                 "gathering_error": f"bundle_serialisation_failed: {exc}",
             }
 
-        # Repair 7: the run record (source manifests, environment inventory,
-        # container events) is for a person diagnosing a run afterwards. It
-        # stays in coach_turn_N.json and is kept out of the model's prompt.
         for leg_for_prompt in ("independent_tests", "behavioural_oracle"):
             leg = bundle_dict.get(leg_for_prompt)
             if isinstance(leg, dict):
@@ -5633,136 +4884,13 @@ Turn: {turn}
         # section in the prompt; it is not repeated inside this JSON.
         bundle_dict.pop("whole_feature_check", None)
 
-        # Truncate bdd.discoveries / bdd.errors.
-        bdd = bundle_dict.get("bdd")
-        if isinstance(bdd, dict):
-            discoveries = bdd.get("discoveries")
-            if isinstance(discoveries, list) and len(discoveries) > self._COACH_BDD_DISCOVERIES_LIMIT:
-                remainder = len(discoveries) - self._COACH_BDD_DISCOVERIES_LIMIT
-                bdd["discoveries"] = discoveries[: self._COACH_BDD_DISCOVERIES_LIMIT] + [
-                    f"... and {remainder} more (truncated for token budget)"
-                ]
-            errors = bdd.get("errors")
-            if isinstance(errors, list) and len(errors) > self._COACH_BDD_ERRORS_LIMIT:
-                remainder = len(errors) - self._COACH_BDD_ERRORS_LIMIT
-                bdd["errors"] = errors[: self._COACH_BDD_ERRORS_LIMIT] + [
-                    f"... and {remainder} more (truncated for token budget)"
-                ]
-
-        # honesty.discrepancies truncation lives inside _render_bundle_honesty_section,
-        # but we ALSO truncate the copy nested in bundle_dict["honesty"] so the
-        # evidence-bundle JSON the Coach sees is internally consistent.
-        honesty = bundle_dict.get("honesty")
-        if isinstance(honesty, dict):
-            discrepancies = honesty.get("discrepancies")
-            if (
-                isinstance(discrepancies, list)
-                and len(discrepancies) > self._COACH_HONESTY_DISCREPANCIES_LIMIT
-            ):
-                remainder = len(discrepancies) - self._COACH_HONESTY_DISCREPANCIES_LIMIT
-                honesty["discrepancies"] = discrepancies[
-                    : self._COACH_HONESTY_DISCREPANCIES_LIMIT
-                ] + [{
-                    "truncated": True,
-                    "remainder": remainder,
-                    "note": (
-                        f"... and {remainder} more discrepancies (truncated "
-                        f"for token budget). See full honesty_verification "
-                        f"in coach_turn_N.json."
-                    ),
-                }]
-
-        # Truncate wiring / mocked_seam / spec_gap findings.
-        # Mirrors the bdd.discoveries truncation pattern (keep first 20 +
-        # "... and N more" marker). Wave-1, TASK-QAWE-002.
-        self._truncate_findings(bundle_dict.get("wiring"), self._COACH_WIRING_FINDINGS_LIMIT)
-        self._truncate_findings(bundle_dict.get("mocked_seam"), self._COACH_WIRING_FINDINGS_LIMIT)
-        self._truncate_findings(bundle_dict.get("spec_gap"), self._COACH_WIRING_FINDINGS_LIMIT)
-
-        # Wave-2+ anti-stub / coverage / behavioural-oracle findings truncation.
-        self._truncate_findings(bundle_dict.get("stub_scan"), self._COACH_WIRING_FINDINGS_LIMIT)
-        self._truncate_findings(bundle_dict.get("coverage"), self._COACH_WIRING_FINDINGS_LIMIT)
-        self._truncate_findings(bundle_dict.get("behavioural_oracle"), self._COACH_WIRING_FINDINGS_LIMIT)
-
-        # Count the permissive-double findings BEFORE truncation, so the
-        # advisory line below reports the true totals.
-        permissive_sharp, permissive_broad = self._count_permissive_doubles(
-            bundle_dict.get("wiring")
-        )
-
-        # The factory nests four more finding lists INSIDE bundle.wiring
-        # (permissive_double / callsite_drift / env_tamper / ctor_arity). They
-        # were being written into the prompt in full, unbounded: one test file
-        # can carry 80+ permissive_double findings, which is thousands of
-        # wasted prompt tokens. Bound them by the same rule as their siblings.
-        wiring_container = bundle_dict.get("wiring")
-        if isinstance(wiring_container, dict):
-            for nested_key in (
-                "permissive_double", "callsite_drift", "env_tamper", "ctor_arity",
-            ):
-                self._truncate_findings(
-                    wiring_container.get(nested_key),
-                    self._COACH_WIRING_FINDINGS_LIMIT,
-                )
-
         try:
             payload = json.dumps(bundle_dict, indent=2, default=str)
         except Exception as exc:  # noqa: BLE001
             logger.error(
-                "Failed to JSON-encode truncated evidence_bundle: %s", exc,
+                "Failed to JSON-encode evidence_bundle: %s", exc,
             )
             payload = '{"gathering_status": "partial_exception", "gathering_error": "json_encode_failed"}'
-
-        # TASK-AB-SKIPVIS01: advisory skip-count visibility. A skipped test is
-        # an ABSENT verdict, not a pass — a nonzero count may mean the worktree
-        # venv is missing an optional extra and is silently under-testing the
-        # deliverable. Advisory prompt text ONLY: no gate/verdict branch reads
-        # tests_skipped, and the line itself tells the Coach never to reject
-        # on it alone.
-        skip_advisory = ""
-        independent = bundle_dict.get("independent_tests")
-        if isinstance(independent, dict):
-            skipped = independent.get("tests_skipped")
-            if isinstance(skipped, int) and not isinstance(skipped, bool) and skipped > 0:
-                skip_advisory = (
-                    f"\nADVISORY: tests_skipped: {skipped} — skipped tests are "
-                    "ABSENT verdicts, not passes; a nonzero count may indicate "
-                    "missing optional extras in the worktree venv. Advisory "
-                    "only — never reject the turn on this count alone.\n"
-                )
-
-        # Permissive-double visibility (2026-08-21). The analyzer has always
-        # computed this into wiring.permissive_double and it has always been
-        # carried into this JSON, but nothing ever named it — so it sat
-        # unlabelled among a dozen sibling keys and no reader knew what it was.
-        # This names it in plain words. Advisory prompt text ONLY: no gate and
-        # no verdict branch reads it, and the text itself says so.
-        #
-        # The wording lives in permissive_double_advisory so that the sentence
-        # a reviewing model reads and the sentence a person reads in the run
-        # log come from one place. It deliberately does NOT tell the reader the
-        # broad group is safe to skip; see that module's docstring for the
-        # forge Mode P case that proved that wording wrong.
-        permissive_advisory = ""
-        if permissive_sharp or permissive_broad:
-            permissive_advisory = permissive_double_advisory_text(
-                permissive_sharp, permissive_broad
-            )
-
-        reviewer_report_guidance = ""
-        advisory_issues = bundle_dict.get("advisory_issues")
-        if isinstance(advisory_issues, list) and any(
-            isinstance(issue, dict)
-            and issue.get("category") == "code_reviewer_model_report"
-            for issue in advisory_issues
-        ):
-            reviewer_report_guidance = (
-                "\nADVISORY: code_reviewer_model_report is bounded, redacted, "
-                "unverified model text. Compare it with deterministic gates "
-                "and acceptance evidence. Its wording never establishes a "
-                "finding, clean review, score, passed test, or verdict by "
-                "itself.\n"
-            )
 
         return f"""
 ## Deterministic Evidence Bundle
@@ -5770,348 +4898,7 @@ Turn: {turn}
 <evidence_bundle>
 {payload}
 </evidence_bundle>
-{skip_advisory}{permissive_advisory}{reviewer_report_guidance}"""
-
-    @staticmethod
-    def _turn_rejecting_discrepancies(
-        honesty_verification: Optional[HonestyVerification],
-    ) -> List[Any]:
-        """The honesty records that may bear on the verdict (LANE-WF).
-
-        Only ``critical``-severity discrepancies are turn-rejecting — the same
-        filter ``CoachValidator._honesty_issues_from`` applies when it decides
-        which records become ``must_fix`` issues and short-circuit gathering
-        with ``partial_honesty_abort``.
-
-        The advisory family (``claim_audit_unmodified`` /
-        ``claim_audit_gitignored`` / ``claim_audit_cross_repo``) is
-        deliberately EXCLUDED (NOTE: a Layer-2-demoted record keeps
-        ``Discrepancy.severity == "critical"`` and is NOT excluded — it
-        renders demoted but stays turn-rejecting; WF coach finding): those records are
-        still rendered into the ``<honesty_verification>`` section verbatim, so
-        the Coach sees them — but they must not switch the prompt into its
-        "CONSIDER HONESTY DISCREPANCIES" / "CRITICAL DISCREPANCIES DETECTED"
-        framing. On build ``FEAT-STV1-20260801195639`` two advisory
-        ``claim_audit_unmodified`` records whose own prose reads "this is a
-        warning, not a turn-rejecting fabrication" were announced to the Coach
-        under exactly that framing on every turn.
-
-        Returns ``[]`` when ``honesty_verification`` is None/empty.
-        """
-        if honesty_verification is None:
-            return []
-        return [
-            d
-            for d in getattr(honesty_verification, "discrepancies", None) or []
-            if is_must_fix_class(d)
-        ]
-
-    def _render_bundle_honesty_section(
-        self,
-        honesty_verification: HonestyVerification,
-    ) -> str:
-        """Render the bundle's HonestyVerification as a structured prompt section.
-
-        Sourced from ``evidence_bundle.honesty`` (channel unification per
-        plan §4). Emits a JSON-structured section inside
-        ``<honesty_verification>...</honesty_verification>`` tags so the
-        absence-of-failure guards can reference specific fields:
-
-        * ``honesty.discrepancies[*].claim_type``
-        * ``honesty.discrepancies[*].severity``
-        * ``honesty.resolved_paths`` — Layer-1 (TASK-FIX-1B4A) suppressions.
-
-        Truncation rule: keep first 20 discrepancies (plan §4 token budget).
-        """
-        from dataclasses import asdict
-
-        try:
-            honesty_dict: Dict[str, Any] = asdict(honesty_verification)
-        except Exception as exc:  # noqa: BLE001
-            logger.error(
-                "Failed to serialise honesty_verification for Coach prompt: %s",
-                exc,
-            )
-            honesty_dict = {
-                "verified": True,
-                "discrepancies": [],
-                "honesty_score": 1.0,
-                "resolved_paths": [],
-                "should_fix_count": 0,
-                "serialisation_error": str(exc),
-            }
-
-        discrepancies = honesty_dict.get("discrepancies")
-        if (
-            isinstance(discrepancies, list)
-            and len(discrepancies) > self._COACH_HONESTY_DISCREPANCIES_LIMIT
-        ):
-            remainder = len(discrepancies) - self._COACH_HONESTY_DISCREPANCIES_LIMIT
-            honesty_dict["discrepancies"] = discrepancies[
-                : self._COACH_HONESTY_DISCREPANCIES_LIMIT
-            ] + [{
-                "truncated": True,
-                "remainder": remainder,
-                "note": (
-                    f"... and {remainder} more discrepancies (truncated "
-                    f"for token budget). See full list in coach_turn_N.json."
-                ),
-            }]
-
-        try:
-            payload = json.dumps(honesty_dict, indent=2, default=str)
-        except Exception as exc:  # noqa: BLE001
-            logger.error(
-                "Failed to JSON-encode honesty_verification: %s", exc,
-            )
-            payload = '{"verified": true, "discrepancies": [], "honesty_score": 1.0}'
-
-        return f"""
-## Honesty Verification
-
-<honesty_verification>
-{payload}
-</honesty_verification>
 """
-
-    def _render_absence_of_failure_guards(self, contract: str | None = None) -> str:
-        """Render the absence-of-failure guard sentences.
-
-        The four guards from the TASK-HMIG-008R task spec (AC-009 points 1-4),
-        the fifth guard added per Phase 2.5 review finding #2
-        (gathering_status guard), and the sixth guard added by
-        TASK-FIX-COACHTESTTO (independent-test absent guard — treat a
-        timed-out / transport-errored independent-test oracle as ABSENT rather
-        than approving on the Player's self-reported tests). The sentences are
-        emitted verbatim inside
-        an ``<absence_of_failure_guards>`` block so the Coach can locate
-        them deterministically. Wording mirrors
-        ``.claude/rules/absence-of-failure-is-not-success.md`` and
-        ``.claude/rules/path-string-mismatch-is-not-dishonesty.md`` to
-        preserve the rule citation chain.
-
-        When ``contract="v4"`` the six vocabulary substitutions defined in
-        TASK-CMIR-002 §4 Fix B are applied so the guard text uses v4
-        terminology (``reject`` instead of ``feedback``, etc.).
-
-        Guard #8 (TASK-AB-INVARIANTTEST01) adds the advisory
-        transient-assertion / invariant-not-snapshot check; like guard #7 it
-        is advisory-only and never turn-rejecting on its own. Its detection
-        wording is ``TRANSIENT_ASSERTION_DETECTION_PHRASE``, quoted verbatim
-        in the Player anti-patterns entry in
-        ``installer/core/agents/autobuild-player.md``.
-        """
-        is_v4 = contract == "v4"
-
-        # TASK-CMIR-002: v4 vocabulary substitutions.
-        # The six legacy phrases are replaced per the spec's substitution table.
-        if is_v4:
-            surface_feedback = "Surface as a reject finding"
-            surface_feedback_decision = 'Surface a "reject" verdict'
-            verbatim_rationale = "verbatim in the finding locus"
-            feedback_not_approval = "that is a REJECT, not approval"
-            approve_or_feedback = "Either APPROVE or REJECT with specific findings"
-            criteria_verification = "verify each criterion against the evidence"
-        else:
-            surface_feedback = "Surface as feedback"
-            surface_feedback_decision = 'Surface a "feedback" decision'
-            verbatim_rationale = "verbatim in the rationale"
-            feedback_not_approval = "that is FEEDBACK, not approval"
-            approve_or_feedback = "Either APPROVE or provide specific FEEDBACK"
-            criteria_verification = "create a criteria_verification entry"
-
-        return f"""
-<absence_of_failure_guards>
-CRITICAL READING RULES — apply these BEFORE any approval decision:
-
-1. ZERO-CARDINALITY BDD GUARD.
-   If evidence_bundle.bdd is not null AND evidence_bundle.bdd.scenarios_attempted == 0:
-   treat as ABSENT SIGNAL — do NOT approve based on absence of failure.
-   {surface_feedback}: "BDD oracle ran zero scenarios — no evidence of
-   passing behaviour." Rule: .claude/rules/absence-of-failure-is-not-success.md.
-
-2. ZERO-CARDINALITY TEST GUARD.
-   If evidence_bundle.tests is not null AND evidence_bundle.tests.tests_run == 0:
-   treat as ABSENT SIGNAL — do NOT approve. {surface_feedback}:
-   "No tests ran — cannot verify correctness." Rule:
-   .claude/rules/absence-of-failure-is-not-success.md.
-
-3. SOPHISTICATED-LIE GUARD.
-   If honesty_verification.discrepancies contains entries with
-   severity == "critical" AND claim_type != "file_existence" AND
-   claim_type != "claim_audit": you MUST reject the turn. These are
-   sophisticated lies (test_result, test_count, promise_file_existence
-   fabrications). Structural rejection is mandatory — do not evaluate
-   ACs further. {surface_feedback_decision} naming each discrepancy.
-
-4. LAYER-1 PATH DEMOTION GUARD.
-   If honesty_verification.discrepancies contains exactly ONE entry with
-   claim_type == "file_existence" AND honesty_verification.resolved_paths
-   is non-empty: this discrepancy was Layer-1-resolved by state_bridge
-   identity lookup (the orchestrator moved the task file, not Player
-   dishonesty). Demote to should_fix and continue AC evaluation. Rule:
-   .claude/rules/path-string-mismatch-is-not-dishonesty.md (Layer 2).
-   Cross-check evidence_bundle.severity_recommendations for the
-   structured hint — if present, it confirms this demotion applies.
-
-5. GATHERING-STATUS GUARD.
-   If evidence_bundle.gathering_status != "complete": evidence collection
-   aborted before all fields were populated. Treat any null/None field as
-   ABSENT SIGNAL — do NOT approve. {surface_feedback} with the
-   gathering_status value {verbatim_rationale} so operators can
-   diagnose which stage failed (e.g. "partial_honesty_abort",
-   "partial_gate_abort", "partial_exception"). When status is
-   "partial_exception", also surface evidence_bundle.gathering_error.
-
-6. INDEPENDENT-TEST ABSENT GUARD.
-   If evidence_bundle.independent_tests is not null AND
-   evidence_bundle.independent_tests.signal_absent == true: the Coach's own
-   trust-but-verify pytest run did NOT complete (it timed out or failed at
-   the transport layer before producing a verdict). This is ABSENT SIGNAL,
-   NOT a passing or failing test result — do NOT approve on the basis of the
-   Player's self-reported tests plus the other gates. {surface_feedback}:
-   "Independent test verification did not complete (signal absent) — cannot
-   independently confirm the Player's reported tests." Quote
-   independent_tests.test_output_summary {verbatim_rationale} so
-   operators can see whether it timed out or errored. Rule:
-   .claude/rules/absence-of-failure-is-not-success.md.
-   ONE EXCEPTION TO THE WORDING, NOT TO THE VERDICT: if
-   independent_tests.check_could_not_run == true the command never STARTED —
-   the estate is broken, not the code. Still do NOT approve, but write NO
-   issue asking the Player to fix it: the Player did not cause it and cannot
-   fix it. Say plainly in the rationale that the check could not run and name
-   what was missing.
-
-7. WIRING-EVIDENCE ADVISORY GUARD.
-   If evidence_bundle.wiring, evidence_bundle.mocked_seam, or
-   evidence_bundle.spec_gap is not null AND any of these fields has a
-   non-empty findings list for a FEATURE / REFACTOR / INTEGRATION task:
-   treat the named symbols as candidate dead code (UNWIRED_PATH), suspect
-   acceptance evidence (MOCKED_SEAM), or unexecuted scenarios (SPEC_GAP).
-   Require evidence of registration / real-seam execution before approving.
-   {surface_feedback} unless the Player demonstrates the wiring path.
-   Conversely: a NON-"complete" status (unsupported_stack,
-   parse_degraded, error, skipped_*) with findings:[] is ABSENT
-   evidence — treat it as "probe could not verify", never as a clean
-   wiring verdict.
-   Advisory only — does not override on its own; combines with other
-   guards for the final decision. Rule:
-   .claude/rules/absence-of-failure-is-not-success.md.
-
-8. TRANSIENT-ASSERTION ADVISORY GUARD (invariant-not-snapshot).
-   If {TRANSIENT_ASSERTION_DETECTION_PHRASE}:
-   flag it as a should_fix issue with category "transient_assertion".
-   Tests must assert LASTING INVARIANTS, never point-in-time snapshots of
-   the current task boundary. Judge "later task in this feature" from the
-   context you can see — the task's own scope statement, requirements, and
-   acceptance criteria (e.g. a boundary the requirements name as another
-   task's deliverable); when no such context is available, apply the check
-   only to boundaries the requirements explicitly defer. A boundary pin is
-   legitimate when it is scoped to methods/paths that NO task in this
-   feature will implement and names which task owns each excluded piece.
-   Stub IMPLEMENTATIONS in scaffold tasks remain legitimate per
-   .claude/rules/anti-stub.md — this guard targets TESTS that pin those
-   stubs as permanent behaviour, not the stubs themselves.
-   Advisory only — NEVER reject the turn on this finding alone; it
-   combines with other guards for the final decision.
-
-   9. STUB-SCAN ADVISORY GUARD.
-   If evidence_bundle.stub_scan is not null AND
-   evidence_bundle.stub_scan.findings is non-empty: the L2 anti-stub scan
-   detected symbols that may be stub implementations (pass bodies,
-   NotImplemented, TODO markers). Treat these as advisory — a nonzero
-   stub_scan findings count NEVER changes the Coach decision deterministically.
-   {surface_feedback} only; never reject the turn on stub_scan findings alone.
-   This guard is advisory-only and never overrides any other guard.
-
-10. HERMETIC-ENV ADVISORY GUARD (hermetic-env).
-   If {HERMETIC_ENV_DETECTION_PHRASE}:
-   flag it as a should_fix issue with category "non_hermetic_env_test".
-   A test whose outcome can change with the host environment is not a test
-   of the code — it fails on a loop box and passes on a clean CI box (or
-   vice versa), and its expected-vs-actual diff can print live ambient
-   values into the evidence stream (a leak channel). Judge the "full
-   relevant env-var surface" from the loader code the test exercises — the
-   env vars that loader reads. Fixture DSNs pointing at
-   localhost/127.0.0.1 remain the documented, legitimate pattern.
-   Advisory only — NEVER reject the turn on this finding alone; it
-   combines with other guards for the final decision.
-
-11. ADVISORY HONESTY-RECORD GUARD (a warning never burns a build).
-   If honesty_verification.discrepancies contains entries with
-   severity != "critical" (the claim_audit_unmodified /
-   claim_audit_gitignored / claim_audit_cross_repo family): these are
-   ADVISORY records. (A Layer-2-demoted record renders at should_fix but
-   its Discrepancy.severity REMAINS "critical", so it stays must_fix-class
-   here — the coordinator's cure of the WF coach's framing finding.) They are recorded
-   verbatim on the verdict payload in BOTH directions — an approve carries
-   them too — and they NEVER change the decision. Do NOT reject a turn
-   whose only honesty records are advisory, and never treat
-   honesty_verification.verified == false as a rejection trigger on its own
-   (that flag means "zero discrepancies", not "zero critical ones").
-   Only severity == "critical" records are turn-rejecting — guard 3 owns
-   them. Rule: .claude/rules/path-string-mismatch-is-not-dishonesty.md.
-</absence_of_failure_guards>
-"""
-
-    def _verify_player_claims(
-        self,
-        player_report: Dict[str, Any],
-    ) -> HonestyVerification:
-        """Verify Player's self-reported claims against reality.
-
-        This method uses CoachVerifier to cross-reference Player claims:
-        - Test results vs actual test execution
-        - Claimed files vs filesystem state
-        - Test counts vs parsed output
-
-        Args:
-            player_report: Player's report from current turn
-
-        Returns:
-            HonestyVerification with verification results and honesty score
-
-        Note:
-            Returns a default verification result if verification fails,
-            allowing the workflow to continue while logging the issue.
-        """
-        try:
-            verifier = CoachVerifier(
-                self.worktree_path,
-                venv_python=self._venv_python,
-                evidence_repos=self._evidence_repos,  # TASK-AB-XREPOEV01
-                in_autobuild_context=True,  # WS3-S1 Q1 SPLIT (hard-abort)
-            )
-            verification = verifier.verify_player_report(player_report)
-
-            if verification.discrepancies:
-                logger.warning(
-                    f"Player honesty verification found {len(verification.discrepancies)} "
-                    f"discrepancies (score: {verification.honesty_score:.2f})"
-                )
-                for disc in verification.discrepancies:
-                    logger.warning(
-                        f"  [{disc.severity}] {disc.claim_type}: "
-                        f"claimed {disc.player_claim}, actual {disc.actual_value}"
-                    )
-            else:
-                logger.info(
-                    f"Player claims verified successfully (score: {verification.honesty_score:.2f})"
-                )
-
-            return verification
-
-        except InterpreterResolutionError as exc:
-            # Step 2 (26 October 2026, GKT-120): advice, not a stop. Nothing is
-            # run under the wrong interpreter; the claims cannot be checked
-            # here, and the Coach's own test run says the project's tests
-            # could not be run, which the reviewer reads.
-            logger.warning("Advice, not a stop: Player claims not verified: %s", exc)
-            return HonestyVerification(verified=True, discrepancies=[], honesty_score=1.0)
-        except Exception as e:
-            logger.warning(f"Failed to verify Player claims: {e}")
-            # Return default verification (assume honest) to not block workflow
-            return HonestyVerification(verified=True, discrepancies=[], honesty_score=1.0)
 
     def _bump_activity(self) -> None:
         """Refresh the no-model-activity clock from a substrate callback.
@@ -7332,36 +6119,6 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                         f"Could not recover player report from {candidate}: {e}"
                     )
 
-        # Carry the builder's "this task is already satisfied" claim through.
-        # The report this method builds is assembled from task_work_results,
-        # which keeps only the fields it knows, so the claim would otherwise
-        # be dropped between the builder writing it and the orchestrator
-        # asking the reviewer to verify it. Copied verbatim and never read
-        # here: nothing on this side judges the claim, and nothing here knows
-        # what language the repository is written in.
-        if ALREADY_SATISFIED_FIELD not in report:
-            for candidate in candidate_paths:
-                if not candidate.exists():
-                    continue
-                try:
-                    with open(candidate, "r") as f:
-                        agent_written = json.load(f)
-                except (json.JSONDecodeError, IOError) as e:
-                    logger.debug(
-                        f"Could not read player report at {candidate}: {e}"
-                    )
-                    continue
-                if isinstance(agent_written, dict) and (
-                    ALREADY_SATISFIED_FIELD in agent_written
-                ):
-                    report[ALREADY_SATISFIED_FIELD] = agent_written[
-                        ALREADY_SATISFIED_FIELD
-                    ]
-                    logger.info(
-                        f"Carried the builder's already-satisfied claim "
-                        f"through for {task_id} turn {turn}"
-                    )
-                    break
 
         # TASK-FIX-PIPELINE: File-existence verification fallback (Fix 5)
         # When no completion_promises exist after Fix 2 recovery, generate
@@ -7508,57 +6265,6 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                             task_work_data[key] = after
                             updated = True
 
-                # TASK-FIX-RWOP1.3.1: re-run the agent-invocations gate against
-                # the enriched data. Idempotent when phases/invocations haven't
-                # changed — but this is the last on-disk rewrite before Coach
-                # reads the file, so it MUST carry the freshest validation
-                # block (not a stale one from _write_task_work_results's
-                # initial write, which may have raced pre-enrichment).
-                # TASK-ABSR-1357: thread task_type so declarative tasks don't
-                # trigger a non-actionable Phase-3 advisory.
-                workflow_mode = task_work_data.get("workflow_mode") or "implement-only"
-                task_type = (
-                    task_work_data.get("task_type")
-                    if isinstance(task_work_data.get("task_type"), str)
-                    else self._lookup_task_type(task_id)
-                )
-                new_validation = self._compute_agent_invocations_validation(
-                    task_work_data, workflow_mode, task_type=task_type
-                )
-                if task_work_data.get("agent_invocations_validation") != new_validation:
-                    task_work_data["agent_invocations_validation"] = new_validation
-                    updated = True
-
-                # TASK-FIX-RWOP1.3.2: re-run the plan-audit gate against the
-                # enriched worktree state. After the file-existence fallback
-                # and promise recovery paths above, the worktree may have
-                # gained files the Player didn't report; the auditor scans
-                # the actual filesystem, so re-running here gives Coach the
-                # freshest verdict.
-                new_plan_audit = self._compute_plan_audit_verdict(task_id)
-                if task_work_data.get("plan_audit") != new_plan_audit:
-                    task_work_data["plan_audit"] = new_plan_audit
-                    updated = True
-
-                # TASK-FIX-DF51: re-run the code_review fold against the
-                # enriched data. This is the load-bearing call site: by the
-                # time we get here, _inject_specialist_records_into_task_work_results
-                # has already merged the orchestrator-invoked Phase-5 record
-                # into agent_invocations, so the helper's path-2
-                # (specialist-completion synthesis) can fire. The initial
-                # write at _write_task_work_results runs *before* injection
-                # and therefore won't see the orchestrator-sourced record;
-                # this enrichment writeback is what actually closes the gap
-                # for autobuild runs. Idempotent: returns None when an
-                # existing measured score is already present, leaving the
-                # legacy Player-stream block alone.
-                new_code_review = self._compute_code_review_block(task_work_data)
-                if new_code_review is not None and (
-                    task_work_data.get("code_review") != new_code_review
-                ):
-                    task_work_data["code_review"] = new_code_review
-                    updated = True
-
                 if updated:
                     with open(task_work_results_path, "w") as f:
                         json.dump(task_work_data, f, indent=2)
@@ -7567,72 +6273,6 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                     )
             except (json.JSONDecodeError, IOError) as e:
                 logger.warning(f"Failed to update task_work_results.json: {e}")
-
-    def _run_preflight_ignore_gate(self, task_id: str) -> Optional[str]:
-        """Run the pre-turn-1 ``git check-ignore`` fail-fast gate
-        (TASK-FIX-CAUD-PREFLIGHT-C3B0).
-
-        Closes deferred AC-005 of TASK-FIX-CAUD-J6F1. Walks the task's
-        planned target list through ``git check-ignore -v --no-index``
-        in the worktree. Step 2 (26 October 2026): a planned target that
-        IS git-ignored is advice; one plain line naming it and its rule is
-        returned (``None`` otherwise), and the task goes on.
-
-        Skipped silently when no implementation plan and no frontmatter
-        ``files_to_create`` / ``files_to_modify`` list is available —
-        identical to the no-plan branch in plan-audit, per the AC-005
-        brief.
-        """
-        from guardkit.orchestrator.preflight_ignore_gate import (
-            STATUS_BLOCKED,
-            STATUS_PASSED,
-            STATUS_SKIPPED,
-            run_preflight_ignore_gate,
-        )
-
-        try:
-            result = run_preflight_ignore_gate(task_id, self.worktree_path)
-        except Exception as exc:
-            # Infra-error: log and continue. The Coach still runs the
-            # existence floor at turn end, so a broken pre-flight does
-            # not weaken the overall detection floor — it only loses
-            # the early fail-fast signal.
-            logger.warning(
-                "preflight_ignore_gate raised unexpectedly for %s: %s. "
-                "Continuing without pre-flight.",
-                task_id,
-                exc,
-            )
-            return None
-
-        if result.status == STATUS_PASSED:
-            logger.info(
-                "[%s] preflight_ignore_gate: passed (no planned targets are git-ignored)",
-                task_id,
-            )
-            return None
-        if result.status == STATUS_SKIPPED:
-            logger.info(
-                "[%s] preflight_ignore_gate: skipped (%s)",
-                task_id,
-                result.skip_reason or "no source available",
-            )
-            return None
-        if result.status == STATUS_BLOCKED:
-            named = "; ".join(f"{m.path} (rule {m.rule})" for m in result.matches)
-            advice = (
-                f"Advice: these planned files are ignored by git and will not "
-                f"be committed: {named}."
-            )
-            logger.warning("[%s] preflight_ignore_gate: %s", task_id, advice)
-            return advice
-        # Defensive: unknown status. Log and continue rather than block.
-        logger.warning(
-            "[%s] preflight_ignore_gate: unknown status %r; continuing.",
-            task_id,
-            result.status,
-        )
-        return None
 
     def _record_baseline(self) -> None:
         """Use the admission baseline, never recapture a later HEAD."""
@@ -8180,159 +6820,6 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         """
         return TaskArtifactPaths.agent_report_path(task_id, agent_type, turn, self.worktree_path)
 
-    def _validate_player_report(self, report: Dict[str, Any]) -> None:
-        """Validate Player report has required fields.
-
-        Args:
-            report: Parsed Player report JSON
-
-        Raises:
-            PlayerReportInvalidError: If required fields are missing or wrong type
-        """
-        missing_fields = []
-        type_errors = []
-
-        for field, expected_type in PLAYER_REPORT_SCHEMA.items():
-            if field not in report:
-                missing_fields.append(field)
-            elif not isinstance(report[field], expected_type):
-                type_errors.append(
-                    f"{field}: expected {expected_type.__name__}, "
-                    f"got {type(report[field]).__name__}"
-                )
-
-        if missing_fields or type_errors:
-            error_msg = "Player report validation failed:\n"
-            if missing_fields:
-                error_msg += f"Missing fields: {', '.join(missing_fields)}\n"
-            if type_errors:
-                error_msg += f"Type errors: {', '.join(type_errors)}"
-            raise PlayerReportInvalidError(error_msg)
-
-    def _validate_coach_decision(self, decision: Dict[str, Any]) -> None:
-        """Validate Coach decision has required fields.
-
-        Args:
-            decision: Parsed Coach decision JSON
-
-        Raises:
-            CoachDecisionInvalidError: If required fields are missing or wrong type
-        """
-        missing_fields = []
-        type_errors = []
-
-        for field, expected_type in COACH_DECISION_SCHEMA.items():
-            if field not in decision:
-                missing_fields.append(field)
-            elif not isinstance(decision[field], expected_type):
-                type_errors.append(
-                    f"{field}: expected {expected_type.__name__}, "
-                    f"got {type(decision[field]).__name__}"
-                )
-
-        # Validate decision value
-        if "decision" in decision and decision["decision"] not in ["approve", "feedback"]:
-            type_errors.append(
-                f"decision: must be 'approve' or 'feedback', got '{decision['decision']}'"
-            )
-
-        if missing_fields or type_errors:
-            error_msg = "Coach decision validation failed:\n"
-            if missing_fields:
-                error_msg += f"Missing fields: {', '.join(missing_fields)}\n"
-            if type_errors:
-                error_msg += f"Type errors: {', '.join(type_errors)}"
-            raise CoachDecisionInvalidError(error_msg)
-
-    def _detect_phase4_verifier_infrastructure(
-        self, task_id: str
-    ) -> Optional[Dict[str, Any]]:
-        """Detect the absent/infrastructure Phase-4 markers for ``task_id``.
-
-        2026-07-04 code review (FIX 4). On the ``partial_gate_abort`` route a
-        reconciled-ABSENT deterministic Phase-4 record (zero collected tests
-        from a broken venv — the FEAT-ABL-005 run-4 shape) fails the quality
-        gates, ``gather_evidence`` aborts with ``independent_tests=None``,
-        guard #6 no-ops, and the generic "quality gates failed" framing
-        implies Player quality while the verifier was blind. This helper
-        schema-matches ONLY the machine-readable markers written upstream —
-        never feedback prose:
-
-        * ``specialist_results.json`` → ``phase_4.verifier_infrastructure``
-          / ``phase_4.signal_absent`` (written by
-          ``specialist_invocations._run_deterministic_phase_4``,
-          TASK-AB-ZEROTESTLOUD01 AC-001), which also carries
-          ``resolved_interpreter`` / ``test_command``;
-        * ``task_work_results.json`` →
-          ``quality_gates.reconciled_absent`` (written by the ABFIX-010
-          narrative reconciliation in
-          ``_inject_specialist_records_into_task_work_results``).
-
-        Returns the marker details dict when a marker is present, else
-        ``None``. Fails OPEN on any missing/unreadable input — an absent
-        marker is an ABSENT signal, never assumed infrastructure
-        (``absence-must-survive-every-reconciliation-layer``).
-        """
-        try:
-            phase_4: Dict[str, Any] = {}
-            specialist_path = (
-                TaskArtifactPaths.autobuild_dir(task_id, self.worktree_path)
-                / "specialist_results.json"
-            )
-            if specialist_path.exists():
-                try:
-                    specialist_data = json.loads(specialist_path.read_text())
-                except (OSError, ValueError):
-                    specialist_data = None
-                if isinstance(specialist_data, dict) and isinstance(
-                    specialist_data.get("phase_4"), dict
-                ):
-                    phase_4 = specialist_data["phase_4"]
-
-            marked = (
-                phase_4.get("verifier_infrastructure") is True
-                or phase_4.get("signal_absent") is True
-            )
-            if not marked:
-                results_path = TaskArtifactPaths.task_work_results_path(
-                    task_id, self.worktree_path
-                )
-                if results_path.exists():
-                    try:
-                        task_work_data = json.loads(results_path.read_text())
-                    except (OSError, ValueError):
-                        task_work_data = None
-                    if isinstance(task_work_data, dict):
-                        qg = task_work_data.get("quality_gates")
-                        if (
-                            isinstance(qg, dict)
-                            and qg.get("reconciled_absent") is True
-                        ):
-                            marked = True
-            if not marked:
-                return None
-            return {
-                "resolved_interpreter": phase_4.get("resolved_interpreter"),
-                "test_command": phase_4.get("test_command"),
-                "test_output_summary": phase_4.get("output_summary"),
-            }
-        except Exception as exc:  # noqa: BLE001 — fail OPEN, never raise
-            logger.debug(
-                "FIX 4: verifier-infrastructure marker probe skipped for "
-                "%s: %s",
-                task_id,
-                exc,
-            )
-            return None
-
-    # Log noun per mutation kind, so the WARNING reads naturally
-    # ("in-memory override still applies" / "annotation" / "correction").
-    _PERSIST_KIND_NOUN = {
-        "overridden": "override",
-        "annotated": "annotation",
-        "reconciled": "correction",
-    }
-
     def _persist_coach_decision(
         self,
         decision: Dict[str, Any],
@@ -8359,6 +6846,7 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         correlation); ``kind`` selects the WARNING noun.
         """
         try:
+            coach_output_path.parent.mkdir(parents=True, exist_ok=True)
             coach_output_path.write_text(json.dumps(decision, indent=2))
         except OSError as exc:
             noun = self._PERSIST_KIND_NOUN.get(kind, "override")
@@ -8367,1737 +6855,6 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                 "in-memory %s still applies",
                 tag, kind, coach_output_path, exc, noun,
             )
-
-    def _reconcile_incomplete_evidence_gathering(
-        self,
-        *,
-        decision: Dict[str, Any],
-        evidence_bundle: Optional["CoachEvidenceBundle"],
-        task_id: str,
-        turn: int,
-        coach_output_path: Path,
-    ) -> None:
-        """Fail closed when the Coach approves over an incomplete evidence pass.
-
-        TASK-AB-NULLEVID01. Deterministic backstop for the absence-of-failure
-        guard #5 (``GATHERING-STATUS GUARD`` in
-        ``_render_absence_of_failure_guards``). When ``gather_evidence`` aborts
-        early the bundle is returned with everything downstream ``None`` — and
-        ``independent_tests`` is never constructed, so ``signal_absent`` is
-        never set and ``_reconcile_absent_independent_test_signal`` explicitly
-        no-ops (its ``independent is None`` branch delegates to guard #5). That
-        left guard #5 as prompt text only — an advisory instruction the LLM can
-        ignore (the shape ``structural-defence-beats-prompt-instruction``
-        forbids for a gating invariant). This method makes guard #5
-        load-bearing: it overrides an ``approve`` verdict to ``feedback``
-        whenever the bundle's ``gathering_status`` is not ``"complete"``,
-        independent of what the LLM emitted.
-
-        Firing statuses — every non-``"complete"`` value fires, matching guard
-        #5's ``!= "complete"`` predicate verbatim. Justification per status
-        (see ``GatheringStatus`` in ``coach_evidence.py``):
-
-        * ``partial_honesty_abort`` — honesty produced ``must_fix``
-          discrepancies; gates and independent tests were never run. The
-          legacy decision tree short-circuits to feedback here; an approve is
-          always a false-green (the FEAT-SMP-002 retro case).
-        * ``partial_gate_abort`` — quality gates FAILED
-          (``all_gates_passed=False``); independent tests / requirements were
-          never run. The legacy tree short-circuits via ``_feedback_from_gates``
-          here, and every legitimate conditional-approval clause (infra /
-          collection_error / parallel_contention) requires
-          ``all_gates_passed=True`` — i.e. it can only arise on a ``complete``
-          bundle — so no legitimately-approvable case exists on this status.
-        * ``partial_exception`` — a gathering helper errored before the
-          evidence pass completed; the approval would rest on evidence that was
-          never collected.
-
-        There is no legitimately-approvable non-complete status: the
-        OPERATOR_HANDOFF empty bundle reports ``"complete"``, and the
-        ``complete`` path is the only one that carries a full evidence pass.
-
-        On ``partial_gate_abort``, a valid bundle-owned ``gate_feedback``
-        payload replaces the model's gate narrative for either an ``approve``
-        or ``feedback`` verdict. The payload is accepted only for the current
-        task and integer turn, when its nested issue/result shapes match the
-        source renderer, both skipped downstream legs remain ``None``, and its
-        five serialized quality-gate values exactly match the typed bundle
-        gates (the renderer's two coverage fields, ``coverage_relaxed_by`` and
-        ``coverage_receipt``, may also be present and must then equal the
-        bundle's). A missing, malformed, stale, or mismatched payload retains the
-        generic fail-closed behaviour below.
-
-        Fail-open rules (this guard must not fire on evidence-less legacy
-        paths):
-
-        * ``evidence_bundle is None`` → no-op (legacy/tool-using callers).
-        * ``gathering_status`` attribute missing or ``None`` → no-op (an
-          unknown legacy bundle shape is not positive evidence of an abort).
-        * A ``feedback`` verdict outside a valid ``partial_gate_abort``
-          payload already rejects the turn and is not rewritten.
-
-        Absence stays absent (``absence-must-survive-every-reconciliation-layer``):
-        this guard flips the *verdict* on the grounds of absent evidence. It
-        does NOT forge ``signal_absent``, construct a synthetic
-        ``IndependentTestResult``, or coerce any ``None`` bundle field to
-        ``False`` — so it contributes nothing to the checkpoint
-        consecutive-failure tally (``cp.tests_passed is False`` remains the
-        only thing that counts).
-
-        The on-disk ``coach_turn_N.json`` is rewritten to match the override so
-        the Layer-4 late-approval reconciliation
-        (``feature_orchestrator._check_late_approval`` reads ``decision``
-        straight off disk) cannot resurrect the overridden ``approve``. See
-        ``.claude/rules/deterministic-verdict-override-must-persist-to-disk.md``.
-
-        2026-07-04 code review (FIX 4) extends the ``partial_gate_abort``
-        route with verifier-infrastructure ATTRIBUTION: when the gate failure
-        stems from an ABSENT deterministic Phase-4 signal (the markers
-        ``_detect_phase4_verifier_infrastructure`` schema-matches), the
-        generic "quality gates failed" framing would imply Player quality
-        while the verifier was blind — guard #6 cannot cover this route
-        because ``independent_tests`` is ``None`` on an aborted gather. In
-        that case:
-
-        * the flipped ``approve`` uses the infrastructure framing (guard #6's
-          wording) and its prepended issue carries
-          ``details.verifier_infrastructure=True`` +
-          ``resolved_interpreter`` / ``test_command``, so the
-          TASK-AB-ZEROTESTLOUD01 stall extractor schema-matches this route;
-        * a ``feedback`` verdict over the same shape is ANNOTATED
-          (idempotently) with an APPENDED ``should_fix`` marker issue —
-          verdict and the LLM's rationale untouched (FIX 5 precedent:
-          attribution never outranks the LLM's genuine must_fix issues).
-
-        Fails OPEN to the pre-existing generic framing (and the feedback
-        no-op) whenever the markers are absent.
-
-        Mutates ``decision`` in place. No-op for every case except a valid
-        deterministic ``partial_gate_abort`` feedback replacement, the
-        ``approve`` + non-complete ``gathering_status`` shape above, and the
-        ``feedback`` + marked ``partial_gate_abort`` annotation.
-
-        Args:
-            decision: The loaded, schema-validated Coach verdict dict.
-            evidence_bundle: The bundle the synthesis verdict was built over,
-                or ``None`` for legacy/tool-using callers (no-op when ``None``).
-            task_id: Task identifier (for the WARNING log).
-            turn: Current turn number (for the WARNING log).
-            coach_output_path: Path to ``coach_turn_N.json`` to re-persist on
-                override.
-        """
-        decision_value = decision.get("decision")
-        if decision_value not in ("approve", "feedback"):
-            return
-        if evidence_bundle is None:
-            return
-        gathering_status = getattr(evidence_bundle, "gathering_status", None)
-        if gathering_status is None or gathering_status == "complete":
-            return
-
-        # 2026-07-04 code review (FIX 4): probe the machine-readable Phase-4
-        # markers on the gate-abort route only — the other abort statuses
-        # never ran the Phase-4 gate, so an infra attribution there would be
-        # invented. Absent markers → None → generic framing (fail open).
-        infra_details: Optional[Dict[str, Any]] = None
-        if gathering_status == "partial_gate_abort":
-            infra_details = self._detect_phase4_verifier_infrastructure(
-                task_id
-            )
-
-        gate_feedback: Optional[Dict[str, Any]] = None
-        if gathering_status == "partial_gate_abort":
-            candidate = getattr(evidence_bundle, "gate_feedback", None)
-            gates = getattr(evidence_bundle, "quality_gates", None)
-            if isinstance(candidate, dict) and gates is not None:
-                validation_results = candidate.get("validation_results")
-                serialized_gates = (
-                    validation_results.get("quality_gates")
-                    if isinstance(validation_results, dict)
-                    else None
-                )
-                gate_fields = (
-                    "tests_passed",
-                    "coverage_met",
-                    "arch_review_passed",
-                    "plan_audit_passed",
-                    "all_gates_passed",
-                )
-                identity_matches = (
-                    isinstance(candidate.get("task_id"), str)
-                    and candidate["task_id"] == task_id
-                    and type(turn) is int
-                    and type(candidate.get("turn")) is int
-                    and candidate["turn"] == turn
-                )
-                validation_shape_matches = (
-                    isinstance(validation_results, dict)
-                    and set(validation_results) == {
-                        "quality_gates",
-                        "independent_tests",
-                        "requirements",
-                    }
-                    and validation_results["independent_tests"] is None
-                    and validation_results["requirements"] is None
-                )
-                # The two coverage fields the renderer has written since
-                # 19 September 2026 (B9 Lane C). They are optional here so a
-                # payload rendered before them still matches, and when present
-                # they must equal the bundle's own values. Before 8 October
-                # 2026 the key set had to be exactly the five gate fields, so
-                # every real payload (which carries these two) was refused and
-                # the Player got the model's narrative instead of the gate's
-                # own feedback: build FEAT-895D's coder was never told which
-                # test failed.
-                coverage_fields = ("coverage_relaxed_by", "coverage_receipt")
-                gates_match = (
-                    validation_shape_matches
-                    and isinstance(serialized_gates, dict)
-                    and set(gate_fields) <= set(serialized_gates)
-                    and set(serialized_gates)
-                    <= set(gate_fields) | set(coverage_fields)
-                    and all(
-                        serialized_gates[field]
-                        is getattr(gates, field, object())
-                        for field in gate_fields
-                    )
-                    and all(
-                        serialized_gates[field]
-                        == getattr(gates, field, object())
-                        for field in coverage_fields
-                        if field in serialized_gates
-                    )
-                )
-                issues = candidate.get("issues")
-                issues_match = isinstance(issues, list) and all(
-                    isinstance(issue, dict)
-                    and isinstance(issue.get("severity"), str)
-                    and isinstance(issue.get("category"), str)
-                    and isinstance(issue.get("description"), str)
-                    and isinstance(issue.get("details"), dict)
-                    for issue in issues
-                )
-                if (
-                    identity_matches
-                    and candidate.get("decision") == "feedback"
-                    and issues_match
-                    and isinstance(candidate.get("rationale"), str)
-                    and gates_match
-                ):
-                    gate_feedback = candidate
-
-        feedback_replaced = gate_feedback is not None
-        if gate_feedback is not None:
-            model_decision = decision_value
-            decision["decision"] = "feedback"
-            decision["issues"] = deepcopy(gate_feedback["issues"])
-            decision["rationale"] = gate_feedback["rationale"]
-            decision["validation_results"] = deepcopy(
-                gate_feedback["validation_results"]
-            )
-            decision_value = "feedback"
-            logger.info(
-                "ITEM60: replacing Coach %s gate narrative for %s turn %s "
-                "with deterministic partial-gate feedback.",
-                model_decision,
-                task_id,
-                turn,
-            )
-
-        if decision_value == "feedback":
-            if infra_details is None:
-                if feedback_replaced:
-                    self._persist_coach_decision(
-                        decision,
-                        coach_output_path,
-                        tag="ITEM60",
-                        kind="reconciled",
-                    )
-                # A feedback verdict already rejects the turn. Outside the
-                # valid item-60 replacement above it remains untouched.
-                return
-            already_marked = any(
-                isinstance(issue, dict)
-                and isinstance(issue.get("details"), dict)
-                and issue["details"].get("verifier_infrastructure") is True
-                for issue in decision.get("issues", [])
-                if issue is not None
-            )
-            if already_marked:
-                if feedback_replaced:
-                    self._persist_coach_decision(
-                        decision,
-                        coach_output_path,
-                        tag="ITEM60",
-                        kind="reconciled",
-                    )
-                return
-            resolved_interpreter = infra_details.get("resolved_interpreter")
-            test_command = infra_details.get("test_command")
-            annotation_issue = {
-                # should_fix + APPEND (FIX 5 precedent): attribution, not a
-                # new top-priority defect. The stall extractor schema-matches
-                # details.verifier_infrastructure anywhere in issues.
-                "severity": "should_fix",
-                "category": "absence_of_failure",
-                "description": (
-                    "Verification infrastructure could not collect/run any "
-                    f"tests (interpreter: {resolved_interpreter or 'unknown'}, "
-                    f"command: {test_command or 'unknown'}) — this is NOT a "
-                    "signal about your code; do not rewrite the "
-                    "implementation in response. Check the worktree venv / "
-                    "re-run environment bootstrap so the verifier can "
-                    "produce a verdict."
-                ),
-                "details": {
-                    "gathering_status": gathering_status,
-                    "signal_absent": True,
-                    "verifier_infrastructure": True,
-                    "resolved_interpreter": resolved_interpreter,
-                    "test_command": test_command,
-                },
-            }
-            decision["issues"] = [
-                *decision.get("issues", []),
-                annotation_issue,
-            ]
-            logger.info(
-                "FIX 4 (TASK-AB-ZEROTESTLOUD01 route): annotating Coach "
-                "feedback for %s turn %s with verifier_infrastructure marker "
-                "— partial_gate_abort over an absent Phase-4 signal "
-                "(interpreter=%s, command=%s).",
-                task_id,
-                turn,
-                resolved_interpreter or "unknown",
-                test_command or "unknown",
-            )
-            self._persist_coach_decision(
-                decision,
-                coach_output_path,
-                tag="ITEM60" if feedback_replaced else "FIX 4",
-                kind="reconciled" if feedback_replaced else "annotated",
-            )
-            return
-
-        original_decision = decision["decision"]
-        gathering_error = (
-            getattr(evidence_bundle, "gathering_error", None) or ""
-        ).strip()
-
-        # Name the abort stage so the Player (and operator) can see WHICH
-        # gathering stage never ran, not just that one didn't.
-        abort_stages = {
-            "partial_honesty_abort": (
-                "honesty verification produced must_fix discrepancies; "
-                "quality gates and independent tests were never run"
-            ),
-            "partial_gate_abort": (
-                "quality gates failed; independent tests and requirements "
-                "validation were never run"
-            ),
-            "partial_exception": (
-                "a gathering helper errored before the evidence pass completed"
-            ),
-        }
-        abort_stage = abort_stages.get(
-            gathering_status,
-            "evidence collection aborted before all fields were populated",
-        )
-
-        if infra_details is not None:
-            # 2026-07-04 code review (FIX 4a): the failing Phase-4 gate is an
-            # ABSENT verifier signal — use the infrastructure framing (guard
-            # #6's wording), never the quality-implying generic one.
-            resolved_interpreter = infra_details.get("resolved_interpreter")
-            test_command = infra_details.get("test_command")
-            rationale = (
-                f"Evidence gathering did not complete (gathering_status="
-                f"{gathering_status!r}) — the failing Phase-4 test gate is "
-                "an ABSENT verifier signal, not a Player failure. "
-                "Verification infrastructure could not collect/run any "
-                f"tests (interpreter: {resolved_interpreter or 'unknown'}, "
-                f"command: {test_command or 'unknown'}) — this is NOT a "
-                "signal about your code; do not rewrite the implementation "
-                "in response. Check the worktree venv / re-run environment "
-                "bootstrap so the verifier can produce a verdict."
-            )
-        else:
-            rationale = (
-                f"Evidence gathering did not complete (gathering_status="
-                f"{gathering_status!r}) — {abort_stage}. Every missing evidence "
-                "field is ABSENT SIGNAL, not a pass — cannot approve a turn whose "
-                "evidence gathering never completed. The next turn must produce a "
-                "complete evidence pass (gathering_status == 'complete') before "
-                "an approval can stand."
-            )
-        if gathering_error:
-            rationale += f" Gathering error: {gathering_error}"
-
-        decision["decision"] = "feedback"
-        decision["rationale"] = rationale
-        override_details: Dict[str, Any] = {
-            "gathering_status": gathering_status,
-            "gathering_error": gathering_error or None,
-            "overridden_decision": original_decision,
-        }
-        if infra_details is not None:
-            # FIX 4b: schema-additive marker so the stall extractor
-            # (autobuild._extract_verifier_infrastructure_signal) matches
-            # this route too — keys, never description text.
-            override_details.update(
-                {
-                    "signal_absent": True,
-                    "verifier_infrastructure": True,
-                    "resolved_interpreter": infra_details.get(
-                        "resolved_interpreter"
-                    ),
-                    "test_command": infra_details.get("test_command"),
-                }
-            )
-        override_issue = {
-            "severity": "must_fix",
-            "category": "absence_of_failure",
-            "description": rationale,
-            "details": override_details,
-        }
-        decision["issues"] = [override_issue, *decision.get("issues", [])]
-        if gathering_status == "partial_gate_abort" and gate_feedback is None:
-            # A rejected source payload cannot lend authority to model-authored
-            # nested evidence. Persist an explicit empty result map so the
-            # generic fallback has the same contract in memory and on disk.
-            decision["validation_results"] = {}
-
-        # WARNING with task_id, turn, and the original (overridden) decision.
-        logger.warning(
-            "TASK-AB-NULLEVID01: overriding Coach verdict %r->'feedback' for "
-            "%s turn %s — evidence gathering incomplete "
-            "(gathering_status=%s; absence-of-failure). %s",
-            original_decision,
-            task_id,
-            turn,
-            gathering_status,
-            abort_stage,
-        )
-
-        # Re-persist so the operator-facing coach_turn_N.json and the Layer-4
-        # late-approval reader see the override, not the stale `approve`. A
-        # persistence hiccup must never unblock the turn — the in-memory
-        # override (returned in the result) already rejects it.
-        self._persist_coach_decision(
-            decision, coach_output_path, tag="TASK-AB-NULLEVID01"
-        )
-
-    def _reconcile_absent_independent_test_signal(
-        self,
-        *,
-        decision: Dict[str, Any],
-        evidence_bundle: Optional["CoachEvidenceBundle"],
-        task_id: str,
-        turn: int,
-        coach_output_path: Path,
-    ) -> None:
-        """Fail closed when the Coach's independent-test oracle produced no signal.
-
-        TASK-FIX-COACHFG01. Deterministic backstop for the absence-of-failure
-        guard #6 (``INDEPENDENT-TEST ABSENT GUARD`` in ``_build_coach_prompt``).
-        The toolless-synthesis Coach is *told* not to approve when
-        ``evidence_bundle.independent_tests.signal_absent`` is True, but that
-        instruction is advisory — run-19 showed the local model emit ``approve``
-        anyway after its own trust-but-verify pytest run timed out (300s). This
-        method makes guard #6 load-bearing: it overrides an ``approve`` verdict
-        to ``feedback`` whenever the independent-test oracle signal is absent,
-        independent of what the LLM emitted.
-
-        Narrow and identity-bounded (mirrors
-        ``.claude/rules/absence-of-failure-is-not-success.md``):
-
-        * Only an ``approve`` is overridden. A ``feedback`` verdict already
-          rejects the turn — its decision and rationale are left untouched
-          (TASK-AB-ZEROTESTLOUD01 only ANNOTATES it with the
-          verifier-infrastructure marker issue; see below).
-        * Only ``independent_tests.signal_absent is True`` triggers it. A
-          genuine test *failure* (``tests_passed=False, signal_absent=False``)
-          is NOT this case — it flows through the existing conditional-approval
-          / ``_classify_test_failure`` path unchanged. A bundle with no
-          ``independent_tests`` leg is owned by the gathering_status guard (#5),
-          not this one.
-        * The on-disk ``coach_turn_N.json`` is rewritten to match the override
-          so the operator artifact and the Layer-4 late-approval reconciliation
-          (``feature_orchestrator._check_late_approval`` reads ``decision``
-          straight off disk) cannot resurrect the overridden ``approve``. See
-          ``.claude/rules/harness-cancellation-contract.md``.
-
-        TASK-AB-ZEROTESTLOUD01 extends the same seam with loud, honest
-        ATTRIBUTION (verdict semantics unchanged):
-
-        * The override issue carries a machine-readable
-          ``verifier_infrastructure`` marker plus the resolved interpreter and
-          probed test command (AC-001), and the rationale/description states
-          explicitly that an absent signal is a verification-infrastructure
-          condition, NOT a signal about the Player's code (AC-002).
-        * A ``feedback`` verdict over an absent signal is ANNOTATED with the
-          same marker issue (idempotently; the verdict, and the LLM's own
-          rationale, are left untouched) so every absent-signal turn carries
-          the marker — the stall classifier's verifier-infrastructure
-          extractor (``autobuild._extract_verifier_infrastructure_signal``)
-          schema-matches it across the trailing window, and the Player sees
-          the not-your-code framing instead of an apparent quality rejection
-          (the FEAT-ABL-005 run-4 mis-attribution). The annotation is
-          re-persisted to disk per
-          ``.claude/rules/deterministic-verdict-override-must-persist-to-disk.md``.
-          Per the 2026-07-04 code review (FIX 5) the annotation issue is
-          ``should_fix`` and APPENDED — attribution must never outrank the
-          LLM's genuine must_fix issues; the extractor is position/severity
-          independent.
-
-        Mutates ``decision`` in place. No-op for every case except the
-        ``approve``/``feedback`` + ``signal_absent`` shapes above.
-
-        Args:
-            decision: The loaded, schema-validated Coach verdict dict.
-            evidence_bundle: The bundle the synthesis verdict was built over,
-                or ``None`` for legacy/tool-using callers (no-op when ``None``).
-            task_id: Task identifier (for the WARNING log).
-            turn: Current turn number (for the WARNING log).
-            coach_output_path: Path to ``coach_turn_N.json`` to re-persist on
-                override.
-        """
-        decision_value = decision.get("decision")
-        if decision_value not in ("approve", "feedback"):
-            return
-        if evidence_bundle is None:
-            return
-        independent = evidence_bundle.independent_tests
-        if independent is None or not getattr(independent, "signal_absent", False):
-            return
-
-        # THE CHECK COULD NOT RUN (step 2, 26 October 2026: advice, below).
-        #
-        # 2026-09-11: the Coach's parallel-wave copy of the worktree could
-        # not start the repository's declared test command, so nothing about
-        # the builder's work was measured. That non-result was handed to the
-        # builder as a must-fix five turns running, and on turn five it
-        # deleted two working functions from a module its task never
-        # mentioned. The estate broke; the builder was blamed.
-        #
-        # "The check ran and the result is bad" and "the check could not run"
-        # are different outcomes and must not share this code path. The Coach
-        # marks the second one on its own result
-        # (``IndependentTestResult.check_could_not_run``). Since step 2 it is
-        # advice: the reviewer's decision stands, and the plain sentence
-        # naming the command, the directory and what was missing is added as
-        # one line for the reviewer, the builder and the card.
-        if getattr(independent, "check_could_not_run", False):
-            self._end_turn_as_estate_fault(
-                decision=decision,
-                independent=independent,
-                task_id=task_id,
-                turn=turn,
-                coach_output_path=coach_output_path,
-            )
-            return
-
-        original_decision = decision["decision"]
-        summary = (getattr(independent, "test_output_summary", "") or "").strip()
-        test_command = getattr(independent, "test_command", None)
-
-        # GKT-078, step 1 (24 October 2026): the declared test command ran and
-        # exited 0, and only the test names were not recognised in its output.
-        # Nothing failed, so the verdict is not overridden; the gap is advice.
-        if getattr(independent, "exit_code", None) == 0:
-            advice = (
-                "Advice: the declared test command "
-                f"({test_command or 'unknown'}) exited 0, but no test count was "
-                "recognised in its output, so the tests could not be counted "
-                "independently. "
-                f"Independent-test oracle output: {summary or '<empty>'}"
-            )
-            logger.warning(
-                "GKT-078: %s turn %s — %s (verdict %r left unchanged)",
-                task_id, turn, advice, original_decision,
-            )
-            if decision_value == "approve":
-                decision.setdefault("issues", []).append({
-                    "severity": "should_fix",
-                    "category": "test_count_unrecognised",
-                    "description": advice,
-                    "details": {"signal_absent": True, "exit_code": 0,
-                                "test_command": test_command},
-                })
-                self._persist_coach_decision(
-                    decision, coach_output_path, tag="GKT-078"
-                )
-            return
-
-        # TASK-AB-ZEROTESTLOUD01 (AC-001/AC-002): name the interpreter and
-        # command so the honest framing (and the machine-readable marker) can
-        # say exactly WHAT could not run. Both come from the Coach's own
-        # IndependentTestResult (resolved_interpreter threaded by
-        # TASK-AB-RESUMEVENV01 AC-003).
-        resolved_interpreter = getattr(independent, "resolved_interpreter", None)
-
-        # AC-2: name the cause and quote test_output_summary verbatim so the
-        # operator can see whether the oracle timed out or errored. The leading
-        # sentence mirrors guard #6's prompt wording exactly.
-        # TASK-AB-ZEROTESTLOUD01 (AC-002): follow with the honest
-        # infrastructure framing — an absent signal can never mean "Player
-        # code is bad", so tell the Player not to rewrite the implementation.
-        rationale = (
-            "Independent test verification did not complete (signal absent) — "
-            "cannot independently confirm the Player's reported tests. "
-            "Verification infrastructure could not collect/run any tests "
-            f"(interpreter: {resolved_interpreter or 'unknown'}, "
-            f"command: {test_command or 'unknown'}) — this is NOT a signal "
-            "about your code; do not rewrite the implementation in response. "
-            "Check the worktree venv / re-run environment bootstrap so the "
-            "verifier can produce a verdict. "
-            f"Independent-test oracle output: {summary or '<empty>'}"
-        )
-
-        override_issue = {
-            "severity": "must_fix",
-            "category": "absence_of_failure",
-            "description": rationale,
-            "details": {
-                "signal_absent": True,
-                # TASK-AB-ZEROTESTLOUD01 (AC-001): schema-additive marker —
-                # downstream consumers (stall classifier) match these keys,
-                # never the description text.
-                "verifier_infrastructure": True,
-                "resolved_interpreter": resolved_interpreter,
-                "test_command": test_command,
-                "test_output_summary": summary,
-                # The command's own exit status, when it had one: 0 means it
-                # ran and passed but showed no test running (read by the
-                # stall diagnostic, 23 October 2026).
-                "exit_code": getattr(independent, "exit_code", None),
-                "overridden_decision": original_decision,
-            },
-        }
-
-        if decision_value == "feedback":
-            # TASK-AB-ZEROTESTLOUD01: the verdict already rejects the turn —
-            # annotate only (never touch the decision or the LLM's rationale).
-            # Idempotent: skip when some issue already carries the marker
-            # (e.g. a re-entrant call on the same decision dict).
-            already_marked = any(
-                isinstance(issue, dict)
-                and isinstance(issue.get("details"), dict)
-                and issue["details"].get("verifier_infrastructure") is True
-                for issue in decision.get("issues", [])
-                if issue is not None
-            )
-            if already_marked:
-                return
-            del override_issue["details"]["overridden_decision"]
-            # 2026-07-04 code review (FIX 5): the annotation is ATTRIBUTION,
-            # not a new top-priority defect — emit it as ``should_fix`` and
-            # APPEND it so it never lands ABOVE (and apparently contradicts)
-            # the LLM's genuine must_fix issues (e.g. "AC-003 not delivered —
-            # implement X"). The stall extractor
-            # (``autobuild._extract_verifier_infrastructure_signal``)
-            # schema-matches ``details.verifier_infrastructure`` anywhere in
-            # ``issues`` — severity and position are irrelevant to it. The
-            # APPROVE flip-path override below stays must_fix + prepended
-            # (load-bearing verdict override, untouched).
-            override_issue["severity"] = "should_fix"
-            decision["issues"] = [*decision.get("issues", []), override_issue]
-            logger.info(
-                "TASK-AB-ZEROTESTLOUD01: annotating Coach feedback for %s "
-                "turn %s with verifier_infrastructure marker — independent-"
-                "test oracle signal absent (interpreter=%s, command=%s).",
-                task_id,
-                turn,
-                resolved_interpreter or "unknown",
-                test_command or "unknown",
-            )
-            # Re-persist so the on-disk coach_turn_N.json carries the marker
-            # the stall classifier and operators read
-            # (deterministic-verdict-override-must-persist-to-disk).
-            self._persist_coach_decision(
-                decision, coach_output_path,
-                tag="TASK-AB-ZEROTESTLOUD01", kind="annotated",
-            )
-            return
-
-        decision["decision"] = "feedback"
-        decision["rationale"] = rationale
-        decision["issues"] = [override_issue, *decision.get("issues", [])]
-
-        # AC-3: WARNING with task_id, turn, and the original (overridden) decision.
-        logger.warning(
-            "TASK-FIX-COACHFG01: overriding Coach verdict %r->'feedback' for "
-            "%s turn %s — independent-test oracle signal absent "
-            "(absence-of-failure). Oracle output: %s",
-            original_decision,
-            task_id,
-            turn,
-            summary or "<empty>",
-        )
-
-        # Re-persist so the operator-facing coach_turn_N.json and the Layer-4
-        # late-approval reader see the override, not the stale `approve`. A
-        # persistence hiccup must never unblock the turn — the in-memory
-        # override (returned in the result) already rejects it.
-        self._persist_coach_decision(
-            decision, coach_output_path, tag="TASK-FIX-COACHFG01"
-        )
-
-    def _end_turn_as_estate_fault(
-        self,
-        *,
-        decision: Dict[str, Any],
-        independent: Any,
-        task_id: str,
-        turn: int,
-        coach_output_path: Path,
-    ) -> None:
-        """The project's tests could not be run: advice, never a stop.
-
-        Step 2 (26 October 2026, GKT-079): tests that could not start are
-        not tests that ran and failed. The reviewer's own decision and
-        findings stand; one plain line, the Coach's sentence naming the
-        command, the directory and what was missing, is added for the
-        reviewer, the builder and the card. The turn is not marked as a
-        configuration error, so the loop goes on.
-        """
-        detail = (
-            getattr(independent, "check_could_not_run_detail", None)
-            or getattr(independent, "test_output_summary", None)
-            or "the check could not start, so nothing about the work was measured"
-        )
-        advice = f"The project's tests could not be run: {detail}"
-        logger.warning("%s turn %s: advice, not a stop: %s", task_id, turn, advice)
-        issues = decision.get("issues")
-        if not isinstance(issues, list):
-            issues = []
-            decision["issues"] = issues
-        issues.append({
-            "severity": "should_fix",
-            "category": "tests_could_not_run",
-            "description": advice,
-        })
-        self._persist_coach_decision(
-            decision, coach_output_path, tag="tests-could-not-run",
-            kind="advice",
-        )
-
-    # TASK-FIX-COACHMISREAD01: the two halves of "this finding claims the
-    # independent-test signal was absent". A finding must NAME the signal
-    # (first tuple) AND make an ABSENCE claim about it (second tuple) before
-    # it can be voided. Either half on its own is never enough, so an ordinary
-    # finding that merely mentions tests, or merely says something "did not
-    # run", is left completely alone.
-    _ABSENT_CLAIM_SIGNAL_REFS = (
-        "signal_absent",
-        "signal absent",
-        "independent test",
-        "independent_test",
-        "independent verification",
-        "independently verif",
-        "trust-but-verify",
-        "trust but verify",
-    )
-    _ABSENT_CLAIM_ABSENCE_PHRASES = (
-        "signal_absent=true",
-        "signal_absent = true",
-        'signal_absent": true',
-        "signal absent",
-        "absent signal",
-        "signal is absent",
-        "signal was absent",
-        "did not complete",
-        "did not execute",
-        "did not run",
-        "never completed",
-        "never executed",
-        "never ran",
-        "no signal",
-        "produced no verdict",
-        "was not run",
-        "was not executed",
-        "not completed",
-    )
-
-    @classmethod
-    def _claims_independent_test_signal_absent(cls, issue: Dict[str, Any]) -> bool:
-        """True when ``issue`` asserts the independent-test signal was absent.
-
-        TASK-FIX-COACHMISREAD01 helper. Reads only the free-text fields the
-        coach contracts populate (``description`` carries the v4 ``locus``);
-        a finding must both name the independent-test signal and claim it was
-        absent/incomplete. Deliberately conservative: an unmatched finding is
-        always KEPT, because voiding a genuine objection is the expensive
-        mistake and leaving one standing is the cheap one.
-        """
-        text = " ".join(
-            str(issue.get(field, ""))
-            for field in (
-                "description",
-                "suggestion",
-                "locus",
-                "message",
-                "title",
-                "requirement",
-            )
-        ).lower()
-        if not text.strip():
-            return False
-        names_signal = any(ref in text for ref in cls._ABSENT_CLAIM_SIGNAL_REFS)
-        claims_absence = any(
-            phrase in text for phrase in cls._ABSENT_CLAIM_ABSENCE_PHRASES
-        )
-        return names_signal and claims_absence
-
-    @staticmethod
-    def _is_never_rejecting_finding(issue: Any) -> bool:
-        """True when ``issue`` is a finding that can never reject a turn.
-
-        Exactly one class qualifies: a deterministic honesty record embedded by
-        :mod:`guardkit.orchestrator.coach_narrative_reconciler` (it carries
-        ``details['source'] == DETERMINISTIC_SOURCE``) whose severity is NOT
-        turn-rejecting. That module's own contract is that only a
-        ``critical``-severity honesty record rejects a turn — everything else
-        ("should_fix", "warning", "info") is advisory and "a warning never
-        burns a build" (see its module docstring, LANE-WF).
-
-        Everything else returns False and therefore keeps blocking: a Coach's
-        own objection (no ``details.source``), a ``must_fix`` honesty record,
-        and any shape this method does not recognise. Fail-closed by
-        construction — an unknown finding is never treated as ignorable.
-        """
-        if not isinstance(issue, dict):
-            return False
-        details = issue.get("details")
-        if not isinstance(details, dict):
-            return False
-        if details.get("source") != DETERMINISTIC_SOURCE:
-            return False
-        # Both the rendered issue severity ("must_fix") and the underlying
-        # record severity ("critical") must be non-rejecting. Either one
-        # saying "turn-rejecting" keeps the finding blocking.
-        if issue.get("severity") == "must_fix":
-            return False
-        if details.get("severity") in MUST_FIX_DISCREPANCY_SEVERITIES:
-            return False
-        return True
-
-    def _reconcile_contradicted_absent_test_claim(
-        self,
-        *,
-        decision: Dict[str, Any],
-        evidence_bundle: Optional["CoachEvidenceBundle"],
-        task_id: str,
-        turn: int,
-        coach_output_path: Path,
-    ) -> None:
-        """Void a Coach objection that contradicts the record about a MANDATED skip.
-
-        TASK-FIX-COACHMISREAD01. The exact inverse of
-        :meth:`_reconcile_absent_independent_test_signal`, and its sibling in
-        style, placement and logging. That guard fires when the RECORD says
-        the independent-test signal was absent and the Coach approved anyway;
-        NOTHING handled the mirror image, which build-FEAT-44A8 hit on
-        2026-09-04: for the documentation task TASK-44A8-004 the record said
-        the independent test run was skipped ON PURPOSE (the profile for that
-        task type does not require tests) —
-        ``independent_tests.signal_absent=false``,
-        ``test_command="skipped"``, ``tests.tests_required=false`` — and the
-        Coach nonetheless rejected all three turns with one objection quoting
-        ``"independent_tests.signal_absent=true"``. The verdict was a
-        misreading of the Coach's own evidence: prompt guard #6
-        (``INDEPENDENT-TEST ABSENT GUARD`` in ``_build_coach_prompt``) tells
-        the model to write almost exactly that sentence, but ONLY when the
-        field is true. Receipt:
-        ``forge-state/receipts/build-FEAT-44A8-20260904131328/.guardkit/
-        autobuild-private/TASK-44A8-004``.
-
-        In plain words: when the record shows the test run was skipped because
-        this kind of task does not need tests, and the Coach's objection says
-        the test signal was missing, the objection is factually wrong. It is
-        removed; and if it was the ONLY thing standing between the turn and an
-        approval, the turn is approved with a rationale that says exactly why.
-
-        Narrow and identity-bounded — every one of these must hold before any
-        finding is touched:
-
-        * ``evidence_bundle.gathering_status == "complete"``. A mandated skip
-          is only trustworthy when the evidence pass actually finished; the
-          aborted-gather case belongs to guard #5
-          (:meth:`_reconcile_incomplete_evidence_gathering`), which only ever
-          flips ``approve`` -> ``feedback`` and so would not notice a
-          promotion made here.
-        * ``evidence_bundle.independent_tests`` is present and
-          ``signal_absent is False``. A GENUINE absent signal
-          (``signal_absent is True``) is guard #6's case and MUST keep failing
-          closed exactly as today — this method returns immediately on it.
-        * ``independent_tests.test_command == "skipped"``. A run that actually
-          happened (pass or fail) is out of scope entirely.
-        * The bundle's own gate slice says the task type does not require
-          tests: ``evidence_bundle.tests["tests_required"] is False``. This is
-          what separates the PROFILE-MANDATED skip from the other reason
-          ``test_command`` reads ``"skipped"`` — "no task-specific tests were
-          found" on a profile that DOES require them, which is the zero-test
-          anomaly (``CoachValidator._check_zero_test_anomaly``) and a
-          perfectly legitimate thing to reject over. **Absent-key safety**
-          mirrors :meth:`_apply_spec_gap_absent_guard`: the key must be
-          present and exactly ``False``; a missing key is UNKNOWN and no-ops.
-        * Only findings that BOTH name the independent-test signal AND claim
-          it was absent are voided
-          (:meth:`_claims_independent_test_signal_absent`). Every other
-          finding is kept, untouched, whatever it says.
-        * The decision is promoted ``feedback`` -> ``approve`` ONLY when no
-          finding that could reject the turn survives. One real objection
-          alongside the false one means the turn stays rejected. Findings
-          that could never have rejected the turn do not block the promotion
-          — see :meth:`_is_never_rejecting_finding`; they stay attached to
-          the approve as advisory, and the decision gains
-          ``contradicted_absent_claim_voided_then_approved: true`` so the
-          receipt shows the promotion happened over them.
-
-          Today the live ordering means those advisory honesty records are
-          embedded AFTER this guard runs (by
-          ``_reconcile_coach_narrative_with_records``), so on the first pass
-          ``kept`` is usually empty anyway. This clause is what makes the
-          guard give the same answer whatever the order — and what makes a
-          second call over an already-reconciled decision idempotent instead
-          of newly blocking. The turn-3 receipt from build-FEAT-99E2 (a
-          documentation task of the project that build was for; copied into
-          ``tests/fixtures/coach-misread-2026-09-04/deact-005-turn3/``) is
-          that shape: one false objection plus six
-          ``claim_audit_unmodified`` records at ``should_fix``.
-
-        On any change the decision dict gains machine-readable markers —
-        ``contradicted_absent_claim_voided: true`` and
-        ``contradicted_absent_claim`` (the voided findings verbatim, the
-        record values they contradict, and the overridden decision when the
-        verdict was promoted) — and ``coach_turn_N.json`` is re-persisted, per
-        ``.claude/rules/deterministic-verdict-override-must-persist-to-disk.md``,
-        so the operator artifact and the Layer-4 late-approval reader
-        (``feature_orchestrator._check_late_approval``) see the same verdict
-        the caller does.
-
-        Wired BEFORE the remaining fail-closed guards
-        (:meth:`_apply_spec_gap_absent_guard`,
-        :meth:`_apply_runtime_parity_guard`,
-        :meth:`_apply_independent_test_code_failure_guard`,
-        :meth:`_apply_behavioural_oracle_guard`,
-        :meth:`_apply_spec_conformance_guard`) on purpose: each of those acts
-        only on an ``approve``, so a verdict promoted here is still offered to
-        every one of them and any of them can flip it straight back to
-        ``feedback``. Promoting after them could unblock a turn one of them
-        would have blocked.
-
-        Mutates ``decision`` in place. No-op for every shape except the one
-        above; idempotent (a second call finds no matching finding).
-
-        Args:
-            decision: The loaded, schema-validated Coach verdict dict.
-            evidence_bundle: The bundle the synthesis verdict was built over,
-                or ``None`` for legacy/tool-using callers (no-op when ``None``).
-            task_id: Task identifier (for the WARNING log).
-            turn: Current turn number (for the WARNING log).
-            coach_output_path: Path to ``coach_turn_N.json`` to re-persist on
-                change.
-        """
-        if decision.get("decision") not in ("approve", "feedback"):
-            return
-        if evidence_bundle is None:
-            return
-        # A mandated skip is only trustworthy when the evidence pass actually
-        # finished. On an aborted gather the legs below may be stale or
-        # missing, and guard #5 (_reconcile_incomplete_evidence_gathering)
-        # owns that case — it only ever flips approve->feedback, so it would
-        # not notice a promotion made here.
-        if getattr(evidence_bundle, "gathering_status", None) != "complete":
-            return
-        independent = evidence_bundle.independent_tests
-        if independent is None:
-            return
-        # A genuine absent signal belongs to guard #6 and must keep failing
-        # closed. `is not False` (never `if signal_absent:`) so an unexpected
-        # non-boolean is treated as UNKNOWN and no-ops.
-        if getattr(independent, "signal_absent", None) is not False:
-            return
-        if getattr(independent, "test_command", None) != "skipped":
-            return
-        # Absent-key safety: only a profile that explicitly does NOT require
-        # tests makes the skip mandated. Missing key / True / None => no-op.
-        tests_slice = getattr(evidence_bundle, "tests", None)
-        if (
-            not isinstance(tests_slice, dict)
-            or "tests_required" not in tests_slice
-            or tests_slice["tests_required"] is not False
-        ):
-            return
-
-        issues = decision.get("issues")
-        if not isinstance(issues, list) or not issues:
-            return
-
-        kept: List[Any] = []
-        voided: List[Dict[str, Any]] = []
-        for issue in issues:
-            if isinstance(issue, dict) and self._claims_independent_test_signal_absent(
-                issue
-            ):
-                voided.append(issue)
-            else:
-                kept.append(issue)
-
-        if not voided:
-            return
-
-        original_decision = decision["decision"]
-        summary = (getattr(independent, "test_output_summary", "") or "").strip()
-        voided_text = [str(issue.get("description", "")) for issue in voided]
-
-        decision["issues"] = kept
-        marker: Dict[str, Any] = {
-            "voided_findings": voided,
-            "voided_text": voided_text,
-            "record": {
-                "signal_absent": False,
-                "test_command": "skipped",
-                "tests_required": False,
-                "task_type": getattr(evidence_bundle, "task_type", None),
-                "profile_name": getattr(evidence_bundle, "profile_name", None),
-                "test_output_summary": summary,
-            },
-            "overridden_decision": None,
-        }
-
-        # What is left standing after the false objection is removed. A turn
-        # is promoted when nothing is left, and ALSO when the only things left
-        # are findings that could never have rejected the turn in the first
-        # place — non-critical deterministic honesty records, whose own module
-        # says "a warning never burns a build". Counting those as blockers
-        # would leave the turn rejected with no rejecting reason on it.
-        # Anything else standing (a Coach objection, a critical honesty
-        # record, an unrecognised shape) still blocks: fail-closed.
-        advisory_only = bool(kept) and all(
-            self._is_never_rejecting_finding(issue) for issue in kept
-        )
-        marker["retained_advisory_findings"] = kept if advisory_only else []
-        promoted = original_decision == "feedback" and (not kept or advisory_only)
-        if promoted:
-            marker["overridden_decision"] = original_decision
-            marker["promotion_basis"] = (
-                "advisory_records_only" if advisory_only else "no_findings_remained"
-            )
-            decision["decision"] = "approve"
-            if advisory_only:
-                decision["contradicted_absent_claim_voided_then_approved"] = True
-            decision["rationale"] = (
-                "Approved by a deterministic check, not by the Coach's own "
-                "words. The record for this turn shows the separate "
-                "(independent) test run was skipped ON PURPOSE because this "
-                "task type does not require tests: independent_tests."
-                "signal_absent=false, independent_tests.test_command="
-                "'skipped', tests.tests_required=false"
-                + (f" — recorded note: {summary}" if summary else "")
-                + ". The Coach's only objection said that test signal was "
-                "absent, which contradicts that record, so the objection was "
-                "removed; "
-                + (
-                    (
-                        f"the only thing left standing was {len(kept)} "
-                        "non-critical honesty warning(s), which never reject a "
-                        "turn (they stay attached as advisory), so the turn is "
-                        "approved"
-                    )
-                    if advisory_only
-                    else "nothing else was objected to, so the turn is approved"
-                )
-                + ". A genuinely absent test signal is a different case "
-                "and is still rejected (see "
-                "_reconcile_absent_independent_test_signal)."
-            )
-
-        decision["contradicted_absent_claim_voided"] = True
-        decision["contradicted_absent_claim"] = marker
-
-        if promoted:
-            logger.warning(
-                "TASK-FIX-COACHMISREAD01: overriding Coach verdict "
-                "'feedback'->'approve' for %s turn %s — the record shows a "
-                "profile-mandated independent-test skip (signal_absent=false, "
-                "test_command='skipped', tests_required=false) and the only "
-                "finding contradicted it: %s",
-                task_id,
-                turn,
-                voided_text,
-            )
-        else:
-            logger.warning(
-                "TASK-FIX-COACHMISREAD01: voided %d Coach finding(s) for %s "
-                "turn %s that claimed an absent independent-test signal the "
-                "record contradicts (mandated skip); verdict %r left "
-                "unchanged (%d other finding(s) still stand): %s",
-                len(voided),
-                task_id,
-                turn,
-                original_decision,
-                len(kept),
-                voided_text,
-            )
-
-        # Re-persist so the operator-facing coach_turn_N.json and the Layer-4
-        # late-approval reader see the corrected verdict. A persistence hiccup
-        # must never change the turn's outcome — the in-memory decision
-        # (returned in the result) already governs it.
-        self._persist_coach_decision(
-            decision,
-            coach_output_path,
-            tag="TASK-FIX-COACHMISREAD01",
-            kind="overridden" if promoted else "reconciled",
-        )
-
-    def _apply_spec_gap_absent_guard(
-        self,
-        *,
-        decision: Dict[str, Any],
-        evidence_bundle: Optional["CoachEvidenceBundle"],
-        task_id: str,
-        turn: int,
-        coach_output_path: Path,
-    ) -> None:
-        """Fail closed when SPEC_GAP reports whole-file silent deselection.
-
-        TASK-QAWE-004 AC-013. Deterministic backstop for the SPEC_GAP
-        whole-file deselection hard-gate. Fires **only** when
-        ``spec_gap.whole_file_deselection == True`` — i.e. the ground truth
-        declares ``@task:<TASK-ID>`` scenarios but the BDD plugin ran zero
-        scenarios (``scenarios_attempted`` present and zero).
-
-        This is **absence-of-failure instance #2** (scenario-granularity
-        false-green): the unit oracle reports green over code that was never
-        exercised at the acceptance layer.
-
-        Narrow and identity-bounded:
-
-        * Only an ``approve`` is overridden. A ``feedback`` verdict is left
-          untouched.
-        * Only ``spec_gap.whole_file_deselection is True`` triggers it. A
-          bundle with no ``spec_gap`` leg or ``whole_file_deselection == False``
-          is NOT this case.
-        * **None-safety mirrors `_reconcile_absent_independent_test_signal`:**
-          no-op when ``evidence_bundle is None``,
-          ``evidence_bundle.spec_gap is None``, or
-          ``whole_file_deselection`` absent/falsey.
-        * **CRITICAL absent-key safety:** ``whole_file_deselection`` is set
-          using ``if "scenarios_attempted" in bdd_dict and
-          bdd_dict["scenarios_attempted"] == 0`` — **never**
-          ``.get(..., 0)``, which coerces a missing key to 0 and fires a
-          false-red. A missing key is UNKNOWN.
-
-        Mutates ``decision`` in place. No-op for every case except the single
-        ``approve`` + ``whole_file_deselection`` shape above.
-
-        Args:
-            decision: The loaded, schema-validated Coach verdict dict.
-            evidence_bundle: The bundle the synthesis verdict was built over,
-                or ``None`` for legacy/tool-using callers (no-op when ``None``).
-            task_id: Task identifier (for the WARNING log).
-            turn: Current turn number (for the WARNING log).
-            coach_output_path: Path to ``coach_turn_N.json`` to re-persist on
-                override.
-        """
-        if decision.get("decision") != "approve":
-            return
-        if evidence_bundle is None:
-            return
-        spec_gap = evidence_bundle.spec_gap
-        if spec_gap is None:
-            return
-        if not spec_gap.get("whole_file_deselection", False):
-            return
-
-        original_decision = decision["decision"]
-        ground_truth_count = spec_gap.get("ground_truth_count", 0)
-        executed_count = spec_gap.get("executed_count", 0)
-        bdd_plugin = spec_gap.get("bdd_plugin_name") or "<unknown>"
-
-        # AC-013: name the cause and include ground-truth / executed counts
-        # so the operator can see the exact mismatch.
-        rationale = (
-            f"SPEC_GAP whole-file silent deselection detected: "
-            f"{ground_truth_count} tagged scenario(s) in ground truth, "
-            f"but {executed_count} scenario(s) were attempted by the "
-            f"{bdd_plugin} BDD plugin. No acceptance-layer execution "
-            f"evidence exists for this task."
-        )
-
-        decision["decision"] = "feedback"
-        decision["rationale"] = rationale
-        override_issue = {
-            "severity": "must_fix",
-            "category": "absence_of_failure",
-            "description": rationale,
-            "details": {
-                "whole_file_deselection": True,
-                "ground_truth_count": ground_truth_count,
-                "executed_count": executed_count,
-                "bdd_plugin_name": bdd_plugin,
-                "overridden_decision": original_decision,
-            },
-        }
-        decision["issues"] = [override_issue, *decision.get("issues", [])]
-
-        # WARNING with task_id, turn, and the original (overridden) decision.
-        logger.warning(
-            "TASK-QAWE-004: overriding Coach verdict %r->'feedback' for "
-            "%s turn %s — SPEC_GAP whole-file deselection "
-            "(absence-of-failure at scenario granularity). "
-            "Ground truth: %d, Executed: %d, Plugin: %s",
-            original_decision,
-            task_id,
-            turn,
-            ground_truth_count,
-            executed_count,
-            bdd_plugin,
-        )
-
-        # Re-persist so the operator-facing coach_turn_N.json and the Layer-4
-        # late-approval reader see the override, not the stale `approve`.
-        self._persist_coach_decision(
-            decision, coach_output_path, tag="TASK-QAWE-004"
-        )
-
-    # 2026-09-06: the lines that mean "a column or a table changed" in a
-    # SQLAlchemy model file. Matched against ADDED lines only.
-    _SCHEMA_CHANGE_LINE_RE = re.compile(r"mapped_column\(|Column\(|__tablename__")
-
-    def _apply_schema_change_without_migration_guard(
-        self,
-        *,
-        decision: Dict[str, Any],
-        evidence_bundle: Optional["CoachEvidenceBundle"],
-        task_id: str,
-        turn: int,
-        coach_output_path: Path,
-    ) -> None:
-        """Fail closed when the feature changes a database model but adds no migration.
-
-        Why (2026-09-06). Build ``build-FEAT-8388`` on api_test. On
-        ``TASK-8388-001`` turn 1 the Player added a ``domain`` column to
-        ``src/users/models.py`` (with ``src/users/schemas.py`` and a new
-        ``tests/users/test_user_domain.py``) and no Alembic migration. The
-        coach sent that turn back for an unrelated reason (the independent
-        test run could not collect any tests), the turn was checkpointed
-        anyway (``fcb67c59``), and every verdict after it — ``TASK-8388-001``
-        turn 2 and ``TASK-8388-002`` turn 1, both with no changes in the tree
-        — approved. The unit tests passed, because they build the schema from
-        the model; the behavioural oracle passed, because it was testing a
-        Docker image from July. The deploy into the Docker Sandbox — which
-        builds the schema by running the migrations on a fresh database — then
-        found the users table had no ``domain`` column: 44 checks passed, 6
-        failed, the candidate was refused. Nothing between the Player and the
-        deploy had read the model change against the migrations tree. This
-        guard does, deterministically, on repositories that use Alembic.
-        (``TASK-8388-001``'s records for both turns — the feedback that
-        carried the column in and the approval that let it through — are
-        kept under ``tests/fixtures/schema-change-2026-09-06/`` with their
-        provenance.)
-
-        Fires only when ALL of these hold, else no-op:
-
-        * the worktree has an Alembic tree — ``alembic.ini`` at the root, or
-          ``alembic/env.py``, or ``migrations/env.py``
-          (:meth:`_alembic_migrations_dir`);
-        * the feature's changes add a line matching ``mapped_column(``,
-          ``Column(`` or ``__tablename__`` in a Python file outside the
-          migrations tree and outside ``tests/``;
-        * no file under the migrations tree's ``versions/`` directory has
-          been added or changed by the feature.
-
-        "The feature's changes" are the worktree's difference from the
-        FEATURE'S BASE COMMIT — the commit the feature's worktree was created
-        from — resolved exactly the way guardkit's own seam checks resolve it
-        (:func:`guardkit.orchestrator.seam_checks.resolve_feature_base`: the
-        recorded ``.guardkit/autobuild/<feature>/feature_base.json``, else
-        ``git merge-base HEAD main``). Not ``HEAD``: ``autobuild.py``
-        (``_loop_phase``) checkpoints EVERY completed turn, feedback turns
-        included, so on build-FEAT-8388's real path the model change was
-        already committed by the time either approval was given and a diff
-        against ``HEAD`` would have been silent on the very build this guard
-        exists for. Against the base, a model change committed by an earlier
-        turn's checkpoint (or an earlier task of the same feature) is still
-        seen, and so is a migration added by an earlier turn or task — the
-        guard fires only while the feature as a whole has changed a model
-        without adding a migration. Tracked changes come from
-        ``git diff <base> -U0`` (the added lines); untracked files from
-        ``git status --porcelain --untracked-files=all``; both run with
-        ``-c core.quotePath=false`` so a non-ASCII filename is read as it is.
-        If the base cannot be resolved, or git cannot run in the worktree,
-        the guard no-ops and logs why — an absent signal is never read as a
-        defect (the estate's absence-of-failure rule).
-
-        Narrow and identity-bounded, like :meth:`_apply_spec_gap_absent_guard`:
-        only an ``approve`` is overridden; a ``feedback`` verdict is left
-        untouched. On override, one ``must_fix`` issue (category
-        ``schema_change_without_migration``) is prepended, the verdict is
-        re-persisted, and a WARNING is logged. The issue's plain sentence
-        names the first matching file; ``details`` carries every matching
-        file, the matching lines, the migrations directory looked in, and the
-        base commit the changes were read against. ``evidence_bundle`` is not
-        read — the signal is the worktree itself.
-
-        Args:
-            decision: The loaded, schema-validated Coach verdict dict.
-            evidence_bundle: Unused; accepted so the guard has the same shape
-                as its siblings in the override chain.
-            task_id: Task identifier (for the WARNING log).
-            turn: Current turn number (for the WARNING log).
-            coach_output_path: Path to ``coach_turn_N.json`` to re-persist on
-                override.
-        """
-        if decision.get("decision") != "approve":
-            return
-        worktree = getattr(self, "worktree_path", None)
-        if worktree is None:
-            return
-        worktree = Path(worktree)
-
-        migrations_dir = self._alembic_migrations_dir(worktree)
-        if migrations_dir is None:
-            return
-
-        feature_base = self._feature_base_for_schema_guard(worktree)
-        if feature_base is None:
-            return  # no base to read against; the reason is already logged
-
-        changes = self._feature_changes_for_schema_guard(worktree, feature_base)
-        if changes is None:
-            return  # git could not run; the reason is already logged
-        changed_paths, added_lines_by_file = changes
-
-        versions_prefix = f"{migrations_dir}/versions/"
-        if any(path.startswith(versions_prefix) for path in changed_paths):
-            return
-
-        matches: Dict[str, List[str]] = {}
-        for path in sorted(added_lines_by_file):
-            if not self._is_schema_source_file(path, migrations_dir):
-                continue
-            hits = [
-                line
-                for line in added_lines_by_file[path]
-                if self._SCHEMA_CHANGE_LINE_RE.search(line)
-            ]
-            if hits:
-                matches[path] = hits
-        if not matches:
-            return
-
-        original_decision = decision["decision"]
-        named_file = next(iter(matches))
-        # Rule 12 of the 2026-09-06 spec, verbatim, with the real file and
-        # the real migrations directory.
-        description = (
-            f"`{named_file}` adds or changes a database column, but no Alembic "
-            f"migration was added under `{versions_prefix}`. A freshly created "
-            "database would not have this column, so the deployed app would "
-            "fail on it. Add the migration in this task."
-        )
-
-        decision["decision"] = "feedback"
-        decision["rationale"] = description
-        override_issue = {
-            "severity": "must_fix",
-            "category": "schema_change_without_migration",
-            "description": description,
-            "details": {
-                "file": named_file,
-                "files": list(matches),
-                "matching_lines": matches,
-                "migrations_dir": migrations_dir,
-                "versions_dir": versions_prefix.rstrip("/"),
-                "feature_base": feature_base,
-                "overridden_decision": original_decision,
-            },
-        }
-        decision["issues"] = [override_issue, *decision.get("issues", [])]
-
-        logger.warning(
-            "schema change without migration: overriding Coach verdict "
-            "%r->'feedback' for %s turn %s — %s adds or changes a column or "
-            "table and nothing was added under %s since the feature's base "
-            "commit %s (matching files: %s)",
-            original_decision,
-            task_id,
-            turn,
-            named_file,
-            versions_prefix,
-            feature_base[:8],
-            ", ".join(matches),
-        )
-
-        self._persist_coach_decision(
-            decision, coach_output_path, tag="schema-change-without-migration"
-        )
-
-    @staticmethod
-    def _alembic_migrations_dir(worktree: Path) -> Optional[str]:
-        """The Alembic migrations directory, relative to the worktree, or
-        ``None`` when the worktree has no Alembic tree.
-
-        ``alembic/env.py`` names ``alembic``; ``migrations/env.py`` names
-        ``migrations``; otherwise an ``alembic.ini`` at the root names it by
-        its ``script_location`` (Alembic's own default, ``alembic``, when the
-        value is absent, unreadable, absolute, or a package reference). An
-        ``alembic.ini`` that cannot be parsed is still an Alembic tree.
-        """
-        if (worktree / "alembic" / "env.py").is_file():
-            return "alembic"
-        if (worktree / "migrations" / "env.py").is_file():
-            return "migrations"
-        ini = worktree / "alembic.ini"
-        if not ini.is_file():
-            return None
-        location = "alembic"
-        try:
-            import configparser
-
-            parser = configparser.ConfigParser(interpolation=None)
-            parser.read(ini, encoding="utf-8")
-            value = parser.get("alembic", "script_location", fallback="")
-            value = value.replace("%(here)s", "").strip().strip("/")
-            if value and not value.startswith("/") and ":" not in value:
-                location = value
-        except Exception:  # noqa: BLE001 — an unreadable ini still means Alembic
-            pass
-        return location.rstrip("/") or "alembic"
-
-    @staticmethod
-    def _is_schema_source_file(path: str, migrations_dir: str) -> bool:
-        """True for a Python file outside ``tests/`` (at any depth) and
-        outside the migrations tree — the files whose added column or table
-        lines this guard reads."""
-        if not path.endswith(".py"):
-            return False
-        parts = path.split("/")
-        if "tests" in parts[:-1]:
-            return False
-        if path == migrations_dir or path.startswith(migrations_dir + "/"):
-            return False
-        return True
-
-    @staticmethod
-    def _added_lines_from_unified_diff(text: str) -> Dict[str, List[str]]:
-        """The added lines of a ``git diff`` (unified, ``-U0`` or not), keyed
-        by the post-image path. A deleted file (``+++ /dev/null``) contributes
-        nothing. A ``+++`` line is a file header only when it follows a
-        ``---`` header, so an added content line beginning ``++`` is not
-        mistaken for one."""
-        added: Dict[str, List[str]] = {}
-        current: Optional[str] = None
-        previous_was_minus_header = False
-        for line in text.splitlines():
-            if line.startswith("+++ ") and previous_was_minus_header:
-                target = line[4:].strip()
-                if target == "/dev/null":
-                    current = None
-                else:
-                    if target.startswith('"') and target.endswith('"'):
-                        target = target[1:-1]
-                    if target.startswith("b/"):
-                        target = target[2:]
-                    current = target
-                    added.setdefault(current, [])
-                previous_was_minus_header = False
-                continue
-            previous_was_minus_header = line.startswith("--- ")
-            if line.startswith("diff --git") or line.startswith("@@"):
-                continue
-            if current is not None and line.startswith("+"):
-                added[current].append(line[1:])
-        return added
-
-    @staticmethod
-    def _feature_base_for_schema_guard(worktree: Path) -> Optional[str]:
-        """The feature's base commit, or ``None`` (logged at WARNING) when it
-        cannot be resolved.
-
-        Read exactly the way guardkit's seam checks read it
-        (:func:`guardkit.orchestrator.seam_checks.resolve_feature_base`): the
-        recorded ``.guardkit/autobuild/<feature>/feature_base.json`` under
-        the worktree, else ``git merge-base HEAD main``. An unresolvable base
-        (an older worktree with no record and no ``main``, a directory that
-        is not a repository, or git unable to run) is an absent signal, never
-        a defect: the guard stays out of the verdict.
-        """
-        from guardkit.orchestrator.seam_checks import resolve_feature_base
-
-        base = resolve_feature_base(worktree)
-        if not base:
-            logger.warning(
-                "schema change without migration: the feature's base commit "
-                "could not be resolved in %s (no recorded feature_base.json "
-                "and no merge-base with main); the turn is judged without "
-                "this guard",
-                worktree,
-            )
-            return None
-        return base
-
-    def _feature_changes_for_schema_guard(
-        self, worktree: Path, feature_base: str
-    ) -> Optional[Tuple[List[str], Dict[str, List[str]]]]:
-        """The feature's changes since its base commit as git sees them, or
-        ``None`` when git could not run in the worktree (the reason is logged
-        at WARNING).
-
-        Returns ``(paths, added_lines_by_file)``: every path changed since
-        ``feature_base`` (committed by a checkpoint or still uncommitted) or
-        untracked, and the added lines per file — from
-        ``git diff <base> -U0`` for tracked files, and the whole file for an
-        untracked Python file. Runs ``git diff <base> --name-only`` (so a
-        changed ``versions/`` file with no added lines is still named),
-        ``git diff <base> -U0`` and ``git status --porcelain
-        --untracked-files=all`` under the class git lock, like
-        :meth:`_detect_git_changes`. Every command runs with
-        ``-c core.quotePath=false`` so a filename with non-ASCII characters
-        is printed as it is rather than as octal escapes; a name git still
-        quotes (a double-quote, a backslash or a control character in it) is
-        unquoted. ``--untracked-files=all`` so a new file inside a new
-        directory — the first migration in an empty ``versions/`` — is named
-        rather than folded into its directory.
-        """
-        import subprocess
-
-        def run(args: List[str]) -> "subprocess.CompletedProcess[str]":
-            return run_git(
-                ["-c", "core.quotePath=false", *args],
-                cwd=worktree,
-                encoding="utf-8",
-                errors="replace",
-                timeout=30,
-            )
-
-        with self._git_lock:
-            try:
-                name_only = run(["diff", feature_base, "--name-only"])
-                diff = run(["diff", feature_base, "-U0", "--no-color", "--no-ext-diff"])
-                status = run(["status", "--porcelain", "--untracked-files=all"])
-            except subprocess.TimeoutExpired:
-                logger.warning(
-                    "schema change without migration: git timed out in %s; "
-                    "the turn is judged without this guard",
-                    worktree,
-                )
-                return None
-            except Exception as exc:  # noqa: BLE001 — no git is not a defect
-                logger.warning(
-                    "schema change without migration: git could not run in "
-                    "%s (%s: %s); the turn is judged without this guard",
-                    worktree,
-                    exc.__class__.__name__,
-                    exc,
-                )
-                return None
-
-        for label, proc in (
-            (f"diff {feature_base[:8]} --name-only", name_only),
-            (f"diff {feature_base[:8]} -U0", diff),
-            ("status --porcelain", status),
-        ):
-            if proc.returncode != 0:
-                logger.warning(
-                    "schema change without migration: `git %s` failed in %s "
-                    "(exit %s: %s); the turn is judged without this guard",
-                    label,
-                    worktree,
-                    proc.returncode,
-                    (proc.stderr or "").strip()[:300],
-                )
-                return None
-
-        paths = [line.strip() for line in name_only.stdout.splitlines() if line.strip()]
-        added = self._added_lines_from_unified_diff(diff.stdout)
-
-        untracked: List[str] = []
-        for line in status.stdout.splitlines():
-            if not line.startswith("?? "):
-                continue
-            path = line[3:].strip()
-            if path.startswith('"') and path.endswith('"'):
-                path = path[1:-1]
-            untracked.append(path)
-        paths.extend(untracked)
-
-        for path in untracked:
-            if not path.endswith(".py"):
-                continue
-            try:
-                added[path] = (worktree / path).read_text(
-                    encoding="utf-8", errors="replace"
-                ).splitlines()
-            except OSError:
-                continue
-
-        return paths, added
-
-    def _record_zero_test_observation(
-        self,
-        *,
-        decision: Dict[str, Any],
-        evidence_bundle: Optional["CoachEvidenceBundle"],
-        task_id: str,
-        turn: int,
-        coach_output_path: Path,
-        env: Optional[Dict[str, str]] = None,
-    ) -> None:
-        """Write down what the zero-test rule observed. Change nothing else.
-
-        Rich's ruling, 2026-08-21: record facts, interpret nothing. So this
-        method does two jobs, and only the first one runs by default:
-
-        1. **Always**, when the rule fired: write a durable row holding the
-           observations — what the Player's report listed, which names the
-           recogniser accepted and under which naming convention, which names
-           it was never run on, which accepted names were found on disk, what
-           the Coach's own independent test run recorded, what the report
-           claimed about its quality gates, and what the Coach decided. No
-           field on that row states a conclusion; see
-           :mod:`guardkit.orchestrator.zero_test_gate`.
-
-        2. **Only when ``GUARDKIT_ZERO_TEST_BLOCKING`` is set**: change an
-           ``approve`` verdict to ``feedback``, handing the Player the same
-           observations. Without that variable this method never changes a
-           verdict — it is a recorder.
-
-        Detection is not done here. It was done in
-        ``CoachValidator.gather_evidence`` by running the legacy rule
-        ``_check_zero_test_anomaly`` unchanged; this method only reads
-        ``evidence_bundle.zero_test``.
-
-        No-ops when the bundle is absent (legacy / tool-using callers), when
-        the ``zero_test`` field is ``None`` (evidence gathering stopped
-        early — a dishonest report or a failed quality gate, both of which
-        stop the legacy path here too), or when the rule did not fire. The
-        override half additionally never touches a ``feedback`` verdict; only
-        an ``approve`` is ever changed.
-
-        Never raises: a recorder that can break a build is worse than none.
-
-        Args:
-            decision: The loaded, schema-validated Coach verdict dict.
-            evidence_bundle: The bundle the verdict was built over, or ``None``.
-            task_id: Task identifier.
-            turn: Current turn number.
-            coach_output_path: ``coach_turn_N.json``, re-persisted on override.
-            env: Environment mapping for the blocking flag. Defaults to the
-                real process environment; injectable for tests.
-        """
-        if evidence_bundle is None:
-            return
-        observation = getattr(evidence_bundle, "zero_test", None)
-        if not isinstance(observation, dict) or not observation.get("rule_fired"):
-            return
-
-        blocking = zero_test_gate.blocking_requested(env)
-        original_decision = decision.get("decision")
-        should_override = blocking and original_decision == "approve"
-
-        # ---- job 1: the row (always) -----------------------------------
-        record: Optional[Dict[str, Any]] = None
-        try:
-            repo_root = self._resolve_repo_root()
-            record = zero_test_gate.build_record(
-                observation=observation,
-                task_id=task_id,
-                turn=turn,
-                worktree_dir=self._zero_test_worktree_dir(),
-                repo=(repo_root or self.worktree_path).name,
-                repo_path=str(repo_root or self.worktree_path),
-                coach_decision=original_decision,
-                blocking_env_var_set=blocking,
-                decision_changed=should_override,
-            )
-            zero_test_gate.write_record(
-                record,
-                worktree_path=self.worktree_path,
-                repo_root=repo_root,
-                task_id=task_id,
-                turn=turn,
-                # Same mapping the blocking flag is read from, so a test can
-                # point the durable ledger at a temporary directory instead
-                # of the real one under the user's home.
-                env=env,
-            )
-        except Exception as exc:  # noqa: BLE001 — a recorder must never break a build
-            logger.warning(
-                "zero-test rule: failed to write the row for %s turn %s "
-                "(%s); the turn is unaffected.",
-                task_id,
-                turn,
-                exc.__class__.__name__,
-            )
-
-        if not should_override:
-            logger.info(
-                "zero-test rule fired for %s turn %s (severity=%s); the Coach "
-                "decision %r is unchanged. Set %s=1 to make it change.",
-                task_id,
-                turn,
-                observation.get("rule_severity"),
-                original_decision,
-                zero_test_gate.BLOCKING_ENV_VAR,
-            )
-            return
-
-        # ---- job 2: the override (only when explicitly asked for) -------
-        # The message hands the Player the observations and nothing else. It
-        # tells it nothing about what it did or failed to do, because this
-        # instrument does not know that — and a Player told "you wrote no
-        # test" when its test exists in a language the recogniser has never
-        # heard of goes and fixes the wrong thing.
-        observed = zero_test_gate.render_observation(record or observation)
-        rationale = (
-            f"{zero_test_gate.BLOCKING_ENV_VAR} is set, so the Coach's "
-            f"{original_decision!r} verdict for this turn was changed to "
-            "'feedback' when CoachValidator._check_zero_test_anomaly fired. "
-            "What was observed, and nothing beyond it:\n"
-            f"{observed}\n"
-            "Read those and answer them. If a test for this turn exists, say "
-            "where it is and what command runs it."
-        )
-        decision["decision"] = "feedback"
-        decision["rationale"] = rationale
-        decision["issues"] = [
-            {
-                "severity": "must_fix",
-                "category": zero_test_gate.ANOMALY_CATEGORY,
-                "description": rationale,
-                "details": dict(record or observation),
-            },
-            *decision.get("issues", []),
-        ]
-        logger.warning(
-            "zero-test rule: changing Coach verdict %r->'feedback' for %s "
-            "turn %s — %s is set.",
-            original_decision,
-            task_id,
-            turn,
-            zero_test_gate.BLOCKING_ENV_VAR,
-        )
-        self._persist_coach_decision(
-            decision, coach_output_path, tag="zero-test-observation"
-        )
-
-    def _zero_test_worktree_dir(self) -> Optional[str]:
-        """The name of the directory this build is running in, or ``None``.
-
-        GuardKit builds run inside ``<repo>/.guardkit/worktrees/<id>/``, where
-        ``<id>`` is a feature identifier for a feature build and a task
-        identifier for a single-task build. The row records the directory
-        name, which is what is known; it does not guess which of the two it
-        is. ``None`` when the build is not running in a worktree at all.
-        """
-        if self._resolve_repo_root() is None:
-            return None
-        return self.worktree_path.name
 
     def _apply_runtime_parity_guard(
         self,
@@ -10119,8 +6876,7 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         root on ``sys.path`` so imports resolve, but a standalone
         ``python <module>`` invocation does not.
 
-        Narrow and absence-of-failure-safe (mirrors
-        :meth:`_apply_spec_gap_absent_guard`):
+        Narrow:
 
         * Only an ``approve`` is overridden; a ``feedback`` verdict is untouched.
         * No-op when ``evidence_bundle`` or ``evidence_bundle.runtime_parity``
@@ -10245,6 +7001,49 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
             decision, coach_output_path, tag="TASK-AB-COACHRUNPARITY01"
         )
 
+    def _apply_security_check_guard(
+        self,
+        *,
+        decision: Dict[str, Any],
+        evidence_bundle: Optional["CoachEvidenceBundle"],
+        task_id: str,
+        turn: int,
+        coach_output_path: Path,
+    ) -> None:
+        """Send the turn back when the secrets check found a secret.
+
+        A safety fence the cull keeps (brief item 4). Only a run that exited
+        non-zero changes the decision; the check exits non-zero only for a
+        confirmed secret. Mutates ``decision`` and re-persists it.
+        """
+        if decision.get("decision") not in ("approve", "feedback"):
+            return
+        result = getattr(evidence_bundle, "security_check", None)
+        if not isinstance(result, dict) or not result.get("ran") or result.get("passed"):
+            return
+        output = str(result.get("output_tail") or "")[-2000:]
+        description = (
+            "The secrets check found what looks like a secret in this task's "
+            "changes; read it from the environment or a secret file instead."
+        )
+        decision["decision"] = "feedback"
+        decision["rationale"] = description
+        decision["issues"] = [
+            {
+                "severity": "must_fix",
+                "category": "secret_in_change",
+                "description": description,
+                "test_output": output,
+            },
+            *decision.get("issues", []),
+        ]
+        logger.warning(
+            "[%s] Turn %s sent back: the secrets check found a secret.", task_id, turn,
+        )
+        self._persist_coach_decision(
+            decision, coach_output_path, tag="security-check"
+        )
+
     def _apply_independent_test_code_failure_guard(
         self,
         *,
@@ -10270,9 +7069,7 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         * the task type's profile has ``tests_required`` (any type).
         * ``independent_tests`` RAN and FAILED: ``tests_passed is False`` AND
           ``signal_absent is False``. An ABSENT signal (including
-          ``check_could_not_run``) is owned by
-          :meth:`_reconcile_absent_independent_test_signal` and is never
-          blocked here (``absence-of-failure-is-not-success.md``).
+          ``check_could_not_run``) sends nothing back.
         * the baseline exception did not cover it: ``_apply_baseline_diff``
           reports a run as passed when every failure was verified as
           pre-existing, so ``tests_passed is False`` here means it did not.
@@ -10327,286 +7124,32 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
             decision, coach_output_path, tag="TASK-ABFIX-012"
         )
 
-    @staticmethod
-    def _validate_required_behavioural_oracle_result(
-        declaration: Dict[str, Any],
-        oracle: Any,
-    ) -> Optional[str]:
-        """Return an actionable reason when required evidence is incomplete."""
-        command = declaration.get("command")
-        expected_exit = declaration.get("expected_exit", 0)
-        expected_checks = declaration.get("expected_checks")
-        checker_path = declaration.get("checker_path")
-        checker_sha256 = declaration.get("checker_sha256")
-        source_paths = declaration.get("source_paths")
-        if (
-            not isinstance(command, str)
-            or not command
-            or isinstance(expected_exit, bool)
-            or not isinstance(expected_exit, int)
-            or isinstance(expected_checks, bool)
-            or not isinstance(expected_checks, int)
-            or expected_checks < 1
-            or not isinstance(checker_path, str)
-            or not checker_path
-            or not isinstance(checker_sha256, str)
-            or not re.fullmatch(r"[0-9a-f]{64}", checker_sha256)
-            or not isinstance(source_paths, list)
-            or not source_paths
-            or any(not isinstance(path, str) or not path for path in source_paths)
-            or len(set(source_paths)) != len(source_paths)
-        ):
-            return "the authoritative required declaration is malformed"
-        if not isinstance(oracle, dict):
-            return "required behavioural-oracle evidence is absent or not a mapping"
-        if oracle.get("status") != "ran":
-            return "required behavioural-oracle status is not 'ran'"
-        if oracle.get("passed") is not True:
-            return "required behavioural-oracle result did not pass"
-        if oracle.get("timed_out") is not False:
-            return "required behavioural-oracle result timed out or omitted timed_out=false"
-        if oracle.get("command") != command:
-            return "required behavioural-oracle command does not match its declaration"
-        observed_expected = oracle.get("expected_exit")
-        observed_exit = oracle.get("exit_code")
-        if (
-            isinstance(observed_expected, bool)
-            or not isinstance(observed_expected, int)
-            or isinstance(observed_exit, bool)
-            or not isinstance(observed_exit, int)
-            or observed_expected != expected_exit
-            or observed_exit != expected_exit
-        ):
-            return "required behavioural-oracle exit evidence is missing or contradictory"
-
-        receipt_validation = oracle.get("receipt_validation")
-        if not isinstance(receipt_validation, dict):
-            return "required behavioural-oracle receipt validation is missing"
-        if any(
-            receipt_validation.get(flag) is not True
-            for flag in ("valid", "fresh", "confined", "regular_file")
-        ) or not isinstance(receipt_validation.get("path"), str) or not receipt_validation["path"]:
-            return "required behavioural-oracle receipt is not valid, fresh, confined, and regular"
-        receipt = oracle.get("receipt")
-        count_names = ("run", "failures", "errors", "skipped")
-        if not isinstance(receipt, dict) or any(
-            type(receipt.get(name)) is not int or receipt[name] < 0
-            for name in count_names
-        ):
-            return "required behavioural-oracle receipt counts are missing or malformed"
-        if receipt["run"] != expected_checks:
-            return "required behavioural-oracle receipt has the wrong check count"
-        if any(receipt[name] != 0 for name in ("failures", "errors", "skipped")):
-            return "required behavioural-oracle receipt reports failed, errored, or skipped checks"
-
-        def valid_snapshot(snapshot: Any) -> bool:
-            return (
-                isinstance(snapshot, dict)
-                and isinstance(snapshot.get("resolved_path"), str)
-                and bool(snapshot["resolved_path"])
-                and type(snapshot.get("device")) is int
-                and snapshot["device"] >= 0
-                and type(snapshot.get("inode")) is int
-                and snapshot["inode"] >= 0
-                and snapshot.get("regular") is True
-                and isinstance(snapshot.get("sha256"), str)
-                and re.fullmatch(r"[0-9a-f]{64}", snapshot["sha256"]) is not None
-            )
-
-        checker = oracle.get("checker_identity")
-        if (
-            not isinstance(checker, dict)
-            or checker.get("declared_path") != checker_path
-            or checker.get("expected_sha256") != checker_sha256
-            or not valid_snapshot(checker.get("before"))
-            or not valid_snapshot(checker.get("after"))
-            or checker["before"] != checker["after"]
-            or checker["before"]["sha256"] != checker_sha256
-        ):
-            return "required behavioural-oracle checker identity is missing or changed"
-
-        identities = oracle.get("source_identities")
-        if not isinstance(identities, list) or len(identities) != len(source_paths):
-            return "required behavioural-oracle source identities are missing or have extras"
-        by_path: Dict[str, Dict[str, Any]] = {}
-        for identity in identities:
-            if not isinstance(identity, dict):
-                return "required behavioural-oracle source identity is malformed"
-            declared_path = identity.get("declared_path")
-            if not isinstance(declared_path, str) or declared_path in by_path:
-                return "required behavioural-oracle source identities contain duplicates"
-            by_path[declared_path] = identity
-        if set(by_path) != set(source_paths):
-            return "required behavioural-oracle source identities do not match the declaration"
-        for path in source_paths:
-            identity = by_path[path]
-            if (
-                not valid_snapshot(identity.get("before"))
-                or not valid_snapshot(identity.get("after"))
-                or identity["before"] != identity["after"]
-            ):
-                return f"required behavioural-oracle source identity changed: {path}"
-        return None
-
     def _apply_behavioural_oracle_guard(
         self,
         *,
         decision: Dict[str, Any],
         evidence_bundle: Optional["CoachEvidenceBundle"],
-        behavioural_oracle_declaration: Optional[Dict[str, Any]] = None,
         task_id: str,
         turn: int,
         coach_output_path: Path,
     ) -> None:
-        """Fail closed when the Coach's behavioural oracle ran and failed.
+        """Send the turn back when the declared behavioural check ran and failed.
 
-        TASK-QAV-004. Deterministic backstop for the L4 behavioural round-trip
-        oracle gate. When ``evidence_bundle.behavioural_oracle`` reports a
-        ran-and-failed outcome, override an ``approve`` verdict to ``feedback``
-        with a ``must_fix`` issue naming the oracle and its failure output.
-
-        Outcome policy (consolidation + ASSUM-005/006):
-
-        * **ran-and-failed** (``status == "ran"``, ``passed == False``) → hard
-          RED override to ``feedback``.
-        * **started-then-timed-out** (``timed_out == True``) → treated as
-          ran-and-failed (fires the override). A deliverable that hangs is a
-          real defect (COACHRUNPARITY01 semantics).
-        * **failed-to-start / runner error / absent** (``status != "ran"`` or
-          ``passed is not False``) → ABSENT (WARN only, never a pass, never a
-          block). No override fires.
-        * **not_independent** (Player-authored oracle) → recorded as
-          ``not_independent`` with a ``should_fix`` warning. Neither passes
-          nor blocks. No override fires.
-
-        Discovery is by artefact presence (``.claude/rules/activate-by-artefact-
-        not-opt-in-flag.md``): an oracle file at the convention path
-        ``tests/acceptance/*_roundtrip.py`` in the worktree, or — for non-file
-        oracles only — a ``behavioural_oracle.command`` declared in the feature
-        YAML (genuine operator policy with no artefact proxy).
-
-        Independence check (ASSUM-004): the oracle file must NOT be in the
-        turn's authored set (``files_authored`` when present, else
-        ``files_created ∪ files_modified``). A Player-authored oracle degrades
-        to ``not_independent`` + a warning — it is never trusted as independent
-        evidence.
-
-        Narrow and identity-bounded (mirrors
-        ``.claude/rules/absence-of-failure-is-not-success.md``):
-
-        * Only an ``approve`` is overridden. A ``feedback`` verdict is left
-          untouched (the guard does not annotate feedback — only the absent
-          independent-test guard does that).
-        * Only ``status == "ran"`` and ``passed == False`` triggers the override.
-          A passing oracle (``passed == True``) is a no-op (AC-4).
-        * **None-safety mirrors the existing guard archetype:** no-op when
-          ``evidence_bundle is None``, ``evidence_bundle.behavioural_oracle is
-          None``, or the outcome is anything but ran-and-failed (AC-3).
-        * **Timeout asymmetry:** ``timed_out == True`` → ran-and-failed (AC-6).
-          ``status != "ran"`` (failed-to-start) → absent, no override (AC-6).
-
-        Mutates ``decision`` in place and re-persists ``coach_turn_N.json``.
-
-        Args:
-            decision: The loaded, schema-validated Coach verdict dict.
-            evidence_bundle: The bundle the synthesis verdict was built over,
-                or ``None`` for legacy/tool-using callers (no-op when ``None``).
-            task_id: Task identifier (for the WARNING log).
-            turn: Current turn number (for the WARNING log).
-            coach_output_path: Path to ``coach_turn_N.json`` to re-persist on
-                override.
+        TASK-QAV-004. Only a ran-and-failed outcome (``status == "ran"`` and
+        ``passed`` not true, a timeout included) changes the decision; a check
+        that did not run, or passed, changes nothing. Mutates ``decision`` in
+        place and re-persists ``coach_turn_N.json``.
         """
         decision_value = decision.get("decision")
         if decision_value not in ("approve", "feedback"):
             return
-        required = (
-            isinstance(behavioural_oracle_declaration, dict)
-            and behavioural_oracle_declaration.get("required") is True
-        )
-        if required:
-            oracle = (
-                getattr(evidence_bundle, "behavioural_oracle", None)
-                if evidence_bundle is not None
-                else None
-            )
-            failure = self._validate_required_behavioural_oracle_result(
-                behavioural_oracle_declaration, oracle
-            )
-            if failure is None:
-                return
-            producer_reason = oracle.get("reason") if isinstance(oracle, dict) else None
-            output_value = oracle.get("output_tail") if isinstance(oracle, dict) else None
-            output_tail = (
-                output_value.strip()
-                if isinstance(output_value, str)
-                else ""
-            )
-            rationale = (
-                "Required behavioural oracle FAILED: "
-                f"{failure}. Producer reason: {producer_reason or '<none>'}. "
-                f"Failure output: {output_tail or '<empty>'}"
-            )
-            issue = {
-                "severity": "must_fix",
-                "category": "behavioural_oracle_failure",
-                "description": rationale,
-                "test_output": output_tail,
-                "details": {
-                    "validation_failure": failure,
-                    "producer_reason": producer_reason,
-                    "receipt": oracle.get("receipt") if isinstance(oracle, dict) else None,
-                    "overridden_decision": decision_value,
-                },
-            }
-            decision["decision"] = "feedback"
-            decision["rationale"] = rationale
-            decision["issues"] = [issue, *decision.get("issues", [])]
-            self._persist_coach_decision(
-                decision, coach_output_path, tag="required-behavioural-oracle"
-            )
-            return
         if evidence_bundle is None:
             return
         oracle = getattr(evidence_bundle, "behavioural_oracle", None)
-        if oracle is None:
+        if not isinstance(oracle, dict):
             return
-
-        # AC-5: not_independent → should_fix warning, no override
-        if oracle.get("status") == "not_independent":
-            oracle_path = oracle.get("oracle_path") or "<unknown>"
-            warning = {
-                "severity": "should_fix",
-                "category": "oracle_not_independent",
-                "description": (
-                    f"Behavioural oracle at {oracle_path} was authored by the "
-                    f"Player (present in the turn's authored set). It is recorded "
-                    f"as not_independent and neither passes nor blocks. "
-                    f"An independent oracle must be authored outside the turn."
-                ),
-                "details": {
-                    "oracle_path": oracle_path,
-                    "provenance": oracle.get("provenance"),
-                },
-            }
-            decision["issues"] = [*decision.get("issues", []), warning]
-            logger.info(
-                "TASK-QAV-004: behavioural oracle at %s is not_independent "
-                "for %s turn %s — warning recorded, no override.",
-                oracle_path,
-                task_id,
-                turn,
-            )
-            self._persist_coach_decision(
-                decision, coach_output_path,
-                tag="TASK-QAV-004", kind="annotated",
-            )
-            return
-
-        # AC-3/AC-7: absent or non-ran status → no-op (no override)
         if oracle.get("status") != "ran":
             return
-
-        # AC-4: passing oracle → no override
         if oracle.get("passed") is True:
             return
 
@@ -10682,282 +7225,6 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         self._persist_coach_decision(
             decision, coach_output_path, tag="TASK-QAV-004"
         )
-
-    def _spec_conformance_ac_paths_failure(
-        self,
-        task_id: str,
-        acceptance_criteria: Optional[List[Dict[str, str]]],
-    ) -> Optional[Dict[str, Any]]:
-        """FEAT-SCG (SCG-002): the opt-in AC-cited-path presence check.
-
-        Applied at Coach-turn time (not in the leg) because it needs THIS
-        turn's structured acceptance criteria. Fires only when the snapshotted
-        ``conformance`` block sets ``ac_paths: true``; otherwise a no-op. The
-        extraction is stack-agnostic (SCG-001's ``_extract_ac_paths`` — any file
-        extension, fully-qualified paths only), so a non-Python repo is never
-        mis-flagged.
-
-        Returns a ``{rule_id, kind, detail}`` failure dict when an AC-cited path
-        is missing from the worktree, else ``None``. Never raises — any error
-        (no worktree, unreadable snapshot) degrades to ``None`` so the check can
-        only ADD a real, actionable failure, never fabricate or crash one.
-        """
-        if not acceptance_criteria:
-            return None
-        worktree = getattr(self, "worktree_path", None)
-        if worktree is None:
-            return None
-        try:
-            from guardkit.orchestrator.quality_gates.spec_conformance import (
-                evaluate_ac_paths,
-                load_snapshot,
-                snapshot_paths,
-            )
-
-            snapshot_dir = snapshot_paths(task_id, Path(worktree))["dir"]
-            loaded = load_snapshot(snapshot_dir)
-            if loaded is None:
-                return None  # no conformance snapshot ⇒ nothing to check
-            block, _authority = loaded
-            if not block.ac_paths:
-                return None  # ac_paths opt-in not set for this task
-            return evaluate_ac_paths(acceptance_criteria, Path(worktree))
-        except Exception:  # noqa: BLE001 — the check must never block a turn
-            return None
-
-    def _apply_spec_conformance_guard(
-        self,
-        *,
-        decision: Dict[str, Any],
-        evidence_bundle: Optional["CoachEvidenceBundle"],
-        task_id: str,
-        turn: int,
-        coach_output_path: Path,
-        acceptance_criteria: Optional[List[Dict[str, str]]] = None,
-    ) -> None:
-        """Fail closed when a mechanical spec-conformance rule fails.
-
-        FEAT-SCG (SCG-002). Deterministic backstop modelled byte-for-byte on
-        :meth:`_apply_behavioural_oracle_guard`. Reads the ``spec_conformance``
-        leg — the declarative ``byte_parity`` / ``token_coverage`` /
-        ``assert_command`` rules, evaluated beside ``gather_evidence`` against
-        the frozen pre-turn-1 snapshot (SCG-001) — and, when it reports
-        ``status == "failed"``, overrides an ``approve`` verdict to ``feedback``
-        with one ``severity=must_fix, category=spec_conformance_failure`` issue
-        PER failed rule, carrying the rule id and its actionable ``detail``
-        verbatim so a local Player can repair it next turn (the fix-and-re-verify
-        law, executing locally).
-
-        The opt-in ``ac_paths`` presence check runs HERE (not in the leg): it
-        needs THIS Coach turn's structured acceptance criteria (the threaded
-        ``acceptance_criteria`` param) and fires only when the snapshotted
-        ``conformance`` block sets ``ac_paths: true``.
-
-        Narrow and identity-bounded (mirrors
-        ``.claude/rules/absence-of-failure-is-not-success.md``):
-
-        * **Only an ``approve`` is ever flipped.** A ``feedback`` verdict is left
-          untouched — the guard neither annotates nor re-persists it.
-        * No-op when ``evidence_bundle is None``, when the leg is absent/passed
-          AND the ac_paths check finds nothing, or when there are simply no
-          failures. An ``absent`` leg never fabricates a block.
-        * The leg's rule failures count only when ``status == "failed"``.
-
-        Mutates ``decision`` in place and re-persists ``coach_turn_N.json`` via
-        :meth:`_persist_coach_decision` (deterministic-verdict-override-must-
-        persist-to-disk).
-
-        Args:
-            decision: The loaded, schema-validated Coach verdict dict.
-            evidence_bundle: The bundle carrying the ``spec_conformance`` leg, or
-                ``None`` for legacy/tool-using callers (no-op when ``None``).
-            task_id: Task identifier (for the ac_paths snapshot lookup + log).
-            turn: Current turn number (for the WARNING log).
-            coach_output_path: Path to ``coach_turn_N.json`` to re-persist on
-                override.
-            acceptance_criteria: This turn's structured ACs (``[{"id","text"}]``)
-                for the opt-in ac_paths check. ``None`` disables ac_paths only.
-        """
-        # Only an approve is ever flipped; a feedback verdict is never touched.
-        decision_value = decision.get("decision")
-        if decision_value != "approve":
-            return
-        if evidence_bundle is None:
-            return
-
-        failures: List[Dict[str, Any]] = []
-
-        # (a) declarative RULE leg (byte_parity / token_coverage /
-        #     assert_command). Rule failures count only on a failed leg — an
-        #     absent leg never manufactures a block (absence-of-failure).
-        leg = getattr(evidence_bundle, "spec_conformance", None)
-        if leg is not None and leg.get("status") == "failed":
-            failures.extend(leg.get("failures") or [])
-
-        # (b) opt-in ac_paths presence check (structured ACs threaded in; fires
-        #     only when the snapshotted conformance block sets ac_paths: true).
-        ac_failure = self._spec_conformance_ac_paths_failure(
-            task_id, acceptance_criteria
-        )
-        if ac_failure is not None:
-            failures.append(ac_failure)
-
-        if not failures:
-            return
-
-        # One must_fix issue per failed rule; rule id + detail carried verbatim
-        # so the Player can act on each without re-deriving anything.
-        override_issues: List[Dict[str, Any]] = []
-        for failure in failures:
-            rule_id = failure.get("rule_id", "<unknown>")
-            kind = failure.get("kind", "spec_conformance")
-            detail = failure.get("detail", "")
-            override_issues.append(
-                {
-                    "severity": "must_fix",
-                    "category": "spec_conformance_failure",
-                    "description": (
-                        f"Spec-conformance rule {rule_id} ({kind}) FAILED. "
-                        f"{detail}"
-                    ),
-                    "details": {
-                        "rule_id": rule_id,
-                        "kind": kind,
-                        "detail": detail,
-                        "overridden_decision": decision_value,
-                    },
-                }
-            )
-
-        rule_ids = ", ".join(
-            str(f.get("rule_id", "<unknown>")) for f in failures
-        )
-        rationale = (
-            f"Mechanical spec-conformance check FAILED — {len(failures)} "
-            f"rule(s) did not conform to the frozen task specification: "
-            f"{rule_ids}. Each is a deterministic byte / path / command check, "
-            f"not a judgment call. This overrides the Coach's approve verdict to "
-            f"feedback; fix every listed rule and the same check passes next "
-            f"turn."
-        )
-
-        decision["decision"] = "feedback"
-        decision["rationale"] = rationale
-        decision["issues"] = [*override_issues, *decision.get("issues", [])]
-
-        logger.warning(
-            "FEAT-SCG: overriding Coach verdict %r->'feedback' for %s turn %s "
-            "— %d spec-conformance rule(s) failed (%s)",
-            decision_value,
-            task_id,
-            turn,
-            len(failures),
-            rule_ids,
-        )
-
-        # Re-persist so the on-disk coach_turn_N.json carries the override, not
-        # the stale approve (deterministic-verdict-override-must-persist-to-disk).
-        self._persist_coach_decision(
-            decision, coach_output_path, tag="FEAT-SCG"
-        )
-
-    def _reconcile_coach_narrative_with_records(
-        self,
-        *,
-        decision: Dict[str, Any],
-        evidence_bundle: Optional["CoachEvidenceBundle"],
-        task_id: str,
-        turn: int,
-        coach_output_path: Path,
-    ) -> None:
-        """Keep the synthesized Coach narrative faithful to deterministic records.
-
-        TASK-FIX-COACHNARR01. Sibling of
-        :meth:`_reconcile_absent_independent_test_signal` and
-        :meth:`_apply_spec_gap_absent_guard`, but it corrects the *narrative*
-        rather than overriding the verdict direction. Under the degraded B-min
-        synthesis path (TASK-PERF-COACHGATHER01) the toolless model narrates
-        discrepancy records it cannot inspect and can fabricate a cause — the
-        FEAT-C332 run-2 "files ... do not exist on disk" hallucination, where
-        the named files were tracked repo files present in every checkpoint.
-
-        Delegates to
-        :func:`guardkit.orchestrator.coach_narrative_reconciler.reconcile_narrative`
-        which (AC-001) embeds the deterministic honesty records verbatim into the
-        feedback issue list and (AC-002 / AC-003) strips any "does not exist on
-        disk"-style claim naming a path absent from every ``file_existence``-class
-        discrepancy. Mutates ``decision`` in place and re-persists
-        ``coach_turn_N.json`` on change so the operator artifact and the Layer-4
-        late-approval reader see the corrected narrative.
-
-        LANE-WF: the reconciler ALSO records advisory (non-``critical``)
-        honesty records onto an ``approve`` verdict — logged here at WARNING
-        with task/turn context. It never writes ``decision['decision']``: a
-        warning never burns a build, and the turn-rejecting override for
-        ``critical`` records stays with
-        :meth:`_reconcile_incomplete_evidence_gathering` (fired by
-        ``gathering_status == "partial_honesty_abort"``).
-
-        No-op when ``evidence_bundle`` is ``None`` (legacy/tool-using callers),
-        its ``honesty`` leg is ``None``, or no reconciliation was needed.
-        """
-        if evidence_bundle is None:
-            return
-        honesty = getattr(evidence_bundle, "honesty", None)
-        if honesty is None:
-            return
-
-        from guardkit.orchestrator.coach_narrative_reconciler import (
-            reconcile_narrative,
-        )
-
-        result = reconcile_narrative(decision, honesty)
-        if not result.changed:
-            return
-
-        if result.corrected_paths:
-            logger.warning(
-                "TASK-FIX-COACHNARR01: corrected unsupported non-existence "
-                "claim(s) in Coach narrative for %s turn %s — path(s) %s have "
-                "no file_existence discrepancy on record (likely B-min "
-                "synthesis fabrication)",
-                task_id,
-                turn,
-                result.corrected_paths,
-            )
-        if result.advisory_records_recorded:
-            # LANE-WF: the approve path. A warning never burns a build, but it
-            # is never silently dropped either — WARNING so the operator sees
-            # the record with task/turn context on a turn that PASSED.
-            logger.warning(
-                "LANE-WF: recorded %d ADVISORY honesty record(s) on the "
-                "APPROVE verdict for %s turn %s — verdict unchanged (only "
-                "critical-severity records are turn-rejecting)",
-                result.advisory_records_recorded,
-                task_id,
-                turn,
-            )
-        elif result.embedded_issue_count:
-            logger.info(
-                "TASK-FIX-COACHNARR01: embedded %d deterministic honesty "
-                "record(s) verbatim into Coach feedback for %s turn %s",
-                result.embedded_issue_count,
-                task_id,
-                turn,
-            )
-
-        # Re-persist so the operator-facing coach_turn_N.json carries the
-        # corrected narrative and embedded records. A persistence hiccup must
-        # never block the turn — the in-memory decision (returned in the
-        # result) already carries the correction.
-        self._persist_coach_decision(
-            decision, coach_output_path,
-            tag="TASK-FIX-COACHNARR01", kind="reconciled",
-        )
-
-    # =========================================================================
-    # Task-Work Delegation Methods
-    # =========================================================================
 
     def _write_coach_feedback(
         self,
@@ -11650,7 +7917,6 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                 max_retries=3,
                 initial_delay=0.1,
             )
-            self._validate_player_report(report)
 
             # Write task_work_results.json for Coach compatibility
             self._write_direct_mode_results(task_id, report, success=True)
@@ -12157,17 +8423,6 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
             "make the words match.\n"
         )
 
-        # --- Section 3b: the third outcome, on the first turn only ---
-        # A task the tree already satisfies should cost one turn, not five.
-        # See ALREADY_SATISFIED_PROMPT_SECTION.
-        already_satisfied_section = (
-            # Not offered on a gate-driven re-entry: turn-1 feedback means a
-            # check that ran AFTER this task was approved has failed, so the
-            # task's own criteria really are satisfied and "change nothing"
-            # would be a truthful answer that leaves the failure unrepaired.
-            # The builder is answering a reviewer, not deciding whether to start.
-            ALREADY_SATISFIED_PROMPT_SECTION if turn == 1 and not feedback else ""
-        )
 
         # --- Section 4: Coach feedback (inline when available) ---
         feedback_section = ""
@@ -12252,7 +8507,6 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
             + turn_section
             + requirements_section
             + criterion_reporting_section
-            + already_satisfied_section
             + feedback_section
             + context_section
             + "\n---\n\n"
@@ -13570,152 +9824,6 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
     # (TASK-AB-BDDAUTHOR01) removed with its invocation — no turn runs
     # pytest-bdd glue sweeps any more.
 
-    @staticmethod
-    def _extract_invocations_from_result_data(
-        result_data: Dict[str, Any],
-    ) -> List[Dict[str, Any]]:
-        """Reconstruct the agent_invocations list validate_agent_invocations expects.
-
-        Prefers an explicit ``agent_invocations`` key (if the Player emitted one
-        per task-work.md Step 3.5); otherwise falls back to the parser's
-        ``phases`` dict and reverse-maps phase_{N} → validator phase ID.
-        """
-        explicit = result_data.get("agent_invocations")
-        if (
-            isinstance(explicit, list)
-            and explicit
-            and all(isinstance(x, dict) for x in explicit)
-        ):
-            return explicit
-
-        invocations: List[Dict[str, Any]] = []
-        phases = result_data.get("phases") or {}
-        for phase_key, phase_data in phases.items():
-            if not isinstance(phase_data, dict):
-                continue
-            if not phase_data.get("completed"):
-                continue
-            phase_id = _PARSER_PHASE_TO_VALIDATOR_PHASE.get(phase_key)
-            if phase_id is None and isinstance(phase_key, str) and phase_key.startswith("phase_"):
-                phase_id = phase_key[len("phase_"):]
-            if phase_id is None:
-                continue
-            invocations.append({
-                "phase": phase_id,
-                "agent": phase_data.get("text") or "unknown",
-                "status": "completed",
-            })
-        return invocations
-
-    def _compute_agent_invocations_validation(
-        self,
-        results: Dict[str, Any],
-        workflow_mode: str,
-        task_type: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        """Run validate_agent_invocations against ``results``; return a gate block.
-
-        Shape::
-
-            {"status": "passed" | "violation" | "validator_error",
-             "expected_phases": int | None,
-             "actual_invocations": int | None,
-             "missing_phases": list[str],
-             "violation_message": str | None}
-
-        Never raises. A validator crash yields ``validator_error`` so Coach can
-        decide — the validator is a gate, not a blocker of artefact emission
-        (per TASK-FIX-RWOP1.3.1 Implementation Notes).
-
-        ``task_type`` is propagated so declarative tasks in
-        ``implement-only`` mode expect 2 phases (Testing, Code Review)
-        instead of 3 — there is no Phase-3 stack-specific specialist to
-        invoke when the schema *is* the implementation (TASK-ABSR-1357).
-        Falls back to ``results.get("task_type")`` when not supplied.
-        """
-        if task_type is None:
-            task_type_from_results = results.get("task_type")
-            if isinstance(task_type_from_results, str):
-                task_type = task_type_from_results
-        try:
-            invocations = self._extract_invocations_from_result_data(results)
-
-            # No invocation evidence at all — the Player didn't emit
-            # `agent_invocations` and the stream parser didn't capture any
-            # phase markers. That can happen for non-SDK fixture writes
-            # (tests, synthetic seeds) or for a pipeline failure before any
-            # phase ran. Record `no_data` so Coach neither blocks nor
-            # approves on spurious grounds — a genuine Player misbehaviour
-            # will be caught by upstream stream-parse errors.
-            if not invocations:
-                expected = get_expected_phases(workflow_mode, task_type)
-                return {
-                    "status": "no_data",
-                    "expected_phases": expected,
-                    "actual_invocations": 0,
-                    "missing_phases": [],
-                    "violation_message": None,
-                }
-
-            # Populate tracker.invocations directly — record_invocation() and
-            # mark_complete() call display_log() which prints to stdout,
-            # which would flood autobuild logs on every producer write.
-            # The validator only reads tracker.invocations; it doesn't care
-            # how the list was populated.
-            tracker = AgentInvocationTracker()
-            for inv in invocations:
-                phase = inv.get("phase")
-                if phase is None:
-                    continue
-                tracker.invocations.append({
-                    "phase": phase,
-                    "agent": inv.get("agent") or "unknown",
-                    "phase_description": f"Phase {phase}",
-                    "agent_source": "unknown",
-                    "status": inv.get("status", "completed"),
-                })
-
-            expected = get_expected_phases(workflow_mode, task_type)
-            actual = sum(
-                1 for inv in tracker.invocations if inv.get("status") == "completed"
-            )
-
-            try:
-                validate_agent_invocations(tracker, workflow_mode, task_type)
-                return {
-                    "status": "passed",
-                    "expected_phases": expected,
-                    "actual_invocations": actual,
-                    "missing_phases": [],
-                    "violation_message": None,
-                }
-            except AgentInvocationValidationError as exc:
-                missing = [
-                    m["phase"]
-                    for m in identify_missing_phases(
-                        tracker, workflow_mode, task_type
-                    )
-                ]
-                return {
-                    "status": "violation",
-                    "expected_phases": expected,
-                    "actual_invocations": actual,
-                    "missing_phases": missing,
-                    "violation_message": str(exc),
-                }
-        except Exception as exc:  # noqa: BLE001 — gate must never block artefacts
-            logger.warning(
-                "agent_invocations validator raised %s; recording validator_error.",
-                exc.__class__.__name__,
-            )
-            return {
-                "status": "validator_error",
-                "expected_phases": None,
-                "actual_invocations": None,
-                "missing_phases": [],
-                "violation_message": f"{exc.__class__.__name__}: {exc}",
-            }
-
     # TASK-OSI-002: Validation-gate refactor — credit orchestrator-invoked
     # specialists. When TASK-OSI-004/005 land, the orchestrator runs Phase 4
     # (test-orchestrator) and Phase 5 (code-reviewer) directly and writes
@@ -13729,545 +9837,6 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
         ("4", "phase_4", "test-orchestrator"),
         ("5", "phase_5", "code-reviewer"),
     )
-
-    def _inject_specialist_records_into_task_work_results(
-        self, task_id: str
-    ) -> Optional[Path]:
-        """Merge orchestrator-invoked Phase 4/5 records into task_work_results.
-
-        Reads ``.guardkit/autobuild/{task_id}/specialist_results.json``
-        (produced by TASK-OSI-004 / TASK-OSI-005) and merges Phase 4/5
-        entries into ``task_work_results.json``'s ``agent_invocations``
-        list, tagging each merged entry ``source: "orchestrator"``.
-
-        Player-emitted Phase 4/5 entries (``source`` absent or
-        ``source == "player"``) are dropped during the merge. Other phases
-        in the existing list are preserved verbatim. After the merge the
-        method re-runs ``_compute_agent_invocations_validation`` and writes
-        the updated ``agent_invocations_validation`` block back to disk.
-
-        If ``specialist_results.json`` is absent, the method logs a warning
-        and inserts skipped Phase 4/5 records so the gate still produces a
-        well-formed validation block — never raises (same invariant as the
-        producer-side gate in ``_write_task_work_results``).
-
-        Returns:
-            Path to the rewritten ``task_work_results.json``, or ``None``
-            if that file is missing (nothing to merge into).
-        """
-        results_path = TaskArtifactPaths.task_work_results_path(
-            task_id, self.worktree_path
-        )
-        if not results_path.exists():
-            logger.warning(
-                "task_work_results.json not found at %s; skipping "
-                "specialist record injection",
-                results_path,
-            )
-            return None
-
-        try:
-            task_work_data = json.loads(results_path.read_text())
-        except (json.JSONDecodeError, OSError) as exc:
-            logger.warning(
-                "Failed to read task_work_results.json at %s: %s",
-                results_path,
-                exc,
-            )
-            return None
-
-        autobuild_dir = TaskArtifactPaths.autobuild_dir(
-            task_id, self.worktree_path
-        )
-        specialist_results_path = autobuild_dir / "specialist_results.json"
-        specialist_data: Optional[Dict[str, Any]] = None
-        if specialist_results_path.exists():
-            try:
-                specialist_data = json.loads(
-                    specialist_results_path.read_text()
-                )
-                if not isinstance(specialist_data, dict):
-                    logger.warning(
-                        "specialist_results.json at %s is not a JSON object; "
-                        "treating as absent",
-                        specialist_results_path,
-                    )
-                    specialist_data = None
-            except (json.JSONDecodeError, OSError) as exc:
-                logger.warning(
-                    "Failed to read specialist_results.json at %s: %s; "
-                    "treating as absent",
-                    specialist_results_path,
-                    exc,
-                )
-                specialist_data = None
-        else:
-            logger.warning(
-                "specialist_results.json not found at %s; inserting skipped "
-                "Phase 4/5 records to keep the gate block structured",
-                specialist_results_path,
-            )
-
-        # Drop every existing Phase 4/5 entry before rebuilding those slots
-        # from the current specialist_results.json.  ``agent_invocations`` is
-        # Player-writable, so a retained ``source: orchestrator`` string cannot
-        # establish provenance.  Unconditional replacement also makes repeated
-        # injection idempotent and prevents an earlier successful Phase 5 report
-        # surviving a later failed Phase 5 result.
-        existing = task_work_data.get("agent_invocations")
-        if not isinstance(existing, list):
-            existing = []
-
-        orchestrator_phase_ids = {
-            phase_id for phase_id, _, _ in self._ORCHESTRATOR_SPECIALIST_PHASES
-        }
-        filtered: List[Dict[str, Any]] = []
-        for inv in existing:
-            if not isinstance(inv, dict):
-                continue
-            phase = str(inv.get("phase", ""))
-            if phase in orchestrator_phase_ids:
-                # The current specialist-results blocks are the sole source for
-                # Phase 4/5 records, regardless of the old record's claimed tag.
-                continue
-            filtered.append(inv)
-
-        phase_4_block = (specialist_data or {}).get("phase_4")
-        phase_4_blocks_review = (
-            isinstance(phase_4_block, dict)
-            and phase_4_block.get("status") in ("failed", "skipped")
-        )
-
-        # Build the orchestrator-sourced records.
-        orchestrator_records: List[Dict[str, Any]] = []
-        for phase_id, phase_key, agent_name in self._ORCHESTRATOR_SPECIALIST_PHASES:
-            block = (specialist_data or {}).get(phase_key)
-            if not isinstance(block, dict):
-                # Either specialist_results.json is absent or this phase's
-                # block is missing/malformed — synthesize a skipped record.
-                missing_reason = (
-                    "specialist_results.json not found"
-                    if specialist_data is None
-                    else f"specialist_results.json missing {phase_key} block"
-                )
-                orchestrator_records.append({
-                    "phase": phase_id,
-                    "agent": agent_name,
-                    "status": "skipped",
-                    "source": "orchestrator",
-                    "error": missing_reason,
-                })
-                continue
-
-            block_status = block.get("status", "skipped")
-            # Map specialist outcome ("passed"/"failed"/"skipped") to the
-            # invocation tracker's vocabulary. Only "passed" credits the
-            # phase as completed; "failed" and "skipped" leave it
-            # uncredited so a real specialist failure surfaces as a gate
-            # violation rather than a silent pass.
-            if block_status == "passed":
-                invocation_status = "completed"
-            elif block_status == "failed":
-                invocation_status = "failed"
-            else:
-                invocation_status = "skipped"
-
-            record: Dict[str, Any] = {
-                "phase": phase_id,
-                "agent": agent_name,
-                "status": invocation_status,
-                "source": "orchestrator",
-            }
-            if "duration_seconds" in block:
-                record["duration_seconds"] = block["duration_seconds"]
-            if block.get("error"):
-                record["error"] = block["error"]
-            if phase_id == "4" and phase_4_ran_and_failed(block):
-                # The test phase ran and tests failed: that IS evidence, about
-                # the code. Marked so the Coach does not report this record as
-                # a specialist that "did not produce evidence" (8 October
-                # 2026, build FEAT-895D, where that wording told the Player
-                # the failing test was not its problem).
-                record[RAN_AND_FAILED] = True
-            if (
-                phase_id == "5"
-                and invocation_status == "completed"
-                and not phase_4_blocks_review
-            ):
-                review_evidence = block.get("review_evidence")
-                if isinstance(review_evidence, dict):
-                    text = review_evidence.get("text")
-                    truncated = review_evidence.get("truncated")
-                    truncation_marker = (
-                        "\n[cut short — only the first 4000 characters of "
-                        "what the specialist said are kept]"
-                    )
-                    bounded = isinstance(text, str) and (
-                        (truncated is False and len(text) <= 4000)
-                        or (
-                            truncated is True
-                            and len(text) <= 4000 + len(truncation_marker)
-                            and text.endswith(truncation_marker)
-                        )
-                    )
-                    if (
-                        review_evidence.get("source")
-                        == "orchestrator_code_reviewer"
-                        and review_evidence.get("kind")
-                        == "unparsed_model_report"
-                        and bounded
-                        and bool(text.strip())
-                        and review_evidence.get("verified") is False
-                        and review_evidence.get("redacted") is True
-                    ):
-                        # Copy only the bounded contract fields. Unknown input
-                        # fields never cross the authoritative Phase-5 bridge.
-                        # A failed/skipped authoritative Phase 4 may coexist
-                        # with an older Phase 5 block after a budget skip, so
-                        # that report is ineligible for this invocation.
-                        record["review_evidence"] = {
-                            "source": "orchestrator_code_reviewer",
-                            "kind": "unparsed_model_report",
-                            "text": text,
-                            "verified": False,
-                            "redacted": True,
-                            "truncated": truncated,
-                        }
-            if phase_id == "5" and isinstance(block.get("review_record"), dict):
-                record["review_record"] = {key: block["review_record"][key] for key in (
-                    "tool_round_budget", "actual_tool_rounds", "forced_finalization", "completion", "ending_reason", "step_cap"
-                ) if key in block["review_record"]}
-                if "review_evidence" in record:
-                    record["review_evidence"].update(record["review_record"])
-            orchestrator_records.append(record)
-
-        merged = filtered + orchestrator_records
-        task_work_data["agent_invocations"] = merged
-
-        # Re-run the gate against the merged ledger so the on-disk
-        # validation block credits orchestrator-invoked phases. Direct-mode
-        # tasks (workflow_mode=="direct") expect Phase 3 only — see
-        # `get_expected_phases("direct")` — and so will not trigger a
-        # false Phase 4/5 violation when specialist_results.json is absent.
-        # TASK-ABSR-1357: thread task_type so declarative tasks in
-        # implement-only mode expect [4, 5] (not [3, 4, 5]).
-        workflow_mode = task_work_data.get("workflow_mode") or "implement-only"
-        task_type = (
-            task_work_data.get("task_type")
-            if isinstance(task_work_data.get("task_type"), str)
-            else self._lookup_task_type(task_id)
-        )
-        new_validation = self._compute_agent_invocations_validation(
-            task_work_data, workflow_mode, task_type=task_type
-        )
-        task_work_data["agent_invocations_validation"] = new_validation
-
-        # Item 60: Phase 4 is the authoritative executed-test producer. When
-        # it passed and supplied typed counts, copy those counts into the gate
-        # evidence consumed by gather_evidence. Keep the narrative-derived
-        # ``tests_passed`` compatibility field unchanged. Every successful
-        # injection reflects the current record: absent/null/invalid counts
-        # remove older mapped values instead of coercing them to zero.
-        qg = task_work_data.get("quality_gates")
-        if (
-            isinstance(phase_4_block, dict)
-            and phase_4_block.get("status") == "passed"
-            and isinstance(qg, dict)
-        ):
-            for count_field in ("tests_run", "tests_failed"):
-                count = phase_4_block.get(count_field)
-                if isinstance(count, int) and not isinstance(count, bool):
-                    qg[count_field] = count
-                else:
-                    qg.pop(count_field, None)
-            task_work_data["quality_gates"] = qg
-
-        # TASK-AB-PERTASKFG01 fix #2 (absence-of-failure-is-not-success):
-        # reconcile the narrative-derived quality_gates block against the
-        # AUTHORITATIVE phase_4 (test-orchestrator) specialist record before the
-        # Coach reads it. ``_write_task_work_results`` assembles quality_gates by
-        # regex-parsing the Player's PROSE, so a hung/failed test-orchestrator
-        # (0 tests run) can still yield {all_passed: true, coverage: 100,
-        # tests_passed: 0} when the prose happens to match the coverage/gate
-        # patterns (the TASK-AB-PERTASKFG01 false-green repro). When the authoritative
-        # specialist record says the test phase FAILED, the narrative is a
-        # false-green and the record wins. Only the false-green direction is
-        # overridden (specialist failed AND narrative claims a pass); a
-        # "skipped" phase (e.g. direct-mode Phase-4-not-run) or a genuine pass
-        # is left untouched.
-        qg = task_work_data.get("quality_gates")
-        if (
-            isinstance(phase_4_block, dict)
-            and isinstance(qg, dict)
-            and phase_4_block.get("status") == "failed"
-            and (qg.get("all_passed") or qg.get("tests_passing"))
-        ):
-            logger.warning(
-                "Reconciling quality_gates against authoritative phase_4 "
-                "specialist record for %s: test-orchestrator status=failed "
-                "(error=%s, tests_run=%s) but quality_gates claimed "
-                "all_passed=%s/tests_passing=%s — overriding to NOT passed "
-                "(narrative false-green).",
-                task_id,
-                phase_4_block.get("error"),
-                phase_4_block.get("tests_run"),
-                qg.get("all_passed"),
-                qg.get("tests_passing"),
-            )
-            # TASK-ABFIX-010 (W1): an ABSENT phase-4 signal (Coach isolated
-            # pytest timed out / produced no verdict, tests_run=0) is UNKNOWN —
-            # never a failure and never a pass. Coercing it to an explicit
-            # ``False`` here is the false-red that killed TASK-FMDR-001: three
-            # such turns trip the context-pollution guard even though the code
-            # is converging to green. Carry ``None`` through the gate chain
-            # (verify_quality_gates → QualityGateStatus → to_dict → checkpoint)
-            # so the pollution tally (CKPTTESTRED01) sees ``None``, not a
-            # counted failure, while ``all_passed=None`` keeps the gate from
-            # auto-approving (Coach feeds back instead). A genuine ran-and-failed
-            # verdict is unchanged. See
-            # ``.claude/rules/absence-must-survive-every-reconciliation-layer.md``.
-            err = phase_4_block.get("error") or ""
-            is_absent = bool(phase_4_block.get("signal_absent")) or err.startswith(
-                "absent test signal"
-            )
-            if is_absent:
-                qg["all_passed"] = None
-                qg["tests_passing"] = None
-                qg["tests_passed"] = None
-                qg["reconciled_absent"] = True
-                # Deliberately do NOT copy the absent block's ``tests_failed=0``
-                # into ``qg`` — verify_quality_gates would otherwise resolve
-                # ``tests_passed = (0 == 0) = True``, a false-GREEN. The
-                # ``reconciled_absent`` short-circuit in verify_quality_gates is
-                # the primary guard; not copying ``tests_failed`` is
-                # defence-in-depth. ``coverage_met`` is left untouched (an absent
-                # test signal is not evidence of a coverage failure).
-            else:
-                qg["all_passed"] = False
-                qg["tests_passing"] = False
-                # The pass count comes only from a pass count. The run count
-                # is never copied into it, and an unknown count stays
-                # ``None`` rather than becoming 0 (follow-up fix 3d,
-                # 13 October 2026). The verdict is set by the lines above.
-                passed_count = phase_4_block.get("tests_passed")
-                qg["tests_passed"] = (
-                    passed_count
-                    if isinstance(passed_count, int)
-                    and not isinstance(passed_count, bool)
-                    else None
-                )
-                if phase_4_block.get("tests_failed") is not None:
-                    qg["tests_failed"] = phase_4_block.get("tests_failed")
-                qg["coverage"] = phase_4_block.get("coverage_pct", qg.get("coverage"))
-                qg["coverage_met"] = False
-            qg["reconciled_from_specialist"] = True
-            task_work_data["quality_gates"] = qg
-
-        # WHICH TESTS FAILED, carried to the feedback (8 October 2026). When
-        # the test phase ran and failed, the names of the failing tests the
-        # test phase itself reported, and its own one-line account of the
-        # failure, are copied beside the gate's counts, so the feedback the
-        # Player gets next turn can name them. Build FEAT-895D lost three
-        # turns because the Player was told only "tests did not pass": the
-        # name sat in specialist_results.json and never reached it. Nothing
-        # here parses test output; it copies what the test phase already
-        # wrote. Every other outcome (passed, absent, skipped, no record)
-        # removes these fields so a name from an earlier turn never lingers.
-        qg = task_work_data.get("quality_gates")
-        if isinstance(qg, dict):
-            if phase_4_ran_and_failed(phase_4_block):
-                # The test phase's own list of failing tests (charged ones
-                # after a comparison with the base, every one it saw
-                # otherwise). A record written before that list existed has
-                # only ``new_failing_tests``.
-                named = phase_4_block.get(PHASE_4_FAILING_TESTS)
-                basis = phase_4_block.get(PHASE_4_FAILING_TESTS_BASIS)
-                if not isinstance(named, list):
-                    named = phase_4_block.get("new_failing_tests")
-                    basis = FAILING_TESTS_BASIS_NEW if named else None
-                names = (
-                    [str(n) for n in named if n]
-                    if isinstance(named, list)
-                    else []
-                )
-                total = phase_4_block.get(PHASE_4_FAILING_TESTS_TOTAL)
-                if not isinstance(total, int) or isinstance(total, bool):
-                    total = len(names)
-                qg[QG_FAILING_TESTS] = names
-                qg[QG_FAILING_TESTS_TOTAL] = max(total, len(names))
-                if isinstance(basis, str) and basis:
-                    qg[QG_FAILING_TESTS_BASIS] = basis
-                else:
-                    qg.pop(QG_FAILING_TESTS_BASIS, None)
-                # The failure line. The test tool's own words are the most
-                # useful, but when the run was compared with the base and
-                # some failures were already failing before the build
-                # started, those words may describe an old failure instead of
-                # the new one; the test phase's own error line then names
-                # only the new ones and says how many were old.
-                inherited = phase_4_block.get("failures_inherited")
-                line = phase_4_block.get("output_summary") or ""
-                if (
-                    isinstance(inherited, int)
-                    and not isinstance(inherited, bool)
-                    and inherited > 0
-                ) or not isinstance(line, str) or not line.strip():
-                    line = phase_4_block.get("error") or line or ""
-                qg[QG_FAILURE_SUMMARY] = (
-                    " ".join(str(line).split())[:FAILURE_SUMMARY_LIMIT]
-                )
-                qg[QG_TEST_PHASE_RAN_AND_FAILED] = True
-            else:
-                for key in (
-                    QG_FAILING_TESTS,
-                    QG_FAILING_TESTS_TOTAL,
-                    QG_FAILING_TESTS_BASIS,
-                    QG_FAILURE_SUMMARY,
-                    QG_TEST_PHASE_RAN_AND_FAILED,
-                ):
-                    qg.pop(key, None)
-            task_work_data["quality_gates"] = qg
-
-        try:
-            results_path.write_text(json.dumps(task_work_data, indent=2))
-        except OSError as exc:
-            logger.warning(
-                "Failed to write merged task_work_results.json at %s: %s",
-                results_path,
-                exc,
-            )
-            return None
-
-        logger.info(
-            "Injected orchestrator specialist records into %s "
-            "(merged=%d, validation=%s)",
-            results_path,
-            len(merged),
-            new_validation.get("status"),
-        )
-        return results_path
-
-    def _extract_explicit_planned_files(
-        self,
-        task_id: str,
-    ) -> Set[str]:
-        """Return file paths declared in the task body's explicit sections.
-
-        Implements TASK-GK-PA-002 AC-1: when a task body contains
-        non-empty ``## Files to Create`` and/or ``## Files to Modify``
-        sections (the FM-001 convention introduced by
-        TASK-FRR-PEB-FM-001 / commit ``02aac9c``), those lists are the
-        authoritative ``planned_files`` set. The plan-audit fallback path
-        ``_compute_plan_audit_verdict`` consults this helper before
-        running the prose regex scan, so well-formed tasks no longer
-        false-positive on prose typos in ``## Implementation notes``
-        (FEAT-PEBR run-2 root cause).
-
-        The section-boundary regex is ``(?=\\n##(?!#)|\\Z)`` so a
-        ``### Subsection`` header inside the section does not terminate
-        it prematurely (subsections legitimately appear under
-        ``## Files to Create`` for grouped declarations).
-
-        Bullet extraction handles four common shapes:
-
-        - ``- `path/to/file.py```
-        - ``- `path/to/file.py` — description`` (em-dash separator)
-        - ``- `path/to/file.py` - description`` (space-dash-space)
-        - ``- path/to/file.py``
-
-        Sections that contain no parseable bullets (header-only or
-        stubs like ``- _none_``) are treated as **absent**, not
-        authoritative-empty — otherwise placeholder sections would
-        accidentally bypass both the explicit-section comparison and the
-        AC prose-scan fallback, leaving plan-audit blind.
-
-        Args:
-            task_id: Task ID whose body should be inspected.
-
-        Returns:
-            Union of paths declared in ``## Files to Create`` and
-            ``## Files to Modify``, as a set of repo-relative path
-            strings. Returns an empty set when neither section is
-            present or both are empty (so callers can ``if explicit:``
-            to detect the FM-001 convention).
-        """
-        import re as _re
-
-        task_file = self._find_task_file(task_id)
-        if task_file is None:
-            return set()
-        try:
-            content = task_file.read_text(errors="replace")
-        except OSError:
-            return set()
-        # Strip frontmatter the same way ``_scan_ac_for_missing_paths``
-        # does, to keep the two helpers' body-shape contracts identical.
-        if content.startswith("---"):
-            parts = content.split("---", 2)
-            body = parts[2] if len(parts) >= 3 else content
-        else:
-            body = content
-
-        # ``(?=^##(?!#)|\Z)`` stops at the next line-start ``## ``
-        # header but not at ``### Subsection`` headers — the latter are
-        # legitimate children of ``## Files to Create``. We anchor the
-        # lookahead with ``^`` (MULTILINE) instead of ``\n##`` so a
-        # blank line absorbed by ``\s*\n`` after the section header
-        # doesn't push the cursor past the next section's start.
-        section_pattern = (
-            r"^##\s+Files\s+to\s+{action}\s*\n(.*?)(?=^##(?!#)|\Z)"
-        )
-        sections: List[str] = []
-        for action in ("Create", "Modify"):
-            match = _re.search(
-                section_pattern.format(action=action),
-                body,
-                _re.IGNORECASE | _re.MULTILINE | _re.DOTALL,
-            )
-            if match:
-                sections.append(match.group(1))
-
-        paths: Set[str] = set()
-        for section_text in sections:
-            for line in section_text.splitlines():
-                stripped = line.strip()
-                if not stripped:
-                    continue
-                # Bullet indicator: ``-`` or ``*`` followed by space.
-                # Numbered lists (``1.``) are unusual for these sections
-                # and are intentionally skipped to keep extraction tight.
-                if not (stripped.startswith("- ") or stripped.startswith("* ")):
-                    continue
-                item = stripped[2:].strip()
-                # Strip trailing description after em-dash (U+2014) or
-                # ``" - "`` (space-dash-space). Bare ``-`` is left alone
-                # so paths like ``feat-pebr-rev2/file.py`` survive.
-                for sep in ("—", " - "):
-                    idx = item.find(sep)
-                    if idx != -1:
-                        item = item[:idx].strip()
-                        break
-                # First backtick-quoted token wins when present;
-                # otherwise the leading whitespace-token is the path.
-                backtick_match = _re.match(r"`([^`]+)`", item)
-                if backtick_match:
-                    candidate = backtick_match.group(1).strip()
-                else:
-                    candidate = item.split()[0] if item else ""
-                if not candidate:
-                    continue
-                # Skip placeholder bullets like ``_none_`` or ``N/A``.
-                if candidate.startswith("_") or candidate.lower() in {
-                    "n/a",
-                    "none",
-                    "tbd",
-                }:
-                    continue
-                # Skip wildcards — ``planned_files`` is a literal set.
-                if "*" in candidate:
-                    continue
-                paths.add(candidate)
-        return paths
 
     def _read_declared_file_sections(
         self,
@@ -14438,561 +10007,6 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                 paths.append(candidate)
         return has_bullets, paths
 
-    def _scan_ac_for_missing_paths(
-        self,
-        task_id: str,
-        *,
-        flag_basenames: bool = False,
-    ) -> List[str]:
-        """Return AC-cited file paths that are absent from the worktree.
-
-        Implements TASK-AB-FIX-INVAB1 AC-005's escalation rule: when the
-        plan auditor reports ``skipped`` (no plan on disk), inspect the
-        task's acceptance criteria for path-shaped tokens — and elevate
-        the verdict to ``violation`` if any named path is missing.
-
-        Uses the same regex set as
-        ``synthetic_report.generate_file_existence_promises`` (primary
-        ``[\\w./\\-]+\\.\\w{1,5}`` plus backtick / single-quoted /
-        double-quoted variants) so AC-005 escalation parity matches the
-        synthetic-report path that produces completion_promises.
-
-        Bare basenames (tokens without a ``/`` separator, e.g.
-        ``pipeline_consumer.py``) are skipped by default — TASK-GK-AC-001
-        traced FEAT-PEBR Wave-1's UNRECOVERABLE_STALL to this scanner
-        flagging files that exist deeper in the tree. AC text routinely
-        names files by basename when the surrounding paragraph already
-        established the directory; treating that as a missing-file
-        signal is a false positive. Callers that genuinely need the
-        old behaviour (none today, but synthetic-report parity is
-        preserved) can pass ``flag_basenames=True``.
-
-        TASK-GK-PA-002 narrows the scan body to the ``## Acceptance
-        Criteria`` (or ``## Acceptance criterion``) section only.
-        Earlier behaviour scanned the whole post-frontmatter body —
-        which let prose paths in ``## Implementation notes`` (FEAT-PEBR
-        run-2 surfaced a typo cross-reference there) trip the scanner.
-        That mismatched the function's name and docstring; the slice
-        re-aligns them. If the AC header is absent, the scanner falls
-        back to whole-body scanning so non-standard task structures
-        keep their pre-fix behaviour.
-
-        Args:
-            task_id: Task ID whose acceptance criteria should be scanned.
-            flag_basenames: When ``True`` (legacy / synthetic-report
-                parity behaviour), bare basenames missing from the
-                worktree root count as missing. When ``False`` (default),
-                only fully-qualified paths (those containing ``/``) are
-                checked against the worktree, so a basename that exists
-                anywhere under the tree does not trip the escalation.
-
-        Returns:
-            Sorted, deduplicated list of paths the AC text names that
-            are absent from ``self.worktree_path``. Returns an empty list
-            when the task file or its acceptance_criteria can't be read,
-            so failure to introspect doesn't block the verdict pipeline.
-        """
-        import re as _re
-
-        task_file = self._find_task_file(task_id)
-        if task_file is None:
-            return []
-        try:
-            content = task_file.read_text(errors="replace")
-        except OSError:
-            return []
-        # Body after the YAML frontmatter — that's where AC text lives.
-        if content.startswith("---"):
-            parts = content.split("---", 2)
-            body = parts[2] if len(parts) >= 3 else content
-        else:
-            body = content
-        # TASK-GK-PA-002 AC-2: restrict the scan to the AC section only.
-        # ``(?=^##(?!#)|\Z)`` (MULTILINE) so a ``### Subsection`` header
-        # inside the AC block (rare but possible — e.g. ``### Edge
-        # cases``) does not terminate it, and an empty AC body followed
-        # by another ``##`` section terminates correctly. Falls back to
-        # whole-body scanning when the AC header is absent so
-        # non-standard task structures keep their pre-fix behaviour.
-        ac_match = _re.search(
-            r"^##\s+Acceptance\s+(?:Criteria|criterion)\s*\n(.*?)(?=^##(?!#)|\Z)",
-            body,
-            _re.IGNORECASE | _re.MULTILINE | _re.DOTALL,
-        )
-        if ac_match:
-            body = ac_match.group(1)
-        # TASK-GK-PA-003 AC-1: resolve markdown links ``[label](href)`` to
-        # their href before tokenizing. A link *label* may itself be a
-        # path-shaped string (e.g. ``[relay/service.py](src/pkg/relay/
-        # service.py)``) — but the label is a display string, not a cited
-        # file. Only the href is the real referent. Dropping the label
-        # stops a non-existent label path tripping the escalation while
-        # the href that actually exists on disk goes unchecked. This is
-        # the inverse-shape sibling of
-        # ``path-string-mismatch-is-not-dishonesty``: a path-string miss
-        # treated as a hard failure when the file exists under a
-        # resolvable path.
-        body = _re.sub(r"\[[^\]]*\]\(([^)]+)\)", r"\1", body)
-        primary = _re.findall(r"[\w./\-]+\.\w{1,5}", body)
-        backtick = _re.findall(r"`([^`]+\.[a-zA-Z]+)`", body)
-        double_q = _re.findall(r'"([^"]+\.[a-zA-Z]+)"', body)
-        single_q = _re.findall(r"'([^']+\.[a-zA-Z]+)'", body)
-        paths: List[str] = []
-        seen: set = set()
-        for p in primary + backtick + double_q + single_q:
-            if "*" in p:
-                continue
-            if p in seen:
-                continue
-            seen.add(p)
-            paths.append(p)
-        # Filter to obvious source-file extensions and exclude paths
-        # that look like documentation / metadata so the escalation
-        # signal stays focused on implementation gaps. Keep this list
-        # narrow on purpose — TASK-AB-FIX-INVAB1 §"Don't break"
-        # warns against tightening helpers that already serve the
-        # synthetic-report pipeline. False positives here would block
-        # otherwise-passing tasks; false negatives degrade silently to
-        # current behaviour.
-        source_exts = (
-            ".py", ".ts", ".tsx", ".js", ".jsx", ".cs", ".go", ".java",
-            ".rb", ".rs",
-        )
-        missing: List[str] = []
-        for p in paths:
-            if not p.endswith(source_exts):
-                continue
-            # Skip bare basenames unless the caller opts in. AC text
-            # often refers to files by basename (e.g. "modify
-            # pipeline_consumer.py") even when the file lives at
-            # src/forge/adapters/nats/pipeline_consumer.py. Treating
-            # that as a missing-file signal is the FEAT-PEBR Wave-1
-            # false-positive root cause (TASK-GK-AC-001).
-            if not flag_basenames and "/" not in p:
-                continue
-            if not self._ac_path_exists(p):
-                missing.append(p)
-        return sorted(set(missing))
-
-    def _ac_path_exists(self, token: str) -> bool:
-        """Return ``True`` when an AC-cited path token resolves on disk.
-
-        TASK-GK-PA-003 AC-2: a multi-segment token (one containing ``/``)
-        is treated as a **path suffix**. AC text — and markdown-link hrefs
-        resolved by :meth:`_scan_ac_for_missing_paths` — routinely cite a
-        path relative to a package root (``relay/service.py``) when the
-        file actually lives at ``src/pkg/relay/service.py``. A direct
-        ``worktree / token`` check misses that; a match anywhere in the
-        tree whose path *ends with* the token (on segment boundaries)
-        counts as present.
-
-        The walk skips dependency / VCS / cache directories and does NOT
-        follow symlinks — the ``.guardkit/worktrees`` tree carries a
-        sibling-repo symlink, so ``followlinks=False`` avoids walking (or
-        looping) into it. AC-003's no-masking guarantee is preserved: a
-        genuinely-missing path (no direct hit and no suffix match) still
-        returns ``False``, so it stays a violation.
-        """
-        if (self.worktree_path / token).exists():
-            return True
-        # Suffix fallback applies to multi-segment tokens only. Bare
-        # basenames are already handled by the caller's skip rule; a lone
-        # segment here keeps the strict worktree-root semantics.
-        suffix_parts = tuple(seg for seg in token.split("/") if seg)
-        if len(suffix_parts) < 2:
-            return False
-        n = len(suffix_parts)
-        basename = suffix_parts[-1]
-        prune = {
-            ".git", ".hg", ".svn", "node_modules", "__pycache__",
-            ".venv", "venv", ".mypy_cache", ".pytest_cache", ".tox",
-            ".guardkit",
-        }
-        for dirpath, dirnames, filenames in os.walk(
-            self.worktree_path, followlinks=False
-        ):
-            dirnames[:] = [d for d in dirnames if d not in prune]
-            if basename in filenames:
-                if Path(dirpath, basename).parts[-n:] == suffix_parts:
-                    return True
-        return False
-
-    def _compute_code_review_block(
-        self, task_work_data: Dict[str, Any]
-    ) -> Optional[Dict[str, Any]]:
-        """Derive ``code_review`` from the orchestrator-invoked Phase-5 record.
-
-        TASK-FIX-DF51: producer-side fold for ``code_review.score``. Mirrors the
-        sibling fixes (TASK-FIX-RWOP1.3.1 agent_invocations gate; TASK-FIX-RWOP1.3.2
-        plan_audit gate): Coach reads ``task_work_results["code_review"]["score"]``,
-        but no upstream producer was writing that key for the OSI architecture
-        (orchestrator-invoked code-reviewer in
-        :mod:`guardkit.orchestrator.specialist_invocations`). The result is the
-        canonical *runner-without-producer* anti-pattern — the gate runs but is
-        structurally unsatisfiable, so every Coach turn rejects with
-        ``must_fix/architectural`` "Architectural review score below threshold"
-        regardless of actual review quality.
-
-        Resolution order:
-
-        1. **Player-stream score wins.** If ``task_work_data["code_review"]``
-           already carries a ``score`` (populated by the legacy
-           ``architectural_review`` extraction in
-           :meth:`_write_task_work_results`, sourced from
-           :class:`TaskWorkStreamParser` parsing the Player's own prose
-           ``"Architectural Score: N/100"`` markers), return ``None`` to
-           signal "leave the existing block alone." This keeps the legacy
-           single-process ``/task-work`` path behaviourally unchanged.
-        2. **Phase-5 specialist completion → synthesise.** Look at
-           ``agent_invocations`` for a ``phase == "5"`` record from the
-           orchestrator-invoked code-reviewer (``source == "orchestrator"``).
-           Map ``status`` to a synthesised block:
-
-           ============  ===========  ====================================
-           inv status    score        explanation
-           ============  ===========  ====================================
-           completed     100          Read-only specialist ran to clean SDK
-                                      completion. We didn't *measure* a
-                                      numeric score (the read-only agent
-                                      can't write a sidecar), so 100 is the
-                                      natural ceiling that signals "max
-                                      confidence we have." The ``source``
-                                      field marks the score as synthesised.
-           failed        0            Explicit fail — gate must reject.
-           ============  ===========  ====================================
-
-           AC-005: when the specialist crashed, timed out, or was skipped
-           (``status == "skipped"``), return ``None``. The on-disk
-           ``code_review`` key is left absent so the consumer's
-           ``code_review.get("score", 0)`` default-to-0 path still applies.
-           This preserves the ability of a real review failure to surface
-           as a gate failure rather than being masked by a synthesised
-           pass.
-        3. **No phase-5 record at all.** Return ``None``; same default-to-0
-           fallback applies (existing behaviour for non-OSI / pre-injection
-           writes).
-
-        The synthesised block always carries an explicit ``source`` field so
-        a reader of ``coach_turn_N.json`` can distinguish a measured
-        prose-parsed score from a completion-marker synthesis. Subscores
-        (``solid``/``dry``/``yagni``) are not synthesised — they only appear
-        when the Player's stream parser captured them (path 1 above).
-
-        Args:
-            task_work_data: The in-progress results dict, after
-                ``arch_review_data`` extraction and after
-                ``agent_invocations`` injection (when called from
-                :meth:`_create_player_report_from_task_work`) or before
-                injection (when called from :meth:`_write_task_work_results`
-                — in that case path 2 may legitimately fire if the Player
-                emitted Phase-5 records itself).
-
-        Returns:
-            A dict to assign to ``task_work_data["code_review"]``, or
-            ``None`` to leave the existing key (or absence of key) alone.
-
-        Notes:
-            Never raises. Defensive against missing/malformed
-            ``agent_invocations`` entries — a non-list, non-dict, or
-            wrong-typed entry is silently ignored and resolution falls
-            through to the next path.
-        """
-        existing = task_work_data.get("code_review")
-        if isinstance(existing, dict) and "score" in existing:
-            return None
-
-        invocations = task_work_data.get("agent_invocations")
-        if not isinstance(invocations, list):
-            return None
-
-        for inv in invocations:
-            if not isinstance(inv, dict):
-                continue
-            if str(inv.get("phase", "")) != "5":
-                continue
-            if inv.get("agent") != "code-reviewer":
-                continue
-            if inv.get("source") != "orchestrator":
-                continue
-            status = inv.get("status")
-            if status == "completed":
-                return {
-                    "score": 100,
-                    "status": "completed",
-                    "source": "orchestrator_specialist_completion",
-                }
-            if status == "failed":
-                block: Dict[str, Any] = {
-                    "score": 0,
-                    "status": "failed",
-                    "source": "orchestrator_specialist_failure",
-                }
-                error = inv.get("error")
-                if isinstance(error, str) and error:
-                    block["error"] = error
-                return block
-            return None
-
-        return None
-
-    def _compute_plan_audit_verdict(self, task_id: str) -> Dict[str, Any]:
-        """Run the deterministic plan auditor; return a Coach-consumable block.
-
-        Mirrors ``_compute_agent_invocations_validation``'s shape contract:
-        produces a stable dict that the Coach gate reads directly. Four
-        statuses:
-
-        - ``passed``: plan exists, audit ran, severity != high
-        - ``violation``: plan exists, audit ran, severity == high
-        - ``skipped``: no saved plan at worktree-relative path
-        - ``auditor_error``: auditor crashed (non-blocking for Coach)
-
-        The block also carries back-compat ``violations`` (int) so the
-        existing ``plan_audit.violations == 0`` gate in coach_validator
-        keeps working and test fixtures that set ``violations=N``
-        continue to exercise the same path. The auditor's deterministic
-        fields (severity, extra_files, missing_files, loc_variance_pct)
-        are exposed for Coach feedback so the Player can correct course.
-
-        Never raises: auditor exceptions become ``auditor_error`` so the
-        producer always writes the artefact (same invariant as the
-        agent_invocations gate).
-
-        When the task document declares the files it will create or change,
-        that declaration is the plan, and it is the plan on **every** path -
-        whether or not the player also wrote its own note of what it intended
-        to touch. A build graded against its own note is not graded.
-        """
-        declared = self._read_declared_file_sections(task_id)
-        if declared["create"] is not None or declared["modify"] is not None:
-            return self._plan_audit_against_task_document(task_id, declared)
-
-        try:
-            result = execute_phase_5_5_plan_audit(
-                task_id=task_id,
-                task_context={},
-                non_interactive=True,
-                workspace_root=self.worktree_path,
-            )
-        except Exception as exc:  # noqa: BLE001 — gate must never block artefacts
-            logger.warning(
-                "plan_audit auditor raised %s; recording auditor_error.",
-                exc.__class__.__name__,
-            )
-            return {
-                "status": "auditor_error",
-                "severity": None,
-                "violations": 0,
-                "extra_files": [],
-                "missing_files": [],
-                "extra_modifications": [],
-                "missing_modifications": [],
-                "extra_dependencies": [],
-                "missing_dependencies": [],
-                "loc_variance_pct": None,
-                "discrepancies_count": 0,
-                "message": f"{exc.__class__.__name__}: {exc}",
-            }
-
-        if result.get("skipped"):
-            # The task document declared no files at all - if it had, the
-            # branch at the top of this method would have taken over. All
-            # that is left is the check that the acceptance criteria do not
-            # name a file nobody wrote.
-
-            # TASK-AB-FIX-INVAB1 AC-005: a "no plan on disk" outcome is
-            # not a free pass. When AC text names a file path that
-            # doesn't exist on disk, escalate to a high-severity
-            # violation so coach_validator's plan_audit gate fires
-            # ``decision: feedback`` automatically.
-            ac_missing = self._scan_ac_for_missing_paths(task_id)
-            if ac_missing:
-                return {
-                    "status": "violation",
-                    "severity": "high",
-                    "violations": len(ac_missing),
-                    "extra_files": [],
-                    "missing_files": ac_missing,
-                    "extra_modifications": [],
-                    "missing_modifications": [],
-                    "extra_dependencies": [],
-                    "missing_dependencies": [],
-                    "loc_variance_pct": None,
-                    "discrepancies_count": len(ac_missing),
-                    "message": (
-                        "no plan on disk; AC names file path(s) that do "
-                        f"not exist on disk: {', '.join(ac_missing)}"
-                    ),
-                }
-            return {
-                "status": "skipped",
-                "severity": None,
-                "violations": 0,
-                "extra_files": [],
-                "missing_files": [],
-                "extra_modifications": [],
-                "missing_modifications": [],
-                "extra_dependencies": [],
-                "missing_dependencies": [],
-                "loc_variance_pct": None,
-                "discrepancies_count": 0,
-                "message": "no implementation plan on disk",
-            }
-
-        if result.get("decision") == "error":
-            return {
-                "status": "auditor_error",
-                "severity": None,
-                "violations": 0,
-                "extra_files": [],
-                "missing_files": [],
-                "extra_modifications": [],
-                "missing_modifications": [],
-                "extra_dependencies": [],
-                "missing_dependencies": [],
-                "loc_variance_pct": None,
-                "discrepancies_count": 0,
-                "message": result.get("error") or "auditor returned error",
-            }
-
-        report = result.get("report")
-        if report is None:
-            # Defensive: non-skipped, non-error, but no report — treat as
-            # auditor_error rather than fabricating a passed verdict.
-            return {
-                "status": "auditor_error",
-                "severity": None,
-                "violations": 0,
-                "extra_files": [],
-                "missing_files": [],
-                "extra_modifications": [],
-                "missing_modifications": [],
-                "extra_dependencies": [],
-                "missing_dependencies": [],
-                "loc_variance_pct": None,
-                "discrepancies_count": 0,
-                "message": "auditor returned no report",
-            }
-
-        return self._plan_audit_block_from_report(report)
-
-    @staticmethod
-    def _plan_audit_block_from_report(report: Any) -> Dict[str, Any]:
-        """Turn an audit report into the block the Coach gate reads.
-
-        Pure shaping: it reads the report's own discrepancy list and names
-        each kind of difference in its own field, so the Coach can tell the
-        player what to put right instead of handing it a number.
-        """
-        extra_files: List[str] = []
-        extra_beside_the_plan: List[str] = []
-        extra_for_the_reviewer: List[str] = []
-        extra_approved_by_a_repair: List[str] = []
-        missing_files: List[str] = []
-        extra_modifications: List[str] = []
-        missing_modifications: List[str] = []
-        extra_deps: List[str] = []
-        missing_deps: List[str] = []
-        loc_variance_pct: Optional[float] = None
-
-        for disc in report.discrepancies:
-            # Modify-axis branches checked BEFORE the generic
-            # creation-axis ``extra`` / ``missing`` discriminators so
-            # the new modification messages route correctly.
-            if disc.category == "files" and "unplanned modification" in disc.message:
-                # TASK-GK-PA-001 Phase 4.5: producer message is
-                # ``f"{N} unplanned modification(s)"`` (digit-prefixed) per
-                # plan_audit.py:516. The previous ``startswith`` check
-                # never matched, so ``extra_modifications`` was structurally
-                # always ``[]``. Use substring match to route correctly.
-                extra_modifications = (
-                    list(disc.actual) if isinstance(disc.actual, list) else []
-                )
-            elif disc.category == "files" and "not modified" in disc.message:
-                missing_modifications = (
-                    list(disc.planned) if isinstance(disc.planned, list) else []
-                )
-            elif disc.category == "files" and "extra" in disc.message:
-                # Several discrepancies can name extra files: the counted
-                # ones; the low one for a planned file's own tests and
-                # stylesheets (plan_audit._beside_the_plan); and, in a repair
-                # round only, the high one for protected files the round made
-                # and the low one for the other files the round made, which
-                # the reviewer judges (plan_audit._repair_round_split). Every
-                # one is named.
-                named = list(disc.actual) if isinstance(disc.actual, list) else []
-                extra_files = sorted(set(extra_files) | set(named))
-                if disc.severity == "low":
-                    if _PLAN_AUDIT_FOR_THE_REVIEWER in disc.message:
-                        extra_for_the_reviewer = named
-                    elif _PLAN_AUDIT_APPROVED_BY_A_REPAIR in disc.message:
-                        extra_approved_by_a_repair = named
-                    else:
-                        extra_beside_the_plan = named
-            elif disc.category == "files" and (
-                "missing" in disc.message or "not created" in disc.message
-            ):
-                missing_files = list(disc.planned) if isinstance(disc.planned, list) else []
-            elif disc.category == "dependencies" and "extra" in disc.message:
-                extra_deps = list(disc.actual) if isinstance(disc.actual, list) else []
-            elif disc.category == "dependencies" and (
-                "missing" in disc.message or "not added" in disc.message
-            ):
-                missing_deps = list(disc.planned) if isinstance(disc.planned, list) else []
-            elif disc.category == "loc":
-                loc_variance_pct = disc.variance
-
-        severity = report.severity
-        # High severity → block the turn; medium/low → informational only.
-        # `violations` is a back-compat count consumed by existing Coach
-        # code (`violations == 0 → pass`). Count high-severity items so
-        # severity-high maps to violations>0 without breaking the legacy
-        # fixture contract that hand-sets violations=N.
-        high_count = sum(
-            1 for d in report.discrepancies if d.severity == "high"
-        )
-        violations = high_count
-        status = "violation" if severity == "high" else "passed"
-
-        return {
-            "status": status,
-            "severity": severity,
-            "violations": violations,
-            "extra_files": extra_files,
-            # The extra files recorded as low because each is a planned
-            # file's own test or stylesheet; they are in extra_files too.
-            "extra_files_beside_the_plan": extra_beside_the_plan,
-            # A repair round only (see plan_audit._repair_round_split): the
-            # non-protected extra files the round made, recorded as low and
-            # left to the reviewer's judgement. In extra_files too.
-            "extra_files_for_the_reviewer": extra_for_the_reviewer,
-            # The extra files an earlier, approved repair round of this task
-            # made: not counted again. In extra_files too.
-            "extra_files_approved_by_a_repair": extra_approved_by_a_repair,
-            "missing_files": missing_files,
-            "extra_modifications": extra_modifications,
-            "missing_modifications": missing_modifications,
-            "extra_dependencies": extra_deps,
-            "missing_dependencies": missing_deps,
-            "loc_variance_pct": loc_variance_pct,
-            "discrepancies_count": len(report.discrepancies),
-            "message": (
-                f"severity={severity}, {len(report.discrepancies)} discrepanc(ies)"
-                + (f", {len(extra_files)} extra file(s)" if extra_files else "")
-                + (f", {len(missing_files)} missing file(s)" if missing_files else "")
-                + (
-                    f", {len(extra_modifications)} unplanned modification(s)"
-                    if extra_modifications
-                    else ""
-                )
-                + (
-                    f", {len(missing_modifications)} unmodified planned file(s)"
-                    if missing_modifications
-                    else ""
-                )
-            ),
-        }
-
     def _resolve_bare_declared_names(
         self,
         declared: Dict[str, Optional[List[str]]],
@@ -15047,238 +10061,6 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                 exc.__class__.__name__,
             )
             return declared, {}, {}
-
-    def _plan_audit_against_task_document(
-        self,
-        task_id: str,
-        declared: Dict[str, Optional[List[str]]],
-    ) -> Dict[str, Any]:
-        """Compare what the build changed with what the task document declared.
-
-        This is the blast-radius question item 3 exists to ask: the plan of
-        record says which files a task will touch, and the audit compares the
-        build against that. It runs whether or not the player wrote its own
-        note; the note is read and reported beside the verdict, and it no
-        longer decides anything.
-
-        Only files are judged. A task document declares files; it says nothing
-        about dependencies, line counts or hours, so neither does this.
-
-        Never raises: an auditor that falls over records ``auditor_error`` and
-        the artefact is still written.
-        """
-        from installer.core.commands.lib.plan_audit import (
-            DeclaredFiles,
-            PlanAuditor,
-        )
-
-        # 19 October 2026 (FEAT-D31F repair): a task document can declare a
-        # bare name such as ``Shelf.tsx`` beside its full path. A bare name that
-        # matches exactly one repository file is that file; one that matches
-        # several stays as written, so it is still missing and is named as
-        # ambiguous below. See guardkit/orchestrator/declared_paths.py.
-        declared, bare_resolved, bare_ambiguous = self._resolve_bare_declared_names(
-            declared
-        )
-
-        every_declared_path = list(declared["create"] or []) + list(
-            declared["modify"] or []
-        )
-        try:
-            from guardkit.tasks.state_bridge import TaskStateBridge
-
-            induced_paths = TaskStateBridge.orchestrator_induced_paths_for(
-                task_id, repo_root=self.worktree_path
-            )
-
-            def _excluded_from_player_work(path: str) -> bool:
-                return path in induced_paths or _is_orchestrator_managed_path(
-                    path, worktree_path=self.worktree_path
-                )
-
-            # The plan audit and Player report must ask git about the same
-            # implementation surface. The report already removes both the
-            # orchestrator's managed namespaces and state-transition source
-            # paths; applying those existing decisions at PlanAuditor's change
-            # source prevents Coach from grading factory work as Player scope.
-            # A gate re-opened this approved task (20 October 2026): the
-            # orchestrator that re-opened it handed the round over in memory
-            # (repair_round.py). ``None`` on every ordinary turn.
-            auditor = PlanAuditor(
-                task_work_scope=self.task_work_scope,
-                workspace_root=self.worktree_path,
-                path_exclusion=_excluded_from_player_work,
-                repair_round=getattr(self, "repair_round", None),
-            )
-            report = auditor.audit_implementation(
-                task_id,
-                declared=DeclaredFiles(
-                    to_create=declared["create"],
-                    to_modify=declared["modify"],
-                ),
-            )
-        except Exception as exc:  # noqa: BLE001 — gate must never block artefacts
-            logger.warning(
-                "plan_audit auditor raised %s while reading the task "
-                "document's declared files; recording auditor_error.",
-                exc.__class__.__name__,
-            )
-            return {
-                "status": "auditor_error",
-                "severity": None,
-                "violations": 0,
-                "extra_files": [],
-                "missing_files": [],
-                "extra_modifications": [],
-                "missing_modifications": [],
-                "extra_dependencies": [],
-                "missing_dependencies": [],
-                "loc_variance_pct": None,
-                "discrepancies_count": 0,
-                "message": f"{exc.__class__.__name__}: {exc}",
-            }
-
-        block = self._plan_audit_block_from_report(report)
-
-        # The one question that needs no git at all: a file the task said it
-        # would touch, which is not there. Asked of every declared path, and
-        # folded in beside whatever the comparison found.
-        declared_not_on_disk = sorted(
-            path
-            for path in every_declared_path
-            if not (self.worktree_path / path).exists()
-        )
-
-        # The same question, asked of the acceptance criteria: a criterion that
-        # names a file nobody wrote. This guard has been here since before task
-        # documents declared their files, and it has to keep working now that
-        # they do - every task will declare both sections, so the path above
-        # takes over on every task, and without this line the guard would be
-        # dead. Nothing here assumes a language: the only question asked is
-        # whether a path the task document names is on disk.
-        try:
-            criteria_not_on_disk = self._scan_ac_for_missing_paths(task_id)
-        except Exception as exc:  # noqa: BLE001 — gate must never block artefacts
-            logger.warning(
-                "reading the acceptance criteria for files raised %s; "
-                "nothing is claimed about them.",
-                exc.__class__.__name__,
-            )
-            criteria_not_on_disk = []
-
-        not_on_disk = sorted(set(declared_not_on_disk) | set(criteria_not_on_disk))
-        missing_files = sorted(set(block["missing_files"]) | set(not_on_disk))
-        block["missing_files"] = missing_files
-
-        # One violation per file that is missing, plus one for each other
-        # serious difference, so the count says how much there is to put right.
-        other_high = sum(
-            1
-            for d in report.discrepancies
-            if d.severity == "high"
-            and not (d.category == "files" and "not created" in d.message)
-        )
-        block["violations"] = len(missing_files) + other_high
-        if missing_files:
-            block["status"] = "violation"
-            block["severity"] = "high"
-        block["planned_files_source"] = "the task document"
-        block["player_note_files"] = report.plan_summary.get("player_note_files", {})
-        block["files_read"] = bool(report.actual_summary.get("files_read"))
-        block["bare_names_resolved"] = bare_resolved
-        block["bare_names_ambiguous"] = bare_ambiguous
-        repair_facts = report.actual_summary.get("repair_round")
-        if repair_facts:
-            # The evidence the reviewer is asked to judge (see
-            # _repair_round_prompt_section): every file the round touched
-            # beyond the task document, and which of them the gate named.
-            # The inventory comes from git since the round started, against
-            # every declared path - not from the discrepancies above, which
-            # say nothing about edits when the task document has no "files to
-            # modify" section.
-            named_by_gate = set(repair_facts.get("implicated_paths") or [])
-            existed = set(repair_facts.get("existed_at_round_start") or ())
-            declared_paths = set(every_declared_path)
-            beyond = [
-                path for path in repair_facts.get("changed_this_round") or []
-                if path not in declared_paths
-            ]
-            block["repair_round"] = {
-                "round_number": repair_facts.get("round_number"),
-                "start_commit": repair_facts.get("start_commit"),
-                "files_the_gate_names": sorted(named_by_gate),
-                "files_made_this_round": sorted(p for p in beyond if p not in existed),
-                "files_changed_this_round": sorted(p for p in beyond if p in existed),
-            }
-
-        declared_count = len(every_declared_path)
-        # A file the acceptance criteria named and the two file sections did
-        # not is said in its own words, so the message names the file the
-        # criteria named rather than blaming a declaration that never made it.
-        named_only_by_the_criteria = sorted(
-            set(criteria_not_on_disk) - set(declared_not_on_disk)
-        )
-        if missing_files:
-            said: List[str] = []
-            if declared_not_on_disk:
-                said.append(
-                    f"the task document declares {declared_count} file(s); "
-                    f"{len(declared_not_on_disk)} of them are not on disk: "
-                    + ", ".join(declared_not_on_disk[:3])
-                    + (", and more" if len(declared_not_on_disk) > 3 else "")
-                )
-            if named_only_by_the_criteria:
-                said.append(
-                    "the acceptance criteria name "
-                    f"{len(named_only_by_the_criteria)} file(s) that are not "
-                    "on disk: "
-                    + ", ".join(named_only_by_the_criteria[:3])
-                    + (
-                        ", and more"
-                        if len(named_only_by_the_criteria) > 3
-                        else ""
-                    )
-                )
-            if not said:
-                # The comparison found a missing file neither of the two
-                # questions above did. Say it plainly rather than say nothing.
-                said.append(
-                    f"the task document declares {declared_count} file(s); "
-                    f"{len(missing_files)} of them are not on disk: "
-                    + ", ".join(missing_files[:3])
-                    + (", and more" if len(missing_files) > 3 else "")
-                )
-            for name in sorted(set(bare_ambiguous) & set(missing_files)):
-                matches = bare_ambiguous[name]
-                said.append(
-                    f"{name} is a bare file name that matches {len(matches)} "
-                    "files ("
-                    + ", ".join(matches[:3])
-                    + (", and more" if len(matches) > 3 else "")
-                    + "), so it cannot be checked; the task document must give "
-                    "the full path"
-                )
-            block["message"] = "; ".join(said)
-        elif block["extra_files"] or block["extra_modifications"]:
-            beyond = list(block["extra_files"]) + list(block["extra_modifications"])
-            block["message"] = (
-                f"this build touched {len(beyond)} file(s) the task document "
-                "did not name: "
-                + ", ".join(sorted(beyond)[:3])
-                + (", and more" if len(beyond) > 3 else "")
-            )
-        elif not block["files_read"]:
-            block["message"] = (
-                "which files this build changed could not be read here, so "
-                "nothing is claimed about them; every file the task document "
-                "declares is on disk"
-            )
-        else:
-            block["message"] = (
-                f"every file this build changed was named in the task "
-                f"document, and all {declared_count} declared file(s) are on disk"
-            )
-        return block
 
     def _write_task_work_results(
         self,
@@ -15342,24 +10124,6 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
         completed = quality_gates_passed or (
             tests_passed is not None and tests_passed > 0 and tests_failed == 0
         )
-
-        # Extract architectural review score and subscores from result_data
-        # The architectural_review object from Phase 2.5B contains overall score
-        # and optional SOLID/DRY/YAGNI subscores for detailed evaluation
-        arch_review_data = result_data.get("architectural_review", {})
-        code_review: Dict[str, Any] = {}
-        if arch_review_data:
-            # Extract overall score (required for CoachValidator)
-            if "score" in arch_review_data:
-                code_review["score"] = arch_review_data["score"]
-
-            # Include optional subscores if present
-            if "solid" in arch_review_data:
-                code_review["solid"] = arch_review_data["solid"]
-            if "dry" in arch_review_data:
-                code_review["dry"] = arch_review_data["dry"]
-            if "yagni" in arch_review_data:
-                code_review["yagni"] = arch_review_data["yagni"]
 
         # Build structured results matching Coach expectations
         results: Dict[str, Any] = {
@@ -15465,10 +10229,6 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
         if isinstance(runtime_evidence, dict):
             results["runtime_evidence"] = runtime_evidence
 
-# Add code_review field if architectural review data was found
-        if code_review:
-            results["code_review"] = code_review
-
         # Include completion_promises if present in result data (TASK-ACR-001)
         completion_promises = result_data.get("completion_promises", [])
         if completion_promises:
@@ -15510,28 +10270,6 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
             if TaskWorkStreamParser._is_valid_file_path(f)
         ]
 
-        # Validate file count constraint for documentation level
-        self._validate_file_count_constraint(
-            task_id=task_id,
-            documentation_level=documentation_level,
-            files_created=results["files_created"],
-        )
-
-        # TASK-FIX-RWOP1.3.1: agent_invocations gate on the producer side.
-        # task-work.md Step 6.5 calls this "the ONLY checkpoint that prevents
-        # false reporting" — it runs after all enrichment and before the file
-        # hits disk, so Coach sees the validation block when it reads the
-        # results. Autobuild Player path invokes task-work --implement-only
-        # (Phases 3/4/5), so workflow_mode defaults to "implement-only".
-        # TASK-ABSR-1357: thread task_type so declarative tasks in
-        # implement-only mode expect [4, 5] only — there is no Phase-3
-        # stack-specific specialist to invoke when the schema *is* the
-        # implementation. Persist task_type into the on-disk results so
-        # downstream re-runs (specialist injection / enrichment writeback)
-        # can pick it up via the fallback in
-        # ``_compute_agent_invocations_validation`` without re-reading
-        # the task file.
-        workflow_mode = result_data.get("workflow_mode") or "implement-only"
         task_type = (
             result_data.get("task_type")
             if isinstance(result_data.get("task_type"), str)
@@ -15539,45 +10277,6 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
         )
         if task_type is not None:
             results["task_type"] = task_type
-        results["agent_invocations_validation"] = (
-            self._compute_agent_invocations_validation(
-                results, workflow_mode, task_type=task_type
-            )
-        )
-
-        # TASK-FIX-RWOP1.3.2: plan_audit gate on the producer side. The
-        # deterministic auditor OVERRIDES any Player-supplied plan_audit
-        # block (the Player-prose block is untrustworthy — it could claim
-        # violations=[] while the worktree has extras). Coach reads
-        # plan_audit.severity and plan_audit.violations from this block,
-        # not from the Player's self-report.
-        results["plan_audit"] = self._compute_plan_audit_verdict(task_id)
-
-        # TASK-FIX-DF51: code_review gate on the producer side. Coach reads
-        # task_work_results["code_review"]["score"] but no upstream producer
-        # was writing it under the OSI architecture, so the gate kept failing
-        # forever (must_fix/architectural). The fold below synthesises the
-        # block from the Phase-5 specialist record when no Player-stream
-        # score is available; see _compute_code_review_block for the full
-        # resolution order. Returns None to leave any existing block (set
-        # above from arch_review_data) untouched.
-        new_code_review = self._compute_code_review_block(results)
-        if new_code_review is not None:
-            results["code_review"] = new_code_review
-
-        # TASK-FIX-RWOP1.4a: assumption-confidence warn-mode gate on the
-        # producer side. Coach reads unconfirmed_low_confidence_assumptions
-        # and surfaces it as a non-blocking warning (see feature-spec.md's
-        # "Gating rule" for the prose claim this wire validates). Same fix-shape as the
-        # 1.3.1 agent_invocations gate; warn-mode per TASK-FIX-RWOP1.4
-        # Part A decision — escalation to block-mode is a separate task.
-        # Lazy import — see the comment on the top-of-file import block.
-        from guardkit.orchestrator.quality_gates.assumption_confidence_checker import (
-            check_unconfirmed_low_confidence_assumptions,
-        )
-        results["unconfirmed_low_confidence_assumptions"] = (
-            check_unconfirmed_low_confidence_assumptions(self.worktree_path)
-        )
 
         # Write results to file
         self._apply_scope_inventory(results)
@@ -15817,61 +10516,6 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
             parts.append("quality gates failed")
 
         return ", ".join(parts) if parts else "Implementation completed"
-
-    def _validate_file_count_constraint(
-        self,
-        task_id: str,
-        documentation_level: str,
-        files_created: List[str],
-    ) -> None:
-        """Validate that files created do not exceed documentation level limit.
-
-        This method enforces documentation level constraints by logging a warning
-        when the number of created files exceeds the limit for the specified level.
-        This is monitoring-only and does not block execution.
-
-        Args:
-            task_id: Task identifier (e.g., "TASK-001")
-            documentation_level: One of "minimal", "standard", or "comprehensive"
-            files_created: List of files created by the agent
-
-        Note:
-            - "minimal" and "standard" levels have a limit of 2 files
-            - "comprehensive" has no limit (None)
-            - Unknown levels are treated as having no limit
-
-        Example:
-            >>> invoker._validate_file_count_constraint(
-            ...     "TASK-001",
-            ...     "minimal",
-            ...     ["file1.py", "file2.py", "file3.py"]
-            ... )
-            # Logs: [TASK-001] Documentation level constraint violated: ...
-        """
-        max_files = DOCUMENTATION_LEVEL_MAX_FILES.get(documentation_level)
-
-        # Comprehensive or unknown levels have no limit
-        if max_files is None:
-            return
-
-        # TASK-GK-DOC-001: filter out orchestrator artefacts (turn dumps,
-        # bdd oracle output, task plans, empty package markers) before
-        # counting. Only real new code should count toward the limit.
-        files_for_count = [
-            f for f in files_created if not _is_doc_level_excluded(f)
-        ]
-        actual_count = len(files_for_count)
-
-        if actual_count > max_files:
-            # Show first 5 files to avoid overly long log messages
-            files_preview = files_for_count[:5]
-            suffix = "..." if len(files_for_count) > 5 else ""
-            logger.warning(
-                f"[{task_id}] Documentation level constraint violated: "
-                f"created {actual_count} files, max allowed {max_files} "
-                f"for {documentation_level} level. Files: {files_preview}{suffix}"
-            )
-
 
 # =========================================================================
 # Module-level utility functions

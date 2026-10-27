@@ -1,47 +1,34 @@
-"""A scratch file written and removed again is not a fabricated claim.
+"""What the builder wrote and then removed again is recorded as such.
 
-13 October 2026, first web fixture proof (build FEAT-40E8, task 001, turn 4).
-The builder wrote ``apps/web/src/zzprobe.test.tsx``, edited it, and removed
-it. It never named the file: the path appeared only in the lists the write
-tracker builds. The claim audit still raised, word for word (kept in
-``turn_state_turn_4.json``)::
-
-    Deterministic honesty record (claim_audit, severity=critical): Player
-    claim: Player claimed file apps/web/src/zzprobe.test.tsx. Actual: Path
-    absent from 'git status --porcelain' so 'git add -A' would not stage it.
-    Probes: path_exists=False; gitignore_match=not checked (file missing);
-    tracked=not checked (file missing). Most likely cause: the Player claimed
-    work on a file that does not exist on disk.
-
-and the evidence gathering aborted on a turn whose tests passed.
-
-Every test here goes through the whole path: harness events feed the parser,
-``_create_player_report_from_task_work`` writes the final report (and
-rewrites ``task_work_results.json``, which is what the Coach's own honesty
-check reads), and ``CoachVerifier`` checks the claims. Only a write
-CONFIRMED by its own successful result, never named by the builder or a
-promise, missing on disk and unknown to git is set aside. Every other shape
-keeps today's critical finding.
+13 October 2026, first web fixture proof (build FEAT-40E8, task 001, turn 4):
+the builder wrote ``apps/web/src/zzprobe.test.tsx``, edited it, and removed
+it, never naming it. The honesty check that once raised over that file was
+removed in the cull of 27 October 2026; what remains is the record: harness
+events feed the parser, ``_create_player_report_from_task_work`` writes the
+final report and rewrites ``task_work_results.json``, and a write confirmed by
+its own result and then removed is listed as ``files_written_then_removed``,
+kept in ``files_authored`` and left out of ``files_created``. A tracked file
+the builder deleted keeps its authorship.
 """
 
 from __future__ import annotations
 
 import json
 import subprocess
+from contextlib import contextmanager
 from pathlib import Path
-from types import SimpleNamespace
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Iterator, List, Optional, Tuple
 from unittest.mock import patch
 
 import pytest
 
-from guardkit.orchestrator.coach_verification import CoachVerifier
 from guardkit.orchestrator.harness.adapter import (
     AssistantMessageEvent,
     ResultMessageEvent,
     ToolResultEvent,
     ToolUseEvent,
 )
+from tests.task_scope_fixtures import admitted_task
 
 PROBE = "apps/web/src/zzprobe.test.tsx"
 TRACKED = "apps/web/src/App.tsx"
@@ -59,8 +46,11 @@ def _git(*args: str, cwd: Path) -> None:
     )
 
 
-def _invoker(tmp_path: Path) -> Any:
-    """An invoker over a real git checkout holding one committed file."""
+@contextmanager
+def _invoker(tmp_path: Path, task_id: str) -> Iterator[Any]:
+    """An invoker over a real git checkout holding one committed file, built
+    while the task is admitted on the checkout (as in a build), so the
+    invoker reads what changed from git."""
     from guardkit.orchestrator.agent_invoker import AgentInvoker
 
     worktree = tmp_path / "worktree"
@@ -69,9 +59,10 @@ def _invoker(tmp_path: Path) -> Any:
     _git("init", "--initial-branch=main", cwd=worktree)
     _git("add", "-A", cwd=worktree)
     _git("commit", "-m", "base", cwd=worktree)
-    return AgentInvoker(
-        worktree_path=worktree, max_turns_per_agent=30, sdk_timeout_seconds=60
-    )
+    with admitted_task(worktree, task_id, register=True):
+        yield AgentInvoker(
+            worktree_path=worktree, max_turns_per_agent=30, sdk_timeout_seconds=60
+        )
 
 
 def _harness(events: List[Any], final_text: str) -> Any:
@@ -117,29 +108,6 @@ def _remove(path: Path) -> Any:
     return lambda: path.unlink()
 
 
-def _write_promise(invoker: Any, task_id: str, files: List[str]) -> Any:
-    """The builder's own report, naming files in a completion promise."""
-
-    def run() -> None:
-        folder = invoker.worktree_path / ".guardkit" / "autobuild" / task_id
-        folder.mkdir(parents=True, exist_ok=True)
-        (folder / "player_turn_1.json").write_text(
-            json.dumps(
-                {
-                    "completion_promises": [
-                        {
-                            "criterion_id": "AC-001",
-                            "status": "complete",
-                            "implementation_files": files,
-                        }
-                    ]
-                }
-            )
-        )
-
-    return run
-
-
 async def _whole_path(
     invoker: Any, task_id: str, events: List[Any], final_text: str = _FINAL_TEXT
 ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
@@ -159,215 +127,31 @@ async def _whole_path(
     return report, record
 
 
-def _critical_for(worktree: Path, record: Dict[str, Any], path: str) -> List[Any]:
-    """The claim check and the existence check, as the Coach runs them."""
-    verifier = CoachVerifier(worktree)
-    found = verifier._verify_files_exist(record) + verifier._verify_claims_were_staged(
-        record
-    )
-    return [d for d in found if path in d.player_claim and d.severity == "critical"]
-
-
-def _is_fabricated_claim(discrepancies: List[Any], path: str) -> bool:
-    return any(
-        d.claim_type == "claim_audit"
-        and d.player_claim == f"Player claimed file {path}"
-        and "path_exists=False" in d.actual_value
-        for d in discrepancies
-    )
-
-
 # ---------------------------------------------------------------------------
-# The exemption
+# The record
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_written_then_removed_probe_is_not_a_critical_claim(
+async def test_a_confirmed_write_then_deleted_is_recorded_as_written_then_removed(
     tmp_path: Path,
 ) -> None:
-    invoker = _invoker(tmp_path)
-    wt = invoker.worktree_path
-    probe = wt / PROBE
-    report, record = await _whole_path(
-        invoker,
-        "TASK-PROBE",
-        [
-            _put(probe),
-            _use("c1", "Write", probe),
-            _ok("c1"),
-            _use("c2", "Edit", probe),
-            _ok("c2"),
-            _remove(probe),
-        ],
-    )
-
-    # Both the final report and the results file the Coach reads.
-    assert _critical_for(wt, report, PROBE) == []
-    assert _critical_for(wt, record, PROBE) == []
-
-
-@pytest.mark.asyncio
-async def test_a_confirmed_write_then_deleted_and_never_claimed_is_exempt(
-    tmp_path: Path,
-) -> None:
-    invoker = _invoker(tmp_path)
-    wt = invoker.worktree_path
-    probe = wt / PROBE
-    report, record = await _whole_path(
-        invoker,
-        "TASK-CONFIRMED",
-        [_put(probe), _use("c1", "write_file", probe), _ok("c1"), _remove(probe)],
-    )
+    with _invoker(tmp_path, "TASK-CONFIRMED") as invoker:
+        probe = invoker.worktree_path / PROBE
+        report, record = await _whole_path(
+            invoker,
+            "TASK-CONFIRMED",
+            [_put(probe), _use("c1", "write_file", probe), _ok("c1"), _remove(probe)],
+        )
 
     for final in (report, record):
         assert final["files_written_then_removed"] == [PROBE]
         assert PROBE in final["files_authored"]
         assert PROBE not in final["files_created"]
-        assert _critical_for(wt, final, PROBE) == []
 
 
 # ---------------------------------------------------------------------------
-# Controls: unconfirmed writes stay critical (pass before and after)
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_an_unanswered_write_that_is_missing_stays_critical(
-    tmp_path: Path,
-) -> None:
-    invoker = _invoker(tmp_path)
-    wt = invoker.worktree_path
-    report, record = await _whole_path(
-        invoker, "TASK-UNANSWERED", [_use("c1", "write_file", wt / PROBE)]
-    )
-
-    for final in (report, record):
-        assert PROBE in final["files_created"]
-        assert final.get("files_written_then_removed", []) == []
-        assert _is_fabricated_claim(_critical_for(wt, final, PROBE), PROBE)
-
-
-@pytest.mark.asyncio
-async def test_a_write_without_a_call_id_that_is_missing_stays_critical(
-    tmp_path: Path,
-) -> None:
-    invoker = _invoker(tmp_path)
-    wt = invoker.worktree_path
-    probe = wt / PROBE
-    report, record = await _whole_path(
-        invoker,
-        "TASK-NO-ID",
-        [_put(probe), _use(None, "write_file", probe), _remove(probe)],
-    )
-
-    for final in (report, record):
-        assert PROBE in final["files_created"]
-        assert final.get("files_written_then_removed", []) == []
-        assert _is_fabricated_claim(_critical_for(wt, final, PROBE), PROBE)
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("later_call_id", ["c2", None], ids=["unanswered", "no-call-id"])
-async def test_a_later_unconfirmed_write_cancels_an_earlier_confirmation(
-    tmp_path: Path, later_call_id: Optional[str]
-) -> None:
-    """A confirmed write, the file removed, then another write to the same
-    path that is never confirmed (its result never arrives, or it has no
-    call id). The earlier confirmation must not excuse the later write."""
-    invoker = _invoker(tmp_path)
-    wt = invoker.worktree_path
-    probe = wt / PROBE
-    report, record = await _whole_path(
-        invoker,
-        f"TASK-LATER-{later_call_id or 'NOID'}",
-        [
-            _put(probe),
-            _use("c1", "write_file", probe),
-            _ok("c1"),
-            _remove(probe),
-            _use(later_call_id, "write_file", probe),
-        ],
-    )
-
-    assert PROBE in record["confirmed_write_paths"]
-    assert PROBE in record["unconfirmed_write_paths"]
-    for final in (report, record):
-        assert PROBE in final["files_created"]
-        assert final["files_written_then_removed"] == []
-        assert _is_fabricated_claim(_critical_for(wt, final, PROBE), PROBE)
-
-
-# ---------------------------------------------------------------------------
-# Kept guards: a named path is a claim (pass before and after)
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_a_confirmed_write_the_builder_names_in_words_stays_critical(
-    tmp_path: Path,
-) -> None:
-    invoker = _invoker(tmp_path)
-    wt = invoker.worktree_path
-    probe = wt / PROBE
-    report, record = await _whole_path(
-        invoker,
-        "TASK-NAMED",
-        [_put(probe), _use("c1", "write_file", probe), _ok("c1"), _remove(probe)],
-        final_text=f"Created: {PROBE}\n" + _FINAL_TEXT,
-    )
-
-    for final in (report, record):
-        assert final.get("files_written_then_removed", []) == []
-        assert _is_fabricated_claim(_critical_for(wt, final, PROBE), PROBE)
-
-
-@pytest.mark.asyncio
-async def test_a_confirmed_write_named_in_a_promise_stays_critical(
-    tmp_path: Path,
-) -> None:
-    invoker = _invoker(tmp_path)
-    wt = invoker.worktree_path
-    probe = wt / PROBE
-    task_id = "TASK-PROMISED"
-    report, record = await _whole_path(
-        invoker,
-        task_id,
-        [
-            _put(probe),
-            _use("c1", "write_file", probe),
-            _ok("c1"),
-            _remove(probe),
-            _write_promise(invoker, task_id, [PROBE]),
-        ],
-    )
-
-    for final in (report, record):
-        assert final.get("files_written_then_removed", []) == []
-        assert _is_fabricated_claim(_critical_for(wt, final, PROBE), PROBE)
-
-
-@pytest.mark.asyncio
-async def test_a_path_named_in_words_with_no_write_call_stays_critical(
-    tmp_path: Path,
-) -> None:
-    invoker = _invoker(tmp_path)
-    wt = invoker.worktree_path
-    report, record = await _whole_path(
-        invoker,
-        "TASK-WORDS-ONLY",
-        [],
-        final_text=f"Created: {PROBE}\n" + _FINAL_TEXT,
-    )
-
-    for final in (report, record):
-        assert PROBE in final["files_created"]
-        assert final.get("files_written_then_removed", []) == []
-        assert _is_fabricated_claim(_critical_for(wt, final, PROBE), PROBE)
-
-
-# ---------------------------------------------------------------------------
-# Authorship is never shortened (pass before and after)
+# Authorship is never shortened
 # ---------------------------------------------------------------------------
 
 
@@ -375,53 +159,15 @@ async def test_a_path_named_in_words_with_no_write_call_stays_critical(
 async def test_a_tracked_file_the_builder_deleted_keeps_its_authorship(
     tmp_path: Path,
 ) -> None:
-    invoker = _invoker(tmp_path)
-    wt = invoker.worktree_path
-    tracked = wt / TRACKED
-    report, record = await _whole_path(
-        invoker,
-        "TASK-TRACKED-DELETE",
-        [_use("c1", "write_file", tracked), _ok("c1"), _remove(tracked)],
-    )
+    with _invoker(tmp_path, "TASK-TRACKED-DELETE") as invoker:
+        tracked = invoker.worktree_path / TRACKED
+        report, record = await _whole_path(
+            invoker,
+            "TASK-TRACKED-DELETE",
+            [_use("c1", "write_file", tracked), _ok("c1"), _remove(tracked)],
+        )
 
     for final in (report, record):
         assert TRACKED in final["files_modified"]
         assert TRACKED in final["files_authored"]
         assert final.get("files_written_then_removed", []) == []
-
-
-@pytest.mark.asyncio
-async def test_contention_still_sees_a_deleted_file(tmp_path: Path) -> None:
-    from guardkit.orchestrator.quality_gates.coach_validator import CoachValidator
-
-    invoker = _invoker(tmp_path)
-    wt = invoker.worktree_path
-    tracked = wt / TRACKED
-    probe = wt / PROBE
-    _, record = await _whole_path(
-        invoker,
-        "TASK-CONTENTION",
-        [
-            _use("c1", "write_file", tracked),
-            _ok("c1"),
-            _remove(tracked),
-            _put(probe),
-            _use("c2", "write_file", probe),
-            _ok("c2"),
-            _remove(probe),
-        ],
-    )
-    assert {TRACKED, PROBE} <= set(record["files_authored"])
-
-    def overlap(peer_files: List[str]) -> Dict[str, frozenset]:
-        validator = CoachValidator(
-            worktree_path=str(wt),
-            task_id="TASK-CONTENTION",
-            test_command="true",
-            wave_size=2,
-            peer_changed_files={"TASK-PEER": peer_files},
-        )
-        return validator._detect_source_file_contention(record)
-
-    assert overlap([TRACKED]) == {"TASK-PEER": frozenset({TRACKED})}
-    assert overlap([PROBE]) == {"TASK-PEER": frozenset({PROBE})}

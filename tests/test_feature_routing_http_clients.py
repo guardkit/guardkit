@@ -17,7 +17,6 @@ from guardkit.lib.client_env import (
     FEATURE_ROUTING_REQUIRED_ENV,
 )
 from guardkit.orchestrator.stamp_model_fallback import ConfiguredAsker
-from guardkit.qa.qav_shadow import _default_seat_call as qav_call
 from guardkit.qa.review_seat import _default_seat_call as review_call
 
 
@@ -95,28 +94,25 @@ def loopback(monkeypatch):
 
 
 def test_all_guardkit_clients_transmit_the_same_feature_header(loopback):
-    qav = qav_call(loopback.base_url)
     review = review_call(loopback.base_url, timeout_s=2)
     stamp = ConfiguredAsker(loopback.base_url, "stamp-model", 2)
 
-    assert qav("system", "user", "qav-model", 2).text == "fixture answer"
     assert review("system", "user", "review-model") == "fixture answer"
     assert stamp("prompt") == "fixture answer"
 
-    assert len(loopback.requests) == 3
+    assert len(loopback.requests) == 2
     for path, headers, body in loopback.requests:
         assert path == "/v1/chat/completions"
         normalized = {name.lower(): value for name, value in headers.items()}
         assert normalized[FEATURE_ROUTING_HEADER] == "wire_route-A"
-        assert body["model"] in {"qav-model", "review-model", "stamp-model"}
+        assert body["model"] in {"review-model", "stamp-model"}
 
 
-@pytest.mark.parametrize("client", ["qav", "review", "stamp"])
+@pytest.mark.parametrize("client", ["review", "stamp"])
 def test_missing_required_route_is_advice_and_sends_no_header(loopback, monkeypatch, client):
     """Step 2 (26 October 2026): routing is bookkeeping, never a refusal."""
     monkeypatch.delenv(FEATURE_ROUTING_ID_ENV)
     call = {
-        "qav": lambda: qav_call(loopback.base_url)("s", "u", "m", 2),
         "review": lambda: review_call(loopback.base_url, timeout_s=2)("s", "u", "m"),
         "stamp": lambda: ConfiguredAsker(loopback.base_url, "m", 2)("p"),
     }[client]

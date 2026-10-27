@@ -348,18 +348,6 @@ def task_work_timeout_issue(error: str) -> Dict[str, Any]:
     }
 
 
-def completion_promise_suggestion(turn: int) -> str:
-    """The suggestion for criteria that have no matching completion promise.
-
-    ``turn`` is the turn that will write the report, so the file named is
-    the one the coder writes next.
-    """
-    return (
-        "List a completion promise for each acceptance criterion "
-        f"(criterion_id, status, evidence) in player_turn_{turn}.json."
-    )
-
-
 def mark_shared_working_copy(report: Dict[str, Any]) -> Dict[str, Any]:
     """Mark a git-built report as coming from a shared working copy.
 
@@ -1139,36 +1127,3 @@ def _merge_promises(
 # ---------------------------------------------------------------------------
 
 
-def validate_requirements_staleness(
-    requirements: List[str],
-    source_files: List[str],
-    worktree_path: Path,
-) -> List[str]:
-    """Re-validate previously-inferred requirements against current worktree state.
-
-    Reuses the keyword-matching logic of ``infer_requirements_from_files`` to
-    check whether previously-inferred requirements are still supported by
-    the files in the worktree.  Requirements whose keywords no longer appear
-    in the tracked source files are considered stale and excluded from the
-    returned list.
-
-    Parameters
-    ----------
-    requirements : List[str]
-        Requirement texts to validate (subset of acceptance criteria).
-    source_files : List[str]
-        Relative file paths to check (accumulated across turns).
-    worktree_path : Path
-        Worktree root for resolving file paths.
-
-    Returns
-    -------
-    List[str]
-        Requirements that are still valid (keywords still present in files).
-    """
-    return infer_requirements_from_files(
-        acceptance_criteria=requirements,
-        files_created=source_files,
-        files_modified=[],
-        worktree_path=worktree_path,
-    )

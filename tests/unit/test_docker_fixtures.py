@@ -32,6 +32,7 @@ from guardkit.orchestrator.docker_fixtures import (
 from guardkit.orchestrator.quality_gates.coach_validator import (
     CoachValidator,
     IndependentTestResult,
+    _checker_pytest_env,
 )
 
 
@@ -344,7 +345,7 @@ class TestCoachValidatorDockerMethods:
                 env = validator._start_infrastructure_containers(["postgresql"])
                 assert "DATABASE_URL" not in os.environ
         assert env["DATABASE_URL"] == "postgresql://postgres:test@127.0.0.1:41000/test"
-        assert validator._pytest_env()["DATABASE_URL"] == env["DATABASE_URL"]
+        assert _checker_pytest_env(validator)["DATABASE_URL"] == env["DATABASE_URL"]
         assert validator._declared_command_env()["DATABASE_URL"] == env["DATABASE_URL"]
 
     def test_start_infrastructure_containers_redis_returns_redis_url(

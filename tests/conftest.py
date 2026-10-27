@@ -91,14 +91,8 @@ def pytest_configure(config):
     )
     config.addinivalue_line(
         "markers",
-        "security_scanners: this test lets the security check find Gitleaks and "
-        "OSV-Scanner on PATH (or its own stubs); every other test sees neither.",
-    )
-    config.addinivalue_line(
-        "markers",
-        "coverage_declaration_check: this test runs the task-start check that "
-        "stops a task needing coverage in a project that declares no coverage "
-        "command; every other test runs with that check passing.",
+        "security_scanners: this test lets the security check find Gitleaks on "
+        "PATH (or its own stub); every other test does not.",
     )
     config.addinivalue_line(
         "markers",
@@ -785,10 +779,9 @@ def project_commands_follow_a_replaced_subprocess_run(monkeypatch):
 # ---------------------------------------------------------------------------
 # The per-change security check (17 October 2026)
 # ---------------------------------------------------------------------------
-# ``security_check.build_security_rule`` adds a rule to every task's frozen checks
-# whenever Gitleaks or OSV-Scanner is on PATH. On a machine that has them installed,
-# that would change what every existing conformance test sees, so the scanners are
-# hidden from every test unless it carries the ``security_scanners`` marker.
+# ``security_check.security_check_command`` adds the secrets check to every task
+# whenever the switch is on and Gitleaks is on PATH. So the scanner is hidden from
+# every test unless it carries the ``security_scanners`` marker.
 
 
 @pytest.fixture(autouse=True)
@@ -807,36 +800,6 @@ def security_scanners_hidden_unless_asked(monkeypatch, request):
 
 
 # The task-start coverage check (19 October 2026)
-# ---------------------------------------------------------------------------
-# ``AutoBuildOrchestrator.orchestrate`` stops a feature, refactor, glue or wiring
-# task at task start when the project declares no coverage command, because such a
-# task can never pass. Most tests that drive ``orchestrate(...)`` use fixture
-# projects with no ``toolchain:`` block and fake the Coach's verdict, so the check
-# would stop every one of them before the behaviour they test. It reports nothing
-# for every test unless the test carries the ``coverage_declaration_check``
-# marker; tests/orchestrator/test_undeclared_coverage_fast_exit.py does.
-
-
-@pytest.fixture(autouse=True)
-def coverage_declaration_check_off_unless_asked(monkeypatch, request):
-    if request.node.get_closest_marker("coverage_declaration_check"):
-        return
-    # The decision function is patched, not the orchestrator's method: some
-    # tests reload guardkit.orchestrator.autobuild, after which the class a test
-    # module imported is no longer the one in sys.modules. The method imports
-    # this function at call time, so the patch reaches every copy of the class.
-    try:
-        from guardkit.orchestrator import toolchain_declaration
-    except Exception:  # noqa: BLE001 -- a test without the package is unaffected
-        return
-    monkeypatch.setattr(
-        toolchain_declaration,
-        "undeclared_coverage_refusal",
-        lambda **_kwargs: None,
-        raising=True,
-    )
-
-
 _CHECKOUT = Path(__file__).resolve().parents[1]
 
 

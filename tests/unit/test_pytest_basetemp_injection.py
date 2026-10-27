@@ -8,8 +8,7 @@ must carry a unique ``--basetemp`` under the system temp dir:
 
 1. Coach standard subprocess independent-test run (``coach_validator.py``).
 2. Coach isolated parallel-wave snapshot run (``_run_isolated_tests``).
-3. Deterministic Phase-4 runner (``specialist_invocations.py`` — delegates to
-   CoachValidator with ``basetemp_context="phase4"``).
+3. A caller-chosen run label (``CoachValidator(basetemp_context=...)``).
 4. BDD runner subprocess (``bdd_runner._invoke_pytest_bdd``).
 
 Operator-authored command strings (smoke gates, non-pytest shell commands)
@@ -21,14 +20,10 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from guardkit.orchestrator.quality_gates.coach_validator import CoachValidator
 from guardkit.orchestrator.quality_gates.bdd_runner import _invoke_pytest_bdd
-from guardkit.orchestrator.specialist_invocations import (
-    _run_deterministic_phase_4,
-)
 
 
 def _make_validator(
@@ -185,30 +180,6 @@ class TestIsolatedRunBasetemp:
 
 
 class TestPhase4BasetempContext:
-    def test_phase4_threads_basetemp_context(self, tmp_path):
-        """The PERTASKFG01 AC-004 subprocess labels its basetemp 'phase4' so a
-        leaked dir is attributable to the Phase-4 runner, not the Coach."""
-        with patch(
-            "guardkit.orchestrator.quality_gates.coach_validator.CoachValidator"
-        ) as mock_cls:
-            instance = mock_cls.return_value
-            instance.run_independent_tests.return_value = SimpleNamespace(
-                test_command="skipped",
-                signal_absent=False,
-                tests_passed=False,
-                test_output_summary="",
-                raw_output="",
-            )
-            result = _run_deterministic_phase_4(
-                tmp_path,
-                "TASK-AB-BASETEMP01",
-                agent_invoker=SimpleNamespace(_venv_python=None),
-                sdk_timeout=60,
-                turn=1,
-            )
-        assert result is None  # "skipped" sentinel -> specialist fallback
-        assert mock_cls.call_args.kwargs["basetemp_context"] == "phase4"
-
     def test_validator_context_override_reaches_prefix(self, tmp_path):
         """CoachValidator(basetemp_context='phase4') composes
         '<task_id>-phase4' for the run's basetemp prefix."""

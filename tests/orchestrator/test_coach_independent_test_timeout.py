@@ -10,9 +10,9 @@ two load-bearing parts:
           bypassing the LLM turn entirely.
   AC-3 — every non-completion path (SDK timeout, SDK API error, subprocess
           timeout, isolated-test timeout, generic execution error) marks the
-          result ``signal_absent=True`` (with ``tests_passed=False``) so the
-          LLM Coach treats it as ABSENT SIGNAL via the sixth absence-of-failure
-          guard rather than approving on the Player's self-reported tests.
+          result ``signal_absent=True`` (with ``tests_passed=False``) so it
+          never reads as a pass, and the reviewer sees ``signal_absent`` in
+          the evidence bundle.
 
 See ``docs/state/TASK-FIX-COACHTESTTO/diagnosis.md`` and
 ``.claude/rules/absence-of-failure-is-not-success.md``.
@@ -31,7 +31,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from guardkit.orchestrator.agent_invoker import AgentInvoker
-from guardkit.orchestrator.coach_verification import HonestyVerification
 from guardkit.orchestrator.quality_gates.coach_evidence import (
     CoachEvidenceBundle,
 )
@@ -239,49 +238,19 @@ class TestAbsentSignalMarking:
 
 
 # ---------------------------------------------------------------------------
-# AC-3 (prompt side): the sixth absence-of-failure guard
+# AC-3 (prompt side): the reviewer sees signal_absent in the evidence bundle
 # ---------------------------------------------------------------------------
 
 
-class TestIndependentTestAbsentGuard:
-    """The Coach prompt must carry the INDEPENDENT-TEST ABSENT GUARD and the
-    bundle must serialise ``signal_absent`` so the LLM can apply it."""
-
-    def test_guard_sentence_renders(self, tmp_path: Path) -> None:
-        bundle = CoachEvidenceBundle(
-            honesty=HonestyVerification(verified=True),
-            gathering_status="complete",
-            independent_tests=IndependentTestResult(
-                tests_passed=False,
-                test_command="pytest",
-                test_output_summary="SDK test execution timed out after 300s",
-                duration_seconds=300.0,
-                signal_absent=True,
-            ),
-            task_type="feature",
-            profile_name="feature",
-        )
-
-        prompt = _build_invoker(tmp_path)._build_coach_prompt(
-            task_id="TASK-T",
-            turn=1,
-            requirements="independent-test absent scenario",
-            player_report={"files_modified": []},
-            evidence_bundle=bundle,
-        )
-
-        assert "INDEPENDENT-TEST ABSENT GUARD" in prompt
-        assert "signal_absent" in prompt
-        assert "ABSENT SIGNAL" in prompt
-        assert "absence-of-failure-is-not-success.md" in prompt
+class TestIndependentTestAbsentInEvidence:
+    """The bundle must serialise ``signal_absent`` into the reviewer's prompt."""
 
     def test_absent_result_serialised_in_evidence_block(
         self, tmp_path: Path
     ) -> None:
-        """The Coach can only apply the guard if ``signal_absent: true`` is in
-        the JSON-serialised bundle it reads."""
+        """``signal_absent: true`` is in the JSON-serialised bundle the
+        reviewer reads."""
         bundle = CoachEvidenceBundle(
-            honesty=HonestyVerification(verified=True),
             gathering_status="complete",
             independent_tests=IndependentTestResult(
                 tests_passed=False,
@@ -317,9 +286,8 @@ class TestAbsentRunnerMarksAbsent:
     """FEAT-9DDE run-6: the pinned worktree interpreter had no pytest, so
     ``python -m pytest`` exited non-zero in 0.0s with 'No module named pytest'.
     That is the oracle failing to RUN (absent signal), not the Player's tests
-    failing — it must set ``signal_absent=True`` so the sixth
-    absence-of-failure guard can override an approve, instead of being read as
-    a real test failure. Sibling of the timeout/exception paths above.
+    failing — it must set ``signal_absent=True`` instead of being read as a
+    real test failure. Sibling of the timeout/exception paths above.
     """
 
     def _validator(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> CoachValidator:

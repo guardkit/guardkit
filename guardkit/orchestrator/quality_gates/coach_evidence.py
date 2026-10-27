@@ -1,37 +1,13 @@
-"""CoachEvidenceBundle — structured evidence supplied by CoachValidator.
+"""CoachEvidenceBundle — the project's own check results for one Coach turn.
 
-TASK-HMIG-008R Part A (Revision 3, operator-approved 2026-05-20). Restores the
-LLM Coach as the primary decision-maker per the Block adversarial-cooperation
-paper, demoting CoachValidator from primary decision path to evidence supplier.
+Produced by ``CoachValidator.gather_evidence(...)`` and consumed by
+``AgentInvoker.invoke_coach(...)``, which renders it into the reviewer's prompt
+and reads it for the only things that send a turn back (27 October 2026): the
+project's required tests ran and failed, the declared smoke command ran and
+failed, the declared behavioural check ran and failed, the secrets check found a
+secret. The reviewer's own verdict is advice.
 
-The bundle is produced by ``CoachValidator.gather_evidence(...)`` and consumed
-by ``AgentInvoker.invoke_coach(...)`` which renders it into the Coach prompt
-via ``_build_coach_prompt(...)``. Every field corresponds to an intermediate
-value that the legacy ``CoachValidator.validate()`` method previously consumed
-internally to reach approve/feedback decisions. Under the new architecture
-those intermediates become read-only evidence the LLM Coach reasons about.
-
-Design rules (see ``.claude/rules/patterns/dataclasses.md``):
-
-* Internal value object — no external API boundary, no field-level validation
-  constraints, serialised via ``dataclasses.asdict`` + ``json.dumps``.
-* All evidence fields are ``Optional[...]`` so the bundle can be returned even
-  when one of the gathering stages aborted early.
-* ``gathering_status`` disambiguates "field is None because gathering aborted"
-  from "field is None because no signal was reported". The absence-of-failure
-  guards in the Coach prompt (TASK-HMIG-008R §4) instruct the Coach to treat
-  any ``None`` field as ABSENT SIGNAL when ``gathering_status != "complete"``.
-
-Cross-references:
-
-* ``.claude/rules/absence-of-failure-is-not-success.md`` — the structural
-  rule the LLM-layer guards mirror. Pair-with-attempted-count semantics map
-  directly onto the bundle's ``bdd.scenarios_attempted`` / ``tests.tests_run``
-  fields.
-* ``.claude/rules/path-string-mismatch-is-not-dishonesty.md`` — Layer-1
-  identity resolution lives in ``honesty.resolved_paths``; Layer-2 demotion
-  hint surfaces in ``severity_recommendations``.
-* TASK-REV-HMIG §14.9 (the architectural correction).
+Internal value object, serialised via ``dataclasses.asdict`` + ``json.dumps``.
 """
 
 from __future__ import annotations
@@ -42,42 +18,14 @@ from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional
 if TYPE_CHECKING:  # pragma: no cover — annotation-only imports
     # Imported under TYPE_CHECKING to avoid the circular dependency
     # coach_validator.py -> coach_evidence.py -> coach_validator.py.
-    # Runtime values are duck-typed; the annotations document intent.
-    from guardkit.orchestrator.coach_verification import HonestyVerification
     from guardkit.orchestrator.quality_gates.coach_validator import (
         IndependentTestResult,
-        QualityGateStatus,
     )
 
 
-INVALID_TASK_TYPE_CAUSE = "invalid_task_type"
-"""The cause ``gather_evidence`` names first in ``gathering_error`` (as
-``"invalid_task_type: <detail>"``) when the task's ``task_type`` is neither a
-``TaskType`` nor a registered alias. The primary Coach path reads it to end
-the turn as a configuration error (TASK-ABFIX-003) instead of asking the LLM
-Coach to judge a turn that has no quality-gate profile."""
-
-
-GatheringStatus = Literal[
-    "complete",
-    "partial_honesty_abort",
-    "partial_gate_abort",
-    "partial_exception",
-]
-"""Status of the evidence-gathering pipeline.
-
-* ``complete`` — all gathering stages ran successfully and populated their fields.
-* ``partial_honesty_abort`` — honesty verification produced ``must_fix``
-  discrepancies; downstream gathering (gates, independent tests, requirements)
-  was skipped because the legacy decision tree would have short-circuited here.
-  Fields downstream of honesty are ``None``.
-* ``partial_gate_abort`` — quality gates failed; downstream gathering
-  (independent tests, requirements) was skipped. ``quality_gates`` is populated;
-  ``independent_tests`` and ``requirements_*`` fields are ``None``.
-* ``partial_exception`` — pre-evidence error (invalid task type, missing
-  task_work_results, or unexpected exception in a gathering helper). Inspect
-  ``gathering_error`` for the cause.
-"""
+GatheringStatus = Literal["complete", "partial_exception"]
+"""``complete``, or ``partial_exception`` when running the project's tests
+raised; ``gathering_error`` then names the cause."""
 
 
 @dataclass
@@ -173,294 +121,55 @@ class IndependentTestClassification:
 
 @dataclass
 class CoachEvidenceBundle:
-    """Structured evidence gathered by CoachValidator for the LLM Coach.
-
-    Each field maps to an intermediate value the legacy ``validate()`` method
-    consumed internally. Under TASK-HMIG-008R the LLM Coach reads this bundle
-    (rendered as JSON into the Coach prompt) plus the honesty result and makes
-    the final approve/feedback decision.
+    """The project's own check results for one Coach turn.
 
     Attributes
     ----------
-    honesty
-        ``HonestyVerification`` from ``CoachVerifier``. Carries
-        ``resolved_paths`` (Layer 1 / TASK-FIX-1B4A) and ``should_fix_count``
-        (Layer 2 demotion / TASK-FIX-1B4B). Populated on every non-pre-evidence
-        gather path. The Coach reads this field unconditionally.
-    gathering_status
-        Pipeline status; see :data:`GatheringStatus` for the meaning of each
-        value. Used by the Coach to decide whether ``None`` evidence fields
-        mean ABSENT SIGNAL (status != "complete") or NO SIGNAL REPORTED
-        (status == "complete").
-    gathering_error
-        Optional human-readable description of what went wrong when
-        ``gathering_status == "partial_exception"``. ``None`` on every other
-        status. Surfaced verbatim in the synthetic feedback rationale when the
-        primary ``_invoke_coach`` path catches an exception around evidence
-        gathering.
-    quality_gates
-        ``QualityGateStatus`` aggregate (tests / coverage / arch_review /
-        plan_audit). ``None`` when gathering aborted before the gates ran or
-        when the task type opts out of all gates.
-    gate_feedback
-        Serialized deterministic ``CoachValidationResult`` produced by the
-        existing quality-gate feedback renderer. Populated only for
-        ``partial_gate_abort`` so post-model reconciliation can use the gate
-        owner's findings instead of model-authored gate claims.
-    coverage_details
-        Raw coverage dict slice from ``task_work_results['test_results']``
-        (line_coverage, branch_coverage, files_below_threshold). ``None`` when
-        coverage was not reported.
-    plan_audit
-        Plan-audit findings dict from ``task_work_results['plan_audit']``.
-        ``None`` when the producer wrote no plan_audit block (e.g.
-        ``--implement-only`` without a saved plan).
-    bdd
-        Raw ``task_work_results['bdd_results']`` dict (scenarios_attempted,
-        scenarios_failed, scenarios_passed, scenarios_pending, failures,
-        pending, feature_files). ``None`` when no BDD oracle ran. The Coach
-        applies the Pattern-2 absence-of-failure guard against
-        ``bdd['scenarios_attempted']``.
-    arch_review
-        Architectural review dict slice (``{"score": int, ...}``). ``None``
-        when no Phase 2.5B output was produced.
-    tests
-        Aggregate test result dict (tests_passed / tests_run /
-        line_coverage_met / branch_coverage_met / requires_infrastructure).
-        ``None`` when no test_results block was produced. The Coach applies
-        the absence-of-failure guard against ``tests['tests_run']``.
+    gathering_status, gathering_error
+        See :data:`GatheringStatus`.
     independent_tests
-        ``IndependentTestResult`` from Coach's own pytest pass. ``None`` when
-        gathering aborted before independent tests or when the task type's
-        profile opts out of independent verification.
+        ``IndependentTestResult`` from the run of the project's tests. ``None``
+        when running them raised.
     independent_test_classification
-        ``IndependentTestClassification`` (TASK-ABFIX-012) — substrate-vs-code
-        verdict for a RAN-AND-FAILED independent test run. Populated only when
-        ``independent_tests`` ran and failed (``tests_passed`` False AND
-        ``signal_absent`` False); ``None`` for passing / absent / skipped runs.
-        It shapes the feedback words of
-        ``AgentInvoker._apply_independent_test_code_failure_guard``, which blocks
-        any ran-and-failed required suite whatever the class.
-    requirements
-        ``RequirementsValidation`` from ``validate_requirements``. ``None``
-        when gathering aborted before requirements validation.
-    zero_test
-        What was observed when the legacy rule
-        ``CoachValidator._check_zero_test_anomaly`` was run for this turn — a
-        dict on the complete-gathering path, ``None`` on every partial return.
-        The rule is run unchanged, so the rule-based and language-model
-        Coaches detect the same thing. It records and concludes nothing, and
-        blocks nothing unless ``GUARDKIT_ZERO_TEST_BLOCKING`` is set. See
-        :mod:`guardkit.orchestrator.zero_test_gate`.
-    severity_recommendations
-        Structured hints derived from ``_honesty_issues_from`` demotion logic
-        (Layer 2). Each hint is ``{"recommendation": str, "rule": str}``. The
-        Coach reads these to know when to demote ``file_existence``
-        discrepancies from ``must_fix`` to ``should_fix``.
-    task_type
-        Resolved task type string (e.g. ``"feature"``, ``"refactor"``,
-        ``"scaffolding"``). ``None`` when task type could not be resolved
-        (``partial_exception`` with invalid_task_type cause).
-    profile_name
-        Quality-gate profile name string. ``None`` on the same paths as
-        ``task_type``.
-    advisory_issues
-        Non-blocking issues that ride along with the final decision regardless
-        of approve/feedback outcome. Currently sourced from:
-
-        * Agent-invocations advisory (TASK-REV-F6E1 F3c) — process observation,
-          ``severity == "warning"``.
-        * Layer-2-demoted honesty ``should_fix`` issues — content observation,
-          ``severity == "should_fix"``.
-
-        Pre-populated so the LLM Coach can read them without re-computing the
-        Layer-2 demotion.
-    wiring
-        UNWIRED_PATH analysis result (dict) from ``guardkitfactory.wiring``.
-        Contains ``status``, ``dialect``, ``language``, ``targets_scanned``,
-        ``symbols_examined``, ``findings``, ``degraded_files``. ``None`` when
-        the task type gates out (SCAFFOLDING/DOCUMENTATION), there are no
-        authored source targets, or the factory is unavailable.
-    mocked_seam
-        MOCKED_SEAM analysis result (dict). Contains ``status``, ``ran``,
-        ``dialect``, ``findings``, ``external_mocks_ignored``. ``None`` when
-        the task type gates out, there are no authored acceptance files, or
-        the factory is unavailable.
-    spec_gap
-        SPEC_GAP analysis result (dict). Contains ``status``,
-        ``ground_truth_count``, ``executed_count``, ``findings``,
-        ``whole_file_deselection``. ``None`` when the task type gates out,
-        the factory BDD plugin is unavailable, or Wave-3 wiring is not yet
-        implemented.
-    stub_scan
-        L2 anti-stub scan result (dict) from ``guardkitfactory.wiring``.
-        Contains ``status``, ``findings``, ``symbols_examined``. ``None`` when
-        the task type gates out (SCAFFOLDING/DOCUMENTATION), there are no
-        authored source targets, or the factory is unavailable. Populated by
-        Wave-2 (TASK-QAV-002).
-    coverage
-        L3 coverage analysis result (dict). Contains ``status``,
-        ``coverage_percentage``, ``files_below_threshold``. ``None`` when the
-        factory is unavailable or coverage analysis did not run. Populated by
-        Wave-3 (TASK-QAV-003).
+        What kind of failure a red run looks like; it only shapes the words the
+        Player is sent. ``None`` unless the run ran and failed.
     behavioural_oracle
-        L4 behavioural oracle result (dict). Contains ``status``,
-        ``scenarios_verified``, ``oracles_passed``. ``None`` when the factory
-        is unavailable or the oracle did not run. Populated by Wave-4
-        (TASK-QAV-004).
+        The declared behavioural check's result (dict), or ``None``.
+    runtime_parity
+        The feature's declared smoke command's result, or ``None``.
+    security_check
+        The secrets check's result (dict: ``ran``, ``passed``, ``command``,
+        ``exit_code``, ``output_tail``), or ``None`` when the check is not on.
+    whole_feature_check
+        In a whole-feature repair round only, the project's whole-feature check
+        record (``feature_check.whole_feature_check_record``); left out of
+        ``to_dict`` otherwise.
+    evidence_repo_tests
+        Results of the declared sibling repositories' test runs.
+    task_type, profile_name
+        The resolved task type and its profile name.
     """
 
-    honesty: "HonestyVerification"
     gathering_status: GatheringStatus = "complete"
     gathering_error: Optional[str] = None
-
-    quality_gates: Optional["QualityGateStatus"] = None
-    gate_feedback: Optional[Dict[str, Any]] = None
-    coverage_details: Optional[Dict[str, Any]] = None
-    plan_audit: Optional[Dict[str, Any]] = None
-    bdd: Optional[Dict[str, Any]] = None
-    # TASK-AB-BDDAUTHOR01: the authoring-sweep result (unfiltered run over
-    # the glue modules THIS task authored this turn). Distinct from ``bdd``
-    # (the tag-scoped oracle); carries the sweep-only ``scenarios_undefined``
-    # counter. ``None`` when the turn authored no owned glue — an absent
-    # sweep is an absent key, never a verdict. Blocking is enforced
-    # deterministically by ``autobuild._bdd_authoring_sweep_gate`` in BOTH
-    # Coach paths; this field exists so the LLM Coach also *sees* the sweep
-    # in the rendered bundle.
-    bdd_authoring_sweep: Optional[Dict[str, Any]] = None
-    arch_review: Optional[Dict[str, Any]] = None
-    tests: Optional[Dict[str, Any]] = None
-
-    # Wave-1 wiring evidence fields (TASK-QAWE-002).
-    # Populated by CoachValidator.gather_evidence at the complete-path return.
-    # Left None for SCAFFOLDING/DOCUMENTATION tasks, zero-target turns,
-    # or when guardkitfactory.wiring is unavailable (ImportError).
-    wiring: Optional[Dict[str, Any]] = None         # UNWIRED_PATH analysis
-    mocked_seam: Optional[Dict[str, Any]] = None    # MOCKED_SEAM analysis
-    spec_gap: Optional[Dict[str, Any]] = None       # SPEC_GAP (Wave-3)
-
-    # Wave-2+ anti-stub / coverage / behavioural-oracle fields (TASK-QAV-002/003/004).
-    # Populated by CoachValidator.gather_evidence at the complete-path return.
-    # Left None for SCAFFOLDING/DOCUMENTATION tasks, zero-target turns,
-    # or when guardkitfactory.wiring is unavailable (ImportError).
-    stub_scan: Optional[Dict[str, Any]] = None      # L2 anti-stub scan (Wave-2)
-    coverage: Optional[Dict[str, Any]] = None       # L3 coverage analysis (Wave-3)
-    behavioural_oracle: Optional[Dict[str, Any]] = None  # L4 behavioural oracle (Wave-4)
-
-    # FEAT-SCG (SCG-002): mechanical spec-conformance leg. The result of the
-    # declarative per-task ``conformance:`` RULES (byte_parity / token_coverage /
-    # assert_command) run against the pre-turn-1 snapshot (SCG-001). A dict
-    # ``{"status": "absent"|"passed"|"failed", "failures": [{rule_id, kind,
-    # detail}]}`` — the same shape/absence discipline as ``behavioural_oracle``
-    # (an absent block, absent snapshot, or executor crash yields ``absent``,
-    # never a fabricated pass/fail). ``None`` when no ``conformance`` snapshot was
-    # captured (the byte-equivalent no-op for the vast majority of tasks).
-    # Produced beside ``gather_evidence`` in ``_invoke_coach_primary`` and read by
-    # ``AgentInvoker._apply_spec_conformance_guard``, which flips ``approve`` ->
-    # ``feedback`` with one ``must_fix`` issue per failed rule. The opt-in
-    # ``ac_paths`` presence check is applied in that guard (it needs the Coach
-    # turn's structured acceptance criteria), not in this leg.
-    spec_conformance: Optional[Dict[str, Any]] = None
-
-    # ZERO-TEST OBSERVATION (2026-08-21, Rich's ruling): what was observed
-    # when the SAME rule the legacy rule-based Coach carries —
-    # ``CoachValidator._check_zero_test_anomaly`` — was run for this turn, so
-    # the two Coach implementations cannot drift apart. It states no
-    # conclusion; :mod:`guardkit.orchestrator.zero_test_gate` lists each
-    # recorded field and how it was established.
-    #
-    # A dict, never None, on the complete-gathering path:
-    # ``{"rule_fired": bool, "rule_severity": str|None,
-    #    "report_tests_written": [...], "names_matching_a_convention": [...],
-    #    "names_not_examined_by_recogniser": [...], ...}``. ``None`` on every
-    # partial return (dishonest report, failed quality gate, exception) —
-    # those stop gathering before the rule is reached, exactly as the legacy
-    # path does.
-    zero_test: Optional[Dict[str, Any]] = None
-
     independent_tests: Optional["IndependentTestResult"] = None
-    # TASK-ABFIX-012: substrate-vs-code classification of a ran-and-failed
-    # independent test run. Populated by gather_evidence ONLY when independent
-    # tests RAN and FAILED (tests_passed False AND signal_absent False). It
-    # shapes the feedback words of the required-suite guard
-    # (AgentInvoker._apply_independent_test_code_failure_guard); it exempts
-    # nothing. ``None`` for
-    # passing / absent / skipped runs — an absent signal never manufactures a
-    # code verdict (absence-of-failure-is-not-success). Serialised automatically
-    # by ``to_dict``/``asdict`` (it is a dataclass), so the verdict reaches
-    # coach_turn_N.json with no to_dict change (the ABFIX-010 serialization
-    # invariant).
     independent_test_classification: Optional["IndependentTestClassification"] = None
-    requirements: Optional[Any] = None  # RequirementsValidation; avoid circular import
-
-    # TASK-AB-COACHRUNPARITY01 (arm b): per-task runtime-parity check. The
-    # Coach runs the deliverable's declared runtime entry point (the feature
-    # smoke command) before approving, on single-task waves only. ``None`` when
-    # no check was attempted (no smoke command threaded / older callers).
-    # ``ran=False`` records an attempted-but-skipped check (parallel wave /
-    # runner error). A ``ran=True, passed=False`` result deterministically
-    # blocks the turn via ``AgentInvoker._apply_runtime_parity_guard``.
+    behavioural_oracle: Optional[Dict[str, Any]] = None
     runtime_parity: Optional["RuntimeParityResult"] = None
-
-    # The project's whole-feature check, in a whole-feature repair round only
-    # (18 October 2026). A dict: this Coach turn's own run of the declared
-    # check (``ran`` with command, exit code, outcome and output tails, or
-    # ``ran: False`` with ``skipped_reason``) and ``previous_failed_attempt``,
-    # the attempt that started the round. Built by
-    # ``feature_check.whole_feature_check_record``. ``None`` on every other
-    # turn, and then left out of ``to_dict`` entirely, so records and the
-    # Coach prompt outside a repair round are byte-identical to before.
+    security_check: Optional[Dict[str, Any]] = None
     whole_feature_check: Optional[Dict[str, Any]] = None
-
-    # TASK-AB-XREPOEV01 (AC-002): Coach's independent test runs in declared
-    # sibling repos (``evidence_repos``). Each entry is an
-    # ``EvidenceTestResult.to_dict()``. Empty when no sibling repos are
-    # declared. These results reach ``coach_turn_N.json`` (this bundle is
-    # serialised verbatim) and the Coach prompt, and a ran-and-failed suite
-    # deterministically blocks the turn in the orchestrator.
     evidence_repo_tests: List[Dict[str, Any]] = field(default_factory=list)
-
-    severity_recommendations: List[Dict[str, str]] = field(default_factory=list)
-    advisory_issues: List[Dict[str, Any]] = field(default_factory=list)
-
     task_type: Optional[str] = None
     profile_name: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
-        """Serialise the bundle to a JSON-compatible dict.
-
-        Nested ``HonestyVerification`` / ``QualityGateStatus`` /
-        ``IndependentTestResult`` / ``RequirementsValidation`` instances are
-        also dataclasses, so ``dataclasses.asdict`` walks the entire tree.
-        ``ResolvedPath`` / ``Discrepancy`` inside ``HonestyVerification`` are
-        also dataclasses — the whole bundle is safe for ``json.dumps``.
-        """
+        """Serialise the bundle to a JSON-compatible dict."""
         from dataclasses import asdict
 
         data = asdict(self)
-        # The RequirementsValidation names are retained inside the validator
-        # because existing turn arithmetic treats Player claims as covered.
-        # The Coach-facing bundle must not make those compatibility counters
-        # sound like independent fulfilment. Give the serialized aggregate
-        # explicit claim-coverage names while leaving each criterion's
-        # claimed/verified/rejected result intact.
-        requirements = data.get("requirements")
-        if isinstance(requirements, dict):
-            requirements["criteria_with_claim_coverage"] = requirements.pop(
-                "criteria_met", 0
-            )
-            requirements["all_criteria_have_claim_coverage"] = requirements.pop(
-                "all_criteria_met", False
-            )
-            requirements["criteria_without_claim_coverage"] = requirements.pop(
-                "missing", []
-            )
-            requirements["aggregate_meaning"] = (
-                "Claim coverage only. A claimed row records what the Player "
-                "reported; only a verified row carries criterion-bound "
-                "independent proof."
-            )
         # Present only in a whole-feature repair round (see the field).
         if data.get("whole_feature_check") is None:
             data.pop("whole_feature_check", None)
+        if data.get("security_check") is None:
+            data.pop("security_check", None)
         return data

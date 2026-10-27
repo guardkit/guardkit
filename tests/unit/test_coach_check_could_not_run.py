@@ -14,10 +14,10 @@ mentioned. Meanwhile the quality gate recorded the tests as passed.
 Three things are pinned here, and none of them mentions a language:
 
 1. **The rule.** "The check ran and the result is bad" and "the check could
-   not run" are different outcomes. A check that could not run never lets a
-   gate report a pass. Since step 2 (26 October 2026) it is advice: one plain
-   line ("the project's tests could not be run: ...") goes to the reviewer,
-   the builder and the card, and the reviewer still decides.
+   not run" are different outcomes. A check that could not run is never a
+   pass, and since 27 October 2026 it never sends a turn back either: only a
+   project check that ran and failed does. The operator's log says so in
+   plain words.
 2. **The fallback.** When the isolated copy cannot start the check, it runs in
    the real worktree — the run a wave of one already uses. A wave of two must
    not be worse than a wave of one. Only when THAT cannot run either does the
@@ -49,7 +49,6 @@ import pytest
 import yaml
 
 from guardkit.orchestrator.agent_invoker import AgentInvoker
-from guardkit.orchestrator.coach_verification import HonestyVerification
 from guardkit.orchestrator.harness import (
     AssistantMessageEvent,
     ResultMessageEvent,
@@ -60,7 +59,6 @@ from guardkit.orchestrator.quality_gates.coach_evidence import (
 from guardkit.orchestrator.quality_gates.coach_validator import (
     CoachValidator,
     IndependentTestResult,
-    QualityGateStatus,
 )
 from guardkit.orchestrator.toolchain_declaration import snapshot_task_toolchain
 
@@ -454,51 +452,12 @@ def _task() -> Dict[str, Any]:
 
 
 class TestTheRule:
-    def test_the_quality_gate_does_not_report_a_pass_when_nothing_ran(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """The builder's own report says every gate passed. Nothing verified
-        it, so the test gate is UNKNOWN — and unknown is not a pass."""
-        _root, worktree = _make_repo(tmp_path)
-        _write_task_work_results(worktree)
-        validator = _validator(worktree, wave_size=2)
-        monkeypatch.setattr(
-            validator, "run_independent_tests", lambda **kwargs: _could_not_run()
-        )
-
-        result = validator.validate(_TASK_ID, 1, _task())
-
-        assert result.quality_gates is not None
-        assert result.quality_gates.tests_passed is None
-        assert result.quality_gates.all_gates_passed is False
-        assert result.decision != "approve"
-
-    def test_the_builders_feedback_says_nothing_about_the_failed_check(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """Assert the ABSENCE. A feedback blob that merely de-emphasises the
-        failed check still teaches the coder to chase it, so there must be
-        nothing there at all — and the turn must be marked as one the builder
-        cannot fix, so the loop stops instead of spending five more turns."""
-        _root, worktree = _make_repo(tmp_path)
-        _write_task_work_results(worktree)
-        validator = _validator(worktree, wave_size=2)
-        monkeypatch.setattr(
-            validator, "run_independent_tests", lambda **kwargs: _could_not_run()
-        )
-
-        result = validator.validate(_TASK_ID, 1, _task())
-
-        assert result.issues == []
-        blob = json.dumps(result.issues)
-        for word in ("could not run", _DECLARED_COMMAND, "runner", "missing"):
-            assert word not in blob
-        assert result.is_configuration_error is True
-
-    def test_the_operator_and_the_receipt_are_told_in_plain_words(
+    def test_the_evidence_the_coach_reads_carries_the_same_two_facts(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
+        """The evidence bundle carries the run that could not happen, never
+        as a pass, and the operator's log says so in plain words."""
         _root, worktree = _make_repo(tmp_path)
         _write_task_work_results(worktree)
         validator = _validator(worktree, wave_size=2)
@@ -506,42 +465,20 @@ class TestTheRule:
             validator, "run_independent_tests", lambda **kwargs: _could_not_run()
         )
 
-        with caplog.at_level("ERROR"):
-            result = validator.validate(_TASK_ID, 1, _task())
-
-        assert any(
-            "ESTATE FAULT" in record.getMessage() for record in caplog.records
-        )
-        receipt = result.to_dict()["validation_results"]["independent_tests"]
-        assert receipt["check_could_not_run"] is True
-        assert _DECLARED_COMMAND in receipt["check_could_not_run_detail"]
-
-    def test_the_evidence_the_coach_reads_carries_the_same_two_facts(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """The live path is the evidence bundle, not the legacy verdict: the
-        gate there must be UNKNOWN too, and since step 2 (26 October 2026)
-        one plain line of advice rides with it for the reviewer."""
-        _root, worktree = _make_repo(tmp_path)
-        _write_task_work_results(worktree)
-        validator = _validator(worktree, wave_size=2)
-        monkeypatch.setattr(
-            validator, "run_independent_tests", lambda **kwargs: _could_not_run()
-        )
-
-        bundle = validator.gather_evidence(_TASK_ID, 1, _task())
+        with caplog.at_level("WARNING"):
+            bundle = validator.gather_evidence(_TASK_ID, 1, _task())
 
         assert bundle.gathering_status == "complete"
-        assert bundle.quality_gates is not None
-        assert bundle.quality_gates.tests_passed is None
-        assert bundle.quality_gates.all_gates_passed is False
-        assert bundle.tests is not None and bundle.tests["tests_passed"] is None
-        assert len(bundle.advisory_issues) == 1
-        advice = bundle.advisory_issues[0]
-        assert advice["category"] == "tests_could_not_run"
-        assert advice["description"].startswith("The project's tests could not be run: ")
+        assert bundle.independent_tests is not None
+        assert bundle.independent_tests.tests_passed is False
+        assert bundle.independent_tests.check_could_not_run is True
+        # An absent signal is never classified as a code failure.
+        assert bundle.independent_test_classification is None
         serialised = bundle.to_dict()["independent_tests"]
         assert serialised["check_could_not_run"] is True
+        assert _DECLARED_COMMAND in serialised["check_could_not_run_detail"]
+        messages = [record.getMessage() for record in caplog.records]
+        assert any("could not be run" in message for message in messages)
 
     def test_a_check_that_ran_and_failed_is_still_the_builders_to_fix(
         self, tmp_path: Path
@@ -558,29 +495,6 @@ class TestTheRule:
         assert result.tests_passed is False
         assert result.signal_absent is False
         assert result.check_could_not_run is False
-
-
-# ---------------------------------------------------------------------------
-# 4. The gate helper on its own
-# ---------------------------------------------------------------------------
-
-
-def test_unknown_is_not_a_pass(tmp_path: Path) -> None:
-    validator = CoachValidator(str(tmp_path))
-    passed = QualityGateStatus(
-        tests_passed=True,
-        coverage_met=True,
-        arch_review_passed=True,
-        plan_audit_passed=True,
-    )
-    assert passed.all_gates_passed is True
-
-    unknown = validator._gates_with_unknown_tests(passed)
-    assert unknown.tests_passed is None
-    assert unknown.all_gates_passed is False
-    # The other gates are untouched.
-    assert unknown.coverage_met is True
-    assert unknown.arch_review_passed is True
 
 
 # ---------------------------------------------------------------------------
@@ -683,13 +597,13 @@ class TestANonPytestCommandIsNotReadWithPytestsVocabulary:
 # ---------------------------------------------------------------------------
 # 6. THE RULE ON THE PATH PRODUCTION ACTUALLY TAKES
 # ---------------------------------------------------------------------------
-# The rule-based coach above (``validate``) is the fallback kept behind
-# GUARDKIT_COACH_LEGACY. What runs in a real build is the evidence bundle plus
-# the reviewing model, whose verdict is then reconciled deterministically. On
-# 2026-09-11 THAT is the path that handed the estate fault to the builder as a
-# must-fix, five turns running. So the rule is pinned here too, against the
-# real ``invoke_coach``, with the reviewing model answering exactly as it did
-# that day.
+# What runs in a real build is the evidence bundle plus the reviewing model.
+# On 2026-09-11 that path handed the estate fault to the builder as a must-fix,
+# five turns running. Since 27 October 2026 the reviewer's verdict is advice:
+# only the project's own tests or declared checks that RAN and FAILED send a
+# turn back. A check that could not run, or ran and said nothing, never does.
+# Pinned against the real ``invoke_coach``, with the reviewing model answering
+# exactly as it did that day.
 
 
 _ESTATE_DETAIL = (
@@ -711,9 +625,6 @@ def _invoker(worktree: Path) -> AgentInvoker:
 
 def _bundle_whose_check_could_not_run() -> CoachEvidenceBundle:
     return CoachEvidenceBundle(
-        honesty=HonestyVerification(
-            verified=True, discrepancies=[], honesty_score=1.0, resolved_paths=[]
-        ),
         gathering_status="complete",
         independent_tests=IndependentTestResult.could_not_run(
             test_command=_DECLARED_COMMAND,
@@ -769,14 +680,64 @@ def _the_reviewer_blames_the_builder(task_id: str, turn: int) -> Dict[str, Any]:
     }
 
 
+def _bundle_whose_run_timed_out() -> CoachEvidenceBundle:
+    return CoachEvidenceBundle(
+        gathering_status="complete",
+        independent_tests=IndependentTestResult.absent(
+            test_command=_DECLARED_COMMAND,
+            test_output_summary="timed out after 300s",
+            duration_seconds=300.0,
+        ),
+    )
+
+
+def _bundle_whose_isolated_copy_fell_back() -> CoachEvidenceBundle:
+    return CoachEvidenceBundle(
+        gathering_status="complete",
+        independent_tests=dataclass_replace(
+            IndependentTestResult.absent(
+                test_command=_DECLARED_COMMAND,
+                test_output_summary="5 of 20 checks failed",
+                duration_seconds=0.2,
+            ),
+            isolation_fallback_reason=(
+                "the isolated copy could not start the check"
+            ),
+        ),
+    )
+
+
+def _bundle_whose_check_exited_zero_with_no_count() -> CoachEvidenceBundle:
+    return CoachEvidenceBundle(
+        gathering_status="complete",
+        independent_tests=IndependentTestResult.from_run(
+            tests_passed=False,
+            test_command=_DECLARED_COMMAND,
+            test_output_summary="no parts yet; later tasks add checks",
+            duration_seconds=0.1,
+            output="no parts yet; later tasks add checks\n",
+            resolved_interpreter=None,
+            signal_absent=True,
+            exit_code=0,
+        ),
+    )
+
+
 class TestTheRuleOnTheLivePath:
-    def test_the_reviewer_decides_with_one_plain_line(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    @pytest.mark.parametrize(
+        "bundle_for",
+        [
+            _bundle_whose_check_could_not_run,
+            _bundle_whose_run_timed_out,
+            _bundle_whose_isolated_copy_fell_back,
+            _bundle_whose_check_exited_zero_with_no_count,
+        ],
+    )
+    def test_a_check_that_did_not_run_and_fail_never_sends_the_turn_back(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, bundle_for,
     ) -> None:
-        """Step 2 (26 October 2026, GKT-079): tests that could not start are
-        advice. The reviewer's own decision and findings stand, one plain
-        line says the project's tests could not be run, and the turn is not
-        a configuration error, so the loop goes on."""
+        """The reviewer blames the builder; its verdict is kept as advice and
+        the turn is approved, because no project check ran and failed."""
         monkeypatch.delenv("GUARDKIT_COACH_SYNTHESIS", raising=False)
         monkeypatch.delenv("GUARDKIT_COACH_GATHER", raising=False)
         invoker = _invoker(tmp_path)
@@ -786,121 +747,52 @@ class TestTheRuleOnTheLivePath:
             task_id=_TASK_ID,
             turn=1,
             verdict=_the_reviewer_blames_the_builder(_TASK_ID, 1),
-            bundle=_bundle_whose_check_could_not_run(),
+            bundle=bundle_for(),
         )
 
         assert result.success is True
-        assert result.report["decision"] == "feedback"  # the reviewer's own
-        advice = [
-            i for i in result.report["issues"]
-            if i.get("category") == "tests_could_not_run"
+        assert result.report["decision"] == "approve"
+        assert result.report["reviewer_decision"] == "feedback"
+        # The reviewer's findings stay in the record.
+        assert [i["category"] for i in result.report["issues"]] == [
+            "absence_of_failure"
         ]
-        assert len(advice) == 1
-        assert advice[0]["description"].startswith("The project's tests could not be run: ")
-        assert len(result.report["issues"]) > 1  # the reviewer's findings stand
         assert result.report.get("is_configuration_error", False) is not True
 
-    def test_the_operator_is_told_in_plain_words(
+    def test_a_check_that_ran_and_failed_sends_the_turn_back(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
-        caplog: pytest.LogCaptureFixture,
     ) -> None:
+        """Negative control: the reviewer approves, the project's own suite
+        ran and failed, and the turn goes back with the failing lines."""
         monkeypatch.delenv("GUARDKIT_COACH_SYNTHESIS", raising=False)
         monkeypatch.delenv("GUARDKIT_COACH_GATHER", raising=False)
         invoker = _invoker(tmp_path)
-
-        with caplog.at_level("WARNING"):
-            result = _ask_the_coach(
-                invoker,
-                task_id=_TASK_ID,
-                turn=2,
-                verdict=_the_reviewer_blames_the_builder(_TASK_ID, 2),
-                bundle=_bundle_whose_check_could_not_run(),
-            )
-
-        advice = next(
-            i["description"] for i in result.report["issues"]
-            if i.get("category") == "tests_could_not_run"
+        approve = dict(
+            _the_reviewer_blames_the_builder(_TASK_ID, 1),
+            decision="approve",
+            issues=[],
         )
-        assert _DECLARED_COMMAND in advice
-        assert "no runner at" in advice
-        messages = [record.getMessage() for record in caplog.records]
-        assert any("could not be run" in message for message in messages)
-
-    def test_an_absent_signal_that_did_start_is_untouched(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """The other outcomes are unchanged: a run that STARTED and then said
-        nothing (a timeout) still carries the existing marker to the builder,
-        and still does not end the turn."""
-        monkeypatch.delenv("GUARDKIT_COACH_SYNTHESIS", raising=False)
-        monkeypatch.delenv("GUARDKIT_COACH_GATHER", raising=False)
-        invoker = _invoker(tmp_path)
         bundle = CoachEvidenceBundle(
-            honesty=HonestyVerification(
-                verified=True, discrepancies=[], honesty_score=1.0,
-                resolved_paths=[],
-            ),
             gathering_status="complete",
-            independent_tests=IndependentTestResult.absent(
+            task_type="feature",
+            independent_tests=IndependentTestResult.from_run(
+                tests_passed=False,
                 test_command=_DECLARED_COMMAND,
-                test_output_summary="timed out after 300s",
-                duration_seconds=300.0,
-            ),
-        )
-
-        result = _ask_the_coach(
-            invoker,
-            task_id=_TASK_ID,
-            turn=3,
-            verdict=_the_reviewer_blames_the_builder(_TASK_ID, 3),
-            bundle=bundle,
-        )
-
-        assert result.report["decision"] == "feedback"
-        assert result.report["issues"] != []
-        assert result.report.get("is_configuration_error", False) is False
-
-    def test_a_fallback_red_still_reaches_the_builder(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """The other half of requirement (b), on the live path. When the
-        isolated copy could not start and the worktree run DID produce a
-        result, the turn is an ordinary one: the reviewer's findings reach the
-        builder and the loop keeps going. Only a check that could not run
-        anywhere empties the builder's channel and stops the loop."""
-        monkeypatch.delenv("GUARDKIT_COACH_SYNTHESIS", raising=False)
-        monkeypatch.delenv("GUARDKIT_COACH_GATHER", raising=False)
-        invoker = _invoker(tmp_path)
-        fell_back = dataclass_replace(
-            IndependentTestResult.absent(
-                test_command=_DECLARED_COMMAND,
-                test_output_summary="5 of 20 checks failed",
+                test_output_summary="1 of 3 checks failed",
                 duration_seconds=0.2,
+                output="1 of 3 checks failed\n",
+                resolved_interpreter=None,
+                exit_code=1,
             ),
-            isolation_fallback_reason=(
-                "the isolated copy could not start the check"
-            ),
-        )
-        bundle = CoachEvidenceBundle(
-            honesty=HonestyVerification(
-                verified=True, discrepancies=[], honesty_score=1.0,
-                resolved_paths=[],
-            ),
-            gathering_status="complete",
-            independent_tests=fell_back,
         )
 
         result = _ask_the_coach(
-            invoker,
-            task_id=_TASK_ID,
-            turn=4,
-            verdict=_the_reviewer_blames_the_builder(_TASK_ID, 4),
-            bundle=bundle,
+            invoker, task_id=_TASK_ID, turn=1, verdict=approve, bundle=bundle,
         )
 
         assert result.report["decision"] == "feedback"
+        assert result.report["reviewer_decision"] == "approve"
         assert result.report["issues"] != []
-        assert result.report.get("is_configuration_error", False) is False
 
 
 # ---------------------------------------------------------------------------
@@ -994,52 +886,6 @@ class TestACheckThatExitedZeroCouldRun:
         # A command that could not start is still an estate fault.
         assert validator._worktree_run_said_nothing(absent, 127) is True
         assert validator._worktree_run_said_nothing(absent, None) is True
-
-    def test_the_builder_is_told_what_to_do_and_the_loop_goes_on(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """On the live path the turn is ordinary feedback: the reviewer's
-        findings reach the builder and the turn is not a configuration error.
-        Since step 1 (24 October 2026, GKT-078) a check that exited 0 with no
-        recognisable test names adds nothing to a feedback verdict."""
-        monkeypatch.delenv("GUARDKIT_COACH_SYNTHESIS", raising=False)
-        monkeypatch.delenv("GUARDKIT_COACH_GATHER", raising=False)
-        invoker = _invoker(tmp_path)
-        ran_nothing = IndependentTestResult.from_run(
-            tests_passed=False,
-            test_command=_DECLARED_COMMAND,
-            test_output_summary="no parts yet; later tasks add checks",
-            duration_seconds=0.1,
-            output="no parts yet; later tasks add checks\n",
-            resolved_interpreter=None,
-            signal_absent=True,
-            exit_code=0,
-        )
-        bundle = CoachEvidenceBundle(
-            honesty=HonestyVerification(
-                verified=True, discrepancies=[], honesty_score=1.0,
-                resolved_paths=[],
-            ),
-            gathering_status="complete",
-            independent_tests=ran_nothing,
-        )
-
-        result = _ask_the_coach(
-            invoker,
-            task_id=_TASK_ID,
-            turn=1,
-            verdict=_the_reviewer_blames_the_builder(_TASK_ID, 1),
-            bundle=bundle,
-        )
-
-        assert result.report["decision"] == "feedback"
-        assert result.report.get("is_configuration_error", False) is False
-        notes = [
-            issue["description"]
-            for issue in result.report["issues"]
-            if (issue.get("details") or {}).get("signal_absent") is True
-        ]
-        assert notes == [], result.report["issues"]
 
 
 class TestANonZeroNoTestsResultIsNoWorseInAWaveOfTwo:

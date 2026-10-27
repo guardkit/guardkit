@@ -34,7 +34,10 @@ from pathlib import Path
 
 import pytest
 
-from guardkit.orchestrator.quality_gates.coach_validator import CoachValidator
+from guardkit.orchestrator.quality_gates.coach_validator import (
+    CoachValidator,
+    _checker_pytest_env,
+)
 
 
 PREFIX = "guardkit-coach-iso-"
@@ -663,7 +666,7 @@ class TestGitCeiling:
         worktree.mkdir()
         validator = CoachValidator(str(worktree))
         for env in (
-            validator._pytest_env(git_ceiling=tmp_path),
+            _checker_pytest_env(validator, git_ceiling=tmp_path),
             validator._declared_command_env(git_ceiling=tmp_path),
         ):
             assert env["GIT_CEILING_DIRECTORIES"] == str(tmp_path)

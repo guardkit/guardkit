@@ -345,6 +345,17 @@ def test_with_no_name_no_thread_gets_a_client(memory_module, tmp_path, caplog):
     assert "memory: OFF" in caplog.text
 
 
+def _patch_if_importable(monkeypatch, module_name: str, attribute: str, value) -> None:
+    """Replace ``module_name.attribute`` when that optional module imports."""
+    import importlib
+
+    try:
+        module = importlib.import_module(module_name)
+    except ImportError:
+        return
+    monkeypatch.setattr(module, attribute, value, raising=False)
+
+
 async def test_with_no_name_nothing_is_read(memory_module, monkeypatch):
     """The stand-in store sees NO call, and no name is invented for one."""
     store = _StandInStore()
@@ -352,7 +363,10 @@ async def test_with_no_name_nothing_is_read(memory_module, monkeypatch):
     def refuse(*args, **kwargs):  # pragma: no cover - must never run
         raise AssertionError("the read path was entered with no memory name")
 
-    monkeypatch.setattr("fleet_memory.retrieval.search", refuse, raising=False)
+    # Without fleet-memory installed (the GitHub job does not install the
+    # memory extra) there is no read function to refuse; the stand-in store
+    # still sees no call.
+    _patch_if_importable(monkeypatch, "fleet_memory.retrieval", "search", refuse)
 
     client = memory_module.FleetMemoryClient(
         memory_module.FleetMemoryConfig(enabled=True, project=None)
@@ -371,8 +385,10 @@ async def test_with_no_name_nothing_is_written(memory_module, monkeypatch):
     async def refuse(episodes):  # pragma: no cover - must never run
         raise AssertionError("the write path was entered with no memory name")
 
-    monkeypatch.setattr(
-        "guardkit.memory.harvest_publisher.publish_episodes", refuse, raising=False
+    # The publisher needs nats-core; without it there is nothing to refuse,
+    # and the write must still come back empty.
+    _patch_if_importable(
+        monkeypatch, "guardkit.memory.harvest_publisher", "publish_episodes", refuse
     )
 
     client = memory_module.FleetMemoryClient(
@@ -401,6 +417,7 @@ async def test_with_no_name_the_store_is_never_opened(memory_module):
 @pytest.mark.personal_run
 async def test_the_declared_name_is_what_the_read_asks_for(memory_module, monkeypatch, tmp_path):
     """End of the read path: the name on the request is the project's own."""
+    pytest.importorskip("fleet_memory.retrieval")
     monkeypatch.chdir(tmp_path)  # the read log lands here, not in the repository
     asked: dict = {}
 

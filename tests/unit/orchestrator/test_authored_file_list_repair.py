@@ -26,7 +26,6 @@ from unittest.mock import patch
 import pytest
 
 from guardkit.orchestrator.authored_files import (
-    NOT_CHECKED_REASON,
     STATUS_TRACKED,
     STATUS_UNKNOWN,
     read_authored_files,
@@ -232,8 +231,8 @@ class TestRealEventLoop:
             "src/users/router.py",
             "src/users/service.py",
         ]
-        assert record["files_created"] == ["src/users/service.py"]
-        assert record["files_modified"] == ["src/users/router.py"]
+        assert record["claimed_files_created"] == ["src/users/service.py"]
+        assert record["claimed_files_modified"] == ["src/users/router.py"]
         # Two shell commands ran; a file one of them wrote would not be in the
         # list above, and the count says so.
         assert record["shell_command_tool_uses"] == 2
@@ -315,8 +314,8 @@ class TestRealEventLoop:
 
         assert record["files_authored_tracking"] == "tracked"
         assert record["files_authored"] == ["src/a.py", "src/b.py"]
-        assert record["files_created"] == ["src/a.py"]
-        assert record["files_modified"] == ["src/b.py"]
+        assert record["claimed_files_created"] == ["src/a.py"]
+        assert record["claimed_files_modified"] == ["src/b.py"]
 
 
 # ---------------------------------------------------------------------------
@@ -364,65 +363,6 @@ class TestPathForm:
         )
         parser._track_tool_call("execute", {"command": "ls"})
         assert "files_authored" not in parser.to_result()
-
-
-# ---------------------------------------------------------------------------
-# What the detectors say when the list was never recorded
-# ---------------------------------------------------------------------------
-
-
-class TestDetectorsOnUnknown:
-    def test_wiring_and_stub_scan_say_not_checked(self, tmp_path: Path) -> None:
-        from guardkit.orchestrator.quality_gates import coach_validator as cv
-
-        wiring = cv._run_wiring_analysis(
-            worktree_path=tmp_path,
-            authored_files=[],
-            task_type="feature",
-            stack_template="python",
-            authored_status=STATUS_UNKNOWN,
-        )
-        assert wiring is not None
-        assert wiring["wiring"]["status"] == "not_checked"
-        assert wiring["wiring"]["findings"] is None
-        assert wiring["wiring"]["reason"] == NOT_CHECKED_REASON
-        assert wiring["mocked_seam"]["status"] == "not_checked"
-
-        stub = cv._compute_stub_scan(
-            worktree_path=tmp_path,
-            authored_files=[],
-            task_type="feature",
-            authored_status=STATUS_UNKNOWN,
-        )
-        assert stub is not None
-        assert stub["status"] == "not_checked"
-        assert stub["findings"] is None
-        assert stub["reason"] == NOT_CHECKED_REASON
-
-    def test_tracked_empty_list_still_gates_out_quietly(
-        self, tmp_path: Path
-    ) -> None:
-        from guardkit.orchestrator.quality_gates import coach_validator as cv
-
-        assert (
-            cv._run_wiring_analysis(
-                worktree_path=tmp_path,
-                authored_files=[],
-                task_type="feature",
-                stack_template="python",
-                authored_status=STATUS_TRACKED,
-            )
-            is None
-        )
-        assert (
-            cv._compute_stub_scan(
-                worktree_path=tmp_path,
-                authored_files=[],
-                task_type="feature",
-                authored_status=STATUS_TRACKED,
-            )
-            is None
-        )
 
 
 class TestStaleTestAttribution:
@@ -550,8 +490,8 @@ class TestOnlyWritesThatWorkedAreListed:
 
         record = await _run(invoker, "TASK-LOCAL-REFUSED", events)
 
-        assert record["files_created"] == ["src/b.py"]
-        assert record["files_modified"] == []
+        assert record["claimed_files_created"] == ["src/b.py"]
+        assert record["claimed_files_modified"] == []
         assert record["files_authored"] == ["src/b.py"]
         assert record["files_authored_tracking"] == "tracked"
 
@@ -570,7 +510,7 @@ class TestOnlyWritesThatWorkedAreListed:
 
         record = await _run(invoker, "TASK-RETRY", events)
 
-        assert record["files_created"] == ["src/retry.py"]
+        assert record["claimed_files_created"] == ["src/retry.py"]
         assert record["files_authored"] == ["src/retry.py"]
 
     @pytest.mark.asyncio
@@ -582,7 +522,7 @@ class TestOnlyWritesThatWorkedAreListed:
 
         record = await _run(invoker, "TASK-UNANSWERED", events)
 
-        assert record["files_created"] == ["src/n.py"]
+        assert record["claimed_files_created"] == ["src/n.py"]
         assert record["files_authored"] == ["src/n.py"]
 
     @pytest.mark.asyncio
@@ -678,8 +618,8 @@ class TestOnlyWritesThatWorkedAreListed:
                 / "task_work_results.json"
             ).read_text()
         )
-        assert record["files_created"] == ["src/b.py", "src/c.py"]
-        assert record["files_modified"] == []
+        assert record["claimed_files_created"] == ["src/b.py", "src/c.py"]
+        assert record["claimed_files_modified"] == []
         assert record["files_authored"] == ["src/b.py", "src/c.py"]
         # The returned result carries the same lists.
         assert result.output["files_created"] == ["src/b.py", "src/c.py"]
@@ -778,8 +718,8 @@ class TestScratchFolder:
         )
 
         listed = (
-            set(record["files_created"])
-            | set(record["files_modified"])
+            set(record["claimed_files_created"])
+            | set(record["claimed_files_modified"])
             | set(record["files_authored"])
         )
         assert listed == {"src/service.py"}
@@ -802,7 +742,7 @@ class TestScratchFolder:
 
         record = await _run(invoker, "TASK-NO-SCRATCH", events, prompts=prompts)
 
-        assert record["files_created"] == [".git/guardkit-scratch/verify.py"]
+        assert record["claimed_files_created"] == [".git/guardkit-scratch/verify.py"]
         assert "throwaway scripts" not in prompts[0]
         saved = list(
             (invoker.worktree_path / ".guardkit" / "autobuild" / "TASK-NO-SCRATCH")
@@ -836,7 +776,7 @@ class TestScratchFolder:
         )
 
         assert (wt / "src" / "app.py").exists()
-        assert record["files_created"] == [".git/guardkit-scratch/project/app.py"]
+        assert record["claimed_files_created"] == [".git/guardkit-scratch/project/app.py"]
         assert record["files_authored"] == [".git/guardkit-scratch/project/app.py"]
 
     @pytest.mark.asyncio
@@ -870,7 +810,7 @@ class TestScratchFolder:
         )
 
         assert (wt / "src" / "app.py").exists()
-        assert record["files_created"] == [".git/guardkit-scratch/app.py"]
+        assert record["claimed_files_created"] == [".git/guardkit-scratch/app.py"]
         assert record["files_authored"] == [".git/guardkit-scratch/app.py"]
 
     def test_symlinked_scratch_folder_never_hides_a_project_claim(

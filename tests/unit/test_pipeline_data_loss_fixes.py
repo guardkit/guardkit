@@ -8,14 +8,14 @@ Tests five critical fixes to prevent data loss in the Player-Coach pipeline:
 4. Filter spurious git entries ("**", "*", empty strings)
 5. File-existence verification fallback when no agent promises
 
-Coverage Target: >=85%
-Test Count: 11 tests
+Fix 4 (filtering wildcard entries out of git's file lists) no longer has a
+place to act: the file lists are now git's own inventory, read through the
+task's admitted scope, so its test was removed.
 """
 
 import json
 import pytest
 from pathlib import Path
-from unittest.mock import patch
 
 from guardkit.orchestrator.agent_invoker import (
     AgentInvoker,
@@ -23,6 +23,7 @@ from guardkit.orchestrator.agent_invoker import (
 )
 from guardkit.orchestrator.exceptions import TaskWorkResult
 from guardkit.orchestrator.paths import TaskArtifactPaths
+from tests.task_scope_fixtures import admitted_task, git, init_checkout
 
 
 # ==================== Fixtures ====================
@@ -180,100 +181,42 @@ def test_create_player_report_preserves_agent_promises(agent_invoker, worktree_p
 # ============================================================================
 
 
-def test_create_player_report_updates_task_work_results(agent_invoker, worktree_path):
-    """Test that task_work_results.json is updated with enriched data after git detection."""
+def test_create_player_report_updates_task_work_results(tmp_path):
+    """task_work_results.json is rewritten with git's inventory of what the
+    task changed, read through the task's admitted scope (as in a build)."""
     task_id = "TASK-TEST-002"
     turn = 1
+    worktree = tmp_path / "admitted"
+    init_checkout(worktree)
+    (worktree / "src").mkdir()
+    (worktree / "src" / "auth.py").write_text("# auth\n")
+    (worktree / "src" / "config.py").write_text("# config\n")
+    git(worktree, "add", "-A")
+    git(worktree, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
+        "commit", "-q", "-m", "base")
 
-    # Setup autobuild directory
-    autobuild_dir = TaskArtifactPaths.ensure_autobuild_dir(task_id, worktree_path)
+    with admitted_task(worktree, task_id, register=True):
+        agent_invoker = AgentInvoker(
+            worktree_path=worktree, max_turns_per_agent=30, sdk_timeout_seconds=60
+        )
+        autobuild_dir = TaskArtifactPaths.ensure_autobuild_dir(task_id, worktree)
+        task_work_results_path = autobuild_dir / "task_work_results.json"
+        # The builder's own record lists nothing; git sees more.
+        task_work_results_path.write_text(
+            json.dumps({"files_modified": [], "files_created": []}, indent=2)
+        )
+        (worktree / "src" / "auth.py").write_text("# auth, changed\n")
+        (worktree / "src" / "config.py").write_text("# config, changed\n")
+        (worktree / "tests").mkdir()
+        (worktree / "tests" / "test_auth.py").write_text("def test_a(): pass\n")
 
-    # Create task_work_results.json with minimal data
-    task_work_results = {
-        "files_modified": [],  # Empty - git will detect more
-        "files_created": [],   # Empty - git will detect more
-    }
-    task_work_results_path = autobuild_dir / "task_work_results.json"
-    task_work_results_path.write_text(json.dumps(task_work_results, indent=2))
+        agent_invoker._create_player_report_from_task_work(
+            task_id, turn, TaskWorkResult(success=True, output={})
+        )
 
-    # Mock git detection to return files
-    mock_git_changes = {
-        "modified": ["src/auth.py", "src/config.py"],
-        "created": ["tests/test_auth.py"]
-    }
-
-    # Create TaskWorkResult with correct signature
-    task_work_result = TaskWorkResult(
-        success=True,
-        output={}
-    )
-
-    # Patch _detect_git_changes
-    with patch.object(agent_invoker, '_detect_git_changes', return_value=mock_git_changes):
-        agent_invoker._create_player_report_from_task_work(task_id, turn, task_work_result)
-
-    # Read back task_work_results.json - should be enriched
     enriched_data = json.loads(task_work_results_path.read_text())
-
-    # Verify enrichment
-    assert len(enriched_data["files_modified"]) == 2
-    assert "src/auth.py" in enriched_data["files_modified"]
-    assert "src/config.py" in enriched_data["files_modified"]
-    assert len(enriched_data["files_created"]) == 1
-    assert "tests/test_auth.py" in enriched_data["files_created"]
-
-
-# ============================================================================
-# Fix 4: Filter Spurious Git Entries (1 test)
-# ============================================================================
-
-
-def test_git_detection_filters_wildcards(agent_invoker, worktree_path):
-    """Test that wildcard entries like '**' and '*' are filtered from file lists."""
-    task_id = "TASK-TEST-003"
-    turn = 1
-
-    # Setup autobuild directory
-    autobuild_dir = TaskArtifactPaths.ensure_autobuild_dir(task_id, worktree_path)
-
-    # Create task_work_results.json
-    task_work_results = {
-        "files_modified": [],
-        "files_created": [],
-    }
-    task_work_results_path = autobuild_dir / "task_work_results.json"
-    task_work_results_path.write_text(json.dumps(task_work_results, indent=2))
-
-    # Mock git detection to return spurious entries
-    mock_git_changes = {
-        "modified": ["src/auth.py", "**", "*", "", "   ", "***", "*test.py"],  # Mix of valid and invalid
-        "created": ["tests/test_auth.py", "**"]  # One valid, one invalid
-    }
-
-    # Create TaskWorkResult with correct signature
-    task_work_result = TaskWorkResult(
-        success=True,
-        output={}
-    )
-
-    # Patch _detect_git_changes
-    with patch.object(agent_invoker, '_detect_git_changes', return_value=mock_git_changes):
-        agent_invoker._create_player_report_from_task_work(task_id, turn, task_work_result)
-
-    # Read back player report
-    player_report_path = TaskArtifactPaths.player_report_path(task_id, turn, worktree_path)
-    report = json.loads(player_report_path.read_text())
-
-    # Verify filtering - only valid files should remain
-    assert "**" not in report["files_modified"]
-    assert "*" not in report["files_modified"]
-    assert "***" not in report["files_modified"]
-    assert "*test.py" not in report["files_modified"]
-    assert "" not in report["files_modified"]
-    assert "src/auth.py" in report["files_modified"]  # Valid file kept
-
-    assert "**" not in report["files_created"]
-    assert "tests/test_auth.py" in report["files_created"]  # Valid file kept
+    assert sorted(enriched_data["files_modified"]) == ["src/auth.py", "src/config.py"]
+    assert enriched_data["files_created"] == ["tests/test_auth.py"]
 
 
 # ============================================================================
@@ -327,9 +270,9 @@ Task description here.
         output={}
     )
 
-    # Patch _detect_git_changes to return empty
-    with patch.object(agent_invoker, '_detect_git_changes', return_value={}):
-        agent_invoker._create_player_report_from_task_work(task_id, turn, task_work_result)
+    # No admitted task scope here: git's inventory is unavailable, and the
+    # promises are built from the builder's own file lists.
+    agent_invoker._create_player_report_from_task_work(task_id, turn, task_work_result)
 
     # Read back player report
     player_report_path = TaskArtifactPaths.player_report_path(task_id, turn, worktree_path)
@@ -394,9 +337,9 @@ Task description.
         output={}
     )
 
-    # Patch _detect_git_changes
-    with patch.object(agent_invoker, '_detect_git_changes', return_value={}):
-        agent_invoker._create_player_report_from_task_work(task_id, turn, task_work_result)
+    # No admitted task scope here: git's inventory is unavailable, and the
+    # promises are built from the builder's own file lists.
+    agent_invoker._create_player_report_from_task_work(task_id, turn, task_work_result)
 
     # Read back player report
     player_report_path = TaskArtifactPaths.player_report_path(task_id, turn, worktree_path)
@@ -453,9 +396,9 @@ Task description.
         output={}
     )
 
-    # Patch _detect_git_changes
-    with patch.object(agent_invoker, '_detect_git_changes', return_value={}):
-        agent_invoker._create_player_report_from_task_work(task_id, turn, task_work_result)
+    # No admitted task scope here: git's inventory is unavailable, and the
+    # promises are built from the builder's own file lists.
+    agent_invoker._create_player_report_from_task_work(task_id, turn, task_work_result)
 
     # Read back player report
     player_report_path = TaskArtifactPaths.player_report_path(task_id, turn, worktree_path)

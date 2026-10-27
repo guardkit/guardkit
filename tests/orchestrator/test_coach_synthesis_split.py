@@ -6,8 +6,8 @@ Covers the GuardKit-orchestrator side of the Coach split:
 * the packaged GBNF grammar loader + byte-parity with the docs source,
 * the ``HarnessAdapter.invoke_synthesis`` default (delegates to a TOOLLESS
   ``invoke(tools=[])``), proving substrate-agnostic toolless dispatch,
-* the synthesis variant of ``_build_coach_prompt`` (AC-5: toolless framing +
-  absence-of-failure guards preserved; legacy variant unchanged),
+* the synthesis variant of ``_build_coach_prompt`` (AC-5: toolless framing
+  and the evidence bundle; legacy variant unchanged),
 * ``invoke_coach`` routing (AC-1: synthesis path dispatches ``_invoke_with_role``
   with ``allowed_tools=[]``, ``synthesis=True``, and the verdict grammar;
   the legacy path keeps the read-only tool set).
@@ -24,7 +24,6 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -189,10 +188,6 @@ class TestSynthesisPrompt:
         )
         assert "TOOLLESS SYNTHESIS" in prompt
         assert "You have NO tools" in prompt
-        # AC-5: the synthesis responsibilities must restate the
-        # absence-of-failure rule so an absent/zero-cardinality oracle is
-        # NOT treated as a pass.
-        assert "zero-cardinality oracle is NOT a pass" in prompt
         # It must NOT instruct the model to run tools it does not have.
         assert "Run the tests yourself" not in prompt
 
@@ -209,32 +204,16 @@ class TestSynthesisPrompt:
         assert "TOOLLESS SYNTHESIS" not in prompt
         assert "Run the tests yourself" in prompt
 
-    def test_synthesis_prompt_preserves_absence_of_failure_guards(
+    def test_synthesis_prompt_renders_the_evidence_bundle(
         self, tmp_path: Path
     ) -> None:
-        """AC-5/AC-6: with an evidence bundle the synthesis prompt must STILL
-        carry the absence-of-failure guards + honesty section (the synthesis
-        variant only changes the responsibilities/banner)."""
-        from guardkit.orchestrator.coach_verification import HonestyVerification
+        """With an evidence bundle the synthesis prompt carries it (the
+        synthesis variant only changes the responsibilities/banner)."""
         from guardkit.orchestrator.quality_gates.coach_evidence import (
             CoachEvidenceBundle,
         )
 
-        honesty = HonestyVerification(
-            verified=True,
-            discrepancies=[],
-            honesty_score=1.0,
-            resolved_paths=[],
-        )
-        bundle = CoachEvidenceBundle(
-            honesty=honesty,
-            gathering_status="complete",
-            bdd={
-                "scenarios_attempted": 0,
-                "scenarios_failed": 0,
-                "scenarios_passed": 0,
-            },
-        )
+        bundle = CoachEvidenceBundle(gathering_status="complete")
         prompt = _build_invoker(tmp_path)._build_coach_prompt(
             task_id="TASK-SYN-002",
             turn=1,
@@ -244,10 +223,6 @@ class TestSynthesisPrompt:
             synthesis=True,
         )
         assert "TOOLLESS SYNTHESIS" in prompt
-        # The five absence-of-failure guards survive the synthesis variant.
-        assert "ZERO-CARDINALITY BDD GUARD" in prompt
-        # AC-6: honesty verification section is rendered from the bundle.
-        assert "<honesty_verification>" in prompt
         # The deterministic evidence bundle is rendered.
         assert "<evidence_bundle>" in prompt
 
@@ -262,28 +237,17 @@ def _make_invoker_for_routing(worktree: Path) -> AgentInvoker:
     invoker.worktree_path = worktree
     invoker.sdk_timeout_seconds = 600
     invoker._calculate_sdk_timeout = MagicMock(return_value=600)  # type: ignore[method-assign]
-    invoker._verify_player_claims = MagicMock(  # type: ignore[method-assign]
-        return_value=SimpleNamespace(
-            verified=True, honesty_score=1.0, discrepancies=[]
-        )
-    )
     return invoker
 
 
 def _make_bundle():
     """A minimal complete CoachEvidenceBundle so invoke_coach takes the
     synthesis path (synthesis is gated on bundle presence)."""
-    from guardkit.orchestrator.coach_verification import HonestyVerification
     from guardkit.orchestrator.quality_gates.coach_evidence import (
         CoachEvidenceBundle,
     )
 
-    return CoachEvidenceBundle(
-        honesty=HonestyVerification(
-            verified=True, discrepancies=[], honesty_score=1.0, resolved_paths=[]
-        ),
-        gathering_status="complete",
-    )
+    return CoachEvidenceBundle(gathering_status="complete")
 
 
 class TestInvokeCoachRouting:
@@ -307,9 +271,10 @@ class TestInvokeCoachRouting:
                 )
             )
 
-        # invoke_coach swallows the error into a failure result; we only care
-        # that the routing kwargs were correct.
-        assert result.success is False
+        # A reviewer call that fails leaves the turn approved (its verdict is
+        # advice, cull of 27 October 2026); this test is about the routing.
+        assert result.success is True
+        assert result.report["decision"] == "approve"
         iwr.assert_awaited_once()
         kwargs = iwr.call_args.kwargs
         assert kwargs["allowed_tools"] == []          # toolless (AC-1)

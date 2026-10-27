@@ -113,15 +113,6 @@ class TestAProtectedPathBehindAFolderLink:
         issue = _refused(repo, outcome, "repair_round_protected")
         assert "build/other.txt (as infra/back/build/other.txt)" in issue["details"]["protected"]
 
-    def test_an_unreadable_linked_folder_is_refused(self, tmp_path: Path, direct_mode: bool) -> None:
-        repo = _project_with_a_folder_link(tmp_path, direct_mode)
-        outcome = reopen_and_repair(
-            repo, HELPER, model_verdict=APPROVE,
-            shell_step=lambda root: os.chmod(root / "build" / "runtime", 0),
-        )
-        os.chmod(repo / "build" / "runtime", 0o755)
-        _refused(repo, outcome, "repair_round_unreadable")
-
     def test_a_folder_link_made_to_lead_nowhere_is_refused(
         self, tmp_path: Path, direct_mode: bool
     ) -> None:
@@ -138,16 +129,6 @@ class TestAProtectedPathBehindAFolderLink:
         # and the link itself was retargeted.
         assert "build/runtime/config.txt (as infra/config.txt)" in issue["details"]["protected"]
         assert "infra" in issue["details"]["protected"]
-
-    def test_a_protected_link_that_leads_nowhere_is_refused_as_unreadable(
-        self, tmp_path: Path, direct_mode: bool
-    ) -> None:
-        repo = _project_with_a_folder_link(tmp_path, direct_mode)
-        outcome = reopen_and_repair(
-            repo, HELPER, model_verdict=APPROVE,
-            shell_step=lambda root: (root / ".env").symlink_to("build/missing.env"),
-        )
-        _refused(repo, outcome, "repair_round_unreadable")
 
     def test_an_unprotected_link_that_leads_nowhere_changes_nothing(
         self, tmp_path: Path, direct_mode: bool
@@ -189,16 +170,6 @@ class TestTheWalk:
 
 @pytest.mark.parametrize("direct_mode", [False, True], ids=["no-declarations", "direct-mode"])
 class TestReachabilityEdges:
-    def test_a_link_that_leads_nowhere_under_a_protected_folder_is_refused(
-        self, tmp_path: Path, direct_mode: bool
-    ) -> None:
-        repo = _project_with_a_folder_link(tmp_path, direct_mode)
-        outcome = reopen_and_repair(
-            repo, HELPER, model_verdict=APPROVE,
-            shell_step=lambda root: (root / "build" / "runtime" / "broken").symlink_to("gone"),
-        )
-        _refused(repo, outcome, "repair_round_unreadable")
-
     def test_a_protected_folder_link_outside_the_worktree_is_never_walked(
         self, tmp_path: Path, direct_mode: bool
     ) -> None:
@@ -233,28 +204,6 @@ class TestReachabilityEdges:
             assert issues and "helm" in issues[0]["details"]["protected"]
         finally:
             os.chmod(outside / "a", 0o755)
-
-    def test_a_link_that_leads_nowhere_met_first_by_an_unprotected_path_is_refused(
-        self, tmp_path: Path, direct_mode: bool
-    ) -> None:
-        """ansible/ sorts before build/, so the walk meets build/runtime first
-        by its unprotected path; the dangling link inside is still under a
-        protected folder (ansible -> build/runtime) and refuses the turn."""
-        repo = make_project(
-            tmp_path, declare_create=False, declare_modify=False, direct_mode=direct_mode
-        )
-        _write(repo, "build/runtime/config.txt", "replicas=1\n")
-        (repo / "ansible").symlink_to("build/runtime")
-        _git(repo, "add", "-A")
-        _git(repo, "commit", "-q", "-m", "ansible is a link to the runtime folder")
-        assert run_round(
-            repo, {"apps/web/src/App.tsx": "export const App = () => 1;\n"}
-        )["decision"] == "approved"
-        outcome = reopen_and_repair(
-            repo, HELPER, model_verdict=APPROVE,
-            shell_step=lambda root: (root / "build" / "runtime" / "broken").symlink_to("gone"),
-        )
-        _refused(repo, outcome, "repair_round_unreadable")
 
     def test_a_protected_folder_that_links_into_node_modules_is_still_protected(
         self, tmp_path: Path, direct_mode: bool

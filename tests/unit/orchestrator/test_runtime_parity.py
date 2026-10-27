@@ -5,7 +5,7 @@ Covers:
    entry point on single-task waves, skips (absent signal) otherwise.
 2. ``AgentInvoker._apply_runtime_parity_guard`` — deterministic backstop that
    overrides an ``approve`` to ``feedback`` when the entry point ran and failed,
-   and is a no-op for absent / passing signals (absence-of-failure safety).
+   and is a no-op for absent / passing signals.
 
 Coverage Target: >=85%
 """
@@ -34,7 +34,7 @@ def test_runtime_parity_result_serialises_into_bundle():
         ran=True, passed=False, command="python3 mod.py", exit_code=1,
         expected_exit=0, stderr_tail="ModuleNotFoundError",
     )
-    bundle = CoachEvidenceBundle(honesty=None, runtime_parity=rp)
+    bundle = CoachEvidenceBundle(runtime_parity=rp)
     d = bundle.to_dict()
     assert d["runtime_parity"]["ran"] is True
     assert d["runtime_parity"]["passed"] is False
@@ -42,7 +42,7 @@ def test_runtime_parity_result_serialises_into_bundle():
 
 
 def test_bundle_runtime_parity_defaults_none():
-    assert CoachEvidenceBundle(honesty=None).runtime_parity is None
+    assert CoachEvidenceBundle().runtime_parity is None
 
 
 # ============================================================================
@@ -150,9 +150,9 @@ def _guard(decision: dict, runtime_parity, tmp_path) -> dict:
     """Invoke the guard against a fresh, un-__init__'d AgentInvoker."""
     inv = AgentInvoker.__new__(AgentInvoker)
     bundle = (
-        CoachEvidenceBundle(honesty=None, runtime_parity=runtime_parity)
+        CoachEvidenceBundle(runtime_parity=runtime_parity)
         if runtime_parity is not None
-        else CoachEvidenceBundle(honesty=None)
+        else CoachEvidenceBundle()
     )
     coach_path = tmp_path / "coach_turn_1.json"
     coach_path.write_text(json.dumps(decision))
@@ -306,7 +306,7 @@ def _guard_with_worktree(decision: dict, runtime_parity, tmp_path) -> dict:
     """Like _guard, but with a worktree_path set (authorship-join surface)."""
     inv = AgentInvoker.__new__(AgentInvoker)
     inv.worktree_path = tmp_path
-    bundle = CoachEvidenceBundle(honesty=None, runtime_parity=runtime_parity)
+    bundle = CoachEvidenceBundle(runtime_parity=runtime_parity)
     coach_path = tmp_path / "coach_turn_1.json"
     coach_path.write_text(json.dumps(decision))
     inv._apply_runtime_parity_guard(
@@ -378,7 +378,7 @@ def test_output_tail_populated_on_pass_and_serialises(tmp_path):
     result = v._gather_runtime_parity()
     assert result.passed is True
     assert "ok" in result.output_tail
-    bundle = CoachEvidenceBundle(honesty=None, runtime_parity=result)
+    bundle = CoachEvidenceBundle(runtime_parity=result)
     assert bundle.to_dict()["runtime_parity"]["output_tail"] == result.output_tail
 
 

@@ -16,8 +16,7 @@ Shape A vs Shape B trade-off (82/100, strict intensity).
 
 The fix replaces the Bash-heredoc emission primitive entirely. Coach is now
 told to end its response with a fenced ``json`` block; the orchestrator
-parses Coach's final response text, extracts the JSON block, validates
-required fields, and writes ``coach_turn_N.json`` itself. Coach remains
+parses Coach's final response text, extracts the JSON block and writes ``coach_turn_N.json`` itself. Coach remains
 read-only (``allowed_tools`` unchanged: ``[Read, Bash, Grep, Glob]``).
 
 ## Substrate parity
@@ -55,18 +54,12 @@ and Coach candidates whose reliability *comes from* reasoning
 (nemotron-3-super's 6-hop agentic depth, deepseek-v4-flash's
 Terminal-Bench score) can run with reasoning ON.
 
-## COACHSF01 coupling (Gap 2 from Phase 2.5B review)
+## When nothing can be read
 
-``autobuild.py:5676-5678`` (COACHSF01 safety net) matches on the literal
-substrings ``"Coach decision not found"`` and ``"Coach decision invalid"`` to
-fire its synthetic-feedback fallback. Every exception raised from this module
-MUST have a ``str(...)`` representation containing one of those substrings
-verbatim — otherwise the safety net silently misses verdict-emission
-failures and the wave loop hard-fails instead of giving the Player a turn
-N+1 with synthetic feedback. The raise sites below prefix every message
-with the matching substring; the regression test
-``tests/unit/test_coach_output_parser.py::test_coachsf01_error_string_coupling``
-pins this contract.
+When no verdict can be extracted the parser raises
+``CoachDecisionNotFoundError`` or ``CoachDecisionInvalidError``;
+``AgentInvoker.invoke_coach`` treats either as "no reviewer findings" and the
+turn goes on (the reviewer's verdict is advice, 27 October 2026).
 
 ## Module-level function, not class (Gap 3 from Phase 2.5B review)
 
@@ -112,28 +105,17 @@ logger = logging.getLogger(__name__)
 # ``\{.*?\}``): malformed JSON, top-level arrays, and top-level scalars are
 # valid matches at the regex level so that the JSON / structural validation
 # step below produces a precise ``CoachDecisionInvalidError`` instead of a
-# misleading ``CoachDecisionNotFoundError``. The COACHSF01 safety net at
-# ``autobuild.py:5676-5678`` discriminates on the two substrings — we want
-# the right one to fire for each failure class.
+# misleading ``CoachDecisionNotFoundError``.
 _FENCE_PATTERN = re.compile(
     r"```json\s*\n?(.+?)\s*\n?```",
     re.DOTALL,
 )
-
-# Required top-level keys on every Coach decision (whether approve or feedback).
-# Mirrors the contract enforced by ``AgentInvoker._validate_coach_decision``
-# downstream, but checked here too so the parser raises the COACHSF01-friendly
-# ``CoachDecisionInvalidError`` instead of letting an under-specified file hit
-# the validator. ``decision`` must additionally be ``"approve"`` or
-# ``"feedback"`` (validated below).
-_REQUIRED_TOP_LEVEL_KEYS = ("task_id", "turn", "decision")
 
 # v4 contract keys — the wire shape Coach v4 emits:
 # {"verdict": "approve"|"reject", "findings": [{"locus": "..."}]}
 _V4_VERDICT_KEY = "verdict"
 _V4_FINDINGS_KEY = "findings"
 _V4_LOCUS_KEY = "locus"
-_V4_VALID_VERDICTS = ("approve", "reject")
 
 # Internal mapping: v4 verdict → internal decision
 _V4_VERDICT_MAP = {"approve": "approve", "reject": "feedback"}
@@ -239,7 +221,7 @@ def _adapt_v4_to_internal(
     - ``task_id`` and ``turn`` are injected from the call site.
     - ``contract`` and ``findings_provenance`` keys are added.
     """
-    decision = _V4_VERDICT_MAP[v4_obj[_V4_VERDICT_KEY]]
+    decision = _V4_VERDICT_MAP.get(v4_obj.get(_V4_VERDICT_KEY), "feedback")
 
     issues: list[dict[str, Any]] = []
     for finding in v4_obj.get(_V4_FINDINGS_KEY, []):
@@ -263,35 +245,6 @@ def _adapt_v4_to_internal(
         "contract": "v4",
         "findings_provenance": "coach-ft-v4",
     }
-
-
-def _validate_v4_decision(v4_obj: dict, task_id: str, turn: int) -> None:
-    """Validate v4-specific constraints before writing.
-
-    - approve ⇒ findings must be empty
-    - reject  ⇒ every finding must have a non-empty ``locus``
-
-    Raises ``CoachDecisionInvalidError`` on violation.
-    """
-    findings = v4_obj.get(_V4_FINDINGS_KEY, [])
-
-    verdict = v4_obj.get(_V4_VERDICT_KEY, "")
-
-    if verdict == "approve":
-        if findings:
-            raise CoachDecisionInvalidError(
-                f"Coach decision invalid: v4 approve verdict must have "
-                f"empty findings for {task_id} turn {turn} "
-                f"(got {len(findings)} finding(s))"
-            )
-    elif verdict == "reject":
-        for i, finding in enumerate(findings):
-            locus = finding.get(_V4_LOCUS_KEY, "")
-            if not locus:
-                raise CoachDecisionInvalidError(
-                    f"Coach decision invalid: v4 reject finding[{i}] "
-                    f"has empty locus for {task_id} turn {turn}"
-                )
 
 
 def _collect_assistant_text(harness_events: Iterable[HarnessEvent]) -> str:
@@ -367,10 +320,10 @@ def extract_and_write(
 
     * ``contract=v4`` — parses Coach v4 wire shape (raw JSON with
       ``{"verdict": ..., "findings": [...]}``), adapts to the internal
-      decision shape, validates v4-specific constraints, and writes the
+      decision shape, and writes the
       internal shape to ``output_path``.
     * ``contract=coachsplit`` (default) — legacy path: finds every fenced
-      ``json`` block, takes the last, validates required fields, and writes.
+      ``json`` block, takes the last, and writes.
 
     Args:
         harness_events: The full ``List[HarnessEvent]`` ``_invoke_with_role``
@@ -378,9 +331,7 @@ def extract_and_write(
             ``ToolUseEvent``, ``ToolResultEvent``, ``ResultMessageEvent`` —
             only ``AssistantMessageEvent`` contributes text.
         task_id: The task identifier this verdict belongs to. Used only for
-            error messages; the parser does NOT enforce that the parsed
-            ``task_id`` field matches (``_validate_coach_decision`` downstream
-            owns that check).
+            error messages; the parser does not check the parsed ``task_id``.
         turn: The turn number. Same role as ``task_id`` above.
         output_path: Destination for ``coach_turn_{turn}.json``. The parser
             writes the document the existing ``_load_agent_report`` consumer
@@ -400,11 +351,8 @@ def extract_and_write(
 
     Raises:
         CoachDecisionNotFoundError: If no verdict can be extracted.
-            ``str(error)`` is prefixed with ``"Coach decision not found"``
-            so the COACHSF01 safety net fires.
-        CoachDecisionInvalidError: If the extracted verdict is malformed
-            or violates contract constraints. ``str(error)`` is prefixed
-            with ``"Coach decision invalid"`` so COACHSF01 fires.
+        CoachDecisionInvalidError: If the last JSON block is not a JSON
+            object.
     """
     if contract is None:
         contract = _resolve_contract()
@@ -435,10 +383,6 @@ def _extract_and_write_v4(
     - ``verdict`` → ``decision`` (approve→approve, reject→feedback)
     - ``findings`` → ``issues`` (severity mapping, locus→description)
     - Inject ``task_id``, ``turn``, ``contract``, ``findings_provenance``
-
-    Validation:
-    - approve ⇒ findings must be empty
-    - reject  ⇒ every finding must have non-empty locus
     """
     full_text = _collect_assistant_text(harness_events)
     full_reasoning = _collect_assistant_reasoning(harness_events)
@@ -483,9 +427,6 @@ def _extract_and_write_v4(
                 return _extract_and_write_legacy(
                     harness_events, task_id, turn, output_path
                 )
-
-    # Validate v4-specific constraints
-    _validate_v4_decision(v4_obj, task_id, turn)
 
     # Adapt to internal shape
     internal = _adapt_v4_to_internal(v4_obj, task_id, turn)
@@ -552,27 +493,13 @@ def _extract_and_write_legacy(
             f"object for {task_id} turn {turn} (got {type(decision).__name__})"
         )
 
-    missing = [key for key in _REQUIRED_TOP_LEVEL_KEYS if key not in decision]
-    if missing:
-        raise CoachDecisionInvalidError(
-            f"Coach decision invalid: missing required field(s) "
-            f"{missing} for {task_id} turn {turn}"
-        )
-
-    if decision["decision"] not in ("approve", "feedback"):
-        raise CoachDecisionInvalidError(
-            f"Coach decision invalid: 'decision' must be 'approve' or "
-            f"'feedback' for {task_id} turn {turn}, got "
-            f"{decision['decision']!r}"
-        )
-
     _atomic_write(output_path, json.dumps(decision, indent=2))
 
     logger.debug(
         "coach_output_parser: extracted %s verdict for %s turn %s "
         "(%d fenced block(s) seen in %s, used last; "
         "%d chars content + %d chars reasoning_content)",
-        decision["decision"], task_id, turn, len(matches), source,
+        decision.get("decision"), task_id, turn, len(matches), source,
         len(full_text), len(full_reasoning),
     )
 

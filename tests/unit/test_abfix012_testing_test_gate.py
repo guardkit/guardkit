@@ -9,9 +9,8 @@ turn 1 while its own deterministic run was 5/9 red, because the test gate was
 The fix has two halves that must not be reversed (constraint 5 of the task):
 
 * a real CODE bug → deterministic block (``_apply_independent_test_code_failure_guard``);
-* a host-SUBSTRATE gap → ``signal_absent`` → the existing absent guard → feedback
-  bounded by ``max_turns`` (the false-red ABFIX-010 prevents), NEVER a code block
-  and NEVER a pass.
+* a host-SUBSTRATE gap → ``signal_absent`` → not a failure, NEVER a code block
+  (the absent guard was removed in the cull of 27 October 2026).
 
 Instances of ``.claude/rules/absence-of-failure-is-not-success.md`` and
 ``.claude/rules/absence-must-survive-every-reconciliation-layer.md``.
@@ -244,7 +243,7 @@ class TestClassificationSerialisation:
         cls = IndependentTestClassification(
             failure_class="code", confidence="high", raw_output_excerpt="E AssertionError",
         )
-        bundle = CoachEvidenceBundle(honesty=None, independent_test_classification=cls)
+        bundle = CoachEvidenceBundle(independent_test_classification=cls)
         d = bundle.to_dict()
         assert d["independent_test_classification"]["failure_class"] == "code"
         assert d["independent_test_classification"]["confidence"] == "high"
@@ -252,7 +251,7 @@ class TestClassificationSerialisation:
         json.dumps(d)
 
     def test_classification_defaults_none(self) -> None:
-        assert CoachEvidenceBundle(honesty=None).independent_test_classification is None
+        assert CoachEvidenceBundle().independent_test_classification is None
 
 
 # ============================================================================
@@ -287,7 +286,6 @@ def _guard(
         else None
     )
     bundle = CoachEvidenceBundle(
-        honesty=None,
         task_type=task_type,
         independent_tests=itr,
         independent_test_classification=cls,
@@ -329,8 +327,8 @@ class TestCodeFailureGuard:
         assert out["decision"] == "feedback"
 
     def test_noop_when_signal_absent(self, tmp_path: Path) -> None:
-        """A substrate gap (signal_absent True) is owned by the absent guard,
-        NEVER blocked as code (absence-of-failure-is-not-success)."""
+        """A suite that could not run (signal_absent True) did not fail, so
+        this guard leaves the decision alone."""
         decision = {"decision": "approve", "issues": [], "rationale": "lgtm"}
         out = _guard(
             decision, task_type="testing", tests_passed=False, signal_absent=True,

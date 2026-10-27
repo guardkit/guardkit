@@ -14,13 +14,11 @@ Coverage Target: >=85%
 """
 
 import pytest
-from pathlib import Path
 
 from .conftest import (
     make_player_result,
     make_coach_result,
     assert_quality_gates_passed,
-    assert_complexity_based_turns,
     assert_worktree_preserved,
 )
 
@@ -396,75 +394,12 @@ class TestSimpleTaskEdgeCases:
             - Total turns = 2
             - Both turns recorded in history
             - Final decision = "approved"
-
-        Note:
-            This test requires overriding the CoachValidator mock to return
-            feedback on the first turn and approve on the second turn.
         """
         # Skip if not simple scenario
         if task_scenario["complexity"] != 2:
             pytest.skip("Test requires simple scenario")
 
-        # Import data classes for CoachValidator results
-        from guardkit.orchestrator.quality_gates import (
-            CoachValidationResult,
-            QualityGateStatus,
-        )
-
-        # Override CoachValidator mock to provide feedback on first turn
-        quality_gates_passed = QualityGateStatus(
-            tests_passed=True,
-            coverage_met=True,
-            arch_review_passed=True,
-            plan_audit_passed=True,
-        )
-
-        quality_gates_needs_work = QualityGateStatus(
-            tests_passed=True,
-            coverage_met=False,  # Coverage not met - needs feedback
-            arch_review_passed=True,
-            plan_audit_passed=True,
-        )
-
-        turn_1_result = CoachValidationResult(
-            task_id=task_scenario["task_id"],
-            turn=1,
-            decision="feedback",
-            quality_gates=quality_gates_needs_work,
-            independent_tests=None,
-            requirements=None,
-            issues=[{"type": "coverage", "description": "Add more tests"}],
-            rationale="Coverage below threshold",
-        )
-
-        turn_2_result = CoachValidationResult(
-            task_id=task_scenario["task_id"],
-            turn=2,
-            decision="approve",
-            quality_gates=quality_gates_passed,
-            independent_tests=None,
-            requirements=None,
-            issues=[],
-            rationale="All quality gates passed",
-        )
-
-        # Mock CoachValidator to return feedback on turn 1, approve on turn 2
-        mock_coach_validator.return_value.validate.side_effect = [
-            turn_1_result,
-            turn_2_result,
-        ]
-
-        # Mock the Coach for both turns.
-        #
-        # invoke_coach was never configured here, so awaiting it returned a
-        # bare AsyncMock: coach_result.report.get("decision") produced a
-        # coroutine rather than "approve"/"feedback", the loop fell into the
-        # feedback branch and _extract_feedback tried to slice that coroutine.
-        # The test died on turn 1 with "'coroutine' object is not
-        # subscriptable" and never reached its assertions. These two results
-        # say the same thing the CoachValidator mock above says — feedback on
-        # turn 1, approve on turn 2 — so the two halves of the Coach now
-        # agree.
+        # The Coach turn's outcome for both turns: feedback, then approve.
         mock_agent_invoker.invoke_coach.side_effect = [
             make_coach_result(
                 task_id=task_scenario["task_id"],

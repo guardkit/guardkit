@@ -42,28 +42,31 @@ Example:
 
 import asyncio
 import concurrent.futures
-import contextlib
 import hashlib
 import json
 import logging
 import os
-import platform
 import re
 import shutil
 import subprocess
-import sys
 import threading
 import time
-from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, FrozenSet, List, Literal, Optional, Set, Tuple
+from typing import (
+    Any,
+    Dict,
+    FrozenSet,
+    List,
+    Literal,
+    Optional,
+    Tuple,
+)
 
 import yaml
 
 # Import worktree components from guardkit package
-from guardkit.orchestrator import process_group
 from guardkit.worktrees import (
     WorktreeManager,
     Worktree,
@@ -84,14 +87,7 @@ from guardkit.orchestrator.failing_test_feedback import (
     MUST_FIX_MARKER,
     SUGGESTION_MARKER,
 )
-from guardkit.orchestrator.phase_specialists import (
-    detect_stack_template,
-    render_missing_phase_list,
-)
 from guardkit.orchestrator.progress import ProgressDisplay
-from guardkit.orchestrator.stale_test_attribution import (
-    extract_failing_test_lines,
-)
 from guardkit.orchestrator.exceptions import (
     AgentInvocationError,
     AgentLaunchRefusedError,
@@ -121,91 +117,12 @@ from guardkit.orchestrator.quality_gates import (
     QualityGateBlocked,
     CheckpointRejectedError,
     CoachValidator,
-    CoachValidationResult,
 )
-from guardkit.orchestrator.quality_gates.coach_evidence import (
-    INVALID_TASK_TYPE_CAUSE,
-    CoachEvidenceBundle,
-)
-
-#: The issue category of a task stopped after its turn because it was to
-#: declare the project's coverage command and did not (20 October 2026).
-UNDECLARED_COVERAGE_CAUSE = "undeclared_coverage"
-
-#: The coverage command a BUILD first pinned from its worktree, kept once per
-#: build beside the Coach documents snapshot (coach review 1, 20 October
-#: 2026); see ``AutoBuildOrchestrator._carry_coverage_from_worktree``.
-BUILD_COVERAGE_RECORD = "build_coverage_command.json"
-
-
-def build_coverage_record_path(worktree_path: Path) -> Path:
-    """Where a build's coverage record lives: the build's private folder,
-    keyed by the worktree's name, outside the worktree on the normal layout."""
-    from guardkit.orchestrator.paths import TaskArtifactPaths
-
-    worktree_path = Path(worktree_path)
-    return TaskArtifactPaths.private_artifact_path(
-        worktree_path.name, BUILD_COVERAGE_RECORD, worktree_path
-    )
-
-
-def _lock_exclusively(handle: Any) -> bool:
-    """Take an exclusive lock on an open file; False where no lock exists."""
-    try:
-        import fcntl
-    except ImportError:  # pragma: no cover - no fcntl on this system
-        logger.warning(
-            "No file locking on this system: this build's coverage record is "
-            "written without a lock."
-        )
-        return False
-    fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
-    return True
-
-
-def _unlock(handle: Any) -> None:
-    import fcntl
-
-    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
-
-
-def discard_build_coverage_record(worktree_path: Any) -> None:
-    """Forget a build's coverage record (a new build is starting). Never raises."""
-    try:
-        path = build_coverage_record_path(Path(worktree_path))
-        if path.exists():
-            path.unlink()
-    except (OSError, TypeError) as exc:
-        logger.warning(
-            "Could not clear an earlier build's coverage record for %s (%s)",
-            worktree_path, exc,
-        )
+from guardkit.orchestrator.quality_gates.coach_evidence import CoachEvidenceBundle
 
 # TASK-AB-COACHSUBPROC01: env > config > default (subprocess) resolution for
 # the Coach's independent test-execution mode.
-from guardkit.orchestrator.quality_gates.coach_validator import (
-    MET_RESULTS,
-    resolve_coach_test_execution,
-)
-
-# The close-the-loop synthetic report types its threaded requirements honestly
-# (coach residue, 2026-08-14: an unimported forward reference is inert at
-# runtime but breaks signature introspection — import under TYPE_CHECKING).
-from typing import TYPE_CHECKING
-if TYPE_CHECKING:  # pragma: no cover — annotation-only import
-    from guardkit.orchestrator.quality_gates.coach_validator import (
-        RequirementsValidation,
-    )
-
-# Import criteria classifier for runtime command verification (TASK-CRV-537E)
-from guardkit.orchestrator.quality_gates.criteria_classifier import (
-    classify_acceptance_criteria,
-)
-from guardkit.orchestrator.quality_gates.command_failure_classifier import (
-    classify_command_failure,
-    build_command_failure_advisory,
-    CommandFailureRecord,
-)
+from guardkit.orchestrator.quality_gates.coach_validator import resolve_coach_test_execution
 
 # Import task type models for quality gate profile resolution
 from guardkit.models.task_types import TaskType, TASK_TYPE_ALIASES, get_profile as get_quality_gate_profile
@@ -224,7 +141,6 @@ from guardkit.orchestrator.synthetic_report import (
     PLAYER_TIMED_OUT_CATEGORY,
     SHARED_WORKING_COPY_FIELD,
     TASK_WORK_TIMEOUT_CATEGORY,
-    completion_promise_suggestion,
     mark_shared_working_copy,
     player_no_report_no_changes_issue,
     player_timed_out_issue,
@@ -319,40 +235,7 @@ COACH_GRACE_PERIOD_SECONDS: int = int(
     os.environ.get("GUARDKIT_COACH_GRACE_PERIOD_SECONDS", "1500")
 )
 
-# TASK-PERF-SPECLAT01: maximum fraction of the *post-Player remaining* task
-# budget the orchestrator-side specialist phase (Phase 4 test-orchestrator +
-# Phase 5 code-reviewer, combined) may consume in a single turn.
-#
-# AC1 of SPECLAT01 requires the specialist phase to be "bounded so it cannot
-# consume more than a configurable fraction of the remaining task budget".
-# FEAT-9DDE run-6 turn-2 burned >½ the 80-min budget in one turn's specialists
-# (a 35-min code-reviewer + an 8.5-min test-orchestrator), refusing turn 4 at
-# ``remaining=397s < min=600s``. Capping the phase at this fraction leaves the
-# remainder for subsequent Player turns so multi-turn convergence stays
-# arithmetically possible. The per-specialist hard ceilings (600s each, in
-# ``specialist_invocations``) bound the phase to <=1200s on their own; this
-# fraction binds when the remaining budget is modest. Clamped to (0, 1];
-# operator-tunable via ``GUARDKIT_SPECIALIST_BUDGET_FRACTION`` (default 0.5).
-SPECIALIST_BUDGET_FRACTION: float = min(
-    1.0, max(0.01, float(os.environ.get("GUARDKIT_SPECIALIST_BUDGET_FRACTION", "0.5")))
-)
 
-
-# ============================================================================
-# Runtime Command Execution Constants (TASK-CRV-537E)
-# Canonical definitions live in command_models.py; re-exported here for
-# backward compatibility with existing tests and callers (TASK-RFX-7C63).
-# ============================================================================
-
-from guardkit.orchestrator.quality_gates.command_models import (  # noqa: E402
-    WORKTREE_SENTINEL,
-    COMMAND_TIMEOUT_SECONDS,
-    COMMAND_TOTAL_TIMEOUT_SECONDS,
-    _PIP_CMD_RE,
-    _assert_worktree_path,
-    CommandExecutionResult,
-    CommandVerificationResult,
-)
 
 
 # ============================================================================
@@ -393,17 +276,6 @@ UNRECOVERABLE_ERRORS = (
 
 
 # ============================================================================
-# Direct-mode evidence gate (TASK-FIX-DIRECTFG01)
-# ============================================================================
-
-# Wall-clock budget for executing a single registered bin-entry producer in the
-# AC3 bin-entry probe. A registered CLI producer that loads cleanly returns in
-# well under a second; a hang (e.g. blocking on stdin despite DEVNULL, or an
-# import that triggers network I/O) is treated as ABSENT signal, not PRESENT.
-_DIRECT_MODE_BIN_PROBE_TIMEOUT_S = 10
-
-
-# ============================================================================
 # Failure Category Mapping (TASK-INST-004)
 # ============================================================================
 
@@ -414,20 +286,8 @@ FAILURE_CATEGORY_MAP: Dict[str, str] = {
     "timeout_budget_exhausted": "timeout",
     "rate_limited": "rate_limit",
     "cancelled": "other",
-    "configuration_error": "env_failure",
     "pre_loop_blocked": "other",
-    "unrecoverable_stall": "other",
-    "player_invocation_stall": "env_failure",
     "design_extraction_failed": "other",
-    "honesty_collapse": "other",
-    # TASK-AB-STALLTAX01: stall sub-type label (STALL_PARALLEL_INTERFERENCE).
-    # Never a top-level final_decision — it co-fires as a decision_subtype —
-    # but mapped here so consumers that look the label up resolve it to the
-    # isolation/environment cause rather than "other".
-    "parallel_interference_stall": "env_failure",
-    # TASK-AB-NOCHANGE01: stall sub-type label (STALL_NO_FILE_CHANGES). Never a
-    # top-level final_decision either; mapped so consumers resolve it.
-    "no_file_changes_stall": "other",
 }
 """Map final_decision strings to FailureCategory controlled vocabulary values."""
 
@@ -436,19 +296,6 @@ FAILURE_CATEGORY_MAP: Dict[str, str] = {
 # Did this turn change anything? (TASK-AB-NOCHANGE01)
 # ============================================================================
 
-_NON_RUN_TEST_COMMANDS = frozenset(
-    {
-        # IndependentTestResult.skipped() — no tests belonging to this task were
-        # found, so nothing ran. It is recorded as tests_passed=True with this
-        # placeholder command, which is why it must be excluded by name from
-        # anything that reads "the tests passed" (TASK-AB-NOCHANGE01).
-        "skipped",
-        # IndependentTestResult.absent() when the whole detection ladder came up
-        # empty. Already carries signal_absent=True; listed for belt and braces.
-        "<no test command declared or detected>",
-    }
-)
-"""Placeholder ``test_command`` values that mean no test run happened."""
 
 _TEST_RUN_ARTEFACT_PATTERNS: Tuple[re.Pattern, ...] = (
     # Files a test run drops on the way past. The generator runs tests inside
@@ -679,82 +526,6 @@ def count_changed_paths(
     return changed
 
 
-# ============================================================================
-# Stall Classification (TASK-FIX-7A07)
-# ============================================================================
-
-# Known stall sub-type labels. The top-level ``final_decision`` stays
-# ``unrecoverable_stall`` for backward compatibility with downstream consumers;
-# ``decision_subtype`` is the new dimension that names *which* stall mechanism
-# fired. Sub-types can co-fire (joined with " + ") — see ``classify_stall``.
-STALL_COACH_AGENT_INVOCATIONS = "coach_agent_invocations_stall"
-"""Stall sub-type: Coach's agent-invocations gate rejected the Player for N
-consecutive turns with identical missing-phases signature. TASK-FIX-7A07."""
-
-STALL_CONTEXT_POLLUTION = "context_pollution_stall_no_checkpoint"
-"""Stall sub-type: context-pollution rollback fired but no passing checkpoint
-existed. TASK-AB-SD01."""
-
-STALL_FEEDBACK_GENERIC = "coach_feedback_stall"
-"""Stall sub-type: identical Coach feedback for N turns with zero criteria
-progress, and no more specific sub-type matched."""
-
-STALL_ENVIRONMENT = "environment_stall"
-"""Stall sub-type: trailing N turns all show ``all_gates_passed=True`` (Player
-quality gates clean) but ``independent_tests.tests_passed=False`` with a
-``test_verification`` issue whose ``failure_classification == "infrastructure"``
-and an identical ``failure_confidence``. Indicates the worktree environment is
-broken (e.g. Python interpreter mismatch with ``requires-python``) rather than
-a code defect or task-type misclassification. TASK-ABSR-C3D4."""
-
-STALL_PARALLEL_INTERFERENCE = "parallel_interference_stall"
-"""Stall sub-type: trailing N turns each carry a ``test_verification`` issue
-whose ``failure_classification == "parallel_contention"`` (or a non-empty
-``contention_peers`` map naming peer wave tasks). The Coach layer knew
-per-turn that peer wave tasks were interfering with this task's test runs;
-this sub-type carries that CAUSE through to the terminal label so an
-isolation problem is not read as a Player-quality problem. Co-fires
-additively alongside ``STALL_CONTEXT_POLLUTION`` (which names the terminal
-CONDITION); the top-level ``final_decision`` stays ``unrecoverable_stall``.
-TASK-AB-STALLTAX01."""
-
-STALL_NO_FILE_CHANGES = "no_file_changes_stall"
-"""Stall sub-type: the code generator wrote nothing. The trailing N turns each
-recorded ``files_changed_this_turn == 0`` — a deterministic git measurement of
-the worktree taken before and after the generator ran, never the generator's
-own account of itself — and the reviewer approved on none of them.
-
-Two real builds in the 2026-08-30 architecture exam ended this way and neither
-said so: the second task of FEAT-245E (the record forbade the only route to the
-data the task needed, so no legal edit existed) and the second task of FEAT-B0EF
-(the filtering the task asked for was already in the file). In both the generator
-claimed edits git showed had not happened, the honesty check flagged the claim
-every turn, and the loop ran out of turns and reported ``max_turns_exceeded`` —
-the symptom, not the cause, at about 25 minutes of wall clock apiece.
-
-When no file changed for N turns running, no later turn can change that, so the
-loop stops here and says which of the two things it is likely to be. TASK-AB-NOCHANGE01."""
-
-STALL_PLAN_CONTRADICTS_CHECK = "plan_contradicts_project_check"
-"""Stall sub-type: inside a whole-feature repair round, the turn was sent back
-only over acceptance criteria that the coder itself marked as not delivered,
-while GuardKit's own run of the project's declared whole-feature check passed
-on that turn's code. Those criteria were approved as met on the code that
-failed the check, so the plan and the project's check cannot both hold, and
-no later turn can fix that: the task stops at once with one plain sentence
-(``plan_contradicts_check_sentence``). Checked first so it takes the primary
-label. Design of 18 October 2026, "GuardKit stops early when the plan
-contradicts the project's check"."""
-
-STALL_CLASSIFICATION_THRESHOLD = 3
-"""Single source of truth for the trailing-turn window every stall scan uses
-(2026-07-04 code review, FIX 2). ``classify_stall``'s call sites and the
-diagnostic re-scans (``_build_verifier_infrastructure_stall_diagnostic``,
-``_collect_contention_peers``, ``_aggregate_failing_test_lines``) MUST share
-this value: a caller-side threshold change with a diverged diagnostic default
-makes the sub-type fire while its diagnostic silently returns ``None`` — the
-operator then sees the generic, quality-implying stall message."""
-
 OUTCOME_CAPTURE_TIMEOUT_SECONDS = 20.0
 """Ceiling on the flywheel's build-outcome write at an autobuild terminal.
 
@@ -772,151 +543,12 @@ inherits nats-py's 30-second drain default and a stalled broker holds the
 build's final line for nearly a minute after this ceiling has expired."""
 
 
-@dataclass(frozen=True)
-class StallClassification:
-    """Sub-classification of an ``unrecoverable_stall`` exit.
-
-    The top-level ``final_decision`` label stays ``"unrecoverable_stall"`` for
-    backward compatibility. This dataclass carries the finer-grained sub-type
-    information that the summary renderer, review-summary-per-task renderer,
-    and memory seeding hook all consume (TASK-FIX-7A07).
-
-    Attributes
-    ----------
-    decision_label : str
-        Primary stall sub-type (one of ``STALL_COACH_AGENT_INVOCATIONS``,
-        ``STALL_CONTEXT_POLLUTION``, ``STALL_FEEDBACK_GENERIC``).
-    decision_subtype : str
-        Composite label when multiple sub-types co-fire, joined by " + "
-        (e.g. ``"coach_agent_invocations_stall + context_pollution_stall_no_checkpoint"``).
-        Equal to ``decision_label`` when only one sub-type fired.
-    missing_phases : List[str]
-        Missing phase identifiers from the Coach's agent-invocations gate
-        (only populated for ``coach_agent_invocations_stall``).
-    expected_phases : Optional[int]
-        Expected phase count (only populated for the agent-invocations case).
-    actual_invocations : Optional[int]
-        Actual invocation count (only populated for the agent-invocations case).
-    co_fires : List[str]
-        All sub-type labels that co-fired on this task. Useful for the
-        review-summary per-task table and memory seeding.
-    """
-
-    decision_label: str
-    decision_subtype: str
-    missing_phases: List[str]
-    expected_phases: Optional[int]
-    actual_invocations: Optional[int]
-    co_fires: List[str]
-
-
-def _extract_agent_invocations_violation(
-    turn_record: "TurnRecord",
-) -> Optional[Dict[str, Any]]:
-    """Return the ``agent_invocations_violation`` issue dict for this turn,
-    or ``None`` if no such issue is present.
-
-    Walks into ``turn_record.coach_result.report["issues"]`` and returns the
-    first issue whose ``category == "agent_invocations_violation"``. This is
-    the schema-stable predicate used by ``classify_stall`` to detect the
-    coach-agent-invocations sub-type across consecutive turns.
-
-    Defensive against malformed TurnRecords (Mock objects in tests,
-    partial state during error paths) — any shape mismatch returns ``None``
-    rather than raising.
-
-    Parameters
-    ----------
-    turn_record : TurnRecord
-        Completed turn record.
-
-    Returns
-    -------
-    Optional[Dict[str, Any]]
-        The violation issue dict (with keys ``missing_phases``, ``details``,
-        etc.) if present, else ``None``.
-    """
-    # TASK-AB-REVIEWCLEAN01 (item 4): consume the shared defensive walker
-    # rather than re-inlining the coach_result/report/issues shape checks.
-    for issue in _coach_report_issues(turn_record):
-        if issue.get("category") == "agent_invocations_violation":
-            return issue
-    return None
-
-
-def _extract_environment_stall_signal(
-    turn_record: "TurnRecord",
-) -> Optional[Dict[str, Any]]:
-    """Return the ``test_verification`` issue dict for this turn when the
-    environment-stall pattern matches, or ``None`` otherwise (TASK-ABSR-C3D4).
-
-    Pattern requires:
-      - ``coach_result.report["validation_results"]["quality_gates"]["all_gates_passed"]`` is True
-      - ``coach_result.report["validation_results"]["independent_tests"]["tests_passed"]`` is False
-      - ``coach_result.report["issues"]`` contains an entry with
-        ``category == "test_verification"`` and
-        ``failure_classification == "infrastructure"``
-
-    Defensive against malformed TurnRecords (Mock objects in tests, partial
-    state during error paths) — any shape mismatch returns ``None`` rather
-    than raising.
-    """
-    # TASK-AB-REVIEWCLEAN01 (item 4): the issue walk consumes the shared
-    # defensive walker; the validation_results gate below is this signal's
-    # own precondition (no shared helper for it) and keeps its inline shape
-    # checks.
-    if turn_record.coach_result is None:
-        return None
-    try:
-        report = getattr(turn_record.coach_result, "report", None) or {}
-    except (AttributeError, TypeError):
-        return None
-    if not isinstance(report, dict):
-        return None
-
-    validation_results = report.get("validation_results")
-    if not isinstance(validation_results, dict):
-        return None
-    quality_gates = validation_results.get("quality_gates")
-    if not isinstance(quality_gates, dict):
-        return None
-    if quality_gates.get("all_gates_passed") is not True:
-        return None
-
-    independent_tests = validation_results.get("independent_tests")
-    if not isinstance(independent_tests, dict):
-        return None
-    if independent_tests.get("tests_passed") is not False:
-        return None
-
-    for issue in _coach_report_issues(turn_record):
-        if (
-            issue.get("category") == "test_verification"
-            and issue.get("failure_classification") == "infrastructure"
-        ):
-            return issue
-    return None
-
-
-# LANE-WF: the v4 contract emits every Coach finding at the CONSTANT
-# severity "major" (coach_output_parser._adapt_v4_to_internal) — a
-# rejection reason. It was absent from this map, so it scored the
-# unknown-severity default (99) and lost to any advisory riding along,
-# which is how build FEAT-STV1-20260801195639 showed
-# "Feedback: Deterministic honesty record (claim_audit_unmodified,
-# severity=should_fix) ..." as the operator-visible reason for five
-# turns whose actual blocker was a failing spec_conformance rule.
+# The v4 contract emits every Coach finding at the constant severity
+# "major" (coach_output_parser._adapt_v4_to_internal).
 _FEEDBACK_SEVERITY_ORDER: Dict[str, int] = {
     "must_fix": 0,
     "critical": 0,
     "major": 1,
-    # 19 October 2026: two more rejection-level severities that scored 99
-    # (below a warning) while missing from this map. "error" is the severity
-    # of the zero-test check's issue, which refuses the turn
-    # (CoachValidator, zero_test_blocking) and is listed after the
-    # agent-invocations advisory warning. No deterministic Coach issue uses a
-    # top-level "high" (the plan audit's "high" is in its details; its issue
-    # is must_fix), but an LLM Coach may, and it reads as rejection-level.
     "high": 1,
     "error": 1,
     "should_fix": 2,
@@ -925,91 +557,19 @@ _FEEDBACK_SEVERITY_ORDER: Dict[str, int] = {
 }
 
 
-def _feedback_issue_rank(issue: Dict[str, Any]) -> Tuple[int, int]:
-    """(advisory-last, severity) — a warning never headlines a turn.
-
-    A deterministic honesty record that is NOT ``must_fix`` is, by
-    construction, never the reason the turn was rejected
-    (``coach_narrative_reconciler``: only ``critical`` records are
-    turn-rejecting). It must never outrank a real finding, whatever severity
-    vocabulary that finding uses. Used for the operator's one-line summary
-    and for the order of the feedback the Player is given.
-    """
-    from guardkit.orchestrator.coach_narrative_reconciler import (
-        DETERMINISTIC_SOURCE,
-    )
-
-    severity = issue.get("severity", "warning")
-    details = issue.get("details")
-    is_advisory_record = (
-        isinstance(details, dict)
-        and details.get("source") == DETERMINISTIC_SOURCE
-        and severity != "must_fix"
-    )
-    return (
-        1 if is_advisory_record else 0,
-        _FEEDBACK_SEVERITY_ORDER.get(severity, 99),
-    )
+def _feedback_issue_rank(issue: Dict[str, Any]) -> int:
+    """The severity rank of an issue: rejection-level issues first."""
+    return _FEEDBACK_SEVERITY_ORDER.get(issue.get("severity", "warning"), 99)
 
 
-def _waits_on_another_gate(issue: Dict[str, Any]) -> bool:
-    """Whether ``issue`` only says it is waiting for another gate.
-
-    The Coach's "Coverage is UNKNOWN" issue, when the project declares a
-    coverage command that was not run because another required gate failed
-    first, names that gate in ``details.waiting_on_gates``. It is still a
-    reason the turn was refused, but it is never the cause: a build on 19
-    October 2026 quoted it as the reason on every turn while the plan audit
-    was what refused them.
-    """
-    details = issue.get("details")
-    return (
-        issue.get("category") == "coverage_unknown"
-        and isinstance(details, dict)
-        and bool(details.get("waiting_on_gates"))
-    )
-
-
-def _feedback_issue_order(issue: Dict[str, Any]) -> Tuple[int, int, int]:
-    """:func:`_feedback_issue_rank`, then an issue that only waits on another
-    gate after the issues it waits on. The order a person and the Player are
-    shown issues in; whether an issue blocks is still decided by the rank."""
-    return (*_feedback_issue_rank(issue), 1 if _waits_on_another_gate(issue) else 0)
+def _feedback_issue_order(issue: Dict[str, Any]) -> int:
+    """The order a person and the Player are shown issues in."""
+    return _feedback_issue_rank(issue)
 
 
 def _feedback_issue_is_must_fix(issue: Dict[str, Any]) -> bool:
-    """Whether an issue is a reason the turn was rejected.
-
-    The same line the feedback file has always drawn between its must_fix and
-    should_fix lists (must_fix, critical and major severities), with the
-    advisory honesty records kept out as :func:`_feedback_issue_rank` keeps
-    them out.
-    """
-    advisory, severity_rank = _feedback_issue_rank(issue)
-    return advisory == 0 and severity_rank <= 1
-
-
-def _player_turn_error(turn_record: "TurnRecord") -> Optional[str]:
-    """The error a failed coder turn ended with, or ``None``.
-
-    A turn whose work was rebuilt from git carries no error of its own; its
-    original error is kept in the rebuilt report's ``_recovery_metadata``.
-    """
-    result = getattr(turn_record, "player_result", None)
-    if result is None:
-        return None
-    if getattr(result, "error", None):
-        return result.error
-    report = getattr(result, "report", None) or {}
-    metadata = report.get("_recovery_metadata") if isinstance(report, dict) else None
-    if isinstance(metadata, dict):
-        return metadata.get("original_error") or metadata.get("detection_method")
-    return None
-
-
-def _player_turn_timeout(turn_record: "TurnRecord") -> Optional[Dict[str, Any]]:
-    """The timeout fields of a coder turn that ran out of time, or ``None``."""
-    return _player_result_timeout(getattr(turn_record, "player_result", None))
+    """Whether an issue is rejection-level (must_fix, critical or major)."""
+    return _feedback_issue_rank(issue) <= 1
 
 
 def _player_result_timeout(result: Any) -> Optional[Dict[str, Any]]:
@@ -1025,1602 +585,11 @@ def _player_result_timeout(result: Any) -> Optional[Dict[str, Any]]:
     ) or player_timeout_from_error(getattr(result, "error", None))
 
 
-#: How many unmet criterion ids the direct-mode gate names before "and N more".
-_GATE_UNMET_IDS_SHOWN = 10
-
 #: Issue categories that already tell the coder its turn ran out of time.
 #: Feedback that carries one of them gets no second timeout note.
 _TIMEOUT_ISSUE_CATEGORIES = frozenset(
     {PLAYER_TIMED_OUT_CATEGORY, TASK_WORK_TIMEOUT_CATEGORY}
 )
-
-
-def _turn_changed_no_files(turn_record: "TurnRecord") -> bool:
-    """True only when this turn was MEASURED and the measurement was zero.
-
-    ``files_changed_this_turn`` is ``None`` when no measurement was taken —
-    git could not answer, or the turn ended before the measurement point.
-    ``None`` returns False here, so an unmeasured turn can never join a
-    no-file-changes window. Defensive against Mock turn records in tests and
-    partial state on error paths (TASK-AB-NOCHANGE01).
-    """
-    try:
-        value = getattr(turn_record, "files_changed_this_turn", None)
-    except (AttributeError, TypeError):
-        return False
-    return isinstance(value, int) and not isinstance(value, bool) and value == 0
-
-
-def _coach_headline_issue(
-    turn_record: "TurnRecord", max_chars: int = 300
-) -> Optional[Tuple[str, bool]]:
-    """The reviewer's most serious readable issue on this turn, and whether it
-    blocks the turn: ``(description, blocking)``, or ``None``.
-
-    Used to tell a person what was being asked for at the point the build gave
-    up, so it picks what the reviewer refused the turn for, not whatever came
-    first. The order is: blocking before non-blocking, then
-    :func:`_feedback_issue_rank` (the order the Player's own feedback is
-    given in), then the honesty tie-break, then the reviewer's own order. A
-    blocking issue (must_fix, critical, major, high or error, and not an
-    advisory honesty record) always wins over a non-blocking one, so an
-    "Advisory (non-blocking)" warning listed first is never quoted as the
-    reviewer's request while a must_fix refused the turn. With no blocking
-    issue, the most serious remaining one is returned with ``blocking``
-    False, so the caller can say it was not a must-fix.
-
-    At equal severity, the honesty records (``honesty`` / ``claim_audit``)
-    come after everything else. On exactly the runs this is written for,
-    those records say "the generator claimed a file it did not change" —
-    which is the fact the message already states in its first line. Quoting
-    it back as the thing being asked for would be circular and would hide
-    the real request. A more severe honesty record still wins: a must_fix
-    honesty finding is quoted ahead of a major ordinary one. Trimmed to
-    ``max_chars`` so a terminal message stays a terminal message.
-    """
-    honesty_categories = {"honesty", "claim_audit"}
-    ranked: List[Tuple[Tuple[int, Tuple[int, int, int], int, int], str, bool]] = []
-    for index, issue in enumerate(_coach_report_issues(turn_record)):
-        description = issue.get("description")
-        if not isinstance(description, str) or not description.strip():
-            continue
-        text = " ".join(description.split())
-        if len(text) > max_chars:
-            text = text[: max_chars - 1].rstrip() + "\u2026"
-        blocking = _feedback_issue_is_must_fix(issue)
-        key = (
-            0 if blocking else 1,
-            _feedback_issue_order(issue),
-            1 if issue.get("category") in honesty_categories else 0,
-            index,
-        )
-        ranked.append((key, text, blocking))
-    if not ranked:
-        return None
-    _, text, blocking = min(ranked, key=lambda item: item[0])
-    return text, blocking
-
-
-def _stall_refusal_line(turn_history: List["TurnRecord"]) -> str:
-    """One line naming what the reviewer refused the last turn for, or "".
-
-    The stall summary used to say only that the build could not make progress,
-    and the per-turn summary quoted whichever must-fix came first. In a
-    build on 19 October 2026 that was "Coverage is UNKNOWN", which only
-    waits on the plan audit; the plan audit was what refused every turn. This
-    quotes :func:`_coach_headline_issue` of the last turn, which puts an issue
-    that only waits on another gate after the gate it waits on. Ends with a
-    newline when not empty. Never raises.
-    """
-    try:
-        if not turn_history:
-            return ""
-        last = turn_history[-1]
-        headline = _coach_headline_issue(last)
-        if headline is None:
-            return ""
-        text, blocking = headline
-        if blocking:
-            return f'The reviewer refused turn {last.turn} for this: "{text}"\n'
-        return (
-            f"On turn {last.turn} the reviewer marked nothing as must-fix; "
-            f'its most serious note was this: "{text}"\n'
-        )
-    except Exception:  # noqa: BLE001 — a message never fails a build
-        return ""
-
-
-def _coach_first_issue_description(
-    turn_record: "TurnRecord", max_chars: int = 300
-) -> Optional[str]:
-    """The description of :func:`_coach_headline_issue`, or ``None``."""
-    headline = _coach_headline_issue(turn_record, max_chars=max_chars)
-    return headline[0] if headline is not None else None
-
-
-# ----------------------------------------------------------------------------
-# The plain early stop in a whole-feature repair round (18 October 2026)
-# ----------------------------------------------------------------------------
-
-#: The criterion text in the stop sentence is cut to this many characters.
-_STOP_CRITERION_TEXT_LIMIT = 160
-
-#: The one gate blocker the early stop accepts: criteria the coder's own
-#: completion promise did not deliver.
-_GATE_AC_BLOCKER = "direct_mode_ac_unverified"
-
-
-def _direct_mode_gate_blockers(
-    leading_issues: Optional[List[Dict[str, Any]]],
-    must_fix: List[Dict[str, Any]],
-) -> List[Dict[str, Any]]:
-    """The direct-mode gate's blockers as data: ``[{category, unmet_ids}]``.
-
-    One entry per leading issue and per must-fix item, in that order. Only a
-    ``direct_mode_ac_unverified`` item carries ids (its ``details.unmet_ids``,
-    the whole list, never the shortened one in the prose).
-    """
-    blockers: List[Dict[str, Any]] = []
-    for issue in list(leading_issues or []) + list(must_fix or []):
-        if not isinstance(issue, dict):
-            continue
-        category = str(issue.get("category") or "")
-        unmet_ids: List[str] = []
-        details = issue.get("details")
-        if category == _GATE_AC_BLOCKER and isinstance(details, dict):
-            raw = details.get("unmet_ids")
-            if isinstance(raw, list):
-                unmet_ids = [str(item) for item in raw]
-        blockers.append({"category": category, "unmet_ids": unmet_ids})
-    return blockers
-
-
-def _coach_report(turn_record: "TurnRecord") -> Optional[Dict[str, Any]]:
-    """The turn's Coach report as a dict, or ``None``. Never raises."""
-    coach_result = getattr(turn_record, "coach_result", None)
-    if coach_result is None:
-        return None
-    try:
-        report = getattr(coach_result, "report", None)
-    except (AttributeError, TypeError):
-        return None
-    return report if isinstance(report, dict) else None
-
-
-def _extract_direct_mode_blockers(
-    turn_record: "TurnRecord",
-) -> Optional[List[Dict[str, Any]]]:
-    """Read the gate's TOP-LEVEL ``direct_mode_blockers`` key, by schema only.
-
-    Built like ``_extract_absent_evidence_repo_signal``: it reads
-    ``turn_record.coach_result.report`` and never any text. Returns ``None``
-    when the key is missing or any entry is malformed (each entry must be a
-    dict with a string ``category`` and a list of strings ``unmet_ids``), so a
-    missing or unreadable record leaves today's behaviour.
-    """
-    report = _coach_report(turn_record)
-    if report is None:
-        return None
-    blockers = report.get("direct_mode_blockers")
-    if not isinstance(blockers, list):
-        return None
-    clean: List[Dict[str, Any]] = []
-    for entry in blockers:
-        if not isinstance(entry, dict):
-            return None
-        category = entry.get("category")
-        unmet_ids = entry.get("unmet_ids")
-        if not isinstance(category, str) or not isinstance(unmet_ids, list):
-            return None
-        if not all(isinstance(item, str) for item in unmet_ids):
-            return None
-        clean.append({"category": category, "unmet_ids": list(unmet_ids)})
-    return clean
-
-
-def _criteria_only_rejection(turn_record: "TurnRecord") -> Optional[List[str]]:
-    """The criteria a turn was sent back over, when NOTHING else sent it back.
-
-    Read as structured data, never from text. Two shapes count:
-
-    * the direct-mode gate: every blocker in ``direct_mode_blockers`` is
-      ``direct_mode_ac_unverified`` (so there is no leading issue and no other
-      gate blocker) and their ``unmet_ids`` name at least one criterion;
-    * the model Coach: every issue has type ``missing_requirement``, at least
-      one criterion is ``rejected``, and the Coach's independent tests ran and
-      passed: the passing flags AND a recorded test command that is not one
-      of the "nothing ran" placeholders (a skipped run never counts).
-
-    Any other blocker, a missing or malformed record, or any other shape
-    returns ``None``: the turn is sent back exactly as today.
-    """
-    report = _coach_report(turn_record)
-    if report is None or report.get("decision") != "feedback":
-        return None
-    if getattr(turn_record, "decision", None) != "feedback":
-        return None
-
-    if "direct_mode_blockers" in report:
-        if report.get("coach_primary_synthetic_feedback") is not True:
-            return None
-        blockers = _extract_direct_mode_blockers(turn_record)
-        if not blockers:
-            return None
-        ids: List[str] = []
-        for blocker in blockers:
-            if blocker["category"] != _GATE_AC_BLOCKER:
-                return None
-            for criterion_id in blocker["unmet_ids"]:
-                if criterion_id not in ids:
-                    ids.append(criterion_id)
-        return ids or None
-
-    # Any other synthetic report (another gate, or an exception) is not the
-    # model's verdict; only the direct-mode gate's structured blockers count.
-    if report.get("coach_primary_synthetic_feedback") is True:
-        return None
-    issues = report.get("issues")
-    if not isinstance(issues, list) or not issues:
-        return None
-    for issue in issues:
-        if not isinstance(issue, dict) or issue.get("type") != "missing_requirement":
-            return None
-    rows = report.get("criteria_verification")
-    if not isinstance(rows, list):
-        return None
-    rejected: List[str] = []
-    for row in rows:
-        if not isinstance(row, dict):
-            return None
-        if row.get("result") == "rejected":
-            criterion_id = row.get("criterion_id")
-            if not isinstance(criterion_id, str) or not criterion_id:
-                return None
-            if criterion_id not in rejected:
-                rejected.append(criterion_id)
-    if not rejected:
-        return None
-    validation = report.get("validation_results")
-    independent = (
-        validation.get("independent_tests") if isinstance(validation, dict) else None
-    )
-    if not (
-        isinstance(independent, dict)
-        and independent.get("tests_passed") is True
-        and independent.get("signal_absent") is False
-    ):
-        return None
-    # A real run, not a skipped one (implementation review R1, 19 October
-    # 2026): IndependentTestResult.skipped() also reads tests_passed=True and
-    # signal_absent=False, so the recorded command must be a real one. The
-    # placeholders that mean "nothing ran" are the shared
-    # _NON_RUN_TEST_COMMANDS. A missing or empty command is unconfirmed, and
-    # unconfirmed counts as no early stop.
-    command = independent.get("test_command")
-    if not isinstance(command, str) or not command.strip():
-        return None
-    if command.strip() in _NON_RUN_TEST_COMMANDS:
-        return None
-    return rejected
-
-
-def _player_left_out(turn_record: "TurnRecord", criterion_ids: List[str]) -> bool:
-    """True when the coder's own completion promise marks EVERY one of
-    ``criterion_ids`` as not delivered (``status: "incomplete"``).
-
-    Read from the turn's Player report. A criterion with no promise, a
-    promise marked anything else, or an unreadable report returns False.
-    """
-    player_result = getattr(turn_record, "player_result", None)
-    report = getattr(player_result, "report", None) if player_result else None
-    if not isinstance(report, dict) or not criterion_ids:
-        return False
-    promises = report.get("completion_promises")
-    if not isinstance(promises, list):
-        return False
-    status_by_id: Dict[str, Any] = {}
-    for promise in promises:
-        if isinstance(promise, dict) and isinstance(promise.get("criterion_id"), str):
-            status_by_id[promise["criterion_id"]] = promise.get("status")
-    return all(status_by_id.get(cid) == "incomplete" for cid in criterion_ids)
-
-
-def _criterion_texts(
-    turn_record: "TurnRecord", criterion_ids: List[str]
-) -> Dict[str, str]:
-    """Each criterion's text: GuardKit's own record first, then the promise."""
-    texts: Dict[str, str] = {}
-    report = _coach_report(turn_record) or {}
-    verification = report.get("acceptance_criteria_verification")
-    rows = (
-        verification.get("criteria_results")
-        if isinstance(verification, dict)
-        else None
-    )
-    for row in rows if isinstance(rows, list) else []:
-        if isinstance(row, dict) and row.get("criterion_id") in criterion_ids:
-            text = row.get("criterion_text")
-            if isinstance(text, str) and text.strip():
-                texts.setdefault(row["criterion_id"], text)
-    player_result = getattr(turn_record, "player_result", None)
-    player_report = getattr(player_result, "report", None) if player_result else None
-    promises = (
-        player_report.get("completion_promises")
-        if isinstance(player_report, dict)
-        else None
-    )
-    for promise in promises if isinstance(promises, list) else []:
-        if isinstance(promise, dict) and promise.get("criterion_id") in criterion_ids:
-            text = promise.get("criterion_text")
-            if isinstance(text, str) and text.strip():
-                texts.setdefault(promise["criterion_id"], text)
-    return texts
-
-
-def plan_contradicts_check_sentence(
-    criterion_ids: List[str],
-    criterion_texts: Dict[str, str],
-    checkpoint_sha: Optional[str] = None,
-) -> str:
-    """The one plain sentence the early stop gives.
-
-    It states two facts, both from GuardKit's own runs: the declared check
-    failed while these criteria were met (they were approved before the check
-    ran), and it passes on the coder's version that leaves them out. The check
-    is named by its fixed public label, never by its command, because this
-    sentence is published (the console, the receipt's reason, Forge's failure
-    reason) and a declared command can carry a credential (13 October 2026).
-    The check's failing lines are not parsed into it.
-    """
-    from guardkit.orchestrator.feature_check import PUBLIC_LABEL
-
-    def _short(text: str) -> str:
-        flat = " ".join(str(text).split())
-        if len(flat) <= _STOP_CRITERION_TEXT_LIMIT:
-            return flat
-        return flat[: _STOP_CRITERION_TEXT_LIMIT - 1].rstrip() + "\u2026"
-
-    named = [
-        f'{cid} ("{_short(criterion_texts[cid])}")'
-        if criterion_texts.get(cid)
-        else cid
-        for cid in criterion_ids
-    ]
-    if len(named) == 1:
-        names = named[0]
-    else:
-        names = ", ".join(named[:-1]) + " and " + named[-1]
-    single = len(named) == 1
-    where = "kept in the build's worktree"
-    if checkpoint_sha:
-        where += f", commit `{str(checkpoint_sha)[:12]}`"
-    return (
-        "The plan contradicts the project's own check: "
-        f"{PUBLIC_LABEL} failed while {names} {'was' if single else 'were'} "
-        "met, and passes on the coder's version that leaves "
-        f"{'it' if single else 'them'} out ({where})."
-    )
-
-
-def _extract_absent_evidence_repo_signal(
-    turn_record: "TurnRecord",
-) -> bool:
-    """Return True when this turn was blocked by a pure-ABSENT sibling-repo
-    signal (TASK-FIX-SIBTESTENV01 AC-3).
-
-    Reads the TOP-LEVEL ``evidence_repo_signal_absent`` key from
-    ``turn_record.coach_result.report`` — the key
-    ``_emit_synthetic_coach_feedback`` writes at the same level as
-    ``coach_primary_synthetic_feedback`` (CRITICAL-1: it is never nested
-    inside ``issues``; a nested marker must NOT trigger immunity). Schema
-    match, never text match — the feedback-stall detector hashes feedback
-    text, and "could NOT run" text is just as identical turn-over-turn as a
-    genuine failure.
-
-    Defensive against malformed TurnRecords (Mock objects in tests, partial
-    state during error paths) — any shape mismatch returns ``False`` rather
-    than raising.
-    """
-    if turn_record.coach_result is None:
-        return False
-    try:
-        report = getattr(turn_record.coach_result, "report", None) or {}
-    except (AttributeError, TypeError):
-        return False
-    if not isinstance(report, dict):
-        return False
-    return report.get("evidence_repo_signal_absent", False) is True
-
-
-def _coach_report_issues(
-    turn_record: "TurnRecord",
-) -> List[Dict[str, Any]]:
-    """Return every well-formed issue dict from a turn's coach report.
-
-    Shared defensive walk (TASK-AB-ZEROTESTLOUD01, factored out of
-    ``_test_verification_issues``) — any shape mismatch (Mock objects in
-    tests, partial state during error paths) returns an empty list rather
-    than raising.
-    """
-    if turn_record.coach_result is None:
-        return []
-    # getattr with a default cannot raise for a missing/absent attribute —
-    # the isinstance guards below are the real shape defence.
-    report = getattr(turn_record.coach_result, "report", None) or {}
-    if not isinstance(report, dict):
-        return []
-    issues = report.get("issues")
-    if not isinstance(issues, list):
-        return []
-    return [issue for issue in issues if isinstance(issue, dict)]
-
-
-def _configuration_error_cause(
-    turn_record: Optional["TurnRecord"],
-) -> Tuple[Optional[str], bool]:
-    """The cause of a configuration-error turn, and whether it is the task_type.
-
-    Returns ``(cause, is_task_type)``; ``cause`` is ``None`` when the turn
-    recorded none. An invalid task_type issue names its own cause. Any other
-    configuration error (a check that could not run, for one) carries its
-    cause as the Coach's rationale: that sentence comes first, never the
-    turn's feedback, which can lead with should-fix records that did not stop
-    the task. The turn's feedback is used only when there is no rationale.
-    Only an invalid task_type is a task_type problem, so only then may the
-    caller advise fixing the task_type (23 October 2026).
-    """
-    if turn_record is None:
-        return None, False
-    for issue in _coach_report_issues(turn_record):
-        if issue.get("category") == INVALID_TASK_TYPE_CAUSE:
-            return issue.get("description") or None, True
-    report = (
-        getattr(turn_record.coach_result, "report", None)
-        if turn_record.coach_result is not None
-        else None
-    )
-    rationale = report.get("rationale") if isinstance(report, dict) else None
-    if isinstance(rationale, str) and rationale.strip():
-        return rationale.strip(), False
-    return turn_record.feedback or None, False
-
-
-def _declared_tool_missing_message(
-    exc: Any, worktree_root: Path, manifests_changed: List[str]
-) -> str:
-    """Say, as a gap in the build environment, which declared tool is missing.
-
-    23 October 2026: the reinstall could not run because a tool the project's
-    own declaration needs is not where the build runs. The declaration is
-    right, so the sentence names the tool and the declaring file and never
-    tells anyone to change the project's declared stack. The builder cannot
-    install into the build environment, so the task stops with this reason.
-    """
-    tool = getattr(exc, "tool", None)
-    declaring = getattr(exc, "declaring_file", None)
-    if declaring:
-        try:
-            declaring = Path(declaring).resolve().relative_to(
-                worktree_root.resolve()
-            ).as_posix()
-        except (OSError, ValueError):
-            pass
-    else:
-        declaring = ", ".join(manifests_changed)
-    named = f"`{tool}`" if tool else "a tool"
-    return (
-        f"The build environment is missing {named}, which {declaring} "
-        "declares is needed to install this project's dependencies, so the "
-        "dependency reinstall could not run. This is a gap in the build "
-        "environment, not in the project: the declaration is correct and "
-        "should stay as it is. The builder cannot fix this from inside the "
-        f"task; add {named} to the build environment, then resume."
-    )
-
-
-# ----------------------------------------------------------------------------
-# Vetoes on the "already there" receipt (TASK-AB-NOCHANGE01, part 2 hardening)
-# ----------------------------------------------------------------------------
-
-_UNMODIFIED_CLAIM_TYPE = "claim_audit_unmodified"
-"""The honesty record that says: the generator named files it never changed."""
-
-
-def _turn_claimed_unmodified_files(turn_record: "TurnRecord") -> bool:
-    """True when this turn carries a ``claim_audit_unmodified`` honesty record.
-
-    That record is written by the deterministic honesty check
-    (``coach_verification``), not by the generator: it fires when the
-    generator's own report names a file that git says it did not change this
-    turn. It is exactly the fingerprint of a turn that did nothing and said
-    otherwise, so it vetoes the "already there" completion.
-
-    Defensive against Mock records and partial reports — any shape mismatch
-    reads as "no such record" and the other vetoes still apply.
-    """
-    for issue in _coach_report_issues(turn_record):
-        details = issue.get("details")
-        if isinstance(details, dict):
-            if details.get("claim_type") == _UNMODIFIED_CLAIM_TYPE:
-                return True
-        if issue.get("claim_type") == _UNMODIFIED_CLAIM_TYPE:
-            return True
-        description = issue.get("description")
-        if (
-            isinstance(description, str)
-            and _UNMODIFIED_CLAIM_TYPE in description
-        ):
-            return True
-    return False
-
-
-def _reviewer_criteria_entries(
-    turn_record: "TurnRecord",
-) -> List[Any]:
-    """The reviewer's own per-criterion verdict list, or an empty list.
-
-    Reads ``criteria_verification`` first and the older
-    ``acceptance_criteria_verification.criteria_results`` shape as a fallback.
-    Any shape mismatch (Mock records, partial reports) reads as "no list".
-    """
-    if turn_record.coach_result is None:
-        return []
-    report = getattr(turn_record.coach_result, "report", None)
-    if not isinstance(report, dict):
-        return []
-
-    entries = report.get("criteria_verification")
-    if not isinstance(entries, list) or not entries:
-        legacy = report.get("acceptance_criteria_verification")
-        if isinstance(legacy, dict):
-            entries = legacy.get("criteria_results")
-    if not isinstance(entries, list):
-        return []
-    return entries
-
-
-def _entry_says_verified(entry: Any) -> bool:
-    """True when one of the reviewer's verdict entries says "verified"."""
-    if not isinstance(entry, dict):
-        return False
-    verdict = entry.get("result")
-    if not isinstance(verdict, str) or not verdict.strip():
-        verdict = entry.get("status")
-    return isinstance(verdict, str) and verdict.strip().lower() == "verified"
-
-
-def _criteria_the_reviewer_did_not_verify(
-    turn_record: "TurnRecord",
-) -> List[str]:
-    """Names of the acceptance criteria the reviewer did NOT mark verified.
-
-    Reads the reviewer's own per-criterion verdicts —
-    ``criteria_verification`` first, and the older
-    ``acceptance_criteria_verification.criteria_results`` shape as a fallback.
-    An entry counts as verified only when it says so; anything else
-    ("rejected", "pending", "fail", missing, unreadable) counts as not
-    verified. An empty or absent list yields an empty result: there is nothing
-    to read, so this check says nothing either way.
-    """
-    entries = _reviewer_criteria_entries(turn_record)
-    if not entries:
-        return []
-
-    unverified: List[str] = []
-    for index, entry in enumerate(entries):
-        if _entry_says_verified(entry):
-            continue
-        name = entry.get("criterion_id") if isinstance(entry, dict) else None
-        unverified.append(
-            name if isinstance(name, str) and name.strip()
-            else f"criterion {index + 1}"
-        )
-    return unverified
-
-
-def _reviewer_counted_criteria_unmet(turn_record: "TurnRecord") -> bool:
-    """True when the reviewer's own criteria count says work is outstanding.
-
-    Reads ``validation_results.requirements`` — the same authoritative count
-    ``_count_criteria_passed`` uses. Covers the case where the reviewer says
-    "not all criteria met" without filling in a per-criterion list. Absent or
-    unreadable counts return False: unknown is not treated as unmet, the
-    per-criterion check and the honesty check still apply.
-    """
-    if turn_record.coach_result is None:
-        return False
-    report = getattr(turn_record.coach_result, "report", None)
-    if not isinstance(report, dict):
-        return False
-    validation = report.get("validation_results")
-    if not isinstance(validation, dict):
-        return False
-    requirements = validation.get("requirements")
-    if not isinstance(requirements, dict):
-        return False
-
-    total = requirements.get("criteria_total")
-    if not isinstance(total, int) or isinstance(total, bool) or total <= 0:
-        return False
-    if requirements.get("all_criteria_met") is False:
-        return True
-    met = requirements.get("criteria_met")
-    if isinstance(met, int) and not isinstance(met, bool) and met < total:
-        return True
-    return False
-
-
-def _already_implemented_veto(turn_record: "TurnRecord") -> Optional[str]:
-    """Why this turn must NOT finish as "the work was already there".
-
-    Returns a plain sentence naming the reason, or ``None`` when nothing
-    objects. The receipt is a completion, so anything saying the work is not
-    done outranks it: the reviewer's verdict on the acceptance criteria, and
-    the deterministic honesty record that the generator claimed files it did
-    not change. Neither is written by the generator.
-    """
-    if _turn_claimed_unmodified_files(turn_record):
-        return (
-            "the honesty check found the generator listed files it did not "
-            "actually change on this turn"
-        )
-    unverified = _criteria_the_reviewer_did_not_verify(turn_record)
-    if unverified:
-        return (
-            "the reviewer has not marked these acceptance criteria as done: "
-            + ", ".join(unverified)
-        )
-    if _reviewer_counted_criteria_unmet(turn_record):
-        return (
-            "the reviewer's own count says not all of this task's acceptance "
-            "criteria are met"
-        )
-    return None
-
-
-# ============================================================================
-# The third outcome: the tree already satisfies the task
-# ============================================================================
-
-DECISION_ALREADY_SATISFIED = "already_satisfied"
-"""A task can end in three ways, not two.
-
-``approved`` — the builder did the work and the reviewer accepted it.
-``already_satisfied`` — the builder found the work already in the tree, said
-so, cited where it is, and the reviewer checked that claim against the tree
-and agreed. Nothing was written, and there is nothing to merge — and
-"nothing was written" is measured across EVERY turn the task took, not just
-the turn the claim was made on, because a task that wrote code on an earlier
-turn has a diff that still needs reviewing and merging.
-Anything else is a failure.
-
-Written after the build of 2026-09-11 (``build-FEAT-3EF3-20260911171802``),
-where the plan split one job into three tasks. Task one did the whole job in a
-single turn; tasks two and three then had nothing left to do. The loop had no
-way to say "already done", so it read the silence as no progress, spent five
-turns on each of them, and on the last of those turns one of them deleted two
-working functions its task never mentioned — 79 tests of shipped behaviour.
-"""
-
-TASK_COMPLETE_DECISIONS: frozenset = frozenset(
-    {"approved", DECISION_ALREADY_SATISFIED}
-)
-"""The outcomes that mean this task is DONE.
-
-Everything that decides a final status, or counts how many tasks finished,
-reads this set: a feature whose tasks are all approved or already-satisfied is
-a COMPLETE feature, not a partial one.
-"""
-
-_ALREADY_SATISFIED_FIELD = "already_satisfied"
-"""The one field the builder writes into its own report to make the claim."""
-
-#: Where a citation's file may be named, in the order the readers try.
-_CITATION_FILE_KEYS = ("file", "path", "file_path")
-#: Where a citation's place inside that file may be named.
-_CITATION_PLACE_KEYS = ("location", "lines", "line", "place", "where", "symbol")
-#: Where a citation says which acceptance criterion it answers.
-_CITATION_CRITERION_KEYS = ("criterion_id", "criterion", "criterion_text", "id")
-
-
-def _already_satisfied_claim(turn_record: "TurnRecord") -> Optional[Any]:
-    """The builder's claim that the tree already satisfies this task, or None.
-
-    STACK-AGNOSTIC BY CONSTRUCTION. This reads ONE field out of the builder's
-    own report. It never opens a source file, never parses one, and has no
-    idea what language the repository is written in — so it behaves the same
-    in a Python, TypeScript, Go or any other repository. The claim is prose
-    citing files and places; the reviewer verifies it the way it verifies
-    every other claim the builder makes.
-
-    Defensive against Mock records and partial reports: any shape mismatch
-    reads as "no claim was made", which simply leaves today's behaviour
-    untouched.
-    """
-    player = getattr(turn_record, "player_result", None)
-    if player is None:
-        return None
-    report = getattr(player, "report", None)
-    if not isinstance(report, dict):
-        return None
-    claim = report.get(_ALREADY_SATISFIED_FIELD)
-    if claim is None or claim is False:
-        return None
-    if isinstance(claim, dict) and claim.get("claimed") is False:
-        return None
-    return claim
-
-
-def _first_text(entry: Dict[str, Any], keys: Tuple[str, ...]) -> Optional[str]:
-    """The first of ``keys`` in ``entry`` that carries readable text."""
-    for key in keys:
-        value = entry.get(key)
-        if isinstance(value, bool) or value is None:
-            continue
-        if isinstance(value, (str, int)):
-            text = str(value).strip()
-            if text:
-                return text
-    return None
-
-
-def _already_satisfied_citations(claim: Any) -> List[Dict[str, str]]:
-    """The usable citations in a claim, normalised.
-
-    A citation is usable only when it says all three things: which acceptance
-    criterion it answers, which file satisfies it, and where in that file. An
-    entry missing any of the three is not a citation and is dropped, so a
-    claim made of empty gestures arrives here as an empty list and is refused.
-
-    Nothing is checked about the *content* of a file name or a place — they
-    are text, in whatever form the repository's language uses ("lines 42-58",
-    "the createUser handler", "func CountUsers"). That is the stack-agnostic
-    rule: no parsing, no language, no package manager.
-    """
-    entries: List[Any]
-    if isinstance(claim, dict):
-        raw = claim.get("citations")
-        entries = raw if isinstance(raw, list) else []
-    elif isinstance(claim, list):
-        entries = claim
-    else:
-        entries = []
-
-    citations: List[Dict[str, str]] = []
-    for entry in entries:
-        if not isinstance(entry, dict):
-            continue
-        criterion = _first_text(entry, _CITATION_CRITERION_KEYS)
-        file_named = _first_text(entry, _CITATION_FILE_KEYS)
-        place = _first_text(entry, _CITATION_PLACE_KEYS)
-        if criterion and file_named and place:
-            citations.append(
-                {"criterion": criterion, "file": file_named, "place": place}
-            )
-    return citations
-
-
-def _reviewer_verified_every_criterion(
-    turn_record: "TurnRecord", expected: int
-) -> bool:
-    """True only when the reviewer's own report SAYS it checked every one.
-
-    Positive evidence is required. An absent, unreadable or partial verdict
-    reads as "not verified" — never as "nothing objected". Unknown is not a
-    pass; that is exactly the rule the 2026-09-11 checkpoint commits broke
-    when they recorded "tests: pass, count: 0".
-    """
-    needed = max(expected, 1)
-
-    entries = _reviewer_criteria_entries(turn_record)
-    verified = sum(1 for entry in entries if _entry_says_verified(entry))
-    if entries and verified >= needed and verified == len(entries):
-        return True
-
-    # The older shape: a count instead of a list.
-    if turn_record.coach_result is None:
-        return False
-    report = getattr(turn_record.coach_result, "report", None)
-    if not isinstance(report, dict):
-        return False
-    validation = report.get("validation_results")
-    if not isinstance(validation, dict):
-        return False
-    requirements = validation.get("requirements")
-    if not isinstance(requirements, dict):
-        return False
-    if requirements.get("all_criteria_met") is not True:
-        return False
-    total = requirements.get("criteria_total")
-    met = requirements.get("criteria_met")
-    for number in (total, met):
-        if not isinstance(number, int) or isinstance(number, bool):
-            return False
-    return total >= needed and met >= needed
-
-
-def _reviewer_must_fix_objection(turn_record: "TurnRecord") -> Optional[str]:
-    """The first thing the reviewer says MUST be fixed, or None.
-
-    A must-fix issue is the reviewer saying "this is not acceptable as it
-    stands". Nothing can close as already-satisfied over one of those, whatever
-    the per-criterion verdicts say — that is the trap the withdrawn 2026-09-01
-    version fell into, where a completion that never read the reviewer's
-    objection could finish a task the reviewer had just refused.
-
-    "Must be fixed" is decided by :func:`_feedback_issue_is_must_fix`, the
-    same line the builder's own feedback draws between what it must fix and
-    what it should: ``must_fix``, ``critical``, ``major``, ``high`` and
-    ``error``, with the advisory honesty records kept out. Until 19 October 2026 this read only the literal word ``must_fix``,
-    which the reviewer model never writes — the v4 contract marks every
-    finding ``major`` and the older one says ``critical``/``major`` — so under
-    a model reviewer a rejection-level finding did not stop the claim. The
-    severity is read case- and space-insensitively, as it always was here.
-    """
-    for issue in _coach_report_issues(turn_record):
-        severity = issue.get("severity")
-        if isinstance(severity, str):
-            issue = {**issue, "severity": severity.strip().lower()}
-        if _feedback_issue_is_must_fix(issue):
-            description = issue.get("description")
-            if isinstance(description, str) and description.strip():
-                return " ".join(description.split())[:300]
-            return "an unnamed must-fix issue"
-    return None
-
-
-def _already_satisfied_refusal(
-    turn_record: "TurnRecord",
-    acceptance_criteria: Optional[List[Any]] = None,
-    turn_history: Optional[List["TurnRecord"]] = None,
-) -> Optional[str]:
-    """Why the claim is refused — one plain sentence — or None when it stands.
-
-    A claim on its own is never enough: a builder that could close a task by
-    asserting it was done would face no bar at all. So every check here is
-    made from something the builder does not control — the citations counted
-    rather than believed, the orchestrator's own git measurement of what the
-    task has written, the reviewer's verdict on the acceptance criteria, its
-    must-fix objections, and its decision on the turn.
-
-    "Already satisfied" says two things at once: nothing was written, and
-    there is nothing to merge. That is a claim about the WHOLE TASK, not about
-    one turn of it, so the git measurement is read for EVERY turn this task
-    has taken — not just the turn the claim was made on. A task whose first
-    turn wrote six files and whose second turn wrote none has a real diff
-    waiting: closing it as already-satisfied would abandon that diff unchecked
-    and unmerged, because the verify and merge steps only run for an approved
-    task. An unmeasured turn is refused for the same reason it is refused on
-    the current turn: unknown is not a pass.
-
-    A refused claim is simply a failed turn: the loop carries on exactly as it
-    does today, including the stall rule.
-    """
-    claim = _already_satisfied_claim(turn_record)
-    if claim is None:
-        return "The builder made no claim that the work was already there."
-
-    expected = len(
-        [c for c in (acceptance_criteria or []) if str(c).strip()]
-    )
-
-    citations = _already_satisfied_citations(claim)
-    if not citations:
-        return (
-            "The builder said this task's work was already in the tree but "
-            "cited nothing. A claim has to name, for each acceptance "
-            "criterion, the file and the place in it that satisfies that "
-            "criterion. Refused, and this counts as a failed turn."
-        )
-
-    cited = {citation["criterion"] for citation in citations}
-    if expected and len(cited) < expected:
-        return (
-            f"The builder said this task's work was already in the tree but "
-            f"cited only {len(cited)} of its {expected} acceptance criteria. "
-            f"A claim has to cite every one. Refused."
-        )
-
-    # Every turn this task has taken, not just this one. See the docstring:
-    # "already satisfied" promises there is nothing to merge, and a turn
-    # earlier in the same task may have written a real diff.
-    records: List["TurnRecord"] = list(turn_history) if turn_history else []
-    if not any(record is turn_record for record in records):
-        records.append(turn_record)
-
-    for record in records:
-        changed = record.files_changed_this_turn
-        this_turn = record is turn_record
-        if not isinstance(changed, int) or isinstance(changed, bool):
-            if this_turn:
-                return (
-                    "The builder said this task's work was already in the "
-                    "tree, but the build could not measure whether this turn "
-                    "changed any files, and an unmeasured turn cannot close a "
-                    "task. Refused."
-                )
-            return (
-                f"The builder said this task's work was already in the tree, "
-                f"but the build could not measure whether turn {record.turn} "
-                f"of this task changed any files, and a task cannot close as "
-                f"already satisfied while any of its turns is unmeasured. "
-                f"Refused."
-            )
-        if changed > 0:
-            if this_turn:
-                return (
-                    f"The builder said this task's work was already in the "
-                    f"tree, but it changed {changed} file(s) on this turn, so "
-                    f"this was work being done, not work that was already "
-                    f"there. Refused."
-                )
-            return (
-                f"The builder said this task's work was already in the tree, "
-                f"but turn {record.turn} of this task wrote {changed} "
-                f"file(s), so work was done here and there is a diff to "
-                f"review and merge. Refused."
-            )
-
-    veto = _already_implemented_veto(turn_record)
-    if veto is not None:
-        return (
-            f"The builder said this task's work was already in the tree, but "
-            f"{veto}. Refused."
-        )
-
-    objection = _reviewer_must_fix_objection(turn_record)
-    if objection is not None:
-        return (
-            f"The builder said this task's work was already in the tree, but "
-            f"the reviewer still has something it says must be fixed: "
-            f"\"{objection}\". Refused."
-        )
-
-    if not _reviewer_verified_every_criterion(turn_record, expected):
-        return (
-            "The builder said this task's work was already in the tree, but "
-            "the reviewer did not confirm every acceptance criterion against "
-            "the tree, so the claim is unverified. Refused."
-        )
-
-    # The reviewer's own decision on this turn. A reviewer that refused the
-    # turn has not confirmed the claim, whatever its per-criterion entries
-    # say and whatever words it used for its reasons — including a refusal
-    # whose reasons use a severity the rule above does not rank as blocking,
-    # or that gave no reason at all (the v4 contract allows a rejection with
-    # no findings). Without this, the close would be the one place in the
-    # loop that can finish a task over a refusal, which is the trap the
-    # withdrawn 2026-09-01 version fell into.
-    decision = getattr(turn_record, "decision", None)
-    if decision != "approve":
-        if decision == "feedback":
-            what_happened = "the reviewer asked for changes on this turn"
-        elif decision == "error":
-            what_happened = "the reviewer's check could not finish on this turn"
-        else:
-            what_happened = "the reviewer did not accept this turn"
-        return (
-            f"The builder said this task's work was already in the tree, but "
-            f"{what_happened}, so the claim is not confirmed. Refused."
-        )
-
-    return None
-
-
-def _already_satisfied_message(
-    task_id: str, turn_record: "TurnRecord", turns_taken: int
-) -> str:
-    """The lines a person reads when a task closes as already satisfied."""
-    citations = _already_satisfied_citations(
-        _already_satisfied_claim(turn_record)
-    )
-    lines = [
-        f"{task_id} was already satisfied by the code in the tree, so nothing "
-        f"was written.",
-        f"The builder said so on turn {turn_record.turn}, after "
-        f"{turns_taken} turn(s) in all, named where each acceptance "
-        f"criterion is already met, and the reviewer checked that against "
-        f"the tree and agreed.",
-    ]
-    if citations:
-        lines.append("Where the work already is:")
-        for citation in citations:
-            lines.append(
-                f"  - {citation['criterion']}: {citation['file']} "
-                f"({citation['place']})"
-            )
-    lines.append(
-        "This task is COMPLETE. There is no diff to review and nothing to "
-        "merge for it."
-    )
-    return "\n".join(lines)
-
-
-def _test_verification_issues(
-    turn_record: "TurnRecord",
-) -> List[Dict[str, Any]]:
-    """Return the ``test_verification`` issue dicts from a turn's coach report.
-
-    Shared schema-stable walk used by the parallel-interference extractor,
-    the contention-peer collection, and the failing-test aggregation
-    (TASK-AB-STALLTAX01). Mirrors the defensive posture of
-    ``_extract_environment_stall_signal`` — any shape mismatch (Mock objects
-    in tests, partial state during error paths) returns an empty list rather
-    than raising.
-    """
-    return [
-        issue
-        for issue in _coach_report_issues(turn_record)
-        if issue.get("category") == "test_verification"
-    ]
-
-
-def _extract_verifier_infrastructure_signal(
-    turn_record: "TurnRecord",
-) -> Optional[Dict[str, Any]]:
-    """Return the issue dict carrying the ``verifier_infrastructure`` marker
-    for this turn, or ``None`` when no issue carries it (TASK-AB-ZEROTESTLOUD01).
-
-    The marker is attached by
-    ``AgentInvoker._reconcile_absent_independent_test_signal`` (Coach-side
-    absent path) as ``details.verifier_infrastructure is True`` — a Phase-4 /
-    independent-test oracle that collected/ran ZERO tests, which can never
-    mean "Player code is bad". Schema-match only — the detector never
-    string-matches feedback prose (TASK-FIX-7A07 precedent). An absent /
-    missing marker is an ABSENT signal: it never defaults to
-    verifier-infrastructure
-    (``absence-must-survive-every-reconciliation-layer.md``).
-    """
-    for issue in _coach_report_issues(turn_record):
-        details = issue.get("details")
-        if (
-            isinstance(details, dict)
-            and details.get("verifier_infrastructure") is True
-        ):
-            return issue
-    return None
-
-
-def _extract_parallel_interference_signal(
-    turn_record: "TurnRecord",
-) -> Optional[Dict[str, Any]]:
-    """Return the ``test_verification`` issue dict for this turn when the
-    parallel-interference pattern matches, or ``None`` otherwise
-    (TASK-AB-STALLTAX01).
-
-    Pattern requires ``coach_result.report["issues"]`` to contain an entry
-    with ``category == "test_verification"`` and EITHER:
-
-      - ``failure_classification == "parallel_contention"`` (the Coach
-        classifier's per-turn contention verdict), OR
-      - a non-empty ``contention_peers`` mapping (the TASK-FIX-A7B2
-        overlap-forces-feedback branch can record
-        ``failure_classification == "code"``, so the peer-overlap map is the
-        marker that survives the overlap case).
-
-    Schema-match only — the detector never string-matches feedback prose
-    (TASK-FIX-7A07 precedent). An absent / ``None`` ``failure_classification``
-    is an ABSENT signal: it never defaults to interference
-    (``absence-must-survive-every-reconciliation-layer.md``).
-    """
-    for issue in _test_verification_issues(turn_record):
-        if issue.get("failure_classification") == "parallel_contention":
-            return issue
-        contention_peers = issue.get("contention_peers")
-        if isinstance(contention_peers, dict) and contention_peers:
-            return issue
-    return None
-
-
-def _collect_contention_peers(
-    turn_history: List["TurnRecord"],
-    threshold: int = STALL_CLASSIFICATION_THRESHOLD,
-) -> Dict[str, List[str]]:
-    """Merge ``contention_peers`` maps from the trailing window's turns.
-
-    Returns ``peer_task_id -> sorted overlapping files`` unioned across the
-    same trailing window ``classify_stall`` inspects, for the stall message's
-    isolation hint (TASK-AB-STALLTAX01). Empty when no turn carried the map
-    (the plain ``parallel_contention`` classification names no specific
-    peers).
-    """
-    merged: Dict[str, Set[str]] = {}
-    recent = turn_history[-threshold:] if threshold > 0 else list(turn_history)
-    for turn_record in recent:
-        for issue in _test_verification_issues(turn_record):
-            contention_peers = issue.get("contention_peers")
-            if not isinstance(contention_peers, dict):
-                continue
-            for peer_id, files in contention_peers.items():
-                if not peer_id:
-                    continue
-                bucket = merged.setdefault(str(peer_id), set())
-                if isinstance(files, (list, tuple, set, frozenset)):
-                    bucket.update(str(f) for f in files if f)
-    return {peer_id: sorted(files) for peer_id, files in merged.items()}
-
-
-# Loose fallback markers for a failing-test line in a ``test_verification``
-# issue's ``test_output`` summary (TASK-AB-STALLTAX01). Used ONLY when the
-# anchored pytest parse (``extract_failing_test_lines``) finds nothing, so
-# non-pytest runner outputs still surface something (2026-07-04 review FIX 3).
-_STALL_FAILING_TEST_MARKERS = ("FAILED", "ERROR", "E   ")
-
-
-def _aggregate_failing_test_lines(
-    turn_history: List["TurnRecord"],
-    threshold: int = STALL_CLASSIFICATION_THRESHOLD,
-    max_lines: int = 10,
-) -> List[str]:
-    """Aggregate deduped failing-test lines from the trailing window's
-    ``test_verification`` issues (TASK-AB-STALLTAX01).
-
-    Walks the same trailing window ``classify_stall`` uses and collects the
-    pytest failure lines carried on each ``test_verification`` issue's
-    ``test_output`` field, so the terminal stall message names WHICH tests
-    failed instead of only that a stall occurred.
-
-    2026-07-04 code review (FIX 3): the primary extractor is the anchored,
-    reason-stripping ``stale_test_attribution.extract_failing_test_lines``
-    (``^FAILED/ERROR <node-id>`` short-summary lines only) so pytest section
-    banners (``==== ERRORS ====``) and traceback ``E   assert`` noise cannot
-    pollute the list, and repeated same-test-different-message lines dedupe
-    to one node-id. The loose substring scan survives ONLY as a fallback for
-    outputs where the anchored parse finds nothing (non-pytest runners);
-    the issue ``description``'s first line is the last resort. Deduped in
-    first-seen order and bounded to ``max_lines`` (plus one overflow marker)
-    so the message stays readable.
-    """
-    lines: List[str] = []
-    seen: Set[str] = set()
-    recent = turn_history[-threshold:] if threshold > 0 else list(turn_history)
-    for turn_record in recent:
-        for issue in _test_verification_issues(turn_record):
-            candidates: List[str] = []
-            test_output = issue.get("test_output")
-            if isinstance(test_output, str):
-                # Primary: anchored pytest node-id lines (deduped,
-                # reason-stripped — dedup across turns is by node-id).
-                candidates = extract_failing_test_lines(test_output)
-                if not candidates:
-                    # Loose fallback ONLY when the anchored parse found
-                    # nothing — non-pytest outputs still surface something.
-                    candidates = [
-                        line.strip()
-                        for line in test_output.splitlines()
-                        if any(
-                            marker in line
-                            for marker in _STALL_FAILING_TEST_MARKERS
-                        )
-                    ]
-            if not candidates:
-                description = issue.get("description")
-                if isinstance(description, str) and description.strip():
-                    candidates.append(description.strip().splitlines()[0])
-            for candidate in candidates:
-                if candidate and candidate not in seen:
-                    seen.add(candidate)
-                    lines.append(candidate)
-    if len(lines) > max_lines:
-        overflow = len(lines) - max_lines
-        lines = lines[:max_lines]
-        lines.append(f"... ({overflow} more line(s) omitted)")
-    return lines
-
-
-def _render_parallel_interference_block(
-    classification: Optional["StallClassification"],
-    turn_history: List["TurnRecord"],
-    threshold: int = STALL_CLASSIFICATION_THRESHOLD,
-) -> Optional[str]:
-    """Render the additive parallel-interference hint block, or ``None``.
-
-    TASK-AB-STALLTAX01 / 2026-07-04 code review (FIX 1): the isolation hint
-    and the contention-peer map are keyed off ``classification.co_fires``
-    ALONE — independent of which primary stall branch builds the surrounding
-    message. Nesting this inside the context-pollution branch was the defect:
-    an interference-ONLY stall (e.g. the ``_is_feedback_stalled`` exit, which
-    never sets ``_context_pollution_no_checkpoint_fired``) fell through to the
-    generic task_type hint, losing exactly the isolation knowledge the
-    sub-type exists to carry.
-    """
-    if (
-        classification is None
-        or STALL_PARALLEL_INTERFERENCE not in classification.co_fires
-    ):
-        return None
-    block = (
-        f"[{STALL_PARALLEL_INTERFERENCE}] Tasks in this "
-        "wave failed on source-file contention with peers "
-        "— a parallel-wave isolation smell, not a "
-        "Player-quality problem. Consider --max-parallel 1 "
-        "(or GUARDKIT_MAX_PARALLEL_TASKS=1), or serializing "
-        "the feature's parallel_groups."
-    )
-    peer_map = _collect_contention_peers(turn_history, threshold=threshold)
-    if peer_map:
-        peer_block = "\n".join(
-            f"    - {peer_id}: {', '.join(files)}"
-            for peer_id, files in sorted(peer_map.items())
-        )
-        block += (
-            "\n  Contending peer task(s) and overlapping "
-            f"file(s):\n{peer_block}"
-        )
-    return block
-
-
-def classify_stall(
-    turn_history: List["TurnRecord"],
-    final_decision: str,
-    threshold: int = STALL_CLASSIFICATION_THRESHOLD,
-    context_pollution_fired: bool = False,
-    plan_contradicts_check_fired: bool = False,
-) -> Optional[StallClassification]:
-    """Classify the sub-type of an ``unrecoverable_stall`` exit (TASK-FIX-7A07).
-
-    Returns ``None`` for any ``final_decision`` other than
-    ``"unrecoverable_stall"`` — callers should only invoke this when the
-    orchestrator exited via that code path.
-
-    Classification rules:
-
-    0. **no_file_changes_stall** — fires when the trailing ``threshold`` turns
-       each recorded ``files_changed_this_turn == 0`` (the orchestrator's own
-       git measurement of the worktree, not the Player's report) and none of
-       them was approved. Checked first so it takes the primary label.
-    1. **coach_agent_invocations_stall** — fires when the trailing ``threshold``
-       turns all carry an ``agent_invocations_violation`` issue. The detector
-       walks ``coach_result.report["issues"]`` for the schema-stable category
-       match; it does NOT string-match on feedback text.
-    2. **context_pollution_stall_no_checkpoint** — fires when the caller
-       signals that context-pollution rollback fired but no passing checkpoint
-       existed (``context_pollution_fired=True``). This is detected at the
-       orchestrator level because it's signalled by the early-exit at
-       ``autobuild.py:_loop_phase`` line ~2007, not by turn-record content.
-    3. **parallel_interference_stall** — fires when the trailing ``threshold``
-       turns each carry a ``test_verification`` issue classified
-       ``parallel_contention`` (or carrying a ``contention_peers`` map).
-       ADDITIVE co-fire: checked unconditionally so the Coach layer's
-       per-turn contention knowledge is never discarded before the terminal
-       label — it names the CAUSE alongside whatever condition sub-type also
-       fired (TASK-AB-STALLTAX01).
-    4. **coach_feedback_stall** — the default fallback: identical feedback
-       with zero criteria progress, no more specific sub-type matched.
-
-    Sub-types can co-fire (e.g. both the agent-invocations stall AND the
-    context-pollution stall can apply to the same task when the Player's
-    inline-pytest pattern both pollutes the context and bypasses sub-agent
-    invocation). ``decision_subtype`` joins co-fires with " + ".
-
-    Parameters
-    ----------
-    turn_history : List[TurnRecord]
-        Complete turn history for the run.
-    final_decision : str
-        The orchestrator's top-level decision. Must be ``"unrecoverable_stall"``
-        for classification to proceed.
-    threshold : int, optional
-        Number of trailing turns to require for classification (default: 3,
-        matching ``_is_feedback_stalled``).
-    context_pollution_fired : bool, optional
-        Whether the context-pollution "no passing checkpoint" exit fired for
-        this task. Set by the caller based on which code path exited the loop.
-
-    Returns
-    -------
-    Optional[StallClassification]
-        Classification details, or ``None`` when ``final_decision`` is not
-        ``"unrecoverable_stall"``.
-    """
-    if final_decision != "unrecoverable_stall":
-        return None
-
-    co_fires: List[str] = []
-    missing_phases: List[str] = []
-    expected_phases: Optional[int] = None
-    actual_invocations: Optional[int] = None
-
-    # 18 October 2026: the plain early stop in a whole-feature repair round.
-    # Signalled by the loop (like context pollution), never read from report
-    # text, and the primary label whenever it fired: it is the one true
-    # statement of why this task stopped.
-    if plan_contradicts_check_fired:
-        co_fires.append(STALL_PLAN_CONTRADICTS_CHECK)
-
-    # Check no_file_changes_stall FIRST so it takes the primary label
-    # (TASK-AB-NOCHANGE01). When the generator wrote nothing at all for the
-    # whole trailing window, that is the deepest true statement about the run
-    # and the one an operator can act on; any other sub-type that also fires
-    # is describing a consequence of it. Schema match on the orchestrator's own
-    # git measurement, never on report text. A turn with no measurement
-    # (``files_changed_this_turn is None``) breaks the window, so this can
-    # never fire on a history recorded before the field existed.
-    if len(turn_history) >= threshold:
-        recent = turn_history[-threshold:]
-        if all(_turn_changed_no_files(tr) for tr in recent) and all(
-            getattr(tr, "decision", None) != "approve" for tr in recent
-        ):
-            co_fires.append(STALL_NO_FILE_CHANGES)
-
-    # Check coach_agent_invocations_stall: trailing N turns all have
-    # agent_invocations_violation category.
-    if len(turn_history) >= threshold:
-        recent = turn_history[-threshold:]
-        violations = [
-            _extract_agent_invocations_violation(tr) for tr in recent
-        ]
-        if all(v is not None for v in violations):
-            co_fires.append(STALL_COACH_AGENT_INVOCATIONS)
-            # Use the most recent violation for the phase details.
-            latest = violations[-1]
-            raw_missing = latest.get("missing_phases") or (
-                latest.get("details", {}).get("missing_phases")
-                if isinstance(latest.get("details"), dict)
-                else []
-            ) or []
-            # Normalise to List[str]; ``missing_phases`` is sometimes stored
-            # as ``[{"phase": "4", "description": "Testing"}, ...]``.
-            if raw_missing and isinstance(raw_missing[0], dict):
-                missing_phases = sorted(
-                    str(m.get("phase", "")) for m in raw_missing if m.get("phase")
-                )
-            else:
-                missing_phases = sorted(str(m) for m in raw_missing)
-            details = (
-                latest.get("details") if isinstance(latest.get("details"), dict) else {}
-            )
-            expected_phases = latest.get("expected_phases") or details.get(
-                "expected_phases"
-            )
-            actual_invocations = latest.get("actual_invocations") or details.get(
-                "actual_invocations"
-            )
-
-    if context_pollution_fired:
-        co_fires.append(STALL_CONTEXT_POLLUTION)
-
-    # Check environment_stall: trailing N turns all show all_gates_passed=True
-    # but independent_tests failed with infrastructure-class failure_classification
-    # AND identical failure_confidence across the window. agent_invocations and
-    # context_pollution take precedence per the AC, so only check when neither
-    # has fired (TASK-ABSR-C3D4). no_file_changes takes precedence for the same
-    # reason: if nothing was written at all, a failing test is downstream of
-    # that, not the thing to report (TASK-AB-NOCHANGE01).
-    if not co_fires and len(turn_history) >= threshold:
-        recent = turn_history[-threshold:]
-        env_signals = [
-            _extract_environment_stall_signal(tr) for tr in recent
-        ]
-        if all(signal is not None for signal in env_signals):
-            confidences = [
-                signal.get("failure_confidence") for signal in env_signals
-            ]
-            if len(set(confidences)) == 1:
-                co_fires.append(STALL_ENVIRONMENT)
-
-        # TASK-AB-ZEROTESTLOUD01 (AC-003): a trailing window whose turns ALL
-        # carry the verifier_infrastructure marker (the Phase-4/independent
-        # test oracle collected/ran ZERO tests every turn) is the same
-        # environment class of stall — the verifier was blind, not the Player
-        # wrong. Second entry path into STALL_ENVIRONMENT under the same
-        # precedence gate; schema-match only, never feedback-text matching.
-        if STALL_ENVIRONMENT not in co_fires:
-            vi_signals = [
-                _extract_verifier_infrastructure_signal(tr) for tr in recent
-            ]
-            if all(signal is not None for signal in vi_signals):
-                co_fires.append(STALL_ENVIRONMENT)
-
-    # Check parallel_interference: trailing N turns each carry a
-    # test_verification issue classified parallel_contention (or carrying a
-    # contention_peers map from the TASK-FIX-A7B2 overlap branch).
-    # Precedence decision (TASK-AB-STALLTAX01): unlike environment_stall
-    # above — which is suppressed when agent_invocations or
-    # context_pollution fired — interference is an ADDITIVE co-fire checked
-    # unconditionally against the trailing window. It names the CAUSE (peer
-    # wave tasks contending on this task's test runs, as the Coach layer
-    # classified per-turn) while context_pollution names the terminal
-    # CONDITION (N consecutive ran-and-failed checkpoints, no green
-    # checkpoint); discarding it here is exactly the knowledge loss the
-    # sub-type exists to fix. It never replaces the top-level
-    # ``final_decision`` ("unrecoverable_stall" stays, backward-compat).
-    # Placed AFTER the environment_stall check so that check's
-    # ``not co_fires`` precedence gate is untouched.
-    if len(turn_history) >= threshold:
-        recent = turn_history[-threshold:]
-        interference_signals = [
-            _extract_parallel_interference_signal(tr) for tr in recent
-        ]
-        if all(signal is not None for signal in interference_signals):
-            co_fires.append(STALL_PARALLEL_INTERFERENCE)
-
-    # Default fallback.
-    if not co_fires:
-        co_fires.append(STALL_FEEDBACK_GENERIC)
-
-    decision_label = co_fires[0]
-    decision_subtype = " + ".join(co_fires)
-
-    return StallClassification(
-        decision_label=decision_label,
-        decision_subtype=decision_subtype,
-        missing_phases=missing_phases,
-        expected_phases=expected_phases,
-        actual_invocations=actual_invocations,
-        co_fires=co_fires,
-    )
-
-
-# ============================================================================
-# Direct-mode bin-entry producer probe (TASK-FIX-DIRECTFG01, AC3)
-# ============================================================================
-
-
-def _read_bin_entries(worktree_path: Path) -> List[str]:
-    """Read the registered CLI manifest under the worktree.
-
-    The manifest at ``installer/core/commands/bin-entries.txt`` is the SOLE
-    source of truth for which scripts install.sh promotes to shell commands
-    (see the file's own header). Format: one repo-relative path per line; blank
-    lines and ``#`` comments ignored.
-
-    Returns an empty list when the manifest is absent (most worktrees that are
-    not guardkit-self do not carry it) or unreadable — absent signal, never a
-    crash.
-    """
-    manifest = Path(worktree_path) / "installer" / "core" / "commands" / "bin-entries.txt"
-    if not manifest.exists():
-        return []
-    try:
-        raw = manifest.read_text(encoding="utf-8")
-    except OSError as exc:
-        logger.debug("bin-entries probe: could not read %s: %s", manifest, exc)
-        return []
-    entries: List[str] = []
-    for line in raw.splitlines():
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-        entries.append(stripped)
-    return entries
-
-
-def _check_direct_mode_bin_entries(
-    worktree_path: Path,
-    authored_files: List[str],
-    python_exe: str,
-    timeout_s: int = _DIRECT_MODE_BIN_PROBE_TIMEOUT_S,
-) -> List[Dict[str, Any]]:
-    """Probe registered bin-entry producers the task authored this turn (AC3).
-
-    For each path that is BOTH listed in ``bin-entries.txt`` AND authored this
-    turn (``files_created ∪ files_modified``), run it as a subprocess
-    (``python <path>``) and classify the producer signal as PRESENT or ABSENT.
-    A registered CLI producer that raises on plain ``python <path>`` (the
-    FEAT-9DDE ``ModuleNotFoundError`` false-green) is the core defect this
-    closes.
-
-    Scoping invariant: only authored, registered entries are executed — never
-    an arbitrary script, and never an entry the task did not touch.
-
-    Per ``stack-plugin-architecture.md`` this is an *execution* check: non-Python
-    entries degrade to an advisory ``should_fix`` (absent signal), never a crash
-    and never a false-pass.
-
-    Returns a list of issue dicts (``must_fix`` for broken producers,
-    ``should_fix`` for unverifiable non-Python entries). Empty list when nothing
-    to probe or every probed producer loaded cleanly.
-    """
-    worktree = Path(worktree_path)
-    bin_entries = _read_bin_entries(worktree)
-    if not bin_entries:
-        return []
-
-    authored_set = set(authored_files)
-    targets = [p for p in bin_entries if p in authored_set]
-    if not targets:
-        return []
-
-    # Clean PYTHONPATH = worktree ONLY. Inheriting the ambient PYTHONPATH would
-    # let guardkit's own installed ``src`` satisfy an import the producer is
-    # actually missing, masking the failure (the false-green this gate closes).
-    # cwd is the worktree, not the host (TASK-FIX-COACHCWD01 cwd-leak lesson).
-    # Built from nothing (13 October 2026): the producer is the build's code
-    # and never sees the factory's credentials.
-    from guardkit.orchestrator.launch_declaration import (
-        load_launch_declaration,
-        main_checkout_root,
-    )
-    from guardkit.orchestrator.project_command_env import (
-        project_command_environment,
-    )
-
-    try:
-        probe_env = project_command_environment(
-            worktree,
-            load_launch_declaration(main_checkout_root(worktree)),
-            additions={"PYTHONPATH": str(worktree)},
-        )
-    except OSError as exc:
-        return [
-            {
-                "severity": "should_fix",
-                "category": "direct_mode_bin_entry_unverifiable",
-                "description": (
-                    f"Registered bin-entries could not be probed: {exc} "
-                    f"(absent signal)."
-                ),
-            }
-        ]
-
-    issues: List[Dict[str, Any]] = []
-    for rel_path in targets:
-        if not rel_path.endswith(".py"):
-            issues.append(
-                {
-                    "severity": "should_fix",
-                    "category": "direct_mode_bin_entry_unverifiable",
-                    "description": (
-                        f"Non-Python bin-entry {rel_path}; execution check "
-                        f"skipped (absent signal)."
-                    ),
-                }
-            )
-            continue
-
-        target_path = worktree / rel_path
-        try:
-            proc = process_group.run_project_command(
-                [python_exe, str(target_path)],
-                cwd=str(worktree),
-                env=probe_env,
-                stdin=subprocess.DEVNULL,
-                capture_output=True,
-                text=True,
-                timeout=timeout_s,
-            )
-        except subprocess.TimeoutExpired:
-            issues.append(
-                {
-                    "severity": "must_fix",
-                    "category": "direct_mode_bin_entry_broken",
-                    "description": (
-                        f"Registered bin-entry {rel_path} execution timed out "
-                        f"after {timeout_s}s. Producer signal absent."
-                    ),
-                    "details": {"path": rel_path, "timed_out": True},
-                }
-            )
-            continue
-
-        stderr = proc.stderr or ""
-        stdout = proc.stdout or ""
-        traceback_seen = "Traceback (most recent call last)" in stderr
-        # ABSENT iff a Python traceback was raised (the AC3 "raises" /
-        # ModuleNotFoundError case — the actual FEAT-9DDE failure), OR a
-        # non-zero exit produced no stdout at all. PRESENT (no issue) iff
-        # returncode == 0 — a module that loads cleanly and prints nothing is
-        # fine (do NOT penalise exit-0 with empty stdout).
-        if traceback_seen or (proc.returncode != 0 and stdout.strip() == ""):
-            issues.append(
-                {
-                    "severity": "must_fix",
-                    "category": "direct_mode_bin_entry_broken",
-                    "description": (
-                        f"Registered bin-entry {rel_path} is broken: exit "
-                        f"{proc.returncode}; stderr head: {stderr[:300]!r}. "
-                        f"Producer signal absent."
-                    ),
-                    "details": {
-                        "path": rel_path,
-                        "returncode": proc.returncode,
-                        "stderr_head": stderr[:300],
-                    },
-                }
-            )
-
-    return issues
 
 
 # ============================================================================
@@ -2658,6 +627,11 @@ class PreLoopPhaseError(OrchestrationError):
     pass
 
 
+# ============================================================================
+# Data Models
+# ============================================================================
+
+
 class DesignExtractionPhaseError(OrchestrationError):
     """Raised when Phase 0 design extraction fails.
 
@@ -2676,11 +650,6 @@ class DesignExtractionPhaseError(OrchestrationError):
         self.source = source
         self.reason = reason
         super().__init__(message)
-
-
-# ============================================================================
-# Data Models
-# ============================================================================
 
 
 @dataclass
@@ -2815,8 +784,6 @@ class TurnRecord:
     sdk_turns_used: Optional[int] = None      # TASK-VPR-003: Actual SDK turns from ResultMessage
     sdk_max_turns: Optional[int] = None        # TASK-VPR-003: Effective SDK turn ceiling
     sdk_ceiling_hit: Optional[bool] = None     # TASK-VPR-003: Whether ceiling was hit
-    is_configuration_error: bool = False       # TASK-ABFIX-003: True when Coach flagged a config error (e.g. invalid task_type)
-    command_results: Optional[Tuple[CommandExecutionResult, ...]] = None  # TASK-RFX-528E: Structured command execution results
     # TASK-AB-NOCHANGE01: how many files this turn actually changed in the
     # worktree, measured with git before the generator ran and again after it
     # (and after the orchestrator's own Phase 4/5 specialists) finished — never
@@ -2877,7 +844,7 @@ class OrchestrationResult:
     task_id: str
     success: bool
     total_turns: int
-    final_decision: Literal["approved", "already_satisfied", "max_turns_exceeded", "unrecoverable_stall", "player_invocation_stall", "error", "cancelled", "timeout", "configuration_error", "pre_loop_blocked", "rate_limited", "design_extraction_failed", "honesty_collapse", "qa_precondition_blocked"]
+    final_decision: Literal["approved", "max_turns_exceeded", "error", "cancelled", "timeout", "pre_loop_blocked", "rate_limited", "design_extraction_failed"]
     turn_history: List[TurnRecord]
     worktree: Worktree
     error: Optional[str] = None
@@ -2885,13 +852,6 @@ class OrchestrationResult:
     ablation_mode: bool = False  # Track if result was from ablation mode
     recovery_count: int = 0  # Number of state recovery attempts
     design_context: Optional["DesignContext"] = None  # Phase 0 design extraction result
-    # TASK-FIX-7A07: Sub-classification of ``unrecoverable_stall`` exits.
-    # None when final_decision is something other than unrecoverable_stall.
-    stall_classification: Optional["StallClassification"] = None
-    # 18 October 2026: the early stop's one plain sentence, set only when a
-    # whole-feature repair round stopped because the plan contradicts the
-    # project's check. The feature orchestrator hands it to the receipt.
-    stopped_because: Optional[str] = None
 
 
 # ============================================================================
@@ -2990,7 +950,6 @@ class AutoBuildOrchestrator:
         skip_arch_review: bool = False,
         enable_perspective_reset: bool = True,
         enable_checkpoints: bool = True,
-        rollback_on_pollution: bool = True,
         ablation_mode: bool = False,
         enable_context: bool = True,
         verbose: bool = False,
@@ -3005,10 +964,6 @@ class AutoBuildOrchestrator:
         emitter: Optional[Any] = None,
         progress_logger: Optional[Any] = None,
         venv_python: Optional[str] = None,
-        wave_changed_files: Optional[Dict[str, Any]] = None,
-        wave_files_lock: Optional[threading.Lock] = None,
-        honesty_early_abort_threshold: float = 0.3,
-        honesty_early_abort_window: int = 3,
         model: Optional[str] = None,  # TASK-FIX-MODELPLUMB
         coach_model: Optional[str] = None,  # TASK-FIX-COACHBUDG01: per-role Coach override
         evidence_repos: Optional[List[EvidenceRepo]] = None,  # TASK-AB-XREPOEV01
@@ -3068,9 +1023,6 @@ class AutoBuildOrchestrator:
         enable_checkpoints : bool, optional
             Enable worktree checkpointing for rollback (default: True).
             Creates git commits at turn boundaries for context pollution recovery.
-        rollback_on_pollution : bool, optional
-            Automatically rollback when context pollution detected (default: True).
-            Triggers on 2+ consecutive test failures.
         enable_context : bool, optional
             Enable job-specific context retrieval from the memory backend (default: True).
             When enabled, retrieves role_constraints, quality_gates, and turn_states
@@ -3145,7 +1097,6 @@ class AutoBuildOrchestrator:
         self.skip_arch_review = skip_arch_review
         self.enable_perspective_reset = enable_perspective_reset
         self.enable_checkpoints = enable_checkpoints
-        self.rollback_on_pollution = rollback_on_pollution
         self.ablation_mode = ablation_mode
         self._emitter = emitter if emitter is not None else NullEmitter()  # TASK-INST-004
         # TASK-OBS-9F43 AC-2: Mint run_id once per orchestration
@@ -3187,29 +1138,8 @@ class AutoBuildOrchestrator:
         # Hardcoded reset turns per architectural review (TASK-BRF-001): [3, 5]
         self.perspective_reset_turns: List[int] = [3, 5] if enable_perspective_reset else []
         self._turn_history: List[TurnRecord] = []
-        self._honesty_history: List[float] = []  # Track honesty scores across turns
         self._checkpoint_manager: Optional[WorktreeCheckpointManager] = None  # Initialized lazily
         self.recovery_count: int = 0  # Track number of state recovery attempts
-        # Stall detection: track (feedback_signature, criteria_passed_count) per turn (TASK-AB-SD01)
-        self._feedback_history: List[Tuple[str, int]] = []
-        # TASK-FIX-7A07: Signal from _loop_phase that context-pollution rollback
-        # fired but no passing checkpoint existed. Consumed by classify_stall()
-        # to emit the context_pollution_stall_no_checkpoint sub-type. Reset
-        # per _loop_phase invocation.
-        self._context_pollution_no_checkpoint_fired: bool = False
-        # TASK-AB-NOCHANGE01: receipt text when a task completed because the
-        # work it asked for was already present and nothing needed changing.
-        # None on every other outcome. Reset per _loop_phase invocation.
-        # Accumulated peak criteria count across turns — criteria verified in turn N
-        # remain counted in turn N+1 to prevent false stall detection (TASK-FIX-AE7E)
-        self._max_criteria_passed: int = 0
-        # Cumulative requirements_addressed across turns — once a criterion is
-        # inferred as addressed, it remains addressed in subsequent turns to
-        # prevent criteria oscillation in synthetic reports (TASK-VRF-005).
-        self._cumulative_requirements_addressed: Set[str] = set()
-        # Files contributing to cumulative requirements — used for staleness
-        # re-validation when carry-forward is applied (TASK-CRV-9618).
-        self._cumulative_source_files: Set[str] = set()
 
         # Context retrieval settings (TASK-GR6-006)
         self.enable_context = enable_context
@@ -3222,6 +1152,8 @@ class AutoBuildOrchestrator:
         # checkpoint manager (per-repo commits). Empty -> worktree-only
         # behaviour, so undeclared sibling-repo writes stay invisible (AC-003).
         self._evidence_repos: List[EvidenceRepo] = list(evidence_repos or [])
+        # The admitted writer scope; orchestrate() sets it under the lease.
+        self.task_work_scope = None
         # TASK-AB-COACHRUNPARITY01 (arm a): turn-1 seed feedback. When a
         # post-wave smoke gate fails, the feature orchestrator re-enters the
         # wave with the smoke error injected here so the Player's first turn
@@ -3260,19 +1192,10 @@ class AutoBuildOrchestrator:
         # Set when a repair round's turn is approved: the non-protected files
         # the reviewer was shown on that turn (AgentInvoker.repair_round_inventory).
         self.repair_round_approved_files: Optional[FrozenSet[str]] = None
-        # This task's whole-feature check record per Coach turn, read by the
-        # early stop. Reset per _loop_phase invocation.
-        self._whole_feature_check_by_turn: Dict[int, Dict[str, Any]] = {}
-        # The early stop's sentence, when it fired. Reset per _loop_phase.
-        self._plan_contradicts_check_sentence: Optional[str] = None
         self._cancellation_event: Optional[threading.Event] = cancellation_event  # Cooperative cancellation (TASK-ASF-007)
         self._timeout_event: Optional[threading.Event] = timeout_event  # Feature-level timeout signal (TASK-ABFIX-006)
         self._progress_logger = progress_logger  # TASK-FIX-OBS2: Per-task progress logging
         self._task_timeout: Optional[int] = task_timeout  # Feature task budget in seconds (TASK-ABFIX-006)
-        # Loop-start monotonic time, set in _loop_phase when a per-turn budget is active.
-        # Used by _execute_turn to refresh the pre-specialist budget guard after the Player
-        # phase consumes wall (TASK-ABSR-FRSH).
-        self._loop_start_time: Optional[float] = None
         # Remaining wall budget (seconds) captured at the instant a per-turn
         # budget check fails, so the finalize-phase summary/error builders can
         # report "remaining=<X>s < min=<MIN>s" instead of the generic
@@ -3285,24 +1208,6 @@ class AutoBuildOrchestrator:
             else None
         )
         self.shares_working_copy: bool = bool(shares_working_copy)  # FEAT-2C42
-        # TASK-FIX-A7B2: Wave-shared map of per-task file edits, populated as
-        # each Player finishes. Coach reads peer entries (everyone but self) to
-        # detect source-file contention and refuse the TASK-ABFIX-005
-        # conditional approval when the contention is real (not transient infra).
-        # Both default to None for single-task use; FeatureOrchestrator supplies
-        # them in parallel waves.
-        self._wave_changed_files: Optional[Dict[str, Any]] = wave_changed_files
-        self._wave_files_lock: Optional[threading.Lock] = wave_files_lock
-        # Honesty rolling-average early-abort thresholds (TASK-FIX-HEAB).
-        # _check_honesty_early_abort() consults these after each turn: when
-        # mean(self._honesty_history[-window:]) < threshold and at least
-        # ``window`` samples have accrued, the loop short-circuits with
-        # final_decision="honesty_collapse" instead of burning the remaining
-        # max_turns budget on what observably won't recover. Defaults match
-        # the CLI/feature_orchestrator forwarding layer (cli/autobuild.py:243-263,
-        # feature_orchestrator.py:534-535).
-        self.honesty_early_abort_threshold: float = honesty_early_abort_threshold
-        self.honesty_early_abort_window: int = honesty_early_abort_window
         # Per-turn context status tracking for progress display (TASK-FIX-GCW5)
         self._last_player_context_status: Optional[ContextStatus] = None
         self._last_coach_context_status: Optional[ContextStatus] = None
@@ -3404,7 +1309,6 @@ class AutoBuildOrchestrator:
             f"enable_perspective_reset={self.enable_perspective_reset}, "
             f"reset_turns={self.perspective_reset_turns}, "
             f"enable_checkpoints={self.enable_checkpoints}, "
-            f"rollback_on_pollution={self.rollback_on_pollution}, "
             f"ablation_mode={self.ablation_mode}, "
             f"existing_worktree={'provided' if existing_worktree else 'None'}, "
             f"enable_context={self.enable_context}, "
@@ -3451,10 +1355,7 @@ class AutoBuildOrchestrator:
                 self._agent_invoker.task_work_scope = self.task_work_scope
                 self._agent_invoker._baseline_commit = self.task_work_scope.baseline_commit
             result = self._orchestrate_owned(task_id, requirements, acceptance_criteria, base_branch, **kwargs)
-            # A task the tree already satisfied is done, as an approved one is
-            # (TASK_COMPLETE_DECISIONS): treating it as unapproved refused every
-            # later task of FEAT-CC77 (step 1 measurement, 26 October 2026).
-            done = result.final_decision in TASK_COMPLETE_DECISIONS
+            done = result.final_decision == "approved"
             if lease.failure and done:
                 raise ScopeUnavailable(lease.failure)
             if not done:
@@ -3546,24 +1447,11 @@ class AutoBuildOrchestrator:
         # driven more than once, and the previous run's terminal must not be
         # named by this run's crash.
         self._last_captured_terminal = None
-        # GKT-027, step 1 (24 October 2026): why this task's coverage cannot
-        # be measured (no coverage command declared, or one that does
-        # nothing). Advice shown with the next Coach verdict, never a stop.
-        self._coverage_declaration_advice: Optional[str] = None
         # Step 1 (24 October 2026): each real check's last measured state for
         # this task, carried from the Coach's own evidence as it arrives.
         # True means its last measurement failed; only a later measured pass
         # clears it, never an absent result.
         self._measured_check_failed: Dict[str, bool] = {}
-        # Set when a task that needs coverage, in a project that declares
-        # none, said it would change .guardkit/config.yaml: it is given its
-        # turn, and the coverage command is read from the worktree before the
-        # Coach judges that turn (20 October 2026). None otherwise.
-        self._coverage_due_from_task: Optional[Dict[str, Any]] = None
-        # The files this task says it will create or change, handed to the
-        # Coach so it makes the task-start check's no-source-files exception
-        # too (23 October 2026). Empty until the task file is read.
-        self._declared_task_paths: List[str] = []
 
         # Emit task.started lifecycle event (TASK-INST-004)
         self._emit_task_started(task_id)
@@ -3576,52 +1464,12 @@ class AutoBuildOrchestrator:
         consumer_context: Optional[list] = None
         _ri_from_caller = requires_infrastructure  # Preserve explicit parameter (may be None)
         requires_infrastructure = None  # Reset; will be resolved via frontmatter then precedence
-        from guardkit.orchestrator.feature_loader import BehaviouralOracle
-
-        if behavioural_oracle is not None:
-            _caller_bo_original = behavioural_oracle
-            if isinstance(behavioural_oracle, str):
-                _caller_bo_raw: Any = {"command": behavioural_oracle}
-            elif isinstance(behavioural_oracle, dict):
-                _caller_bo_raw = dict(behavioural_oracle)
-                if isinstance(_caller_bo_raw.get("source_paths"), list):
-                    _caller_bo_raw["source_paths"] = list(
-                        _caller_bo_raw["source_paths"]
-                    )
-            else:
-                model_dump = getattr(behavioural_oracle, "model_dump", None)
-                _caller_bo_raw = (
-                    model_dump(exclude_none=True)
-                    if callable(model_dump)
-                    else behavioural_oracle
-                )
-            _caller_bo_declaration = BehaviouralOracle.model_validate(
-                _caller_bo_raw
-            ).model_dump(exclude_none=True)
-            if _caller_bo_declaration.get("required") is True:
-                behavioural_oracle = _caller_bo_declaration
-            else:
-                behavioural_oracle = _caller_bo_original
-
         _task_bo_unset = object()
         _task_bo_raw: Any = _task_bo_unset
         _component_raw: Any = None
-        _verifier_raw: Any = None
-        _test_ref_raw: Any = None
-        _implementation_mode_raw: Any = None
-        # The files this task says it will create or change (20 October
-        # 2026), read only by the task-start coverage check below.
-        _declared_task_paths: List[str] = []
-        # Why the worktree's coverage command was not used at task start
-        # (it does nothing), when that is so.
-        _coverage_does_nothing: Optional[str] = None
         try:
             task_data = TaskLoader.load_task(task_id, repo_root=self.repo_root)
             frontmatter = task_data.get("frontmatter", {})
-            _declared_task_paths = self._task_declared_paths(
-                task_data.get("content"), frontmatter
-            )
-            self._declared_task_paths = list(_declared_task_paths)
             _task_bo_raw = (
                 frontmatter["behavioural_oracle"]
                 if "behavioural_oracle" in frontmatter
@@ -3630,9 +1478,6 @@ class AutoBuildOrchestrator:
             task_type = frontmatter.get("task_type")
             if task_type:
                 logger.debug(f"Loaded task_type from task file: {task_type}")
-            # Read only to tell whether the coverage gate is relaxed for this
-            # task (direct mode) at the task-start coverage check below.
-            _implementation_mode_raw = frontmatter.get("implementation_mode")
             # Human-readable name for the build-outcome record (falls back to
             # the task id when the task file is absent or has no title).
             _title = frontmatter.get("title")
@@ -3652,18 +1497,6 @@ class AutoBuildOrchestrator:
             # mixed-touch task must be split, not silently assigned to one
             # component (design §B.2).
             _component_raw = frontmatter.get("component")
-            # ROUTING LAW (card Q8/A.2): the task's `verifier:` stamp, lifted
-            # beside `component:` for the same reason and validated the same
-            # way — RAW here, LOUDLY outside this try. The closed vocabulary
-            # is the law: an unknown home must fail the task load, never fall
-            # back to "no stamp" (a scenario silently routed nowhere is the
-            # unverified green the law removes).
-            _verifier_raw = frontmatter.get("verifier")
-            # (3) RULED 2026-08-18: `test_ref:` rides beside the stamp so a
-            # bare `verifier: toolchain` (legal vocabulary, wrong home — the
-            # drive-19 shape) is refused at task load, same rule and message
-            # as the feature-YAML schema.
-            _test_ref_raw = frontmatter.get("test_ref")
             # Writable sibling membership was frozen from admitted source
             # before this mutable task metadata was read.
         except TaskNotFoundError:
@@ -3671,56 +1504,18 @@ class AutoBuildOrchestrator:
         except Exception as e:
             logger.debug(f"Failed to load task metadata from task file: {e}, continuing with defaults")
             _component_raw = None
-            _verifier_raw = None
-            _test_ref_raw = None
 
-        # PER-COMPONENT SEAM: validate the selector LOUDLY, outside the
-        # metadata swallow above (the D.1a cure's precedent in this same
-        # method). A task that names a component the repo does not declare is
-        # a task-load FAILURE, never a quiet fall-back to the root block —
-        # falling back would judge one product's work with another product's
-        # suite, which is the exact false verdict the seam removes.
+        # PER-COMPONENT SEAM: the task's `component:` selector; a name the
+        # repository does not declare means the root component.
         component: Optional[str] = self._resolve_task_component(task_id, _component_raw)
 
-        # The project's `launch:` block, checked LOUDLY here for the same
-        # reason: a malformed one fails the task load, never degrades to
-        # "absent", because that would send tool caches into the worktree.
-        # Raises LaunchDeclarationError (a ValueError) with the plain reason.
-        from guardkit.orchestrator.launch_declaration import (
-            load_launch_declaration,
-            snapshot_task_launch,
-        )
-
-        load_launch_declaration(self.repo_root, warn_unread_keys=True)
-
-        # ROUTING LAW (card Q8/A.2): validate the `verifier:` stamp LOUDLY,
-        # outside the metadata swallow above — same seam, same law as the
-        # component selector directly above. An unknown home raises here and
-        # the task load fails; there is no fallback vocabulary. The stamp
-        # does not yet ROUTE anything in this wave beyond the toolchain
-        # test_ref linkage (snapshot_task_conformance); validation + the
-        # loud vocabulary IS the Wave-2 deliverable.
-        task_verifier: Optional[str] = self._resolve_task_verifier(
-            task_id, _verifier_raw, _test_ref_raw
-        )
-
         if _task_bo_raw is not _task_bo_unset and _task_bo_raw is not None:
-            # Coordinator cure (D.1a coach): the frontmatter path is the
-            # HIGHEST-precedence declaration and must pass the same schema as
-            # the feature-YAML path. A typo'd key or an out-of-bound timeout in
-            # a verdict-bearing declaration is a FALSE GREEN, so a validation
-            # failure here fails the task load LOUDLY — deliberately outside
-            # the metadata try/except above.
-            _bo_val = (
+            # The per-task declaration outranks the feature-level one.
+            behavioural_oracle = (
                 {"command": _task_bo_raw}
                 if isinstance(_task_bo_raw, str)
                 else _task_bo_raw
             )
-            behavioural_oracle = BehaviouralOracle.model_validate(
-                _bo_val
-            ).model_dump(exclude_none=True)
-            if behavioural_oracle.get("required") is False:
-                behavioural_oracle.pop("required")
             logger.info(
                 "Loaded behavioural_oracle from task frontmatter for %s: %r",
                 task_id, behavioural_oracle,
@@ -3739,21 +1534,13 @@ class AutoBuildOrchestrator:
             # Phase 1: Setup (or resume existing worktree)
             if self.resume and task_file_path:
                 worktree, start_turn = self._resume_from_state(task_id, task_file_path)
+                resumed_from = getattr(
+                    getattr(self, "task_work_scope", None), "baseline_commit", None
+                )
             else:
                 worktree = self._setup_phase(task_id, base_branch)
                 start_turn = 1
-
-                # FEAT-SCG (SCG-001) snapshot seam. Pinned HERE — immediately
-                # after the worktree exists and before any Player activity
-                # (pre-loop design, pre-turn-1). Captures the task's
-                # `conformance` block + every byte_parity authority's BYTES into
-                # the task-private dir, which resolves OUTSIDE the shared
-                # worktree (post-SBHO). Constraint: pre-turn-1 and
-                # Player-unreachable, so the executor compares against a
-                # snapshot the Player cannot edit. No-op (byte-equivalent) for
-                # tasks without a `conformance` block; never raises. Resume
-                # runs skip this — the original fresh start already captured it.
-                self._snapshot_spec_conformance(task_id, worktree)
+                resumed_from = None
 
                 # TS-lane D.1b (design §B.4) — THE SAME PIN, and it is NOT
                 # optional. ``.guardkit/config.yaml`` lives inside the target
@@ -3764,90 +1551,34 @@ class AutoBuildOrchestrator:
                 # Player-unreachable private dir — and the pinned copy is what
                 # executes for the whole build.
                 self._snapshot_toolchain_declaration(task_id, worktree)
-                # 20 October 2026: the pin above is cut from the canonical
-                # repository, which does not have what earlier tasks of this
-                # build committed to the worktree. A coverage command one of
-                # them declared is added to this task's pin (coverage only,
-                # and only when the pin has none).
-                if self._existing_worktree is None:
-                    # This orchestrator made the worktree: a new build, so an
-                    # older build's pinned coverage command (same worktree
-                    # name) is forgotten before anything reads it. A feature's
-                    # tasks share the feature orchestrator's record, which it
-                    # clears when it makes the feature worktree.
-                    self.discard_build_coverage_record(Path(worktree.path))
-                _, _coverage_does_nothing = self._carry_coverage_from_worktree(
-                    task_id, worktree, component=component,
-                    when="declared by earlier work in this build",
-                )
-
                 # The project's `launch:` block (settings and scratch folders
                 # for its commands' shells), pinned at the same point for the
                 # same reason. A no-op without one. NOT swallowed: a block
                 # that cannot be pinned would send tool caches into the
                 # worktree (``launch_declaration``).
+                from guardkit.orchestrator.launch_declaration import (
+                    snapshot_task_launch,
+                )
+
                 snapshot_task_launch(task_id, worktree.path, self.repo_root)
 
                 # Save initial state
                 if task_file_path:
                     self._save_state(task_file_path, worktree, "in_progress")
 
-                # WS2 B2: Coach task-start precondition (flag-gated,
-                # qa.enforce_tier1, default OFF). A task cannot start without a
-                # pinned F1 pass bar (qa/pass-bar-<TASK-ID>.yaml) whose
-                # registered_at.sha predates implementation commits. Fresh-start
-                # only (a resume has already passed this gate). The worktree is
-                # created first so a refusal still returns a well-formed,
-                # preserved result; no implementation runs.
-                precondition = self._check_qa_pass_bar_precondition(task_id)
-                if precondition is not None and not precondition.passed:
-                    logger.warning(
-                        "QA pass-bar precondition blocked %s: %s",
-                        task_id,
-                        precondition.detail,
-                    )
-                    self._emit_task_failed(task_id, "qa_precondition_blocked")
-                    self._capture_build_outcome(
-                        task_id,
-                        success=False,
-                        final_decision="qa_precondition_blocked",
-                        turn_history=[],
-                        task_title=task_title,
-                        requirements=requirements,
-                        error=(
-                            "QA tier-1 pass-bar precondition failed: "
-                            + precondition.detail
-                        ),
-                    )
-                    self._finalize_phase(
-                        worktree=worktree,
-                        final_decision="qa_precondition_blocked",
-                        turn_history=[],
-                    )
-                    if task_file_path:
-                        self._save_state(task_file_path, worktree, "blocked")
-                    return OrchestrationResult(
-                        task_id=task_id,
-                        success=False,
-                        total_turns=0,
-                        final_decision="qa_precondition_blocked",
-                        turn_history=[],
-                        worktree=worktree,
-                        error=(
-                            "QA tier-1 pass-bar precondition failed: "
-                            + precondition.detail
-                        ),
-                        ablation_mode=self.ablation_mode,
-                        recovery_count=self.recovery_count,
-                    )
+            # The secrets check (a safety fence), built before the first turn
+            # from the commit this task starts from; None when it is not on.
+            from guardkit.orchestrator.security_check import security_check_command
 
-            # Project initialisation design, review fixes (4 October 2026):
-            # the Coach's binding documents are captured once per build, here,
-            # from the committed content of the commit the build started from
-            # (not the caller's checkout, not the worktree Players edit), before
-            # the pre-loop phase and the Player's first turn. A declaration
-            # that cannot be given whole stops the task before any model call.
-            documents_refusal = self._capture_coach_project_documents(
+            self._security_command = security_check_command(
+                Path(worktree.path), task_id=task_id, start_commit=resumed_from
+            )
+
+            # Project initialisation design (4 October 2026): the reviewer's
+            # binding documents are captured once per build from the commit the
+            # build started from, and the protected paths' committed content
+            # is read. A failure to read either is logged; the task goes on.
+            documents_note = self._capture_coach_project_documents(
                 task_id,
                 worktree,
                 resume=bool(self.resume and task_file_path),
@@ -3855,107 +1586,8 @@ class AutoBuildOrchestrator:
                 new_build=not (self.resume and task_file_path)
                 and self._existing_worktree is None,
             ) or self._load_protected_reference(worktree)
-            if documents_refusal is not None:
-                self._project_documents_refusal = documents_refusal
-                logger.error(
-                    "Task %s stopped before any model call: %s",
-                    task_id, documents_refusal,
-                )
-                self._emit_task_failed(task_id, "configuration_error")
-                self._capture_build_outcome(
-                    task_id,
-                    success=False,
-                    final_decision="configuration_error",
-                    turn_history=[],
-                    task_title=task_title,
-                    requirements=requirements,
-                    error=documents_refusal,
-                )
-                self._finalize_phase(
-                    worktree=worktree,
-                    final_decision="configuration_error",
-                    turn_history=[],
-                )
-                if task_file_path:
-                    self._save_state(task_file_path, worktree, "blocked")
-                return OrchestrationResult(
-                    task_id=task_id,
-                    success=False,
-                    total_turns=0,
-                    final_decision="configuration_error",
-                    turn_history=[],
-                    worktree=worktree,
-                    error=documents_refusal,
-                    ablation_mode=self.ablation_mode,
-                    recovery_count=self.recovery_count,
-                )
-
-            # 19 October 2026: a task whose type needs measured coverage, in a
-            # project that declares no coverage command for it, can never
-            # pass (only the declared command measures coverage). Found out
-            # here, from the pinned declaration the Coach will read, before
-            # the pre-loop phase or any Player turn, instead of after every
-            # turn has been refused "Coverage is UNKNOWN".
-            coverage_refusal = self._undeclared_coverage_refusal(
-                task_id,
-                worktree,
-                task_type=task_type,
-                component=component,
-                implementation_mode=_implementation_mode_raw,
-            )
-            if coverage_refusal is not None and self._task_declares_coverage_setup(
-                task_id, worktree, _declared_task_paths, component=component
-            ):
-                # 20 October 2026: this task's own work is to change
-                # .guardkit/config.yaml, which is where the missing command
-                # goes. It is given its turn; the command is read from the
-                # worktree before the Coach judges it, and if there is still
-                # none the reason becomes advice (see
-                # _pin_coverage_after_task_turn).
-                self._coverage_due_from_task = {
-                    "component": component,
-                    "declared_paths": list(_declared_task_paths),
-                }
-                logger.info(
-                    "Task %s needs a coverage command and none is declared, "
-                    "but it says it will change .guardkit/config.yaml, so it "
-                    "is not stopped: the coverage command is read from the "
-                    "worktree after its turn.",
-                    task_id,
-                )
-                coverage_refusal = None
-            elif coverage_refusal is not None and self._undeclared_coverage_refusal(
-                task_id,
-                worktree,
-                task_type=task_type,
-                component=component,
-                implementation_mode=_implementation_mode_raw,
-                declared_paths=_declared_task_paths,
-            ) is None:
-                # 23 October 2026: every file this task declares is a
-                # configuration, deployment, documentation or data file, so
-                # coverage has nothing to measure, whatever its type. Decided
-                # after the setup path above, so a task declaring the
-                # coverage command still has it pinned and measured on its
-                # own turn.
-                logger.info(
-                    "Task %s declares no source files, so it needs no "
-                    "coverage command and is not stopped.",
-                    task_id,
-                )
-                coverage_refusal = None
-            if coverage_refusal is not None and _coverage_does_nothing:
-                # The worktree declares a coverage command, but one that
-                # does nothing: say that, not "declares no coverage command".
-                coverage_refusal = _coverage_does_nothing
-            if coverage_refusal is not None:
-                # GKT-027, step 1 (24 October 2026): advice, not a stop. The
-                # task runs; the reason is logged and shown with the Coach's
-                # verdict, and the Coach reports the coverage it could measure.
-                self._coverage_declaration_advice = coverage_refusal
-                logger.warning(
-                    "Task %s: advice, not a stop: %s", task_id, coverage_refusal,
-                )
+            if documents_note is not None:
+                logger.warning("Task %s: %s", task_id, documents_note)
 
             # Phase 2: Pre-Loop Quality Gates (if enabled)
             if self.enable_pre_loop and not self.resume:
@@ -4070,34 +1702,12 @@ class AutoBuildOrchestrator:
                 turn_history=turn_history,
             )
 
-            # Save final state. A task the tree already satisfied is finished
-            # the same way an approved one is — there is simply no diff.
+            # Save final state.
             if task_file_path:
-                status = (
-                    "in_review"
-                    if final_decision in TASK_COMPLETE_DECISIONS
-                    else "blocked"
-                )
+                status = "in_review" if final_decision == "approved" else "blocked"
                 self._save_state(task_file_path, worktree, status)
 
-            # Build result. Both complete outcomes count as done, so a feature
-            # whose tasks are approved or already-satisfied finishes as
-            # complete and its completed count includes them.
-            success = final_decision in TASK_COMPLETE_DECISIONS
-            # TASK-FIX-7A07: Compute stall sub-classification for the result
-            # so downstream consumers (review-summary, memory seeding) can
-            # surface the per-task decision_subtype without re-walking the
-            # turn_history each.
-            stall_classification = classify_stall(
-                turn_history,
-                final_decision,
-                threshold=STALL_CLASSIFICATION_THRESHOLD,
-                context_pollution_fired=self._context_pollution_no_checkpoint_fired,
-                plan_contradicts_check_fired=(
-                    getattr(self, "_plan_contradicts_check_sentence", None)
-                    is not None
-                ),
-            )
+            success = final_decision == "approved"
             result = OrchestrationResult(
                 task_id=task_id,
                 success=success,
@@ -4111,12 +1721,6 @@ class AutoBuildOrchestrator:
                 pre_loop_result=pre_loop_result,
                 ablation_mode=self.ablation_mode,
                 recovery_count=self.recovery_count,
-                stall_classification=stall_classification,
-                stopped_because=(
-                    None
-                    if success
-                    else getattr(self, "_plan_contradicts_check_sentence", None)
-                ),
             )
 
             # Emit lifecycle event based on outcome (TASK-INST-004)
@@ -4239,66 +1843,6 @@ class AutoBuildOrchestrator:
             f"already been recorded, so this record supersedes that one."
         )
 
-    def _check_qa_pass_bar_precondition(self, task_id: str):
-        """WS2 B2: task-start pinned-pass-bar precondition (flag-gated).
-
-        Returns ``None`` when ``qa.enforce_tier1`` is OFF for the repo (the
-        default) — so autobuild behaviour is byte-for-byte unchanged unless a
-        repo has explicitly opted in. When ON, returns the
-        ``PassBarPreconditionResult`` (``.passed`` gates task start). The check
-        is defensive: any unexpected error while evaluating the precondition
-        degrades to ``None`` (do not block a build on a bug in the gate itself),
-        logged loudly.
-        """
-        try:
-            from guardkit.qa.enforcement import (
-                check_pass_bar_precondition,
-                is_tier1_enforced,
-            )
-
-            if not is_tier1_enforced(self.repo_root):
-                return None
-            return check_pass_bar_precondition(self.repo_root, task_id)
-        except Exception as exc:  # pragma: no cover - defensive
-            logger.warning(
-                "QA pass-bar precondition check errored for %s (%s) — not "
-                "blocking task start",
-                task_id,
-                exc,
-            )
-            return None
-
-    def _snapshot_spec_conformance(self, task_id: str, worktree: "Worktree") -> None:
-        """FEAT-SCG (SCG-001): snapshot the task's conformance block pre-turn-1.
-
-        Captures the parsed ``conformance:`` frontmatter block and the BYTES of
-        every ``byte_parity`` rule's authority file into the task-private dir
-        (outside the shared worktree). Later Coach-turn evaluation (SCG-002)
-        compares against THIS snapshot, so a Player editing both a subject and
-        its live authority inside the worktree can no longer stay green.
-
-        A no-op (writes nothing) for tasks without a ``conformance`` block, so
-        existing builds stay byte-equivalent. Never raises — the snapshot
-        helper degrades to a logged warning on any error.
-        """
-        try:
-            from guardkit.orchestrator.quality_gates.spec_conformance import (
-                snapshot_task_conformance,
-            )
-
-            snapshot_task_conformance(
-                task_id=task_id,
-                worktree_path=worktree.path,
-                repo_root=self.repo_root,
-            )
-        except Exception as exc:  # pragma: no cover - defensive
-            logger.warning(
-                "FEAT-SCG: spec-conformance snapshot failed for %s (%s) — "
-                "guard will be absent for this task",
-                task_id,
-                exc,
-            )
-
     def _snapshot_toolchain_declaration(
         self, task_id: str, worktree: "Worktree"
     ) -> None:
@@ -4332,362 +1876,32 @@ class AutoBuildOrchestrator:
                 exc,
             )
 
-    def _undeclared_coverage_refusal(
-        self,
-        task_id: str,
-        worktree: "Worktree",
-        *,
-        task_type: Any,
-        component: Optional[str],
-        implementation_mode: Any,
-        declared_paths: Optional[List[str]] = None,
-    ) -> Optional[str]:
-        """The plain reason this task cannot pass for want of a coverage
-        command, or ``None`` when it can (19 October 2026).
-
-        Reads the PINNED declaration, the same one the Coach reads
-        (``load_toolchain_snapshot``), or the coverage command pinned on its
-        own when no declaration is (``coverage_view_of_pin``, 20 October
-        2026), so the answer here is the answer the Coach would give after
-        every turn. A failure to decide is ``None``: the task then runs
-        exactly as it did before this check existed.
-        """
-        if self.ablation_mode:
-            # Ablation runs skip the Coach and approve every turn, so the
-            # coverage gate never judges them and "cannot pass" is untrue.
-            return None
-        try:
-            from guardkit.orchestrator.toolchain_declaration import (
-                coverage_view_of_pin,
-                undeclared_coverage_refusal,
-            )
-
-            return undeclared_coverage_refusal(
-                task_type=task_type,
-                toolchain=coverage_view_of_pin(task_id, Path(worktree.path)),
-                component=component,
-                implementation_mode=implementation_mode,
-                declared_paths=declared_paths,
-            )
-        except Exception as exc:  # pragma: no cover - defensive
-            logger.warning(
-                "Could not check %s for a declared coverage command (%s); "
-                "the task runs as before.",
-                task_id,
-                exc,
-            )
-            return None
-
-    @staticmethod
-    def _task_declared_paths(content: Any, frontmatter: Any) -> List[str]:
-        """The files a task says it will create or change (20 October 2026).
-
-        Read from the task document's "Files to Create" / "Files to Modify"
-        sections (the same parser the plan audit uses) and from the
-        ``files_to_create`` / ``files_to_modify`` frontmatter lists. Never
-        raises; anything unreadable is simply not a declared path.
-
-        Read only by the coverage checks, so every entry is kept (23 October
-        2026): names starting with ``_`` and wildcards stay, and are judged
-        by their file kind; only no-file markers are left out.
-        """
-        paths: List[str] = []
-        try:
-            if isinstance(content, str) and content:
-                sections = AgentInvoker.declared_file_sections_in_text(
-                    content, keep_every_entry=True
-                )
-                for key in ("create", "modify"):
-                    paths.extend(sections.get(key) or [])
-            if isinstance(frontmatter, dict):
-                for key in ("files_to_create", "files_to_modify"):
-                    listed = frontmatter.get(key)
-                    if isinstance(listed, list):
-                        paths.extend(p for p in listed if isinstance(p, str))
-        except Exception as exc:  # pragma: no cover - defensive
-            logger.debug("Could not read the task's declared files: %s", exc)
-        return paths
-
-    def _task_declares_coverage_setup(
-        self,
-        task_id: str,
-        worktree: "Worktree",
-        declared_paths: List[str],
-        *,
-        component: Optional[str] = None,
-    ) -> bool:
-        """May a task that needs coverage, in a project declaring none, have
-        its turn to declare it? (20 October 2026)
-
-        Yes when the task says it will create or change
-        ``.guardkit/config.yaml``. The command it writes is added after the
-        turn: to the pinned declaration, or, when the project declared no
-        ``toolchain:`` block at all, kept on its own beside the pin (review
-        round 1). A task naming a component in a project with nothing pinned
-        is the one exception: its component cannot be resolved by the Coach
-        whatever the turn writes, so it is stopped before any work as before.
-        """
-        from guardkit.orchestrator.toolchain_declaration import (
-            declares_config_file,
-            load_toolchain_snapshot,
-        )
-
-        if not declares_config_file(declared_paths):
-            return False
-        if component:
-            return load_toolchain_snapshot(task_id, Path(worktree.path)) is not None
-        return True
-
-
-    @classmethod
-    def _build_coverage_record_path(cls, worktree_path: Path) -> Path:
-        return build_coverage_record_path(worktree_path)
-
-    @staticmethod
-    def _build_coverage_entry(data: Any, component: Optional[str]) -> Optional[Tuple[str, int]]:
-        """One scope's ``(command, timeout)`` from the record's data, or None."""
-        entry = data.get(component or "") if isinstance(data, dict) else None
-        if not isinstance(entry, dict):
-            return None
-        command, timeout = entry.get("coverage"), entry.get("coverage_timeout")
-        if not isinstance(command, str) or not command.strip():
-            return None
-        if not isinstance(timeout, int) or isinstance(timeout, bool) or timeout <= 0:
-            timeout = 300
-        return command, timeout
-
-    @classmethod
-    def _read_build_coverage(
-        cls, worktree_path: Path, component: Optional[str]
-    ) -> Optional[Tuple[str, int]]:
-        """The build's first-pinned coverage command for this scope, or None.
-
-        The record is only ever replaced whole (see
-        :meth:`_claim_build_coverage`), so a reader never sees a part-written
-        file. Raises when it exists but cannot be read: unreadable is not
-        "none", and the caller then never falls back to the live worktree file.
-        """
-        path = cls._build_coverage_record_path(worktree_path)
-        try:
-            if not path.is_file():
-                return None
-            return cls._build_coverage_entry(
-                json.loads(path.read_text(encoding="utf-8")), component
-            )
-        except (OSError, ValueError) as exc:
-            logger.warning(
-                "Could not read this build's pinned coverage command (%s); the "
-                "worktree is not read in its place.", exc,
-            )
-            raise
-
-    @classmethod
-    def _claim_build_coverage(
-        cls,
-        worktree_path: Path,
-        component: Optional[str],
-        command: str,
-        timeout: int,
-        task_id: str,
-    ) -> Tuple[str, int]:
-        """Record ``command`` as this build's coverage command for the scope,
-        unless one is recorded already; return the one that stands.
-
-        Feature tasks of one wave run at the same time in one worktree (review
-        round 2). The read, the choice and the write are done under an
-        exclusive lock on a file beside the record, so two tasks cannot lose
-        each other's entries, and the record is replaced whole (written to a
-        temporary file, then renamed over it), so a reader never sees half of
-        it. The first command for each scope wins and is never overwritten;
-        the caller pins whatever this returns.
-        """
-        import tempfile
-
-        path = cls._build_coverage_record_path(worktree_path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        lock_path = path.with_name(path.name + ".lock")
-        with open(lock_path, "a+", encoding="utf-8") as lock:
-            locked = _lock_exclusively(lock)
-            try:
-                data: Dict[str, Any] = {}
-                if path.is_file():
-                    loaded = json.loads(path.read_text(encoding="utf-8"))
-                    if isinstance(loaded, dict):
-                        data = loaded
-                standing = cls._build_coverage_entry(data, component)
-                if standing is not None:
-                    return standing
-                data[component or ""] = {
-                    "coverage": command,
-                    "coverage_timeout": timeout,
-                    "first_pinned_by": task_id,
-                }
-                handle, temporary = tempfile.mkstemp(
-                    dir=str(path.parent), prefix=path.name + ".", suffix=".tmp"
-                )
-                try:
-                    with os.fdopen(handle, "w", encoding="utf-8") as out:
-                        json.dump(data, out, indent=2)
-                    os.replace(temporary, path)
-                except BaseException:
-                    with contextlib.suppress(OSError):
-                        os.unlink(temporary)
-                    raise
-                return command, timeout
-            finally:
-                if locked:
-                    _unlock(lock)
-
-    @classmethod
-    def discard_build_coverage_record(cls, worktree_path: Path) -> None:
-        """Forget an earlier build's coverage record when a NEW build's
-        worktree is made (the same rule as the Coach documents snapshot)."""
-        discard_build_coverage_record(worktree_path)
-
-    def _carry_coverage_from_worktree(
-        self,
-        task_id: str,
-        worktree: "Worktree",
-        *,
-        component: Optional[str],
-        when: str,
-    ) -> Tuple[Optional[str], Optional[str]]:
-        """Pin a coverage command for this task when its pin has none
-        (20 October 2026). Returns ``(command pinned, refusal)``.
-
-        * A coverage command the canonical repository declares is pinned
-          already and always wins: nothing happens.
-        * Once a task of this build has pinned a command from the worktree,
-          every later task reuses that same command (the build's record) and
-          the worktree file is NOT read again: a later Player that rewrites
-          it cannot weaken the check for the tasks after it (coach review 1).
-          A different value in the worktree is logged and ignored.
-        * Otherwise the worktree's ``.guardkit/config.yaml`` is read once.
-          Only the coverage command and its timeout are taken from it; every
-          other command stays as pinned from the canonical repository. A
-          command that does nothing (``true``, ``:``, ``exit 0``, ``echo``…)
-          is not pinned: the returned refusal says why, and the caller stops
-          the task as a configuration error if it needs coverage.
-        """
-        from guardkit.orchestrator.toolchain_declaration import (
-            coverage_in,
-            coverage_view_of_pin,
-            declared_coverage_command,
-            does_nothing_command,
-            load_toolchain_declaration,
-            pin_coverage_command,
-        )
-
-        worktree_path = Path(worktree.path)
-        if declared_coverage_command(
-            coverage_view_of_pin(task_id, worktree_path), component
-        ):
-            return None, None
-        live = coverage_in(load_toolchain_declaration(worktree_path), component)
-        try:
-            recorded = self._read_build_coverage(worktree_path, component)
-        except (OSError, ValueError):
-            return None, None
-        if recorded is not None:
-            if live is not None and live[0] != recorded[0]:
-                logger.warning(
-                    "Task %s: the worktree's .guardkit/config.yaml now says "
-                    "coverage %r, but this build pinned %r first; the first one "
-                    "is kept, and the worktree value is ignored.",
-                    task_id, live[0], recorded[0],
-                )
-            added = pin_coverage_command(
-                task_id, worktree_path, recorded[0], recorded[1], component
-            )
-            if added:
-                logger.info(
-                    "Task %s: using this build's pinned coverage command %r.",
-                    task_id, added,
-                )
-            return added, None
-        if live is None:
-            return None, None
-        if does_nothing_command(live[0]):
-            refusal = (
-                f"The coverage command `{live[0]}` in .guardkit/config.yaml "
-                f"does nothing, so it cannot measure coverage and was not used. "
-                f"Declare a command that runs the tests with coverage and exits "
-                f"non-zero when the coverage threshold is missed."
-            )
-            logger.error("Task %s: %s", task_id, refusal)
-            return None, refusal
-        try:
-            winner = self._claim_build_coverage(
-                worktree_path, component, live[0], live[1], task_id
-            )
-        except (OSError, ValueError) as exc:
-            logger.warning(
-                "Task %s: this build's coverage record could not be written "
-                "(%s); no coverage command is pinned from the worktree.",
-                task_id, exc,
-            )
-            return None, None
-        if winner[0] != live[0]:
-            logger.warning(
-                "Task %s: another task of this build pinned coverage %r first; "
-                "that one is used, not the worktree's %r.",
-                task_id, winner[0], live[0],
-            )
-        added = pin_coverage_command(
-            task_id, worktree_path, winner[0], winner[1], component
-        )
-        if added:
-            logger.warning(
-                "Task %s: the coverage command %r was %s and is now pinned for "
-                "this task and every later task of this build. Only the "
-                "coverage command is taken from the worktree; every other "
-                "declared command still comes from the canonical repository.",
-                task_id,
-                added,
-                when,
-            )
-        return added, None
-
     @property
     def real_check_failed(self) -> bool:
-        """Whether a real test or conformance command (such as lint) is still
-        red for this task: its last measurement failed and no later
-        measurement passed (step 1, 24 October 2026)."""
+        """Whether the project's own tests are still red for this task: their
+        last measurement failed and no later measurement passed (step 1, 24
+        October 2026)."""
         return any(getattr(self, "_measured_check_failed", {}).values())
 
     def _carry_measured_checks(
         self,
         independent: Optional["IndependentTestResult"],
-        conformance: Optional[Dict[str, Any]],
-        *,
-        test_phase: Optional[Dict[str, Any]] = None,
     ) -> None:
-        """Carry this turn's measured test and conformance-command results, as
-        the Coach's evidence produced them (step 1, 24 October 2026).
+        """Carry this turn's measured test result, as the Coach's evidence
+        produced it (step 1, 24 October 2026).
 
-        Tests fail on the independent run's own failure receipt, or, when no
-        independent run measured them this turn, on the task's test phase
-        reporting failed tests; they clear only on a later independent run
-        that ran and passed. Conformance commands
-        (``assert_command`` rules, where a project declares lint) fail on a
-        failed command and clear when the rule leg ran with none failed. An
-        absent result changes nothing.
+        Tests fail on the independent run's own failure receipt and clear
+        only on a later independent run that ran and passed. An absent
+        result changes nothing.
         """
         try:
-            self._carry_measured_checks_now(
-                independent,
-                conformance,
-                test_phase_failed=bool((test_phase or {}).get("tests_failed")),
-            )
+            self._carry_measured_checks_now(independent)
         except Exception as exc:  # noqa: BLE001 — carrying a result never ends a turn
             logger.warning("Could not carry this turn's check results: %s", exc)
 
     def _carry_measured_checks_now(
         self,
         independent: Optional["IndependentTestResult"],
-        conformance: Optional[Dict[str, Any]],
-        *,
-        test_phase_failed: bool,
     ) -> None:
         state = self.__dict__.setdefault("_measured_check_failed", {})
         if independent is not None and independent.failure_receipt() is not None:
@@ -4699,117 +1913,19 @@ class AutoBuildOrchestrator:
             and not independent.check_could_not_run
             and independent.test_command != "skipped"
         ):
-            # The independent run decides over the test phase's own count,
-            # which can include failures the base branch already had.
             state["tests"] = False
-        elif test_phase_failed:
-            state["tests"] = True
-        if isinstance(conformance, dict) and conformance.get("status") in (
-            "passed", "failed",
-        ):
-            state["commands"] = any(
-                isinstance(failure, dict) and failure.get("kind") == "assert_command"
-                for failure in conformance.get("failures") or []
-            )
-
-    def _pin_coverage_after_task_turn(
-        self,
-        task_id: str,
-        turn: int,
-        worktree: "Worktree",
-        task_type: Optional[str],
-    ) -> None:
-        """After the turn of a task that was to declare the coverage command,
-        pin what it declared (20 October 2026), so the Coach measures coverage
-        with it on this very turn.
-
-        Step 1 (24 October 2026, GKT-027): when it declared none, or one that
-        does nothing, the reason is kept as advice for the Coach's verdict and
-        the turn goes on to the Coach; it is never a stop.
-        """
-        due = getattr(self, "_coverage_due_from_task", None)
-        if not due:
-            return
-        from guardkit.orchestrator.toolchain_declaration import (
-            coverage_view_of_pin,
-            declared_coverage_command,
-            declares_no_source_files,
-            undeclared_coverage_refusal,
-        )
-
-        component = due.get("component")
-        _, do_nothing = self._carry_coverage_from_worktree(
-            task_id, worktree, component=component,
-            when=f"declared by this task's own turn {turn}",
-        )
-        pinned = coverage_view_of_pin(task_id, Path(worktree.path))
-        if declared_coverage_command(pinned, component):
-            self._coverage_due_from_task = None
-            return
-        if do_nothing is None and declares_no_source_files(
-            due.get("declared_paths")
-        ):
-            # 23 October 2026: it declared no coverage command, but every
-            # file it declares is a configuration, deployment, documentation
-            # or data file, so there is nothing for coverage to measure. It
-            # goes on to the Coach (which makes the same exception) instead
-            # of being stopped. A command that does nothing is still refused.
-            # The marker stays set, so a command a later turn of this task
-            # writes is still pinned and measured on that turn.
-            logger.info(
-                "Task %s declared no coverage command on turn %s, but it "
-                "declares no source files, so it is not stopped; a coverage "
-                "command a later turn declares will still be read.",
-                task_id, turn,
-            )
-            return
-        advice = do_nothing or undeclared_coverage_refusal(
-            task_type=task_type,
-            toolchain=pinned,
-            component=component,
-            after_turn=True,
-        ) or (
-            "This task said it would change .guardkit/config.yaml to declare "
-            "a coverage command, but after its turn none is declared."
-        )
-        # GKT-027, step 1 (24 October 2026): advice, not a stop. The marker
-        # stays set, so a command a later turn writes is still pinned.
-        self._coverage_declaration_advice = advice
-        logger.warning(
-            "Task %s turn %s: advice, not a stop: %s", task_id, turn, advice,
-        )
-        return
 
     def _resolve_task_component(
         self, task_id: str, raw: Any
     ) -> Optional[str]:
-        """PER-COMPONENT SEAM: validate a task's ``component:`` selector.
+        """PER-COMPONENT SEAM: the task's ``component:`` selector, or ``None``.
 
-        ``None``/absent is the overwhelmingly common case and means THE ROOT
-        COMPONENT — today's semantics, unchanged, on every repo in the estate.
-
-        A NAMED component is checked against the repo's declaration NOW, at
-        task load, and a name the declaration does not define raises. That is
-        deliberate and it is the whole point: the alternative to a loud
-        failure is running the root component's suite as the verdict on
-        another component's work, which is a false green wearing a green tick.
-        Validated here rather than inside the metadata try/except above for
-        exactly the reason the D.1a behavioural-oracle lift is (a
-        verdict-bearing declaration's schema error must never be swallowed).
-
-        Raises
-        ------
-        ValueError
-            If the selector is not a non-empty string, or names a component
-            the repo's ``toolchain.components`` does not declare.
+        ``None`` means the root component. A name the repository's
+        ``toolchain.components`` does not declare also means the root
+        component.
         """
-        if raw is None:
-            return None
         if not isinstance(raw, str) or not raw.strip():
-            raise ValueError(
-                f"Invalid `component:` in {task_id}'s frontmatter: expected a "
-                f"non-empty component name, got {raw!r}."
-            )
+            return None
         name = raw.strip()
 
         from guardkit.orchestrator.toolchain_declaration import (
@@ -4818,22 +1934,12 @@ class AutoBuildOrchestrator:
 
         declaration = load_toolchain_declaration(self.repo_root)
         if declaration is None or declaration.component(name) is None:
-            declared = (
-                ", ".join(declaration.component_names)
-                if declaration is not None and declaration.component_names
-                else "<none>"
+            logger.warning(
+                "Task %s selects `component: %s`, which the repository does "
+                "not declare; the root component is used.",
+                task_id, name,
             )
-            raise ValueError(
-                f"Task {task_id} selects `component: {name}`, but "
-                f"<repo>/.guardkit/config.yaml declares no such component "
-                f"under `toolchain.components:` (declared: {declared}).\n"
-                "This is a LOUD task-load failure on purpose: the root "
-                "`test:` command is NOT used as a fallback, because judging "
-                "one component's work with another component's suite is the "
-                "false verdict the per-component seam exists to remove.\n"
-                "FIX: declare the component (with its REQUIRED repo-relative "
-                "`cwd:`), or correct the task's `component:` key."
-            )
+            return None
         logger.info(
             "Task %s selects component %r (cwd=%r, test=%r)",
             task_id,
@@ -4842,100 +1948,6 @@ class AutoBuildOrchestrator:
             declaration.component(name).test,
         )
         return name
-
-    def _resolve_task_verifier(
-        self, task_id: str, raw: Any, test_ref: Any = None
-    ) -> Optional[str]:
-        """ROUTING LAW (card Q8/A.2): validate a task's ``verifier:`` stamp.
-
-        ``None``/absent means "no stamp" — every existing task, unchanged. A
-        PRESENT stamp is checked against the closed vocabulary NOW, at task
-        load, and an unknown home raises — deliberately mirroring
-        ``_resolve_task_component`` directly above (the pattern the law was
-        copied from): loud failure, no fallback, because a scenario silently
-        routed to no home (or the wrong one) is an unverified green.
-
-        ``test_ref`` is the frontmatter's ``test_ref:`` beside the stamp;
-        (3) RULED 2026-08-18: ``verifier: toolchain`` without it is refused
-        here too — same rule, same message as the feature-YAML schema.
-
-        Raises
-        ------
-        ValueError
-            If the stamp is not a non-empty string, names a verifier
-            outside the closed vocabulary, or is ``toolchain`` with no
-            ``test_ref``.
-        """
-        from guardkit.orchestrator.verifier_stamp import validate_task_verifier
-
-        verifier = validate_task_verifier(task_id, raw, test_ref)
-        if verifier is not None:
-            logger.info(
-                "ROUTING LAW: task %s is stamped `verifier: %s`", task_id, verifier
-            )
-        return verifier
-
-    def _produce_spec_conformance_leg(
-        self, task_id: str, turn: int, worktree: "Worktree"
-    ) -> Optional[Dict[str, Any]]:
-        """FEAT-SCG (SCG-002): evaluate the task's conformance RULES for this turn.
-
-        Produced beside ``gather_evidence`` and attached to the
-        ``CoachEvidenceBundle`` as its ``spec_conformance`` leg. Reads the
-        pre-turn-1 snapshot (SCG-001, captured OUTSIDE the shared worktree so a
-        Player cannot edit both a subject and its authority to stay green) and
-        evaluates the declarative ``byte_parity`` / ``token_coverage`` /
-        ``assert_command`` rules against the live worktree.
-
-        The opt-in ``ac_paths`` presence check is deferred to
-        ``AgentInvoker._apply_spec_conformance_guard`` — it needs the Coach
-        turn's STRUCTURED acceptance criteria (the ``invoke_coach`` param), which
-        are not assembled here — so ``acceptance_criteria`` is intentionally not
-        threaded into this call.
-
-        Absence-of-failure discipline: returns ``None`` (the leg stays absent on
-        the bundle) when no conformance snapshot was captured for this task — the
-        byte-equivalent no-op for the vast majority of tasks, with NO executor
-        activity — and never raises (any error degrades to ``None`` + a logged
-        warning; the leg must never block a turn).
-        """
-        try:
-            from guardkit.orchestrator.quality_gates.spec_conformance import (
-                evaluate_from_snapshot,
-                snapshot_paths,
-            )
-
-            snapshot_dir = snapshot_paths(task_id, worktree.path)["dir"]
-            if not snapshot_dir.exists():
-                # No snapshot ⇒ no conformance block ⇒ leg stays absent (None).
-                # The executor is never invoked — the byte-equivalence guarantee
-                # for every task that declares no ``conformance:`` block.
-                return None
-
-            result = evaluate_from_snapshot(
-                snapshot_dir,
-                worktree.path,
-                acceptance_criteria=None,  # ac_paths runs in the guard, not here
-                task_id=task_id,
-            )
-            logger.info(
-                "FEAT-SCG: spec-conformance leg for %s turn %s -> %s "
-                "(%d failure(s))",
-                task_id,
-                turn,
-                result.get("status"),
-                len(result.get("failures", [])),
-            )
-            return result
-        except Exception as exc:  # noqa: BLE001 — the leg must never block a turn
-            logger.warning(
-                "FEAT-SCG: spec-conformance leg failed for %s turn %s (%s) — "
-                "leg absent for this turn",
-                task_id,
-                turn,
-                exc,
-            )
-            return None
 
     def _setup_phase(
         self,
@@ -5180,6 +2192,8 @@ class AutoBuildOrchestrator:
             "architectural_score": result.architectural_score,
             "clarifications": result.clarifications,
         }
+
+            # Non-critical failure - don't raise
 
     def _extract_design_phase(
         self,
@@ -5554,7 +2568,6 @@ class AutoBuildOrchestrator:
 
         except Exception as e:
             logger.warning(f"Failed to store extraction metadata: {e}")
-            # Non-critical failure - don't raise
 
     def _loop_phase(
         self,
@@ -5571,7 +2584,7 @@ class AutoBuildOrchestrator:
         time_budget_seconds: Optional[float] = None,
         behavioural_oracle: Optional[Any] = None,
         component: Optional[str] = None,  # per-component seam
-    ) -> Tuple[List[TurnRecord], Literal["approved", "already_satisfied", "max_turns_exceeded", "unrecoverable_stall", "player_invocation_stall", "error", "cancelled", "timeout", "configuration_error", "design_extraction_failed", "timeout_budget_exhausted", "honesty_collapse"]]:
+    ) -> Tuple[List[TurnRecord], Literal["approved", "max_turns_exceeded", "error", "cancelled", "timeout", "design_extraction_failed", "timeout_budget_exhausted"]]:
         """
         Phase 3: Execute Player↔Coach adversarial loop.
 
@@ -5631,24 +2644,13 @@ class AutoBuildOrchestrator:
         # TASK-RFX-5FED: Store worktree path for local turn state file access
         self._active_worktree_path = worktree.path
 
-        # TASK-FIX-7A07: Reset stall-classification signals at loop entry so
-        # classify_stall() sees fresh state per task.
-        self._context_pollution_no_checkpoint_fired = False
-        # The plain early stop (18 October 2026): fresh per task loop.
-        self._plan_contradicts_check_sentence = None
-        self._whole_feature_check_by_turn = {}
         # Why a checkpoint was refused, when one was (build 0D7C).
         self._checkpoint_refusal: Optional[str] = None
         # Why protected paths could not be put back, when they could not.
         self._protected_paths_failure: Optional[str] = None
-        # A dependency reinstall that failed and has not since succeeded:
-        # (first failing turn, dependency files). Fresh per task loop.
-        self._standing_reinstall_failure: Optional[Tuple[int, List[str]]] = None
-        self._reinstall_environment_gap: Optional[str] = None
 
         # Track loop start time for SDK-level timeout remaining budget (TASK-ABFIX-006)
-        import time as _time
-        loop_start = _time.monotonic()
+        loop_start = time.monotonic()
 
         # Use existing turn history if resuming
         turn_history: List[TurnRecord] = list(self._turn_history)
@@ -5691,10 +2693,7 @@ class AutoBuildOrchestrator:
                 refuse_without_branch=True,
                 task_work_scope=self.task_work_scope,
             )
-            logger.info(
-                f"Checkpoint manager initialized for {task_id} "
-                f"(rollback_on_pollution={self.rollback_on_pollution})"
-            )
+            logger.info(f"Checkpoint manager initialized for {task_id}")
 
         # 17 October 2026 (review R1): protected paths — worktree, index and
         # branch — are put back as committed under the checkpoint lock just
@@ -5743,19 +2742,9 @@ class AutoBuildOrchestrator:
 
         # Track loop start time for per-turn budget (TASK-ABFIX-004)
         loop_start_time: Optional[float] = time.monotonic() if time_budget_seconds is not None else None
-        # Expose to _execute_turn so the pre-specialist budget guard can refresh
-        # remaining_budget post-Player (TASK-ABSR-FRSH).
-        self._loop_start_time = loop_start_time
 
         with self._progress_display:
             for turn in range(start_turn, self.max_turns + 1):
-                # A refused "the work is already there" claim is told back to
-                # the builder on the next turn, so it stops repeating it.
-                # Reset every turn: only the turn that made the claim carries
-                # its refusal.
-                refusal_to_carry: Optional[str] = None
-                # This turn's checkpoint commit, named by the early stop.
-                turn_checkpoint_sha: Optional[str] = None
 
                 # Cooperative cancellation check at TOP of loop (TASK-ASF-007)
                 # Check timeout_event first — feature-level timeout takes priority (TASK-ABFIX-006)
@@ -5883,7 +2872,7 @@ class AutoBuildOrchestrator:
                     and "SDK timeout" in turn_record.player_result.error
                     and self._task_timeout
                 ):
-                    elapsed = int(_time.monotonic() - loop_start)
+                    elapsed = int(time.monotonic() - loop_start)
                     remaining = max(0, self._task_timeout - elapsed)
                     # The invoker scales the base limit per task (mode and
                     # complexity) and states the limit it applied in the
@@ -5916,27 +2905,6 @@ class AutoBuildOrchestrator:
                     task_id=task_id, worktree_path=worktree.path,
                 )
 
-                # Record honesty score from Coach's verification
-                self._record_honesty(turn_record)
-
-                # Honesty rolling average (TASK-FIX-HEAB). When the rolling
-                # average over _honesty_early_abort_window turns drops below
-                # _honesty_early_abort_threshold the diagnostic (naming the
-                # most-flagged claim) is logged as advice; since step 2 (26
-                # October 2026) the loop goes on.
-                heab_msg = self._check_honesty_early_abort(
-                    turn_history,
-                    task_id=task_id,
-                    worktree_path=worktree.path,
-                )
-                if heab_msg is not None:
-                    # Step 2 (26 October 2026): a rough guide (a score below
-                    # 0.3 over 3 turns) is advice; the Coach's verdict decides.
-                    logger.warning(
-                        f"[{task_id}] Advice, not a stop: honesty score low after "
-                        f"turn {turn}: {heab_msg}"
-                    )
-
                 # Display criteria progress after each turn.
                 # Wrap in try/except: this is a display-only helper and must
                 # never fail a task. Previously a parse error inside
@@ -5956,51 +2924,6 @@ class AutoBuildOrchestrator:
                 # Persist state after each turn
                 if task_file_path:
                     self._save_state(task_file_path, worktree, "in_progress")
-
-                # THE THIRD OUTCOME: a task the tree already satisfies is
-                # CLOSED, not stalled. Checked here, on every turn, so the
-                # usual case — the builder looks first, finds the work
-                # already present on TURN ONE and says so — costs one turn
-                # instead of five wasted ones ending in a stall.
-                #
-                # Two things have to be true and neither is the builder's to
-                # decide alone: the builder must CLAIM it, citing for each
-                # acceptance criterion the file and the place that satisfies
-                # it, and the reviewer must have VERIFIED those criteria
-                # against the tree, raised nothing it says must be fixed, and
-                # accepted the turn. A claim nobody verified is just an
-                # assertion, and a builder that can close a task by asserting
-                # it is done has no bar at all — so a refused claim is a
-                # failed turn and the loop carries on exactly as it does
-                # today, stall rule included.
-                #
-                # The whole turn history goes in, not just this turn: the
-                # outcome promises there is nothing to merge, so a task that
-                # wrote files on ANY earlier turn cannot take it. Otherwise a
-                # claim made on turn two would close a task whose turn one
-                # left a real diff behind, unverified and unmerged.
-                #
-                # STACK-AGNOSTIC: nothing in this path reads, parses or knows
-                # anything about source code, a language, an interpreter or a
-                # package manager. The claim is prose citing files and places;
-                # the reviewer verifies it the way it verifies any other
-                # claim. It behaves identically in a Python, TypeScript or Go
-                # repository.
-                if _already_satisfied_claim(turn_record) is not None:
-                    refusal = _already_satisfied_refusal(
-                        turn_record, acceptance_criteria, turn_history
-                    )
-                    if refusal is None:
-                        logger.info(
-                            "[%s] %s",
-                            task_id,
-                            _already_satisfied_message(
-                                task_id, turn_record, len(turn_history)
-                            ),
-                        )
-                        return turn_history, DECISION_ALREADY_SATISFIED
-                    logger.warning("[%s] %s", task_id, refusal)
-                    refusal_to_carry = refusal
 
                 # Check approval BEFORE cancellation (TASK-ABFIX-004)
                 # Coach approval during grace period must propagate even if cancellation is set
@@ -6048,55 +2971,6 @@ class AutoBuildOrchestrator:
                     logger.error(f"Critical error on turn {turn}")
                     return turn_history, "error"
 
-                # Fast-exit on configuration errors (TASK-ABFIX-003)
-                # The Player cannot fix task frontmatter — retrying is futile.
-                if turn_record.is_configuration_error:
-                    error_detail, is_task_type = _configuration_error_cause(
-                        turn_record
-                    )
-                    error_detail = error_detail or "unknown configuration error"
-                    if is_task_type:
-                        logger.error(
-                            f"Configuration error for {task_id}: {error_detail}. "
-                            f"This is a task file issue — the Player cannot fix it."
-                        )
-                        self._progress_display.console.print(
-                            f"\n[bold red]ERROR: Configuration error for {task_id}:[/bold red]\n"
-                            f"  {error_detail}\n"
-                            f"  [yellow]This is a task file configuration issue — the Player cannot fix it.[/yellow]\n"
-                            f"  [green]Fix the task_type in the task .md file and retry.[/green]\n"
-                        )
-                        return turn_history, "configuration_error"
-                    # Not a task file problem (a check that could not run,
-                    # for one): name the cause, and no task_type advice.
-                    stop = "" if error_detail.rstrip().endswith((".", "!", "?")) else "."
-                    logger.error(
-                        f"Configuration error for {task_id}: "
-                        f"{error_detail.rstrip()}{stop} The Player cannot fix this."
-                    )
-                    self._progress_display.console.print(
-                        f"\n[bold red]ERROR: Configuration error for {task_id}:[/bold red]\n"
-                        f"  {error_detail}\n"
-                        f"  [yellow]The Player cannot fix this. Fix the cause above and retry.[/yellow]\n"
-                    )
-                    return turn_history, "configuration_error"
-
-                # WITHDRAWN 2026-09-01, before it ever ran a build. A second
-                # part of this change let a turn that changed nothing FINISH the
-                # task as done when the reviewer's own test run was green. An
-                # independent review proved it could finish a task the reviewer
-                # had just REFUSED: the completion never read the reviewer's
-                # decision, so a report saying "rate limiting is absent from
-                # src/api.py" — the documented feedback shape — completed as
-                # approved with the work skipped. It only ever ran on non-approve
-                # turns, so overriding the reviewer was its whole operating range.
-                # Deciding "already done" safely means enumerating every way a
-                # reviewer can object, which is a bigger design than this lane.
-                # The no-progress stall below covers the same builds honestly:
-                # they stop in one turn instead of twenty-five minutes, and say
-                # that the work may already be done or the task may be
-                # unsatisfiable, without pretending to know which.
-
                 # Create checkpoint after turn completes (if enabled)
                 # Skip checkpoint for configuration errors — tests were never run (TASK-ABFIX-003)
                 if self.enable_checkpoints and self._checkpoint_manager:
@@ -6117,128 +2991,12 @@ class AutoBuildOrchestrator:
                         f"Checkpoint created: {checkpoint.commit_hash[:8]} "
                         f"for turn {turn}"
                     )
-                    turn_checkpoint_sha = getattr(checkpoint, "commit_hash", None)
 
-                    # Check for context pollution and rollback if needed
-                    if self.rollback_on_pollution:
-                        if self._checkpoint_manager.should_rollback():
-                            target_turn = self._checkpoint_manager.find_last_passing_checkpoint()
-                            if target_turn:
-                                logger.warning(
-                                    f"Context pollution detected, rolling back "
-                                    f"from turn {turn} to turn {target_turn}"
-                                )
-                                self._checkpoint_manager.rollback_to(target_turn)
-
-                                # TASK-FIX-RBSS AC-1: clear the Player SDK session
-                                # so the next turn does not resume the polluted
-                                # cumulative-authoring memory of files the
-                                # rollback just deleted. Mirrors the
-                                # perspective-reset path above (lines 2161-2165).
-                                if self._agent_invoker is not None:
-                                    self._agent_invoker.set_player_resume_session(None)
-
-                                # Update state after rollback
-                                self._turn_history = turn_history[:target_turn]
-                                previous_feedback = (
-                                    self._turn_history[-1].feedback
-                                    if self._turn_history else None
-                                )
-
-                                # Continue loop from rollback point + 1
-                                logger.info(
-                                    f"Continuing from turn {target_turn + 1} "
-                                    f"after rollback"
-                                )
-                                continue
-                            else:
-                                # UNRECOVERABLE: No passing checkpoint ever existed (TASK-AB-SD01)
-                                logger.error(
-                                    f"Unrecoverable stall detected for {task_id}: "
-                                    f"context pollution detected but no passing checkpoint exists. "
-                                    f"Exiting loop early to avoid wasting turns."
-                                )
-                                # TASK-FIX-7A07: Signal classifier that this was
-                                # the context-pollution code path so the
-                                # per-task decision_subtype can reflect it
-                                # alongside any agent-invocations co-fire.
-                                self._context_pollution_no_checkpoint_fired = True
-                                return turn_history, "unrecoverable_stall"
-
-                # Check for player-invocation stall first (TASK-FIX-7A02).
-                # This takes precedence over feedback stall: when the Player
-                # never produced a real report for N consecutive turns, the
-                # feedback stall signal (Coach rejecting synthetic reports)
-                # is a symptom of the SDK-layer failure, not a task-content
-                # problem. Classifying separately surfaces the real
-                # underlying cause (auth/SDK env) rather than falsely
-                # blaming the task's acceptance criteria.
-                if self._is_player_invocation_stalled(turn_history):
-                    logger.error(
-                        f"Player-invocation stall detected for {task_id}: "
-                        f"{len(turn_history)} turn(s), latest {3} consecutively "
-                        f"failed at the SDK layer. Exiting loop early."
-                    )
-                    return turn_history, "player_invocation_stall"
-
-                # TASK-AB-NOCHANGE01 (part 1): the generator wrote nothing.
-                # N turns running with no file changed and no approval — no
-                # later turn can change that, so stop here and say so, instead
-                # of burning the remaining turns and reporting
-                # ``max_turns_exceeded``, which names the symptom and hides
-                # the cause. Placed after the player-invocation check (an SDK
-                # layer failure also produces no files, and that has its own
-                # more specific label) and before the feedback stall.
-                if self._is_no_file_change_stalled(turn_history):
-                    logger.error(
-                        "[%s] %s",
-                        task_id,
-                        self._no_file_change_stall_message(
-                            task_id, turn_history
-                        ),
-                    )
-                    return turn_history, "unrecoverable_stall"
-
-                # 18 October 2026: the plain early stop in a whole-feature
-                # repair round. All four conditions must hold (see
-                # _plan_contradicts_check_stop); otherwise nothing changes.
-                stop_sentence = self._plan_contradicts_check_stop(
-                    turn_record, turn_checkpoint_sha
-                )
-                if stop_sentence is not None:
-                    self._plan_contradicts_check_sentence = stop_sentence
-                    logger.error("[%s] %s", task_id, stop_sentence)
-                    return turn_history, "unrecoverable_stall"
-
-                # Check for repeated feedback stall (TASK-AB-SD01 Mechanism 2)
-                if turn_record.decision == "feedback" and turn_record.feedback:
-                    criteria_passed = self._count_criteria_passed(turn_record)
-                    # Accumulate peak: criteria verified in prior turns stay counted (TASK-FIX-AE7E)
-                    self._max_criteria_passed = max(criteria_passed, self._max_criteria_passed)
-                    if self._is_feedback_stalled(
-                        turn_record.feedback,
-                        self._max_criteria_passed,
-                        turn_record=turn_record,
-                    ):
-                        logger.error(
-                            self._feedback_stall_terminal_message(
-                                task_id, turn_record, criteria_passed
-                            )
-                        )
-                        return turn_history, "unrecoverable_stall"
 
                 # Handle feedback decision
                 if turn_record.decision == "feedback":
                     logger.info(f"Coach provided feedback on turn {turn}")
                     previous_feedback = turn_record.feedback
-                    if refusal_to_carry:
-                        # Say plainly why the claim was not accepted, so the
-                        # next turn either cites properly or does the work.
-                        previous_feedback = (
-                            f"{refusal_to_carry}\n\n{previous_feedback}"
-                            if previous_feedback
-                            else refusal_to_carry
-                        )
                     protected_note = getattr(self, "_protected_paths_note", None)
                     if protected_note:
                         # Protected paths this turn changed were put back.
@@ -6258,154 +3016,24 @@ class AutoBuildOrchestrator:
             logger.warning(f"Max turns ({self.max_turns}) exceeded for {task_id}")
             return turn_history, "max_turns_exceeded"
 
-    def _plan_contradicts_check_stop(
-        self,
-        turn_record: TurnRecord,
-        checkpoint_sha: Optional[str] = None,
-    ) -> Optional[str]:
-        """The early stop's sentence when ALL FOUR conditions hold, else None.
-
-        1. This task is in a whole-feature repair round (it was given a
-           ``FeatureCheckRepair``).
-        2. GuardKit's own run of the project's check on this turn's code
-           PASSED. The Player's word is never enough: the stop rests on the
-           run recorded in this turn's evidence.
-        3. The turn was sent back ONLY over acceptance criteria, at least one
-           named, read as structured data (``_criteria_only_rejection``).
-        4. The coder's own completion promise marks each of those criteria as
-           not delivered: it chose the check over them.
-
-        Those criteria were approved as met on the code that failed the check
-        (the check runs only once every task is approved), so both facts in
-        the sentence come from GuardKit's own runs. No timer, no setting, no
-        extra attempt. Anything missing or unreadable returns None and the
-        turn goes on exactly as today. Never raises.
-        """
-        try:
-            if getattr(self, "_feature_check_repair", None) is None:
-                return None
-            record = self._whole_feature_check_by_turn.get(turn_record.turn)
-            if not (
-                isinstance(record, dict)
-                and record.get("ran") is True
-                and record.get("outcome") == "passed"
-            ):
-                return None
-            criterion_ids = _criteria_only_rejection(turn_record)
-            if not criterion_ids:
-                return None
-            if not _player_left_out(turn_record, criterion_ids):
-                return None
-            return plan_contradicts_check_sentence(
-                criterion_ids,
-                _criterion_texts(turn_record, criterion_ids),
-                checkpoint_sha,
-            )
-        except Exception as exc:  # noqa: BLE001 — the stop never fails a turn
-            logger.warning(
-                "The plan-contradicts-check stop could not be evaluated: %s",
-                type(exc).__name__,
-            )
-            return None
-
-    def _cap_specialist_timeout(
-        self,
-        remaining_budget: Optional[float],
-        task_id: str,
-        *,
-        phase_budget_remaining: Optional[float] = None,
-    ) -> int:
-        """Cap orchestrator-invoked specialist sdk_timeout via the Player-side scaler.
-
-        Delegates the base computation to
-        ``AgentInvoker._calculate_sdk_timeout`` so the specialist receives the
-        same mode/complexity multipliers the Player gets for the same task
-        (TASK-FIX-CRSTL-MULT). Then applies the wall-clock clamp on top so a
-        single specialist (Phase 4 test-orchestrator or Phase 5 code-reviewer)
-        cannot consume the entire remaining wall budget when the scaled value
-        exceeds what's left.
-
-        Reserves ``COACH_GRACE_PERIOD_SECONDS`` so Coach still has a window to
-        validate after the specialist returns. Floors at 60 s to prevent
-        pathologically-low values from blocking specialists entirely
-        (TASK-ABSR-WALL).
-
-        ``phase_budget_remaining`` (TASK-PERF-SPECLAT01) is the wall still
-        available *within this turn's specialist-phase budget*
-        (``SPECIALIST_BUDGET_FRACTION`` of the post-Player remaining, shared
-        across Phase 4 + Phase 5). When provided, it is applied as an extra
-        ceiling **after** the grace reservation — so the COACH grace is
-        reserved from the full remaining budget while the fraction bounds only
-        the specialist phase. Also floored at 60 s.
-
-        Set ``GUARDKIT_SPECIALIST_TIMEOUT_CAP=disable`` to short-circuit BOTH
-        wall clamps (the grace-reserved cap and the phase-budget fraction); the
-        scaling still applies — disable means "no wall cap", not "no scaling".
-        Emergency backout only. The per-specialist hard ceilings in
-        ``specialist_invocations`` (600 s each) remain in force regardless.
-        """
-        if os.environ.get("GUARDKIT_SPECIALIST_TIMEOUT_CAP") == "disable":
-            return self._agent_invoker._calculate_sdk_timeout(
-                task_id, remaining_budget=None
-            )
-
-        scaled = self._agent_invoker._calculate_sdk_timeout(
-            task_id, remaining_budget=remaining_budget
-        )
-        if remaining_budget is None:
-            capped = scaled
-        else:
-            reserved = remaining_budget - COACH_GRACE_PERIOD_SECONDS
-            cap = max(60, int(reserved))
-            capped = min(scaled, cap)
-
-        if phase_budget_remaining is not None:
-            capped = min(capped, max(60, int(phase_budget_remaining)))
-
-        return capped
-
     def _maybe_refresh_venv_for_manifest_change(
-        self,
-        player_result: Any,
-        worktree: Any,
-        turn: int,
-    ) -> Optional[str]:
-        """
-        Refresh the worktree venv when this turn changed a dependency manifest.
+        self, player_result: Any, worktree: Any, turn: int
+    ) -> None:
+        """Reinstall the worktree's dependencies when this turn changed a manifest.
 
-        Detects manifest changes from the Player report's ``files_modified`` /
-        ``files_created`` (the post-turn diff) and, when one is found, reinstalls
-        into the existing worktree venv so the Coach's independent pytest run for
-        THIS turn sees newly declared dependencies (TASK-AB-COACHVENV01). No-op
-        when no manifest changed — unaffected turns pay only a cheap basename
-        scan — unless an earlier reinstall in this task failed and has not
-        since succeeded: that one is re-run until it does.
-
-        Parameters
-        ----------
-        player_result : Any
-            The Player's turn result (carries ``.report`` with file lists).
-        worktree : Any
-            The shared worktree (carries ``.path``).
-        turn : int
-            Current turn number (for logging).
-
-        Returns
-        -------
-        Optional[str]
-            ``None`` on no-op or a successful reinstall. On a reinstall failure,
-            an actionable feedback string the caller feeds back to the Player —
-            so a failed reinstall is never swallowed into a silent pass
-            (``absence-of-failure-is-not-success``). On success, updates
-            ``self._venv_python`` from the refreshed interpreter when available.
+        TASK-AB-COACHVENV01: the reinstall runs before the Coach's independent
+        test run, so the project's tests run against the dependencies the turn
+        declared. A failed reinstall is logged; the turn goes on, and the
+        project's tests say what they say.
         """
         from guardkit.orchestrator.environment_bootstrap import (
             changed_dependency_manifests,
+            refresh_environment_for_changes,
+            stacks_for_changed_manifests,
         )
 
-        self._reinstall_environment_gap = None
         if worktree is None or player_result is None:
-            return None
+            return
         report = getattr(player_result, "report", None) or {}
         changed = list(report.get("files_modified", []) or []) + list(
             report.get("files_created", []) or []
@@ -6413,69 +3041,8 @@ class AutoBuildOrchestrator:
         manifests_changed = changed_dependency_manifests(
             changed, Path(worktree.path)
         )
-        # 23 October 2026: a reinstall that failed earlier in this task still
-        # stands until a later reinstall succeeds. Every later turn re-runs it
-        # with the earlier failed files added to whatever that turn changed,
-        # so neither a turn that changes no dependency file nor one that
-        # changes a different one can clear it without those files
-        # installing, and the reviewer can never approve the task over an
-        # environment that was never installed.
-        standing = getattr(self, "_standing_reinstall_failure", None)
-        if not isinstance(standing, tuple):
-            standing = None
-        modified_by = "this turn"
-        if standing is not None:
-            modified_by = (
-                f"turns {standing[0]} and {turn}"
-                if manifests_changed
-                else f"turn {standing[0]}"
-            )
-            changed = changed + [p for p in standing[1] if p not in changed]
-            manifests_changed = changed_dependency_manifests(
-                changed, Path(worktree.path)
-            )
         if not manifests_changed:
-            self._standing_reinstall_failure = None
-            return None
-        feedback = AutoBuildOrchestrator._refresh_venv_for_manifests(
-            self, changed, manifests_changed, worktree, turn, modified_by
-        )
-        if feedback is None:
-            self._standing_reinstall_failure = None
-            return None
-        if standing is not None and not self._reinstall_environment_gap:
-            feedback = (
-                f"{feedback}\n\nThis reinstall has not succeeded since turn "
-                f"{standing[0]}, and the task cannot be approved until it does."
-            )
-        first_turn = standing[0] if standing is not None else turn
-        self._standing_reinstall_failure = (first_turn, list(manifests_changed))
-        return feedback
-
-    def _refresh_venv_for_manifests(
-        self,
-        changed: List[str],
-        manifests_changed: List[str],
-        worktree: Any,
-        turn: int,
-        modified_by: str = "this turn",
-    ) -> Optional[str]:
-        """Run one reinstall for :meth:`_maybe_refresh_venv_for_manifest_change`.
-
-        Returns ``None`` on success, else the feedback string. A tool the
-        project declares that is missing from the build environment, or an
-        install program that is not there at all, also sets
-        ``self._reinstall_environment_gap``: the builder cannot fix that.
-        ``modified_by`` says which turn changed the files ("this turn", or
-        an earlier turn when a standing failure is re-run).
-        """
-        from guardkit.orchestrator.environment_bootstrap import (
-            BootstrapEnvironmentLeakError,
-            DeclaredToolMissingError,
-            refresh_environment_for_changes,
-            stacks_for_changed_manifests,
-        )
-
+            return
         logger.info(
             "Turn %d modified dependency manifest(s) %s — refreshing worktree "
             "venv before Coach verification (TASK-AB-COACHVENV01)",
@@ -6483,79 +3050,28 @@ class AutoBuildOrchestrator:
             manifests_changed,
         )
         try:
-            # Scope essentials to the stacks this turn actually touched: a
-            # pyproject.toml edit must not be blocked by a co-resident stack
-            # whose toolchain is absent on this host (e.g. a Flutter app dir
-            # with no `flutter` binary). Non-relevant stack failures degrade
-            # to warnings inside bootstrap().
             result = refresh_environment_for_changes(
                 Path(worktree.path),
                 changed,
                 relevant_stacks=stacks_for_changed_manifests(changed) or None,
             )
-        except DeclaredToolMissingError as exc:
-            self._reinstall_environment_gap = _declared_tool_missing_message(
-                exc, Path(worktree.path), manifests_changed
-            )
-            return self._reinstall_environment_gap
-        except BootstrapEnvironmentLeakError as exc:
-            return (
-                f"Dependency reinstall after {modified_by}'s manifest change landed "
-                f"outside the worktree venv: {exc}"
-            )
-        except Exception as exc:  # noqa: BLE001 - surface, never silently pass
+        except Exception as exc:  # noqa: BLE001 - logged; the turn goes on
             logger.warning(
-                "Worktree venv refresh raised for turn %d: %s",
-                turn,
-                exc,
-                exc_info=True,
+                "Worktree venv refresh failed for turn %d: %s", turn, exc,
             )
-            return (
-                f"Dependency reinstall failed after {modified_by} modified "
-                f"{', '.join(manifests_changed)}: {exc}"
-            )
-
+            return
         if result is None:
-            return None
-
+            return
         if not result.success:
-            essential = [d for d in result.failure_details if d.essential]
-            missing = [d for d in essential if getattr(d, "missing_tool", None)]
-            if missing:
-                # The install program itself is not where the build runs:
-                # the same gap as a declared tool that is missing, and the
-                # builder cannot fix it whatever else failed beside it. A
-                # failure replayed from the saved record carries no program
-                # name and stays an ordinary, blocking failure.
-                first = missing[0]
-                gap = _declared_tool_missing_message(
-                    DeclaredToolMissingError(
-                        first.stderr_excerpt,
-                        tool=first.missing_tool,
-                        declaring_file=first.manifest_path,
-                    ),
-                    Path(worktree.path),
-                    manifests_changed,
-                )
-                others = len(essential) - 1
-                if others:
-                    gap += (
-                        f" {others} other install(s) also failed in the same "
-                        "reinstall; see the build log."
-                    )
-                self._reinstall_environment_gap = gap
-                return gap
-            details = "; ".join(
-                f"{d.stack} ({Path(d.manifest_path).name}): {d.stderr_excerpt}"
-                for d in essential
-            ) or (result.error or "unknown install error")
-            return (
-                f"Dependency reinstall failed after {modified_by} modified "
-                f"{', '.join(manifests_changed)}. The Coach would otherwise "
-                "verify against a stale environment. Fix the dependency "
-                f"declaration so the install succeeds. Details: {details}"
+            logger.warning(
+                "Worktree venv refresh for turn %d did not succeed: %s",
+                turn,
+                "; ".join(
+                    f"{d.stack} ({Path(d.manifest_path).name}): {d.stderr_excerpt}"
+                    for d in result.failure_details
+                ) or (result.error or "unknown install error"),
             )
-
+            return
         if result.venv_python:
             self._venv_python = result.venv_python
         logger.info(
@@ -6563,7 +3079,6 @@ class AutoBuildOrchestrator:
             turn,
             ", ".join(result.stacks_detected),
         )
-        return None
 
     def _set_progress_files_measure(self, measure: Optional[Any]) -> None:
         """Install or clear the progress log's files-changed measurement."""
@@ -6896,387 +3411,6 @@ class AutoBuildOrchestrator:
                 f"Promise matching will fail — falling through to text matching."
             )
 
-        # Execute command_execution criteria in the worktree (TASK-CRV-537E)
-        # Only when on the synthetic report path — not when Player returns
-        # structured data directly.
-        command_exec_results: List[CommandExecutionResult] = []
-        if (
-            player_result.success
-            and player_result.report.get("_synthetic")
-            and acceptance_criteria
-            and worktree is not None
-        ):
-            try:
-                _assert_worktree_path(worktree.path)
-                command_exec_results = self._execute_command_criteria(
-                    synthetic_report=player_result.report,
-                    acceptance_criteria=acceptance_criteria,
-                    worktree_path=worktree.path,
-                )
-                # TASK-RFX-528E: Inject structured results into player report
-                # for Coach visibility and coach_turn_N.json persistence.
-                if command_exec_results:
-                    player_result.report["command_results"] = [
-                        r.to_dict() for r in command_exec_results
-                    ]
-                    passed = sum(1 for r in command_exec_results if r.passed)
-                    total = len(command_exec_results)
-                    summary = f"Runtime Commands: {passed}/{total} passed"
-                    logger.info(summary)
-                    # TASK-RFX-528E: Show in progress display
-                    self._progress_display.console.print(
-                        f"   [dim]{summary}[/dim]"
-                    )
-            except RuntimeError:
-                logger.error(
-                    "Worktree path assertion failed for %s — "
-                    "skipping runtime command execution",
-                    task_id,
-                    exc_info=True,
-                )
-
-        # Cumulative requirements_addressed high-water-mark (TASK-VRF-005)
-        # with staleness validation (TASK-CRV-9618).
-        if player_result.success and player_result.report:
-            # Track source files for staleness checking (TASK-CRV-9618)
-            current_files = set(
-                player_result.report.get("files_created", [])
-                + player_result.report.get("files_modified", [])
-            )
-            self._cumulative_source_files.update(current_files)
-
-            # TASK-FIX-A7B2: Publish this task's edits to the wave-shared map
-            # so peer Coaches in this parallel wave can detect source-file
-            # contention. Update under lock to keep the snapshot stable for
-            # readers. Each turn overwrites the prior entry — Coach sees the
-            # latest cumulative edit set, which is the right granularity for
-            # contention detection (any overlap, ever, between two in-flight
-            # tasks in the same wave is real source-file contention).
-            if (
-                self._wave_changed_files is not None
-                and self._wave_files_lock is not None
-            ):
-                with self._wave_files_lock:
-                    self._wave_changed_files[task_id] = frozenset(
-                        str(f) for f in current_files if f
-                    )
-
-            current_addressed = set(
-                player_result.report.get("requirements_addressed", [])
-            )
-            # Requirements carried forward from previous turns (not current)
-            carry_forward = self._cumulative_requirements_addressed - current_addressed
-
-            # Staleness check: re-validate carry-forward requirements
-            # against current worktree file contents (TASK-CRV-9618).
-            if carry_forward and worktree is not None:
-                from guardkit.orchestrator.synthetic_report import (
-                    validate_requirements_staleness,
-                )
-
-                still_valid = set(
-                    validate_requirements_staleness(
-                        requirements=list(carry_forward),
-                        source_files=list(self._cumulative_source_files),
-                        worktree_path=worktree.path,
-                    )
-                )
-                stale = carry_forward - still_valid
-                if stale:
-                    for req in stale:
-                        logger.debug(
-                            "Dropping stale requirement: %s", req[:80]
-                        )
-                    logger.info(
-                        "Dropped %d stale requirements from carry-forward",
-                        len(stale),
-                    )
-                carry_forward = still_valid
-
-            # Merge: current turn + validated carry-forward
-            merged = current_addressed | carry_forward
-            carried_count = len(carry_forward)
-
-            if carried_count > 0:
-                logger.info(
-                    "Carried forward %d requirements from previous turns",
-                    carried_count,
-                )
-
-            # Update cumulative set and report
-            self._cumulative_requirements_addressed = merged
-            if merged:
-                player_result.report["requirements_addressed"] = list(merged)
-                logger.info(
-                    "Cumulative requirements_addressed: %d criteria "
-                    "(current turn: %d, carried: %d)",
-                    len(merged),
-                    len(current_addressed),
-                    carried_count,
-                )
-
-        # ===== Orchestrator-side Phase 4/5 (FEAT-AB59 / TASK-OSI-006) =====
-        # Replaces the Player's discretionary specialist invocations with
-        # orchestrator-driven calls. Skipped for direct-mode tasks.
-        if player_result.success and self._agent_invoker is not None:
-            # AC#8 defensive: import inside the block so a missing module
-            # in some hypothetical future packaging error skips Phase 4/5
-            # rather than breaking the turn.
-            # A plain flag, not a None stand-in: the module is only ever used
-            # through its attributes.
-            try:
-                from guardkit.orchestrator import specialist_invocations as _si
-
-                specialist_invocations_loaded = True
-            except ImportError:
-                specialist_invocations_loaded = False
-                logger.warning(
-                    f"[{task_id}] specialist_invocations import failed; "
-                    "skipping orchestrator-side Phase 4/5"
-                )
-
-            if specialist_invocations_loaded:
-                impl_mode = self._agent_invoker._get_implementation_mode(task_id)
-
-                # TASK-ABSR-CEIL: when Player hit the SDK turn ceiling the
-                # codebase is provably partial — running test-orchestrator
-                # on it just thrashes for the full SDK timeout, exhausts
-                # the per-task wall budget, and forecloses turn-N+1 with
-                # timeout_budget_exhausted. Skip Phase 4/5 and route
-                # straight to Coach so the next turn can fix the missing
-                # ACs. Set GUARDKIT_INVOKE_SPECIALISTS_ON_CEILING_HIT=1 to
-                # restore the prior behaviour (emergency backout).
-                sdk_ceiling_hit = getattr(
-                    player_result, "sdk_ceiling_hit", None
-                )
-                ceiling_skip_disabled = (
-                    os.environ.get(
-                        "GUARDKIT_INVOKE_SPECIALISTS_ON_CEILING_HIT", "0"
-                    ) == "1"
-                )
-
-                # Refresh remaining_budget after the Player phase. The value
-                # threaded in via `remaining_budget` is the start-of-turn
-                # value computed at line ~2125; the Player can consume
-                # substantial wall before this guard runs, so recompute from
-                # the loop-start monotonic time (TASK-ABSR-FRSH, R3).
-                if (
-                    remaining_budget is None
-                    or self._loop_start_time is None
-                    or self._task_timeout is None
-                ):
-                    post_player_remaining: Optional[float] = remaining_budget
-                else:
-                    post_player_remaining = float(self._task_timeout) - (
-                        time.monotonic() - self._loop_start_time
-                    )
-
-                # Coarse budget guard (AC#6) — if the post-Player remaining
-                # budget is below MIN_TURN_BUDGET_SECONDS, skip specialists
-                # and write a `specialist_skipped` phase_4 block so the gate
-                # still produces a well-formed validation block.
-                budget_ok = (
-                    post_player_remaining is None
-                    or post_player_remaining >= MIN_TURN_BUDGET_SECONDS
-                )
-
-                if impl_mode == "direct":
-                    logger.info(
-                        f"[{task_id}] Skipping orchestrator Phase 4/5 (direct mode)"
-                    )
-                elif sdk_ceiling_hit is True and not ceiling_skip_disabled:
-                    logger.info(
-                        f"[{task_id}] Skipping orchestrator Phase 4/5 "
-                        "(Player hit SDK turn ceiling — codebase is partial)"
-                    )
-                    specialist_results_path = (
-                        Path(worktree.path) / ".guardkit" / "autobuild" / task_id
-                        / "specialist_results.json"
-                    )
-                    for _phase_key, _defaults in (
-                        ("phase_4", _si._PHASE_4_AGENT_FIELD_DEFAULTS),
-                        ("phase_5", _si._PHASE_5_AGENT_FIELD_DEFAULTS),
-                    ):
-                        _si._merge_specialist_block(
-                            specialist_results_path,
-                            _phase_key,
-                            {
-                                "status": "skipped",
-                                "duration_seconds": 0.0,
-                                "error": "specialist_skipped: sdk_ceiling_hit",
-                                **_defaults,
-                            },
-                        )
-                    try:
-                        self._agent_invoker._inject_specialist_records_into_task_work_results(
-                            task_id
-                        )
-                    except Exception as exc:
-                        logger.warning(
-                            f"[{task_id}] _inject_specialist_records_into_task_work_results "
-                            f"raised after sdk_ceiling_hit skip: {exc}"
-                        )
-                elif not budget_ok:
-                    logger.info(
-                        f"[{task_id}] Skipping orchestrator Phase 4/5 "
-                        f"(post_player_remaining={post_player_remaining}s < "
-                        f"{MIN_TURN_BUDGET_SECONDS}s)"
-                    )
-                    specialist_results_path = (
-                        Path(worktree.path) / ".guardkit" / "autobuild" / task_id
-                        / "specialist_results.json"
-                    )
-                    _si._merge_specialist_block(
-                        specialist_results_path,
-                        "phase_4",
-                        {
-                            "status": "skipped",
-                            "duration_seconds": 0.0,
-                            "error": (
-                                f"specialist_skipped: budget exhausted "
-                                f"(post_player_remaining={post_player_remaining}s)"
-                            ),
-                            **_si._PHASE_4_AGENT_FIELD_DEFAULTS,
-                        },
-                    )
-                    try:
-                        self._agent_invoker._inject_specialist_records_into_task_work_results(
-                            task_id
-                        )
-                    except Exception as exc:
-                        logger.warning(
-                            f"[{task_id}] _inject_specialist_records_into_task_work_results "
-                            f"raised after budget-skip: {exc}"
-                        )
-                else:
-                    # Reuse / create a loop just like _invoke_player_safely does.
-                    try:
-                        _loop = asyncio.get_event_loop()
-                        if _loop.is_closed():
-                            raise RuntimeError("loop closed")
-                    except RuntimeError:
-                        _loop = asyncio.new_event_loop()
-                        asyncio.set_event_loop(_loop)
-
-                    # TASK-PERF-SPECLAT01: the orchestrator-side specialist
-                    # phase (Phase 4 + Phase 5) may consume at most
-                    # SPECIALIST_BUDGET_FRACTION of the post-Player remaining
-                    # budget, shared across both specialists. Computed from
-                    # post_player_remaining (NOT the start-of-turn
-                    # remaining_budget) so the wall the Player already burned is
-                    # accounted for.
-                    specialist_phase_budget: Optional[float] = (
-                        post_player_remaining * SPECIALIST_BUDGET_FRACTION
-                        if post_player_remaining is not None
-                        else None
-                    )
-
-                    # Phase 4: test-orchestrator
-                    # TASK-ABSR-WALL: cap specialist sdk_timeout at remaining wall
-                    _phase4_start = time.monotonic()
-                    phase4_result = _loop.run_until_complete(
-                        _si.invoke_test_orchestrator(
-                            worktree_path=worktree.path,
-                            task_id=task_id,
-                            sdk_timeout=self._cap_specialist_timeout(
-                                remaining_budget=post_player_remaining,
-                                task_id=task_id,
-                                phase_budget_remaining=specialist_phase_budget,
-                            ),
-                            agent_invoker=self._agent_invoker,
-                            cancellation_event=self._cancellation_event,
-                            turn=turn,
-                            # TASK-AB-NPDET01: the deterministic non-Python
-                            # whole-suite guard defers to the LLM specialist in a
-                            # parallel wave; it needs the real wave size here.
-                            wave_size=self.wave_size,
-                            effective_concurrency=getattr(
-                                self, "effective_concurrency", None
-                            ),
-                            # Per-component seam: the task's component selector
-                            # (already resolved and validated in ``run()``, and
-                            # in scope here as this turn's parameter) so the
-                            # Player's Phase-4 block runs THIS component's
-                            # declared command in THIS component's directory —
-                            # the same oracle the Coach uses below. ``None``
-                            # for every single-toolchain repo, which keeps the
-                            # root path unchanged.
-                            component=component,
-                        )
-                    )
-
-                    # TASK-ATR-002 / TASK-PERF-SPECLAT01: refresh the remaining
-                    # budget post-Phase-4 so the Phase 5 cap reflects the wall
-                    # Phase 4 actually consumed. Both the wall budget and the
-                    # shared specialist-phase budget are reduced by Phase 4's
-                    # elapsed time. Basing this on post_player_remaining (not
-                    # the start-of-turn remaining_budget) avoids over-allocating
-                    # Phase 5 by the wall the Player + Phase 4 already burned.
-                    _phase4_elapsed = time.monotonic() - _phase4_start
-                    if post_player_remaining is not None:
-                        phase5_remaining: Optional[float] = max(
-                            0.0, post_player_remaining - _phase4_elapsed
-                        )
-                    else:
-                        phase5_remaining = None
-                    if specialist_phase_budget is not None:
-                        phase5_phase_budget: Optional[float] = max(
-                            0.0, specialist_phase_budget - _phase4_elapsed
-                        )
-                    else:
-                        phase5_phase_budget = None
-
-                    # Phase 5: code-reviewer (only if Phase 4 passed)
-                    if phase4_result.status == "passed":
-                        _loop.run_until_complete(
-                            _si.invoke_code_reviewer(
-                                worktree_path=worktree.path,
-                                task_id=task_id,
-                                phase4_result=phase4_result,
-                                sdk_timeout=self._cap_specialist_timeout(
-                                    remaining_budget=phase5_remaining,
-                                    task_id=task_id,
-                                    phase_budget_remaining=phase5_phase_budget,
-                                ),
-                                agent_invoker=self._agent_invoker,
-                                cancellation_event=self._cancellation_event,
-                                turn=turn,
-                                # 13 October 2026 (bounded code review): the
-                                # same criteria list the Coach gets below, and
-                                # the files the Player reported changed.
-                                acceptance_criteria=acceptance_criteria,
-                                reported_files=self._scoped_review_files(),
-                            )
-                        )
-                    else:
-                        # Phase 4 failed/skipped — write a phase_5 skipped block.
-                        specialist_results_path = (
-                            Path(worktree.path) / ".guardkit" / "autobuild" / task_id
-                            / "specialist_results.json"
-                        )
-                        _si._merge_specialist_block(
-                            specialist_results_path,
-                            "phase_5",
-                            {
-                                "status": "skipped",
-                                "duration_seconds": 0.0,
-                                "error": f"phase_4 status={phase4_result.status}",
-                                **_si._PHASE_5_AGENT_FIELD_DEFAULTS,
-                            },
-                        )
-
-                    # Gate-credit injection (TASK-OSI-002)
-                    try:
-                        self._agent_invoker._inject_specialist_records_into_task_work_results(
-                            task_id
-                        )
-                    except Exception as exc:
-                        logger.warning(
-                            f"[{task_id}] _inject_specialist_records_into_task_work_results "
-                            f"raised: {exc}"
-                        )
-        # ===== End orchestrator-side Phase 4/5 =====
-
         # Cooperative cancellation check BETWEEN Player and Coach (TASK-ASF-007)
         # If Player succeeded, grant Coach a grace period instead of aborting (TASK-ABFIX-004)
         if self._cancellation_event and self._cancellation_event.is_set():
@@ -7314,7 +3448,6 @@ class AutoBuildOrchestrator:
                     sdk_turns_used=getattr(player_result, 'sdk_turns_used', None),
                     sdk_max_turns=getattr(player_result, 'sdk_max_turns', None),
                     sdk_ceiling_hit=getattr(player_result, 'sdk_ceiling_hit', None),
-                    command_results=tuple(command_exec_results) if command_exec_results else None,
                     timeout_note=self._player_timeout_feedback(
                         task_id, turn, player_result, recovered_failure_error
                     ) or None,
@@ -7390,72 +3523,18 @@ class AutoBuildOrchestrator:
                 sdk_turns_used=getattr(player_result, 'sdk_turns_used', None),
                 sdk_max_turns=getattr(player_result, 'sdk_max_turns', None),
                 sdk_ceiling_hit=getattr(player_result, 'sdk_ceiling_hit', None),
-                command_results=tuple(command_exec_results) if command_exec_results else None,
                 files_changed_this_turn=files_changed_this_turn,
             )
 
         # TASK-AB-COACHVENV01: when THIS turn modified a dependency manifest,
         # reinstall into the worktree venv BEFORE the Coach's independent test
-        # run — not only between waves. Otherwise a dep added+consumed in one
-        # wave (e.g. tiktoken in FEAT-MEM-05) makes the Coach's pytest run
-        # against the stale venv and ModuleNotFoundError-reject a sound
-        # deliverable (false-red). A reinstall failure is surfaced as turn
-        # feedback, never swallowed into a silent pass
-        # (absence-of-failure-is-not-success).
-        venv_refresh_feedback = self._maybe_refresh_venv_for_manifest_change(
-            player_result, worktree, turn
-        )
-        environment_gap = getattr(self, "_reinstall_environment_gap", None)
-        if environment_gap and venv_refresh_feedback == environment_gap:
-            # A tool the project declares is missing from the build
-            # environment (23 October 2026). Step 2 (26 October 2026): advice,
-            # not a stop. The builder cannot fix it, so it is not fed back as
-            # work; the reviewer is told in one plain line (the Player report's
-            # concerns, which it reads) and still decides.
-            advice = f"The project's tests could not be run: {environment_gap}"
-            logger.warning("[%s] turn %s: advice, not a stop: %s", task_id, turn, advice)
-            report = player_result.report if isinstance(player_result.report, dict) else None
-            if report is not None:
-                concerns = report.get("concerns")
-                if not isinstance(concerns, list):
-                    concerns = []
-                    report["concerns"] = concerns
-                concerns.append(advice)
-            venv_refresh_feedback = None
-        if venv_refresh_feedback is not None:
-            self._progress_display.complete_turn(
-                "feedback", "Dependency reinstall failed - feeding back to Player"
-            )
-            # A Player that ran out of time is told so first (FEAT-2C42);
-            # the reinstall text follows unchanged.
-            timeout_note = self._player_timeout_feedback(
-                task_id, turn, player_result, recovered_failure_error
-            )
-            if timeout_note:
-                venv_refresh_feedback = (
-                    f"{timeout_note}\n\n{venv_refresh_feedback}"
-                )
-            return TurnRecord(
-                turn=turn,
-                player_result=player_result,
-                coach_result=None,
-                decision="feedback",
-                feedback=venv_refresh_feedback,
-                timestamp=timestamp,
-                player_context_status=player_context_status,
-                sdk_turns_used=getattr(player_result, 'sdk_turns_used', None),
-                sdk_max_turns=getattr(player_result, 'sdk_max_turns', None),
-                sdk_ceiling_hit=getattr(player_result, 'sdk_ceiling_hit', None),
-                command_results=tuple(command_exec_results) if command_exec_results else None,
-                files_changed_this_turn=files_changed_this_turn,
-                timeout_note=timeout_note or None,
-            )
+        # run, so the project's tests run against the dependencies the turn
+        # declared. A failed reinstall is logged; the turn goes on.
+        self._maybe_refresh_venv_for_manifest_change(player_result, worktree, turn)
 
         self._progress_display.start_turn(turn, "Coach Validation")
 
         logger.debug(f"Invoking Coach for turn {turn}")
-        # TASK-FIX-A7B2: Snapshot peer edits for source-file contention check.
-        peer_changed_files_snapshot = self._snapshot_peer_changed_files(task_id)
 
         coach_result = self._invoke_coach_safely(
             task_id=task_id,
@@ -7471,88 +3550,11 @@ class AutoBuildOrchestrator:
             remaining_budget=coach_remaining_budget,
             wave_size=self.wave_size,
             effective_concurrency=getattr(self, "effective_concurrency", None),
-            peer_changed_files=peer_changed_files_snapshot,
             behavioural_oracle=behavioural_oracle,  # TS-lane D.1a
             component=component,  # per-component seam
         )
-        # GKT-027, step 1 (24 October 2026): the coverage-declaration reason
-        # rides with this verdict as advice; it never changes the decision.
-        coverage_advice = getattr(self, "_coverage_declaration_advice", None)
-        if coverage_advice and isinstance(coach_result.report, dict):
-            coach_result.report.setdefault("issues", []).append({
-                "severity": "should_fix",
-                "category": UNDECLARED_COVERAGE_CAUSE,
-                "description": f"Advice: {coverage_advice}",
-            })
-            self._coverage_declaration_advice = None
         # Snapshot context status after coach invocation (TASK-FIX-GCW5)
         coach_context_status = self._last_coach_context_status
-
-        # QAV shadow (§7, log-only second opinion). Fire-and-forget a
-        # training-envelope judgment beside the FINAL post-override coach verdict.
-        # This is the single choke point that sees the final decision on every
-        # path (approve / feedback / synthetic-feedback / error), strictly after
-        # the guard chain's last re-persist inside _invoke_coach_safely. The lane
-        # is default-OFF, absent-not-fail, and NEVER blocks/changes/delays the
-        # turn (the DCL capture Fallback law): schedule_qav_shadow reads the flag
-        # first and returns after that one config read when OFF — no thread, no
-        # /running probe, no seat call, no file. The bundle is read inside the
-        # scheduled run from coach_evidence_turn_{turn}.json (missing =>
-        # absent(no_bundle)). This try/except is belt-and-suspenders so NO shadow
-        # path can ever touch the verdict/flow.
-        try:
-            from guardkit.qa.qav_shadow import schedule_qav_shadow
-
-            _qav_coach_decision = (
-                coach_result.report.get("decision", "feedback")
-                if coach_result.success and isinstance(coach_result.report, dict)
-                else "error"
-            )
-            schedule_qav_shadow(
-                worktree.path,
-                task_id=task_id,
-                turn=turn,
-                coach_decision=_qav_coach_decision,
-            )
-        except Exception as _qav_exc:  # noqa: BLE001 — shadow must never touch the turn
-            logger.warning(
-                "QAV shadow schedule raised %s for %s turn %s; ignored (verdict untouched).",
-                _qav_exc.__class__.__name__,
-                task_id,
-                turn,
-            )
-
-        # Architecture rules, watched only (2026-08-30). The repository under build
-        # can write down how it is meant to be built, in
-        # docs/architecture-rules.yaml; the checker in guardkit/conformance reads
-        # that file and reports where the code sits against it. Here it runs over
-        # this task's touched files and writes its report beside this turn's Coach
-        # verdict, and that is all it does. NOTHING READS THE RECEIPT: no verdict
-        # changes, no issue reaches the Player, nothing appears on a card, nothing
-        # is read at merge. A repository with no rules file gets one small receipt
-        # saying nothing was checked — which is not the same as clean — and costs
-        # the build nothing else. The call cannot raise (it owns its own
-        # try/except); this one is belt-and-braces so no path here can ever touch
-        # the turn.
-        try:
-            from guardkit.orchestrator.arch_conformance import (
-                observe_task_conformance,
-            )
-
-            observe_task_conformance(
-                worktree.path,
-                task_id=task_id,
-                turn=turn,
-                changed_files=sorted(self._cumulative_source_files),
-            )
-        except Exception as _arch_exc:  # noqa: BLE001 — never touches the turn
-            logger.warning(
-                "Architecture rules receipt raised %s for %s turn %s; ignored "
-                "(build untouched).",
-                _arch_exc.__class__.__name__,
-                task_id,
-                turn,
-            )
 
         # Parse Coach decision
         if not coach_result.success:
@@ -7581,42 +3583,11 @@ class AutoBuildOrchestrator:
                 sdk_turns_used=getattr(player_result, 'sdk_turns_used', None),
                 sdk_max_turns=getattr(player_result, 'sdk_max_turns', None),
                 sdk_ceiling_hit=getattr(player_result, 'sdk_ceiling_hit', None),
-                command_results=tuple(command_exec_results) if command_exec_results else None,
                 files_changed_this_turn=files_changed_this_turn,
             )
 
         # Extract decision and feedback
         decision_value = coach_result.report.get("decision", "feedback")
-
-        if recovered_failure_error and decision_value == "approve":
-            logger.warning(
-                "Coach returned approve for recovered timeout %s turn %s; "
-                "forcing feedback because the Player attempt failed",
-                task_id,
-                turn,
-            )
-            decision_value = "feedback"
-            coach_result.report["decision"] = "feedback"
-            coach_result.report["rationale"] = (
-                "Recovered partial state cannot approve a failed task-work "
-                f"attempt: {recovered_failure_error}"
-            )
-            issues = coach_result.report.setdefault("issues", [])
-            if isinstance(issues, list):
-                # The same issue the ordinary feedback path uses, so the
-                # next turn is told once (see _player_timeout_feedback).
-                issues.insert(0, task_work_timeout_issue(recovered_failure_error))
-            if self._agent_invoker is not None and worktree is not None:
-                from guardkit.orchestrator.paths import TaskArtifactPaths
-
-                coach_output_path = TaskArtifactPaths.private_artifact_path(
-                    task_id, f"coach_turn_{turn}.json", worktree.path
-                )
-                self._agent_invoker._persist_coach_decision(
-                    coach_result.report,
-                    coach_output_path,
-                    tag="TASK-WORK-TIMEOUT",
-                )
 
         if decision_value == "approve":
             self._progress_display.complete_turn(
@@ -7641,7 +3612,6 @@ class AutoBuildOrchestrator:
                 sdk_turns_used=getattr(player_result, 'sdk_turns_used', None),
                 sdk_max_turns=getattr(player_result, 'sdk_max_turns', None),
                 sdk_ceiling_hit=getattr(player_result, 'sdk_ceiling_hit', None),
-                command_results=tuple(command_exec_results) if command_exec_results else None,
                 files_changed_this_turn=files_changed_this_turn,
             )
 
@@ -7660,15 +3630,6 @@ class AutoBuildOrchestrator:
             )
             if timeout_note:
                 feedback_text = f"{timeout_note}\n\n{feedback_text}"
-            # TASK-RFX-F7F5: Inject command failure advisory into feedback
-            # when Coach is already rejecting. Environment/transient failures
-            # are suppressed; only implementation/unknown failures are shown.
-            if player_result.success and player_result.report:
-                cmd_failures = player_result.report.get("command_failures", [])
-                advisory = build_command_failure_advisory(cmd_failures)
-                if advisory:
-                    feedback_text = feedback_text + "\n\n" + advisory
-            is_config_error = coach_result.report.get("is_configuration_error", False)
             summary = self._build_feedback_summary(coach_result.report, feedback_text)
             self._progress_display.complete_turn("feedback", summary)
             # Show coach context status line (TASK-FIX-GCW5)
@@ -7690,8 +3651,6 @@ class AutoBuildOrchestrator:
                 sdk_turns_used=getattr(player_result, 'sdk_turns_used', None),
                 sdk_max_turns=getattr(player_result, 'sdk_max_turns', None),
                 sdk_ceiling_hit=getattr(player_result, 'sdk_ceiling_hit', None),
-                is_configuration_error=is_config_error,
-                command_results=tuple(command_exec_results) if command_exec_results else None,
                 files_changed_this_turn=files_changed_this_turn,
                 # Asked without the reviewer's report, so it is there even
                 # when the reviewer's own timeout issue made the note above
@@ -7704,7 +3663,7 @@ class AutoBuildOrchestrator:
     def _finalize_phase(
         self,
         worktree: Worktree,
-        final_decision: Literal["approved", "already_satisfied", "max_turns_exceeded", "unrecoverable_stall", "player_invocation_stall", "error", "cancelled", "configuration_error", "pre_loop_blocked", "design_extraction_failed", "honesty_collapse", "qa_precondition_blocked"],
+        final_decision: Literal["approved", "max_turns_exceeded", "error", "cancelled", "pre_loop_blocked", "design_extraction_failed"],
         turn_history: List[TurnRecord],
     ) -> None:
         """
@@ -7746,31 +3705,9 @@ class AutoBuildOrchestrator:
         # Always preserve worktree for human review
         self._worktree_manager.preserve_on_failure(worktree)
 
-        # H-A Stage 1 — MACHINE-VERIFY STAGE (report-only). Mechanize the
-        # coordinator's by-hand VERIFY: charged-failures vs the feature base,
-        # a junk sweep over the committed diff, and a registered-gate live
-        # drive. Emits ONE clean/CATCH receipt; it does NOT merge or gate (that
-        # is Stage 3). Only meaningful on an approved build; fully fail-open so
-        # it can never disturb the preserve-for-review contract above.
-        #
-        # H-A Stage 3 — AUTO-MERGE behind the DF-021 trust ledger. The merge only
-        # ever fires for a lane that has GRADUATED (streak≥N of clean MG-3
-        # records), is not a constitutional class, has a clean Stage 1 signal,
-        # AND the master GUARDKIT_AUTO_MERGE switch is ON (default OFF in-window —
-        # nothing auto-merges until the streak matures through real use). Fully
-        # fail-open: it never disturbs the preserve-for-review contract above.
-        # Only an approved build reaches these two: an already-satisfied task
-        # wrote nothing, so there is no diff to verify and nothing to merge.
-        if final_decision == "approved":
-            report = self._run_machine_verify_stage(worktree)
-            self._maybe_auto_merge(worktree, report)
-
         # Check for blocked report in last Player report (escape hatch pattern).
-        # honesty_collapse is treated like max_turns_exceeded for this gate
-        # (TASK-FIX-HEAB) — both terminate the loop with no Coach approval, so
-        # any blocked_report the Player emitted is equally relevant.
         blocked_report = self._extract_blocked_report(turn_history)
-        if blocked_report and final_decision in ("max_turns_exceeded", "honesty_collapse"):
+        if blocked_report and final_decision == "max_turns_exceeded":
             # Render structured blocked report
             self._progress_display.render_blocked_report(
                 blocked_report=blocked_report,
@@ -7801,181 +3738,6 @@ class AutoBuildOrchestrator:
             f"Worktree preserved at {worktree.path} for human review. "
             f"Decision: {final_decision}"
         )
-
-    def _machine_verify_enabled(self) -> bool:
-        """Whether the H-A Stage 1 machine-verify stage runs (default ON).
-
-        Kill-switch: ``GUARDKIT_MACHINE_VERIFY=0`` (or ``false``/``off``/``no``).
-        Default ON because the stage is report-only — it emits a receipt and
-        never merges, gates, or fails the build (spec §3, Stage 1).
-        """
-        raw = os.environ.get("GUARDKIT_MACHINE_VERIFY")
-        if raw is None:
-            return True
-        return raw.strip().lower() not in {"0", "false", "off", "no"}
-
-    def _observed_reds_in_worktree(self, worktree: "Worktree") -> Optional[List[str]]:
-        """Re-run the recorded suite command in the preserved worktree.
-
-        Round-21 proved the suite runs in the (isolated) preserved worktree with
-        the shared checkout untouched — that IS the throwaway worktree the spec
-        asks for (A1). We re-run the command the wave-0 baseline probe recorded
-        and parse the failing pytest node IDs.
-
-        Returns the observed failing node IDs, or ``None`` when the suite could
-        not be re-run / has no recorded command (the caller records the reds as
-        UNAVAILABLE and forces a human disposition — we never invent a clean).
-        """
-        from guardkit.orchestrator.baseline import (
-            failing_node_ids,
-            read_baseline_from_worktree,
-        )
-
-        baseline = read_baseline_from_worktree(worktree.path)
-        command = baseline.command if baseline else None
-        if not command:
-            logger.debug("machine-verify: no recorded suite command; reds unavailable")
-            return None
-        from guardkit.orchestrator.launch_declaration import (
-            load_launch_declaration,
-            main_checkout_root,
-        )
-        from guardkit.orchestrator.project_command_env import (
-            project_command_environment,
-        )
-
-        try:
-            # Built from nothing (13 October 2026): the recorded suite is the
-            # project's command and never sees the factory's credentials.
-            env = project_command_environment(
-                Path(worktree.path),
-                load_launch_declaration(main_checkout_root(Path(worktree.path))),
-            )
-            proc = process_group.run_project_command(
-                command,
-                cwd=str(worktree.path),
-                shell=True,
-                capture_output=True,
-                text=True,
-                timeout=1800,
-                env=env,
-            )
-        except (OSError, subprocess.SubprocessError) as exc:
-            logger.warning(
-                "machine-verify: suite re-run '%s' failed in %s: %s "
-                "(reds unavailable; will require disposition).",
-                command, worktree.path, exc,
-            )
-            return None
-        combined = f"{proc.stdout or ''}\n{proc.stderr or ''}"
-        return failing_node_ids(combined)
-
-    def _run_machine_verify_stage(self, worktree: "Worktree") -> Optional[object]:
-        """H-A Stage 1 machine-verify (report-only). Emits one clean/CATCH receipt.
-
-        Fully fail-open: any exception is swallowed with a warning — the stage
-        must never disturb the preserve-for-review path. Returns the
-        ``MachineVerifyReport`` (or ``None`` when disabled/failed) for testing.
-        """
-        if not self._machine_verify_enabled():
-            return None
-        try:
-            from guardkit.orchestrator.baseline import (
-                load_known_failure_ids,
-                read_baseline_from_worktree,
-            )
-            from guardkit.orchestrator.seam_checks import resolve_feature_base
-            from guardkit.orchestrator.machine_verify import run_machine_verify
-
-            feature_base = resolve_feature_base(
-                worktree.path, base_branch=worktree.base_branch
-            )
-            baseline = read_baseline_from_worktree(worktree.path)
-            ledger = load_known_failure_ids(worktree.path)
-            observed = self._observed_reds_in_worktree(worktree)
-
-            report = run_machine_verify(
-                worktree.path,
-                observed_node_ids=observed,
-                baseline_result=baseline,
-                ledger_ids=ledger,
-                feature_base=feature_base,
-            )
-        except Exception as exc:  # noqa: BLE001 — report-only; never disturb finalize
-            logger.warning(
-                "machine-verify: stage skipped for %s (%s); worktree preserved.",
-                worktree.task_id, exc,
-            )
-            return None
-
-        for line in report.receipt_lines():
-            logger.info("machine-verify: %s", line)
-        if report.disposition_required:
-            logger.warning(
-                "machine-verify: %s — CATCH/disposition required for %s "
-                "(report-only; no merge occurs).",
-                report.signal.upper(), worktree.task_id,
-            )
-        return report
-
-    def _trust_ledger_lane(self, worktree: "Worktree") -> str:
-        """The DF-021 lane identifier for this worktree (per-repo/per-lane).
-
-        A DF-021 "lane" is a persistent merge stream (a product line / repo), not
-        a single task. v1 keys it on ``GUARDKIT_LANE`` when set, else the target
-        repo's directory name — the natural per-repo lane.
-        """
-        override = os.environ.get("GUARDKIT_LANE")
-        if override:
-            return override.strip()
-        repo_root = getattr(self._worktree_manager, "repo_root", None)
-        return Path(repo_root).name if repo_root else worktree.base_branch
-
-    def _maybe_auto_merge(
-        self, worktree: "Worktree", report: Optional[object]
-    ) -> Optional[object]:
-        """H-A Stage 3 auto-merge behind the DF-021 trust ledger (fail-open).
-
-        Reads the per-repo trust ledger from the target repo's ``qa/`` tree
-        (file-based transport v1) and, ONLY when the lane has graduated, the
-        target is non-constitutional, Stage 1's signal is clean, AND the master
-        ``GUARDKIT_AUTO_MERGE`` switch is ON, runs the rebuilt ``manager.merge()``
-        act. Every guard defaults toward NOT merging. Fully fail-open: any
-        exception is swallowed with a warning — the preserve-for-review contract
-        in ``_finalize_phase`` is never disturbed.
-        """
-        try:
-            from guardkit.orchestrator.auto_merge import auto_merge_if_graduated
-            from guardkit.qa.trust_ledger import TrustLedger
-
-            repo_root = getattr(self._worktree_manager, "repo_root", None)
-            if repo_root is None:
-                return None
-            ledger_root = Path(repo_root) / "qa" / "trust-ledger"
-            ledger = TrustLedger(ledger_root)
-            lane = self._trust_ledger_lane(worktree)
-
-            decision = auto_merge_if_graduated(
-                self._worktree_manager, worktree, ledger, lane, report
-            )
-        except Exception as exc:  # noqa: BLE001 — fail-open; never disturb finalize
-            logger.warning(
-                "auto-merge: stage skipped for %s (%s); worktree preserved.",
-                worktree.task_id, exc,
-            )
-            return None
-
-        if decision.fired:
-            logger.info(
-                "auto-merge: FIRED for lane %s → %s (%s).",
-                decision.lane, decision.target, decision.reason,
-            )
-        else:
-            logger.info(
-                "auto-merge: held for lane %s (%s); worktree preserved for review.",
-                decision.lane, decision.reason,
-            )
-        return decision
 
     def _extract_blocked_report(
         self,
@@ -8011,11 +3773,6 @@ class AutoBuildOrchestrator:
                 return None
 
         return None
-
-    def _scoped_review_files(self):
-        from guardkit.orchestrator.task_work_scope import collect_changes
-        observed = collect_changes(self.task_work_scope)
-        return sorted(set(observed['created'] + observed['modified'] + observed['deleted']))
 
     def _attempt_state_recovery(
         self,
@@ -8331,54 +4088,6 @@ class AutoBuildOrchestrator:
 
     # --- Runtime command execution for command_execution criteria (TASK-CRV-537E) ---
 
-    def _execute_command_criteria(
-        self,
-        synthetic_report: Dict[str, Any],
-        acceptance_criteria: List[str],
-        worktree_path: Path,
-    ) -> List[CommandExecutionResult]:
-        """Execute ``command_execution`` acceptance criteria in the worktree.
-
-        Delegates to ``CoachValidator.verify_command_criteria()`` for the
-        actual command execution and classification (TASK-RFX-7C63). This
-        method handles orchestrator-level concerns: injecting passed criteria
-        into ``synthetic_report["requirements_addressed"]`` and recording
-        failures in ``synthetic_report["command_failures"]``.
-
-        Parameters
-        ----------
-        synthetic_report : Dict[str, Any]
-            The synthetic Player report to enrich.
-        acceptance_criteria : List[str]
-            Raw acceptance criteria text from the task.
-        worktree_path : Path
-            Worktree directory to use as ``cwd``.
-
-        Returns
-        -------
-        List[CommandExecutionResult]
-            Structured results for each executed command criterion
-            (TASK-RFX-528E). Empty list if no command criteria found.
-        """
-        validator = CoachValidator(str(worktree_path))
-        verification = validator.verify_command_criteria(
-            acceptance_criteria,
-            per_command_timeout=COMMAND_TIMEOUT_SECONDS,
-            total_timeout=COMMAND_TOTAL_TIMEOUT_SECONDS,
-        )
-
-        # Inject passed criteria into synthetic report (orchestrator concern)
-        for criterion_text in verification.passed_criteria:
-            synthetic_report.setdefault("requirements_addressed", []).append(
-                criterion_text
-            )
-
-        # Inject failures into synthetic report (orchestrator concern)
-        for failure in verification.failures:
-            synthetic_report.setdefault("command_failures", []).append(failure)
-
-        return verification.results
-
     def _generate_file_existence_promises(
         self,
         work_state: WorkState,
@@ -8649,504 +4358,17 @@ class AutoBuildOrchestrator:
             return True
         return False
 
-    def _normalize_feedback_for_stall(
-        self,
-        feedback: str,
-        turn_record: Optional["TurnRecord"] = None,
-    ) -> str:
-        """
-        Normalize feedback text for stall detection by stripping volatile details.
-
-        Applies regex substitutions to remove test-specific paths, line numbers,
-        percentages, durations, and counts that vary between turns but represent
-        the same underlying error category.
-
-        TASK-FIX-7A07 AC-5: For ``agent_invocations_violation`` feedback, also
-        fold a canonicalised representation of the violation's ``missing_phases``
-        list (sorted) into the normalised output. Otherwise, a Player that
-        reorders phase keys across turns could produce textually-different
-        but semantically-identical feedback and bypass the stall detector.
-
-        Parameters
-        ----------
-        feedback : str
-            Raw Coach feedback text
-        turn_record : Optional[TurnRecord]
-            Completed turn record. When present, the method inspects the
-            Coach's structured report for an ``agent_invocations_violation``
-            issue and folds its sorted ``missing_phases`` into the signature
-            input. When absent, falls back to text-only normalisation
-            (preserves TASK-AB-SD01 behaviour for non-violation feedback).
-
-        Returns
-        -------
-        str
-            Normalized feedback with volatile details replaced by placeholders
-            and, where applicable, a canonical violation fingerprint appended.
-        """
-        from guardkit.orchestrator.failing_test_feedback import (
-            without_independent_suite_failure,
-        )
-
-        # The summary of this turn's failed test run names the turn, so it
-        # is left out: the tally compares the reviewer's words only, as it
-        # did before that summary was added (12 October 2026).
-        result = without_independent_suite_failure(feedback)
-        for pattern, replacement in self._STALL_NORMALIZE_PATTERNS:
-            result = pattern.sub(replacement, result)
-
-        # Fold canonical violation fingerprint when the feedback came from
-        # the agent-invocations gate. Without this, reordering of the
-        # missing_phases list in the underlying violation would produce
-        # two md5 signatures that differ despite being semantically identical.
-        # When a violation is present we REPLACE the feedback text with the
-        # canonical marker rather than appending to it — otherwise variant
-        # renderings ("missing phases 4, 5" vs "missing phases 5, 4") still
-        # propagate into the hash input.
-        if turn_record is not None:
-            violation = _extract_agent_invocations_violation(turn_record)
-            if violation is not None:
-                details = (
-                    violation.get("details")
-                    if isinstance(violation.get("details"), dict)
-                    else {}
-                )
-                raw_missing = (
-                    violation.get("missing_phases")
-                    or details.get("missing_phases")
-                    or []
-                )
-                if raw_missing and isinstance(raw_missing[0], dict):
-                    normalised_missing = sorted(
-                        str(m.get("phase", ""))
-                        for m in raw_missing
-                        if m.get("phase")
-                    )
-                else:
-                    normalised_missing = sorted(str(m) for m in raw_missing)
-                canonical = {
-                    "category": "agent_invocations_violation",
-                    "missing_phases": normalised_missing,
-                    "expected_phases": violation.get("expected_phases")
-                    or details.get("expected_phases"),
-                    "actual_invocations": violation.get("actual_invocations")
-                    or details.get("actual_invocations"),
-                }
-                result = "|CANONICAL|" + json.dumps(canonical, sort_keys=True)
-        return result
-
-    def _is_feedback_stalled(
-        self,
-        feedback: str,
-        criteria_passed_count: int,
-        threshold: int = 3,
-        turn_record: Optional["TurnRecord"] = None,
-    ) -> bool:
-        """
-        Detect repeated identical feedback with zero criteria progress (TASK-AB-SD01).
-
-        Tracks Coach feedback signatures across turns and returns True when
-        the same feedback repeats for ``threshold`` consecutive turns with
-        no change in the number of passing acceptance criteria.
-
-        When partial progress exists (criteria_passed_count > 0), the threshold
-        is extended by 2 turns to give the Player more runway before declaring
-        stall (TASK-REV-E719 Fix 3).
-
-        Parameters
-        ----------
-        feedback : str
-            Current Coach feedback text
-        criteria_passed_count : int
-            Number of acceptance criteria currently passing
-        threshold : int, optional
-            Number of consecutive identical turns before stall (default: 3)
-        turn_record : Optional[TurnRecord]
-            Current turn record used to fold canonical violation fingerprint
-            into the signature when the feedback came from the
-            agent-invocations gate (TASK-FIX-7A07 AC-5). When None, falls
-            back to text-only normalisation. Also consulted for the
-            absent-sibling-signal immunity (TASK-FIX-SIBTESTENV01 AC-3): a
-            turn blocked by a pure-ABSENT ``evidence_repos`` signal is an
-            environment problem, not task-content feedback, so it is
-            excluded from the stall tally entirely (bounded termination is
-            preserved by ``max_turns``).
-
-        Returns
-        -------
-        bool
-            True if feedback stall detected, False otherwise
-        """
-        if turn_record is not None and _extract_absent_evidence_repo_signal(
-            turn_record
-        ):
-            logger.warning(
-                "Feedback-stall tally: turn blocked by an ABSENT sibling-repo "
-                "signal (evidence_repo_signal_absent) — environment problem, "
-                "excluded from the feedback-stall tally."
-            )
-            return False
-
-        normalized = self._normalize_feedback_for_stall(feedback, turn_record)
-        feedback_sig = hashlib.md5(
-            normalized.strip().lower().encode()
-        ).hexdigest()[:8]
-
-        self._feedback_history.append((feedback_sig, criteria_passed_count))
-
-        if len(self._feedback_history) < threshold:
-            return False
-
-        recent = self._feedback_history[-threshold:]
-
-        # All same feedback signature?
-        sigs = {sig for sig, _ in recent}
-        if len(sigs) != 1:
-            return False
-
-        # Zero criteria progress across all recent turns?
-        counts = [count for _, count in recent]
-        if all(c == counts[0] for c in counts):
-            if counts[0] == 0:
-                # True zero progress -- unrecoverable
-                # close-the-loop 2026-08-14 (CURE 3): state what was
-                # consulted. "0 criteria passing" was reported verbatim on
-                # turns where 4 of 6 criteria had in fact verified — the
-                # count was structurally zero because the blocking report
-                # carried ``validation_results.requirements: null``.
-                logger.warning(
-                    f"Feedback stall: the Coach feedback signature "
-                    f"(sig={feedback_sig}) repeated for {threshold} "
-                    f"consecutive turns and the criteria-passed count read 0 "
-                    f"on each. Both quantities come from the Coach report; a "
-                    f"report with no requirements block reads as 0."
-                )
-                return True
-
-            # Partial progress but stuck (TASK-REV-E719 Fix 3):
-            # Extend threshold by 2 turns to give Player more runway.
-            extended_threshold = threshold + 2
-            if len(self._feedback_history) >= extended_threshold:
-                extended_recent = self._feedback_history[-extended_threshold:]
-                ext_sigs = {sig for sig, _ in extended_recent}
-                ext_counts = [count for _, count in extended_recent]
-                if len(ext_sigs) == 1:
-                    if all(c == ext_counts[0] for c in ext_counts):
-                        logger.warning(
-                            f"Feedback stall: the Coach feedback signature "
-                            f"(sig={feedback_sig}) repeated for "
-                            f"{extended_threshold} consecutive turns and the "
-                            f"criteria-passed count held at {counts[0]} on "
-                            f"each (extended threshold for partial progress)"
-                        )
-                        return True
-                    # Plateau-tolerant branch (TASK-GK-COACH-001):
-                    # Tolerate exactly one count transition between turn 1 and
-                    # turn 2 of the extended window; the remaining turns must
-                    # be uniform AND non-zero. Closes the 0→N then plateau
-                    # blind spot surfaced by FEAT-PEBR run-2
-                    # (TASK-REV-PEBR-002). Bug B (TASK-GK-CV-001) is the most
-                    # common trigger for this shape, but the structural blind
-                    # spot exists for any non-criteria gate that plateaus
-                    # after a single criteria-count climb.
-                    tail = ext_counts[1:]
-                    if (
-                        len(tail) >= extended_threshold - 1
-                        and all(c == tail[0] for c in tail)
-                        and tail[0] > 0
-                        and tail[0] != ext_counts[0]
-                    ):
-                        logger.warning(
-                            f"Feedback stall: identical feedback (sig={feedback_sig}) "
-                            f"for {extended_threshold - 1} consecutive turns with "
-                            f"{tail[0]} criteria passing after a 1-turn count "
-                            f"transition (plateau-tolerant extended threshold)"
-                        )
-                        return True
-
-            logger.info(
-                f"Partial progress stall warning: {counts[0]} criteria passing "
-                f"but stuck for {len(self._feedback_history)} turns. "
-                f"Extended threshold: {extended_threshold} turns."
-            )
-            return False
-
-        return False
-
-    def _is_player_invocation_stalled(
-        self,
-        turn_history: List[TurnRecord],
-        threshold: int = 3,
-    ) -> bool:
-        """
-        Detect N consecutive turns where the Player never produced a real report
-        (TASK-FIX-7A02).
-
-        Distinct from feedback stall: feedback stall fires when Coach keeps
-        rejecting identical *real* Player output. This fires when the Player
-        itself never ran to completion at the SDK layer — either because
-        ``player_result.error`` is non-None, or because the orchestrator had
-        to build a synthetic recovery report (``report["_synthetic"] is True``).
-
-        Both conditions mean the downstream task-blaming hint
-        (``"Review task_type classification..."``) is a misdiagnosis — the task
-        is fine, the Player never ran.
-
-        Parameters
-        ----------
-        turn_history : List[TurnRecord]
-            Complete turn history for the current run.
-        threshold : int, optional
-            Number of trailing turns that must all be player-invocation failures
-            before declaring stall (default: 3, matches ``_is_feedback_stalled``).
-
-        Returns
-        -------
-        bool
-            True when the trailing ``threshold`` turns are all player-invocation
-            failures, False otherwise.
-        """
-        if len(turn_history) < threshold:
-            return False
-
-        recent = turn_history[-threshold:]
-        for tr in recent:
-            if not self._is_player_invocation_failure(tr):
-                return False
-
-        first_error = (
-            recent[0].player_result.error
-            if recent[0].player_result and recent[0].player_result.error
-            else None
-        )
-        logger.warning(
-            f"Player-invocation stall: {threshold} trailing turns failed at "
-            f"the SDK layer (first-turn error: {first_error!r})"
-        )
-        return True
-
-    @staticmethod
-    def _is_player_invocation_failure(turn_record: TurnRecord) -> bool:
-        """
-        Return True when this turn's Player never produced a real report
-        (TASK-FIX-7A02).
-
-        Two cases:
-        1. Player errored and recovery failed → ``turn_record.decision == "error"``
-           with ``player_result.error`` set and no recovery.
-        2. Player errored and state-recovery succeeded → the substituted
-           ``player_result.report`` carries ``"_synthetic": True``.
-
-        Both mean the Player never produced a real report for this turn.
-        """
-        if turn_record.player_result is None:
-            return False
-
-        if turn_record.player_result.error:
-            return True
-
-        report = turn_record.player_result.report or {}
-        if report.get("_synthetic") is True:
-            return True
-
-        return False
-
     def _repair_round_for_this_loop(self, task_id: str) -> Optional[Any]:
-        """The repair round this task's turns are judged as, or ``None``.
-
-        In a repair round the plan audit leaves the extra files the round made
-        to the LLM Coach's judgement (repair_round.py). The legacy rule-based
-        Coach (``GUARDKIT_COACH_LEGACY=1``) has no reviewer to judge them, so
-        on that path a repair round is audited exactly as an ordinary turn,
-        and the log says so (20 October 2026).
-        """
-        repair_round = getattr(self, "_repair_round", None)
-        if repair_round is None:
-            return None
-        if os.environ.get("GUARDKIT_COACH_LEGACY") == "1":
-            logger.warning(
-                "[%s] Repair round %s is audited as an ordinary turn: the "
-                "legacy rule-based Coach (GUARDKIT_COACH_LEGACY=1) has no "
-                "reviewer to judge the extra files a repair round makes, so "
-                "they count as on any other turn.",
-                task_id,
-                getattr(repair_round, "round_number", "?"),
-            )
-            return None
-        return repair_round
-
-    def _feedback_stall_terminal_message(
-        self,
-        task_id: str,
-        turn_record: TurnRecord,
-        criteria_passed: int,
-    ) -> str:
-        """Build the feedback-stall terminal line (close-the-loop CURE 3).
-
-        Pure string construction — no thresholds, no control flow, no
-        decision. Extracted from ``_loop_phase`` only so the wording is
-        directly testable.
-
-        The old line read "identical feedback with no criteria progress
-        (0 criteria passing)", which described the Player. On the round-3
-        receipts the Player had made forward progress on turn 1 and then had
-        nothing left to do: the blocking verdict came from a deterministic
-        gate and the LLM Coach was never invoked. The line now states the two
-        quantities the detector actually consulted, and names a synthetic
-        blocker when that is what stopped the turn.
-        """
-        report = getattr(
-            getattr(turn_record, "coach_result", None), "report", None
-        )
-        synthetic_blocker = bool(
-            isinstance(report, dict)
-            and report.get("coach_primary_synthetic_feedback")
-        )
-        blocker_note = (
-            " The blocking verdict was synthetic (a deterministic gate); "
-            "the LLM Coach was not invoked on the trailing turn."
-            if synthetic_blocker
-            else ""
-        )
-        return (
-            f"Feedback stall detected for {task_id}: the Coach feedback "
-            f"signature was identical across the stall window and the "
-            f"criteria-passed count did not move (latest turn: "
-            f"{criteria_passed} passing; peak: {self._max_criteria_passed})."
-            f"{blocker_note} Exiting loop early."
-        )
+        """The repair round this task's turns are judged as, or ``None``."""
+        return getattr(self, "_repair_round", None)
 
     # ------------------------------------------------------------------
     # The generator wrote nothing (TASK-AB-NOCHANGE01)
     # ------------------------------------------------------------------
 
-    def _is_no_file_change_stalled(self, turn_history: List[TurnRecord]) -> bool:
-        """True when the last N turns each changed no files and none approved.
-
-        N is ``STALL_CLASSIFICATION_THRESHOLD`` — the same trailing window
-        every other stall scan uses. Reads only the orchestrator's own git
-        measurement (``TurnRecord.files_changed_this_turn``), so the generator
-        cannot influence it by what it says about its work. A turn with no
-        measurement (``None``) breaks the window.
-        """
-        threshold = STALL_CLASSIFICATION_THRESHOLD
-        if len(turn_history) < threshold:
-            return False
-        recent = turn_history[-threshold:]
-        if not all(_turn_changed_no_files(tr) for tr in recent):
-            return False
-        return all(tr.decision != "approve" for tr in recent)
-
-    def _no_file_change_stall_message(
-        self,
-        task_id: str,
-        turn_history: List[TurnRecord],
-    ) -> str:
-        """The line a person reads when the build stops for writing nothing.
-
-        Says three things and nothing else: no files changed for N turns
-        running; what the reviewer was asking for on the last of those turns;
-        and the two things that usually means. It does not pick between them —
-        the build cannot tell, and guessing would be worse than saying so.
-        """
-        threshold = STALL_CLASSIFICATION_THRESHOLD
-        recent = turn_history[-threshold:] if turn_history else []
-        turn_numbers = [str(tr.turn) for tr in recent]
-        if len(turn_numbers) > 1:
-            turns_phrase = (
-                ", ".join(turn_numbers[:-1]) + " and " + turn_numbers[-1]
-            )
-        else:
-            turns_phrase = turn_numbers[0] if turn_numbers else "?"
-
-        headline = _coach_headline_issue(recent[-1]) if recent else None
-        last_ask: Optional[str] = headline[0] if headline else None
-        blocking = headline[1] if headline else True
-        if last_ask is None and recent and recent[-1].feedback:
-            last_ask = " ".join(str(recent[-1].feedback).split())[:300]
-        last_turn = turn_numbers[-1] if turn_numbers else "?"
-        if not last_ask:
-            ask_line = (
-                "The reviewer gave no readable description of what it wanted "
-                "on the last of those turns."
-            )
-        elif blocking:
-            ask_line = (
-                f'On turn {last_turn} the reviewer was still asking for this: '
-                f'"{last_ask}"'
-            )
-        else:
-            # Nothing was marked as must-fix: say so rather than present a
-            # note as the reason the turn was refused.
-            ask_line = (
-                f"On turn {last_turn} the reviewer marked nothing as must-fix; "
-                f'its most serious note was this: "{last_ask}"'
-            )
-
-        return (
-            f"Unrecoverable stall detected after {len(turn_history)} turn(s) "
-            f"[{STALL_NO_FILE_CHANGES}].\n"
-            f"The code generator changed no files for {threshold} turns "
-            f"running (turns {turns_phrase}) and the reviewer approved none of "
-            f"them. Nothing was written, changed or deleted in the worktree on "
-            f"any of those turns, so another turn cannot help.\n"
-            f"{ask_line}\n"
-            f"This usually means one of two things, and the build cannot tell "
-            f"you which:\n"
-            f"  - the work is already there, and nothing needed changing; or\n"
-            f"  - the task cannot be done as written \u2014 something it asks "
-            f"for is blocked, or contradicts a rule the build has to keep.\n"
-            f"Read the task ({task_id}) and the files it names, then either "
-            f"close it as already done or rewrite it.\n"
-            f"Worktree preserved for inspection."
-        )
-
     # ------------------------------------------------------------------
     # The work was already there (TASK-AB-NOCHANGE01, part 2)
     # ------------------------------------------------------------------
-
-    def _count_criteria_passed(self, turn_record: TurnRecord) -> int:
-        """
-        Count acceptance criteria verified as passing from Coach's actual decision.
-
-        Sources the count from ``validation_results.requirements.criteria_met``
-        which is the Coach validator's authoritative verified count.  This
-        ensures the stall detector and Coach always agree on progress
-        (TASK-CRV-90FB).
-
-        Falls back to counting ``acceptance_criteria_verification.criteria_results``
-        entries with ``status == "verified"`` when the structured path is absent
-        (backward compatibility with older Coach report formats).
-
-        Parameters
-        ----------
-        turn_record : TurnRecord
-            Completed turn record
-
-        Returns
-        -------
-        int
-            Number of criteria verified by the Coach
-        """
-        if not turn_record.coach_result or not turn_record.coach_result.report:
-            return 0
-
-        report = turn_record.coach_result.report
-
-        # Primary source: Coach's authoritative criteria_met (TASK-CRV-90FB)
-        validation_results = report.get("validation_results", {}) or {}
-        requirements = validation_results.get("requirements", {}) or {}
-        criteria_met = requirements.get("criteria_met")
-        if criteria_met is not None:
-            return int(criteria_met)
-
-        # Fallback: count from acceptance_criteria_verification (legacy)
-        verification = report.get("acceptance_criteria_verification", {})
-        criteria_results = verification.get("criteria_results", [])
-        return sum(
-            1 for r in criteria_results
-            if r.get("status") == "verified"
-        )
 
     def _capture_turn_state(
         self,
@@ -9365,211 +4587,6 @@ class AutoBuildOrchestrator:
             return f"FEAT-{match.group(1)}"
 
         return "FEAT-UNKNOWN"
-
-    def _record_honesty(self, turn_record: TurnRecord) -> None:
-        """
-        Record honesty score from turn's Coach verification results.
-
-        Extracts the honesty_verification data from the Coach report and tracks
-        the score for cumulative honesty tracking across turns.
-
-        Parameters
-        ----------
-        turn_record : TurnRecord
-            Completed turn record with Coach results
-
-        Notes
-        -----
-        If honesty scores drop below threshold (avg < 0.8 over 3+ turns),
-        a warning is logged to alert about potential Player reliability issues.
-        """
-        if not turn_record.coach_result or not turn_record.coach_result.success:
-            return
-
-        honesty_data = turn_record.coach_result.report.get("honesty_verification")
-        if honesty_data is None:
-            logger.debug(
-                f"Turn {turn_record.turn}: no honesty payload to record "
-                f"(operator-handoff or pre-_verify_honesty short-circuit)"
-            )
-            return
-        honesty_score = honesty_data.get("honesty_score", 1.0)
-
-        self._honesty_history.append(honesty_score)
-
-        # Check for sustained low honesty
-        if len(self._honesty_history) >= 3:
-            avg_honesty = sum(self._honesty_history[-3:]) / 3
-            if avg_honesty < 0.8:
-                logger.warning(
-                    f"Player honesty concern: average score {avg_honesty:.2f} over last 3 turns "
-                    f"(threshold: 0.8). Consider manual review."
-                )
-
-        # Log current turn's score
-        discrepancy_count = honesty_data.get("discrepancy_count", 0)
-        if discrepancy_count > 0:
-            logger.info(
-                f"Turn {turn_record.turn} honesty: {honesty_score:.2f} "
-                f"({discrepancy_count} discrepancies)"
-            )
-
-    def _check_honesty_early_abort(
-        self,
-        turn_history: List[TurnRecord],
-        *,
-        task_id: str,
-        worktree_path: Path,
-    ) -> Optional[str]:
-        """
-        Decide whether the rolling honesty average has collapsed enough to
-        abort the loop early (TASK-FIX-HEAB).
-
-        Returns ``None`` when no abort is indicated. Returns an
-        operator-facing diagnostic string when:
-
-        1. ``len(self._honesty_history) >= self.honesty_early_abort_window``
-           AND
-        2. ``mean(self._honesty_history[-window:]) < self.honesty_early_abort_threshold``.
-
-        The diagnostic names the rolling average, the threshold, the
-        most-flagged ``player_claim`` across the window (filtered to
-        Coach issues with category ``"honesty"`` or ``"claim_audit"``),
-        and the number of turns saved by short-circuiting. When the
-        most-flagged path matches a ``.gitignore`` rule in the worktree,
-        a best-effort ``git check-ignore -v`` recommendation line is
-        appended; failures of that subprocess are swallowed so the
-        diagnostic always fires.
-
-        Parameters
-        ----------
-        turn_history : List[TurnRecord]
-            Per-turn records from the loop. Used to extract the
-            most-flagged claim across ``[-window:]``.
-        task_id : str
-            Task identifier; included in the message for log correlation.
-        worktree_path : Path
-            Worktree root, used as cwd for the ``git check-ignore``
-            best-effort lookup.
-
-        Returns
-        -------
-        Optional[str]
-            ``None`` when no abort indicated, otherwise the diagnostic
-            string the loop should log before returning
-            ``"honesty_collapse"``.
-        """
-        # Defensive lookups: tests / future callers that construct the
-        # orchestrator via ``__new__`` to exercise narrow code paths
-        # (e.g. tests/unit/test_autobuild_timeout_budget.py) won't have
-        # set these attributes. Fall back to the same defaults the ctor
-        # uses so the helper is a no-op rather than raising
-        # AttributeError on those code paths.
-        window = getattr(self, "honesty_early_abort_window", 3)
-        threshold = getattr(self, "honesty_early_abort_threshold", 0.3)
-        history = getattr(self, "_honesty_history", None) or []
-
-        # AC-7: window precondition. Suppresses first-turn false trips.
-        if len(history) < window:
-            return None
-
-        recent = history[-window:]
-        rolling_avg = sum(recent) / len(recent)
-        if rolling_avg >= threshold:
-            return None
-
-        abort_turn = len(history)
-        max_turns = getattr(self, "max_turns", abort_turn)
-        saved = max(0, max_turns - abort_turn)
-
-        # AC-2: most-flagged player_claim across the window. Iterate the
-        # tail of turn_history (its length should match the honesty
-        # window when called from the loop, but slice defensively in
-        # case of resume scenarios that pre-populate _honesty_history).
-        claim_counter: Counter = Counter()
-        for tr in turn_history[-window:]:
-            coach = getattr(tr, "coach_result", None)
-            if coach is None or not getattr(coach, "success", False):
-                continue
-            report = getattr(coach, "report", None) or {}
-            issues = report.get("issues") or []
-            for issue in issues:
-                if not isinstance(issue, dict):
-                    continue
-                if issue.get("category") not in {"honesty", "claim_audit"}:
-                    continue
-                details = issue.get("details") or {}
-                claim = details.get("player_claim")
-                if claim:
-                    claim_counter[claim] += 1
-
-        top_claim: Optional[str] = None
-        top_count: int = 0
-        if claim_counter:
-            top_claim, top_count = claim_counter.most_common(1)[0]
-
-        lines: List[str] = [
-            f"HONESTY COLLAPSE [{task_id}]: rolling avg {rolling_avg:.2f} "
-            f"over last {window} turns < threshold {threshold:.2f}.",
-        ]
-        if top_claim is not None:
-            lines.append(
-                f"Most-flagged claim: '{top_claim}' "
-                f"({top_count} of last {window} turns)."
-            )
-        lines.append(
-            f"Saved {saved} turn(s) of {max_turns} "
-            f"(aborted at turn {abort_turn})."
-        )
-
-        # AC-2: best-effort git check-ignore -v recommendation. Skip the
-        # rec line silently on any failure (no .gitignore match, git
-        # missing, subprocess error). The diagnostic must still fire.
-        if top_claim is not None:
-            rec = self._git_check_ignore_rec(top_claim, worktree_path)
-            if rec is not None:
-                lines.append(rec)
-
-        return "\n".join(lines)
-
-    @staticmethod
-    def _git_check_ignore_rec(
-        candidate_path: str, worktree_path: Path
-    ) -> Optional[str]:
-        """Run ``git check-ignore -v --no-index`` against ``candidate_path``.
-
-        Returns a one-line operator recommendation when the path matches
-        a ``.gitignore`` rule, or ``None`` on no-match / any error. Mirrors
-        TASK-FIX-IGNR's ``--no-index`` invocation so untracked paths the
-        Player keeps re-claiming surface their gitignore origin.
-        """
-        from guardkit.lib.project_git import run_git
-
-        try:
-            proc = run_git(
-                ["check-ignore", "-v", "--no-index", candidate_path],
-                cwd=worktree_path,
-                timeout=5,
-            )
-        except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
-            return None
-        if proc.returncode == 0 and proc.stdout.strip():
-            # Red-baseline retro (2026-07-08, L12 item 6): ``check-ignore -v
-            # --no-index`` returns exit 0 reporting the last matching pattern
-            # even when it is a ``!``-negation that RE-INCLUDES the path. A
-            # negation match is not a real "matches a .gitignore rule"
-            # recommendation — suppress it rather than steer the operator/Player
-            # toward a phantom gitignore fix (the FEAT-VOICE-003 churn).
-            first_line = proc.stdout.strip().splitlines()[0]
-            rule_field = first_line.split("\t", 1)[0]
-            rule_parts = rule_field.split(":", 2)
-            if len(rule_parts) >= 3 and rule_parts[2].strip().startswith("!"):
-                return None
-            return (
-                f"Path matches a .gitignore rule "
-                f"(git check-ignore -v): {proc.stdout.strip()}"
-            )
-        return None
 
     def _display_criteria_progress(
         self,
@@ -10416,55 +5433,6 @@ class AutoBuildOrchestrator:
                 error=f"Recoverable: {str(e)}",
             )
 
-    def _snapshot_peer_changed_files(
-        self, task_id: str
-    ) -> Optional[Dict[str, frozenset]]:
-        """Return a stable snapshot of peer-task file edits in this wave.
-
-        TASK-FIX-A7B2. Returns ``None`` when no wave-shared map is configured
-        (single-task path) so the Coach knows there is no peer information to
-        evaluate. Returns an empty dict when configured but no peer has
-        published yet (this is the first task to finish in the wave). Returns
-        a dict of ``peer_task_id -> frozenset[file]`` otherwise. The current
-        task's own entry is excluded.
-        """
-        if (
-            self._wave_changed_files is None
-            or self._wave_files_lock is None
-        ):
-            return None
-        with self._wave_files_lock:
-            return {
-                peer_id: files
-                for peer_id, files in self._wave_changed_files.items()
-                if peer_id != task_id
-            }
-
-    @staticmethod
-    def _normalise_behavioural_oracle_declaration(
-        value: Optional[Any],
-    ) -> Optional[Dict[str, Any]]:
-        """Validate and copy authority without depending on a producer instance."""
-        if value is None:
-            return None
-        from guardkit.orchestrator.feature_loader import BehaviouralOracle
-
-        if isinstance(value, str):
-            raw: Any = {"command": value}
-        elif isinstance(value, dict):
-            raw = dict(value)
-            if isinstance(raw.get("source_paths"), list):
-                raw["source_paths"] = list(raw["source_paths"])
-        else:
-            model_dump = getattr(value, "model_dump", None)
-            raw = model_dump(exclude_none=True) if callable(model_dump) else value
-        declaration = BehaviouralOracle.model_validate(raw).model_dump(
-            exclude_none=True
-        )
-        if isinstance(declaration.get("source_paths"), list):
-            declaration["source_paths"] = list(declaration["source_paths"])
-        return declaration
-
     def _invoke_coach_safely(
         self,
         task_id: str,
@@ -10479,7 +5447,6 @@ class AutoBuildOrchestrator:
         consumer_context: Optional[list] = None,
         remaining_budget: Optional[float] = None,
         wave_size: int = 1,
-        peer_changed_files: Optional[Dict[str, Any]] = None,
         behavioural_oracle: Optional[Any] = None,
         component: Optional[str] = None,  # per-component seam
         effective_concurrency: Optional[int] = None,
@@ -10549,42 +5516,26 @@ class AutoBuildOrchestrator:
         When enable_context=True, retrieves quality_gate_configs and turn_states
         from the memory backend to inform Coach validation decisions.
         """
-        import time
         import asyncio
 
         start_time = time.time()
 
-        # 20 October 2026: a task given its turn to declare the project's
-        # coverage command (see orchestrate()) has that command pinned now, so
-        # this Coach measures coverage with it. If the turn declared none, the
-        # reason is advice (step 1, 24 October 2026), never a stop.
-        self._pin_coverage_after_task_turn(task_id, turn, worktree, task_type)
 
         # Retrieve job-specific context for Coach if enabled (TASK-GR6-006, TASK-FIX-GTP2)
         # Uses per-thread context loader to avoid cross-loop Neo4j errors
         context_prompt = ""
         self._last_coach_context_status = None  # Reset per invocation (TASK-FIX-GCW5)
 
-        # Project initialisation design (4 October 2026): when the project
-        # declares binding documents, the Coach judges the turn against them
-        # and the project's own instructions — the set captured once per build
-        # from the build's source commit (see _capture_coach_project_documents).
-        # A project that declares none is
-        # untouched (opt-in). A direct caller that skipped the task-start
-        # capture gets the capture here, with the same refusals.
+        # Project initialisation design (4 October 2026): the project's
+        # binding documents, captured once per build from its source commit.
         try:
             project_documents = self._coach_documents_for_turn(task_id, worktree)
         except AgentInvocationError as exc:
-            logger.error("Coach turn %s for %s refused: %s", turn, task_id, exc)
-            return AgentInvocationResult(
-                task_id=task_id,
-                turn=turn,
-                agent_type="coach",
-                success=False,
-                report={},
-                duration_seconds=time.time() - start_time,
-                error=str(exc),
+            logger.warning(
+                "Coach turn %s for %s goes on without the project's documents: %s",
+                turn, task_id, exc,
             )
+            project_documents = ()
 
         # Create event loop if needed (required for thread-local loader creation too)
         try:
@@ -10644,53 +5595,6 @@ class AutoBuildOrchestrator:
             self._log_memory_turn("reviewer", task_id, turn, skip=self._memory_skip())
             self._last_coach_context_status = ContextStatus(status="disabled")
 
-        # TASK-HMIG-008R Part B (Revision 3): branch on GUARDKIT_COACH_LEGACY.
-        #
-        # Default (env var unset): LLM Coach is the primary decision-maker.
-        # CoachValidator runs gather_evidence to produce a CoachEvidenceBundle,
-        # and the LLM Coach is invoked unconditionally via
-        # self._agent_invoker.invoke_coach. The LLM Coach reads the bundle
-        # (rendered into the prompt by _build_coach_prompt in Part C) and
-        # writes coach_turn_N.json with approve/feedback.
-        #
-        # Legacy (GUARDKIT_COACH_LEGACY=1): deterministic CoachValidator is the
-        # primary decision-maker (Option D / TASK-REV-0414 behaviour). The LLM
-        # Coach is only invoked on validator exception. This is the
-        # operator-controlled emergency-revert documented in
-        # ``guardkit doctor`` and the TASK-HMIG-008R commit message.
-        #
-        # Per Phase 2.5 review finding #1, exception handling in the primary
-        # path MUST NOT fall back to validator.validate() — that would
-        # reactivate the path falsifier #1 requires to be GONE and bypass the
-        # GUARDKIT_COACH_LEGACY operator-controlled revert. Unexpected
-        # exceptions in gather_evidence are caught and surfaced as a synthetic
-        # feedback coach_turn_N.json so the turn produces a deterministic
-        # feedback decision, not silent approval and not a validator fallback.
-        legacy_mode = os.environ.get("GUARDKIT_COACH_LEGACY") == "1"
-
-        if legacy_mode:
-            return self._invoke_coach_legacy(
-                task_id=task_id,
-                turn=turn,
-                requirements=requirements,
-                player_report=player_report,
-                worktree=worktree,
-                acceptance_criteria=acceptance_criteria,
-                task_type=task_type,
-                skip_arch_review=skip_arch_review,
-                requires_infrastructure=requires_infrastructure,
-                consumer_context=consumer_context,
-                remaining_budget=remaining_budget,
-                wave_size=wave_size,
-                peer_changed_files=peer_changed_files,
-                context_prompt=context_prompt,
-                start_time=start_time,
-                behavioural_oracle=behavioural_oracle,  # TS-lane D.1a
-                component=component,  # per-component seam
-                project_documents=project_documents,
-                effective_concurrency=effective_concurrency,
-            )
-
         return self._invoke_coach_primary(
             task_id=task_id,
             turn=turn,
@@ -10704,7 +5608,6 @@ class AutoBuildOrchestrator:
             consumer_context=consumer_context,
             remaining_budget=remaining_budget,
             wave_size=wave_size,
-            peer_changed_files=peer_changed_files,
             context_prompt=context_prompt,
             start_time=start_time,
             behavioural_oracle=behavioural_oracle,  # TS-lane D.1a
@@ -10773,9 +5676,6 @@ class AutoBuildOrchestrator:
                 "Could not clear an earlier Coach documents snapshot for %s (%s)",
                 worktree_path, exc,
             )
-        # The build's pinned coverage command is the same kind of record
-        # (20 October 2026): a new build must not reuse an older one's.
-        cls.discard_build_coverage_record(worktree_path)
 
     def _reuse_coach_documents_snapshot(
         self, task_id: str, worktree: Worktree, snapshot: Path
@@ -11075,330 +5975,6 @@ class AutoBuildOrchestrator:
             )
         return tuple(marked)
 
-    #: What the legacy Coach's turn record says when it decided without them.
-    LEGACY_DOCUMENTS_NOTE = "declared documents not used by the legacy Coach"
-
-    def _note_documents_unused_by_legacy_coach(
-        self, task_id: str, turn: int, worktree: Worktree, project_documents: tuple
-    ) -> None:
-        """Warn, and write the turn record, when GUARDKIT_COACH_LEGACY=1 decided
-        a turn of a project that declares binding documents."""
-        from guardkit.orchestrator.agent_invoker import (
-            write_coach_project_documents_record,
-        )
-
-        logger.warning(
-            "Coach turn %s for %s: the project declares binding documents, but the "
-            "legacy rule-based Coach (GUARDKIT_COACH_LEGACY=1) decided this turn "
-            "and cannot use them.",
-            turn, task_id,
-        )
-        write_coach_project_documents_record(
-            Path(worktree.path), task_id, turn, project_documents,
-            note=self.LEGACY_DOCUMENTS_NOTE,
-        )
-
-    def _coach_documents_unsupported(self, project_documents: tuple) -> Optional[str]:
-        """A refusal sentence when documents exist and the invoker cannot take them.
-
-        A declared binding document is never dropped silently — the same rule
-        the Player follows for ``required_documents``.
-        """
-        if not project_documents:
-            return None
-        import inspect as _inspect
-
-        try:
-            parameters = _inspect.signature(self._agent_invoker.invoke_coach).parameters
-        except Exception:  # noqa: BLE001 — cannot inspect: cannot prove support
-            parameters = {}
-        if "project_documents" in parameters:
-            return None
-        return (
-            "The project has binding documents for the Coach, but this Coach "
-            "invoker cannot take them, so the Coach was not run; a declared "
-            "document is never dropped."
-        )
-
-    def _invoke_coach_legacy(
-        self,
-        *,
-        task_id: str,
-        turn: int,
-        requirements: str,
-        player_report: Dict[str, Any],
-        worktree: Worktree,
-        acceptance_criteria: Optional[List[str]],
-        task_type: Optional[str],
-        skip_arch_review: bool,
-        requires_infrastructure: Optional[List[str]],
-        consumer_context: Optional[list],
-        remaining_budget: Optional[float],
-        wave_size: int,
-        peer_changed_files: Optional[Dict[str, Any]],
-        context_prompt: str,
-        start_time: float,
-        # TS-lane D.1a. Defaulted so a direct caller (and every existing
-        # test that calls this path by hand) keeps its current signature.
-        behavioural_oracle: Optional[Any] = None,
-        component: Optional[str] = None,  # per-component seam
-        project_documents: tuple = (),
-        effective_concurrency: Optional[int] = None,
-    ) -> AgentInvocationResult:
-        """Legacy Coach flow: CoachValidator decides, LLM Coach is exception fallback.
-
-        Pre-TASK-HMIG-008R behaviour preserved verbatim, gated on
-        ``GUARDKIT_COACH_LEGACY=1``. Used as the operator-controlled
-        emergency revert when the LLM Coach's leniency in canary surfaces a
-        regression (Wave 3 / TASK-HMIG-009).
-        """
-        import time
-        import asyncio
-
-        logger.info(
-            "Using CoachValidator (legacy, GUARDKIT_COACH_LEGACY=1) for "
-            "%s turn %s", task_id, turn,
-        )
-        oracle_declaration = self._normalise_behavioural_oracle_declaration(
-            behavioural_oracle
-        )
-        if oracle_declaration and oracle_declaration.get("required") is True:
-            return self._emit_synthetic_coach_feedback(
-                task_id=task_id,
-                turn=turn,
-                worktree=worktree,
-                rationale=(
-                    "required_behavioural_oracle_unsupported: the legacy Coach "
-                    "path cannot carry or validate the required behavioural "
-                    "oracle evidence; use the primary Coach path."
-                ),
-                start_time=start_time,
-                category="behavioural_oracle_failure",
-            )
-        try:
-            coach_cfg = self._load_coach_config()
-            # TASK-AB-COACHSUBPROC01: env > config > default (subprocess);
-            # logs the active mode + provenance once per validator init.
-            coach_test_execution = resolve_coach_test_execution(
-                coach_cfg.get("test_execution")
-            )
-            matching_strategy = coach_cfg.get("matching_strategy", "auto")
-            validator = CoachValidator(
-                str(worktree.path),
-                task_id=task_id,
-                coach_test_execution=coach_test_execution,
-                matching_strategy=matching_strategy,
-                wave_size=wave_size,
-                effective_concurrency=effective_concurrency,
-                turn=turn,
-                peer_changed_files=peer_changed_files,
-                model_name=self._model_name,  # TASK-FIX-LGFM3
-                coach_model_name=self._coach_model_name,  # TASK-FIX-COACHBUDG01
-                venv_python=self._venv_python,  # TASK-FIX-COACHPYENV
-                evidence_repos=self._evidence_repos,  # TASK-AB-XREPOEV01 (AC-002)
-                smoke_command=self._smoke_command,  # TASK-AB-COACHRUNPARITY01 (arm b)
-                smoke_expected_exit=self._smoke_expected_exit,  # TASK-AB-COACHRUNPARITY01 (arm b)
-                in_autobuild_context=True,  # WS3-S1 Q1 SPLIT (hard-abort)
-                component=component,  # per-component seam
-            )
-
-            # TASK-AB-XREPOEV01 (AC-002): same sibling-repo gate as the primary
-            # path. Without this, GUARDKIT_COACH_LEGACY=1 silently ignores a
-            # declared sibling test_command (the BDDW-002 false-green re-opens
-            # under the legacy revert). No bundle here — validate() returns a
-            # CoachValidationResult, not a CoachEvidenceBundle — so the gate
-            # blocks but does not attach (the rejection rationale names the
-            # failing repos).
-            gate_result = self._evidence_repo_gate(
-                validator, task_id, turn, worktree, start_time
-            )
-            if gate_result is not None:
-                return gate_result
-
-            # TASK-FIX-DIRECTFG01: deterministic direct-mode verification gate.
-            # Closes the implementation_mode=direct false-green (relaxed gates +
-            # unverified AC delivery / wiring / runnable producer). No-op for
-            # non-direct tasks (AC5 guard). Shared with the primary path so the
-            # legacy revert cannot bypass it.
-            direct_gate_result = self._direct_mode_evidence_gate(
-                validator,
-                task_id,
-                turn,
-                worktree,
-                start_time,
-                acceptance_criteria=acceptance_criteria,
-                task_type=task_type,
-                player_report=player_report,
-            )
-            if direct_gate_result is not None:
-                return direct_gate_result
-
-            # R1 DE-WIRE (Rich 08-14): the deterministic authoring-sweep gate
-            # (TASK-AB-BDDAUTHOR01) is removed from both Coach paths —
-            # nothing produces bdd_authoring_sweep any more.
-
-            validation_result = validator.validate(
-                task_id=task_id,
-                turn=turn,
-                task={
-                    "acceptance_criteria": acceptance_criteria or [],
-                    "task_type": task_type,
-                    "requires_infrastructure": requires_infrastructure or [],
-                    "_docker_available": validator._is_docker_available(),
-                    "consumer_context": consumer_context or [],
-                    "description": requirements or "",
-                    # TS-lane D.1a: solder the dead wire. This key is the ONLY
-                    # thing CoachValidator._extract_command ever looked for,
-                    # and no production caller had ever set it — the executor
-                    # (_run_shell_command) was built, unit tested and
-                    # unreachable. Spread conditionally so a task with no
-                    # declaration still hands over the identical six-key dict
-                    # it did before this line existed.
-                    **(
-                        {"behavioural_oracle": behavioural_oracle}
-                        if behavioural_oracle
-                        else {}
-                    ),
-                    # 23 October 2026: the files the task said it would
-                    # create or change, for the Coach's no-source-files
-                    # coverage exception. Spread conditionally like the key
-                    # above.
-                    **(
-                        {"declared_files": list(self._declared_task_paths)}
-                        if getattr(self, "_declared_task_paths", None)
-                        else {}
-                    ),
-                },
-                skip_arch_review=skip_arch_review,
-                context=context_prompt if context_prompt else None,
-            )
-
-            # Reliability repair 1 (12 October 2026): the same required-suite
-            # rule the primary path applies in
-            # AgentInvoker._apply_independent_test_code_failure_guard. A task
-            # whose profile requires tests is not approved while its
-            # independent suite ran and failed — this closes validate()'s
-            # conditional approvals of a red run (a code failure in a
-            # parallel wave among them). Applied BEFORE save_decision so the
-            # persisted coach_turn_N.json and the returned report agree. The
-            # classification only shapes the feedback words.
-            from guardkit.orchestrator.quality_gates.required_suite import (
-                enforce_on_validation_result,
-            )
-
-            self._carry_measured_checks(validation_result.independent_tests, None)
-            validation_result = enforce_on_validation_result(
-                validation_result,
-                task_type=task_type,
-                classify=lambda raw: validator._classify_test_failure(
-                    raw,
-                    requires_infrastructure=requires_infrastructure or [],
-                    task_type=task_type,
-                ),
-            )
-
-            if context_prompt:
-                logger.info(
-                    f"[Memory] Coach context provided: {len(context_prompt)} chars"
-                )
-
-            duration = time.time() - start_time
-            decision_path = validator.save_decision(validation_result)
-
-            if project_documents:
-                # The rule-based validator decided this turn and cannot read
-                # documents, so the declared ones were not used. Said out loud
-                # and recorded, never silently skipped (review fix 3).
-                self._note_documents_unused_by_legacy_coach(
-                    task_id, turn, worktree, project_documents
-                )
-
-            if player_report.get("command_results") and decision_path.exists():
-                try:
-                    with open(decision_path, "r") as f:
-                        decision_data = json.load(f)
-                    decision_data["command_results"] = player_report["command_results"]
-                    with open(decision_path, "w") as f:
-                        json.dump(decision_data, f, indent=2)
-                except Exception as exc:
-                    logger.debug("Failed to append command_results to coach decision: %s", exc)
-
-            return AgentInvocationResult(
-                task_id=task_id,
-                turn=turn,
-                agent_type="coach",
-                success=True,
-                report=validation_result.to_dict(),
-                duration_seconds=duration,
-                error=None,
-            )
-
-        except Exception as e:
-            logger.warning(f"CoachValidator failed, falling back to SDK: {e}")
-            try:
-                try:
-                    loop = asyncio.get_event_loop()
-                except RuntimeError:
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-
-                unsupported = self._coach_documents_unsupported(project_documents)
-                if unsupported is not None:
-                    return AgentInvocationResult(
-                        task_id=task_id,
-                        turn=turn,
-                        agent_type="coach",
-                        success=False,
-                        report={},
-                        duration_seconds=time.time() - start_time,
-                        error=unsupported,
-                    )
-                fallback_kwargs: Dict[str, Any] = {}
-                if project_documents:
-                    fallback_kwargs["project_documents"] = project_documents
-                result = loop.run_until_complete(
-                    self._agent_invoker.invoke_coach(
-                        task_id=task_id,
-                        turn=turn,
-                        requirements=requirements,
-                        player_report=player_report,
-                        remaining_budget=remaining_budget,
-                        **fallback_kwargs,
-                    )
-                )
-                # A model's report never carries the test run's facts: only
-                # the orchestrator writes that key (build 7010).
-                from guardkit.orchestrator.failing_test_feedback import (
-                    SUITE_RECEIPT_KEY,
-                )
-
-                if isinstance(getattr(result, "report", None), dict):
-                    result.report.pop(SUITE_RECEIPT_KEY, None)
-                return result
-
-            except NotImplementedError as sdk_error:
-                logger.warning(f"Coach invocation not implemented: {sdk_error}")
-                return AgentInvocationResult(
-                    task_id=task_id,
-                    turn=turn,
-                    agent_type="coach",
-                    success=False,
-                    report={},
-                    duration_seconds=time.time() - start_time,
-                    error="SDK integration pending",
-                )
-            except Exception as sdk_error:
-                logger.error(f"Coach invocation failed: {sdk_error}", exc_info=True)
-                return AgentInvocationResult(
-                    task_id=task_id,
-                    turn=turn,
-                    agent_type="coach",
-                    success=False,
-                    report={},
-                    duration_seconds=time.time() - start_time,
-                    error=f"Unexpected error: {str(sdk_error)}",
-                )
-
     def _invoke_coach_primary(
         self,
         *,
@@ -11414,7 +5990,6 @@ class AutoBuildOrchestrator:
         consumer_context: Optional[list],
         remaining_budget: Optional[float],
         wave_size: int,
-        peer_changed_files: Optional[Dict[str, Any]],
         context_prompt: str,
         start_time: float,
         # TS-lane D.1a. Defaulted so a direct caller (and every existing
@@ -11424,32 +5999,18 @@ class AutoBuildOrchestrator:
         project_documents: tuple = (),
         effective_concurrency: Optional[int] = None,
     ) -> AgentInvocationResult:
-        """Primary Coach flow (TASK-HMIG-008R): LLM Coach is the decision-maker.
+        """The Coach turn: the project's own checks, then the reviewer.
 
-        Per the Block adversarial-cooperation paper and the Revision 3
-        architectural correction (operator-approved 2026-05-20), the LLM Coach
-        is invoked unconditionally for every turn. CoachValidator runs
-        ``gather_evidence`` to produce a structured ``CoachEvidenceBundle``
-        which Part C will render into the Coach prompt via
-        ``AgentInvoker._build_coach_prompt``.
-
-        Exception handling per plan §3 / Phase 2.5 review finding #1:
-        unexpected exceptions in ``gather_evidence`` write a synthetic
-        ``feedback`` coach_turn_N.json with rationale naming the failure.
-        The LLM Coach is NOT bypassed by a deterministic-validator fallback
-        in this path — ``GUARDKIT_COACH_LEGACY=1`` is the sole, intentional,
-        operator-controlled mechanism for reactivating ``validate()``.
+        ``CoachValidator.gather_evidence`` runs the project's checks and
+        returns a ``CoachEvidenceBundle``; the reviewer (the LLM Coach) is
+        invoked on every turn with it and its verdict is advice (27 October
+        2026). When gathering raises, the reviewer runs without the bundle.
+        A declared sibling repository's tests that ran and failed send the
+        turn back before the reviewer runs (``_evidence_repo_gate``).
         """
         import asyncio
-        import time
 
         logger.info("Using LLM Coach (primary) for %s turn %s", task_id, turn)
-        oracle_declaration = self._normalise_behavioural_oracle_declaration(
-            behavioural_oracle
-        )
-        oracle_required = bool(
-            oracle_declaration and oracle_declaration.get("required") is True
-        )
         if context_prompt:
             logger.info(
                 f"[Memory] Coach context provided: {len(context_prompt)} chars"
@@ -11470,13 +6031,13 @@ class AutoBuildOrchestrator:
             wave_size=wave_size,
             effective_concurrency=effective_concurrency,
             turn=turn,
-            peer_changed_files=peer_changed_files,
             model_name=self._model_name,  # TASK-FIX-LGFM3
             coach_model_name=self._coach_model_name,  # TASK-FIX-COACHBUDG01
             venv_python=self._venv_python,  # TASK-FIX-COACHPYENV
             evidence_repos=self._evidence_repos,  # TASK-AB-XREPOEV01 (AC-002)
             smoke_command=self._smoke_command,  # TASK-AB-COACHRUNPARITY01 (arm b)
             smoke_expected_exit=self._smoke_expected_exit,  # TASK-AB-COACHRUNPARITY01 (arm b)
+            security_command=getattr(self, "_security_command", None),
             # Whole-feature repair round only; None everywhere else.
             feature_check_repair=self._feature_check_repair,
             in_autobuild_context=True,  # WS3-S1 Q1 SPLIT (hard-abort)
@@ -11508,92 +6069,20 @@ class AutoBuildOrchestrator:
                         if behavioural_oracle
                         else {}
                     ),
-                    # 23 October 2026: the files the task said it would
-                    # create or change, for the Coach's no-source-files
-                    # coverage exception. Spread conditionally like the key
-                    # above.
-                    **(
-                        {"declared_files": list(self._declared_task_paths)}
-                        if getattr(self, "_declared_task_paths", None)
-                        else {}
-                    ),
                 },
                 skip_arch_review=skip_arch_review,
                 context=context_prompt if context_prompt else None,
             )
-        except Exception as exc:  # noqa: BLE001 — primary path must not fall back
+        except Exception as exc:  # noqa: BLE001 — the turn goes on without it
             logger.error(
-                "gather_evidence raised in primary Coach path for %s turn %s: %s. "
-                "Emitting synthetic feedback decision (no validate() fallback).",
+                "gather_evidence raised for %s turn %s: %s. The reviewer runs "
+                "without the evidence bundle.",
                 task_id, turn, exc, exc_info=True,
             )
-            return self._emit_synthetic_coach_feedback(
-                task_id=task_id,
-                turn=turn,
-                worktree=worktree,
-                rationale=f"Evidence gathering failed: {exc}",
-                start_time=start_time,
-            )
+            evidence_bundle = None
 
-        # TASK-ABFIX-003 fast-exit, restored on the primary path (19 October
-        # 2026). An unrecognised task_type is a fault in the task file: there
-        # is no quality-gate profile to judge against and no Player turn can
-        # fix it. The legacy validate() path ends the turn as a configuration
-        # error; when TASK-HMIG-008R made the LLM Coach primary,
-        # gather_evidence recorded the cause but nothing acted on it, so the
-        # LLM Coach was asked to judge the turn and the Player retried until
-        # the turn budget ran out. This does not call validate(); it reads the
-        # bundle's own cause, as the other deterministic gates below do.
-        invalid_task_type_prefix = f"{INVALID_TASK_TYPE_CAUSE}: "
-        if (
-            isinstance(evidence_bundle, CoachEvidenceBundle)
-            and evidence_bundle.gathering_status == "partial_exception"
-            and (evidence_bundle.gathering_error or "").startswith(
-                invalid_task_type_prefix
-            )
-        ):
-            return self._emit_synthetic_coach_feedback(
-                task_id=task_id,
-                turn=turn,
-                worktree=worktree,
-                rationale=evidence_bundle.gathering_error[
-                    len(invalid_task_type_prefix):
-                ],
-                start_time=start_time,
-                category=INVALID_TASK_TYPE_CAUSE,
-                is_configuration_error=True,
-            )
-
-        if oracle_required and not isinstance(evidence_bundle, CoachEvidenceBundle):
-            return self._emit_synthetic_coach_feedback(
-                task_id=task_id,
-                turn=turn,
-                worktree=worktree,
-                rationale=(
-                    "Required behavioural-oracle evidence is missing or malformed: "
-                    "gather_evidence did not return a CoachEvidenceBundle."
-                ),
-                start_time=start_time,
-                category="behavioural_oracle_failure",
-            )
-
-        # FEAT-SCG (SCG-002): attach the spec-conformance RULE leg beside the
-        # gather_evidence bundle. Reads the pre-turn-1 snapshot (SCG-001) and
-        # evaluates the declarative conformance rules against the live worktree;
-        # ``None`` (leg absent) for tasks without a ``conformance:`` block, so
-        # existing builds stay byte-equivalent. The opt-in ``ac_paths`` presence
-        # check is applied later in
-        # ``AgentInvoker._apply_spec_conformance_guard`` (it needs the structured
-        # acceptance criteria). The leg is written before the bundle is persisted
-        # below so ``coach_evidence_turn_N.json`` records it too.
-        evidence_bundle.spec_conformance = self._produce_spec_conformance_leg(
-            task_id, turn, worktree
-        )
-        self._carry_measured_checks(
-            evidence_bundle.independent_tests,
-            evidence_bundle.spec_conformance,
-            test_phase=getattr(evidence_bundle, "tests", None),
-        )
+        if evidence_bundle is not None:
+            self._carry_measured_checks(evidence_bundle.independent_tests)
 
         # Whole-feature repair round (18 October 2026): the bundle carries the
         # project's check — this turn's run, made in gather_evidence, and the
@@ -11623,7 +6112,10 @@ class AutoBuildOrchestrator:
             )
             _evidence_path.parent.mkdir(parents=True, exist_ok=True)
             with open(_evidence_path, "w") as _evidence_f:
-                json.dump(evidence_bundle.to_dict(), _evidence_f, indent=2, default=str)
+                json.dump(
+                evidence_bundle.to_dict() if evidence_bundle is not None else None,
+                _evidence_f, indent=2, default=str,
+            )
             logger.debug("Persisted coach evidence bundle to %s", _evidence_path)
         except Exception as _evidence_exc:  # noqa: BLE001 — persistence must never block the turn
             logger.warning(
@@ -11644,30 +6136,6 @@ class AutoBuildOrchestrator:
         )
         if gate_result is not None:
             return gate_result
-
-        # TASK-FIX-DIRECTFG01: deterministic direct-mode verification gate.
-        # Closes the implementation_mode=direct false-green where relaxed gates
-        # let the LLM Coach approve without verifying AC delivery, authored
-        # wiring, or that a registered CLI producer actually runs. Runs AFTER
-        # _evidence_repo_gate and BEFORE the LLM Coach so a red signal cannot be
-        # approved over by Coach leniency (the BDDW-002 lesson). No-op for every
-        # non-direct task (AC5 guard).
-        direct_gate_result = self._direct_mode_evidence_gate(
-            validator,
-            task_id,
-            turn,
-            worktree,
-            start_time,
-            acceptance_criteria=acceptance_criteria,
-            task_type=task_type,
-            player_report=player_report,
-        )
-        if direct_gate_result is not None:
-            return direct_gate_result
-
-        # R1 DE-WIRE (Rich 08-14): the deterministic authoring-sweep gate
-        # (TASK-AB-BDDAUTHOR01) is removed from both Coach paths — nothing
-        # produces bdd_authoring_sweep any more.
 
         # Step 2: invoke LLM Coach via AgentInvoker, threading the bundle.
         # Part C (this PR) extends invoke_coach + _build_coach_prompt to
@@ -11693,46 +6161,15 @@ class AutoBuildOrchestrator:
 
                 try:
                     _sig = _inspect.signature(self._agent_invoker.invoke_coach)
-                except Exception:
-                    if oracle_required:
-                        return self._emit_synthetic_coach_feedback(
-                            task_id=task_id,
-                            turn=turn,
-                            worktree=worktree,
-                            rationale=(
-                                "required_behavioural_oracle_unsupported: Coach "
-                                "invoker signature could not be inspected."
-                            ),
-                            start_time=start_time,
-                            category="behavioural_oracle_failure",
-                        )
-                    raise
-                if oracle_required and "behavioural_oracle_declaration" not in _sig.parameters:
-                    return self._emit_synthetic_coach_feedback(
-                        task_id=task_id, turn=turn, worktree=worktree,
-                        rationale="required_behavioural_oracle_unsupported: Coach invoker lacks the explicit behavioural_oracle_declaration parameter.",
-                        start_time=start_time, category="behavioural_oracle_failure",
-                    )
+                except Exception:  # noqa: BLE001 — call with the plain kwargs
+                    _sig = _inspect.Signature()
                 if "evidence_bundle" in _sig.parameters:
                     invoke_kwargs["evidence_bundle"] = evidence_bundle
-                if "behavioural_oracle_declaration" in _sig.parameters:
-                    invoke_kwargs["behavioural_oracle_declaration"] = oracle_declaration
                 if "coach_context" in _sig.parameters and context_prompt:
                     invoke_kwargs["coach_context"] = context_prompt
                 # Project initialisation design (4 October 2026): the
                 # project's binding documents, never dropped silently.
-                if project_documents:
-                    unsupported = self._coach_documents_unsupported(project_documents)
-                    if unsupported is not None:
-                        return AgentInvocationResult(
-                            task_id=task_id,
-                            turn=turn,
-                            agent_type="coach",
-                            success=False,
-                            report={},
-                            duration_seconds=time.time() - start_time,
-                            error=unsupported,
-                        )
+                if project_documents and "project_documents" in _sig.parameters:
                     invoke_kwargs["project_documents"] = project_documents
                 # TASK-ARCH-COACHBFULL (AC-4 / AC-1): thread structured ACs into
                 # the Coach prompt so the synthesis verdict can populate
@@ -11781,61 +6218,6 @@ class AutoBuildOrchestrator:
                     self._agent_invoker.invoke_coach(**invoke_kwargs)
                 )
 
-            # TASK-FIX-COACHSF01: soft-fail on Coach verdict-emission failures.
-            #
-            # `AgentInvoker.invoke_coach` catches `CoachDecisionNotFoundError`
-            # and `CoachDecisionInvalidError` internally (agent_invoker.py:
-            # 1987-1997) and returns `success=False` with the exception
-            # message as `error` — these never raise out of `invoke_coach`,
-            # so the broader `except Exception` synthetic-feedback safety
-            # net below cannot see them. Without this check the orchestrator
-            # surfaces `coach_decision="error"` to the wave loop, the turn
-            # hard-fails, and the Player gets no opportunity to retry.
-            #
-            # The failure class this catches is canary F2 at Coach level
-            # (qwen36-workhorse-style substrates that discuss the Bash
-            # heredoc verdict-write in prose without actually emitting the
-            # tool_use block). It's a substrate-quality finding, not a
-            # task-quality finding — so we convert it to a synthetic
-            # feedback decision with a rationale naming the failure mode,
-            # write coach_turn_N.json (so downstream consumers see a
-            # consistent shape), and return success=True. The Player gets
-            # a turn N+1 to retry; substrate variance may produce a real
-            # verdict on the second attempt.
-            #
-            # Other `success=False` outcomes (`SDKTimeoutError` → "SDK
-            # timeout after Xs", generic `Exception` → "Unexpected error: X")
-            # are propagated unchanged: those are not verdict-emission
-            # failures and the wave loop's existing handling is correct
-            # for them.
-            if (
-                not result.success
-                and result.error
-                and (
-                    "Coach decision not found" in result.error
-                    or "Coach decision invalid" in result.error
-                )
-            ):
-                logger.warning(
-                    "Coach verdict-emission failed in primary path for %s "
-                    "turn %s: %s. Emitting synthetic feedback decision "
-                    "(substrate F2 at Coach level — Player will retry on "
-                    "turn %s with this feedback).",
-                    task_id, turn, result.error, turn + 1,
-                )
-                return self._emit_synthetic_coach_feedback(
-                    task_id=task_id,
-                    turn=turn,
-                    worktree=worktree,
-                    rationale=(
-                        f"Coach verdict-emission failed: {result.error}. "
-                        f"Likely substrate limitation (qwen36-workhorse F2 "
-                        f"at Coach level). Player should retry on turn "
-                        f"{turn + 1} with this feedback."
-                    ),
-                    start_time=start_time,
-                )
-
             # TASK-AB-CKPTGATE01: thread the deterministic gate's test signal
             # from the evidence bundle into the returned report so the
             # checkpoint layer (_extract_tests_passed) records a genuinely
@@ -11849,36 +6231,19 @@ class AutoBuildOrchestrator:
             )
             return result
 
-        except NotImplementedError as sdk_error:
-            logger.warning(
-                "Coach invocation not implemented in primary path: %s. "
-                "Emitting synthetic feedback decision.",
-                sdk_error,
-            )
-            return self._emit_synthetic_coach_feedback(
-                task_id=task_id,
-                turn=turn,
-                worktree=worktree,
-                rationale=(
-                    f"LLM Coach invocation not available "
-                    f"(SDK integration pending): {sdk_error}. "
-                    f"Set GUARDKIT_COACH_LEGACY=1 to use the deterministic "
-                    f"CoachValidator path."
-                ),
-                start_time=start_time,
-            )
-        except Exception as sdk_error:  # noqa: BLE001 — surface as feedback, not fallback
+        except Exception as sdk_error:  # noqa: BLE001 — an internal crash
             logger.error(
-                "Coach invocation failed in primary path: %s. Emitting "
-                "synthetic feedback decision.",
+                "Coach invocation crashed in the primary path: %s",
                 sdk_error, exc_info=True,
             )
-            return self._emit_synthetic_coach_feedback(
+            return AgentInvocationResult(
                 task_id=task_id,
                 turn=turn,
-                worktree=worktree,
-                rationale=f"LLM Coach invocation failed: {sdk_error}",
-                start_time=start_time,
+                agent_type="coach",
+                success=False,
+                report={},
+                duration_seconds=time.time() - start_time,
+                error=f"LLM Coach invocation crashed: {sdk_error}",
             )
 
     def _evidence_repo_gate(
@@ -11890,17 +6255,12 @@ class AutoBuildOrchestrator:
         start_time: float,
         bundle: Optional["CoachEvidenceBundle"] = None,
     ) -> Optional[AgentInvocationResult]:
-        """Run declared sibling-repo tests and gate the turn (TASK-AB-XREPOEV01 AC-002).
+        """Run declared sibling-repo tests (TASK-AB-XREPOEV01 AC-002).
 
-        Shared by BOTH Coach paths (primary LLM Coach and legacy
-        ``GUARDKIT_COACH_LEGACY=1``) so the sibling-repo gate cannot be
-        bypassed by toggling the Coach implementation. Runs each declared
-        repo's ``test_command`` independently; attaches results to ``bundle``
-        (when provided, so they reach ``coach_turn_N.json`` and the Coach
-        prompt); and returns a blocking synthetic-feedback result when a
-        declared suite failed or could not run (a red sibling suite must not
-        be approved over by Coach leniency — the BDDW-002 false-green). Returns
-        None when there is nothing to block on.
+        Runs each declared repo's ``test_command``; attaches the results to
+        ``bundle`` (so they reach ``coach_turn_N.json`` and the Coach prompt);
+        and returns a feedback result when a declared suite ran and failed.
+        Returns None otherwise.
         """
         try:
             results = validator.run_evidence_repo_tests()
@@ -11923,14 +6283,6 @@ class AutoBuildOrchestrator:
         )
         if blocking_reason is None:
             return None
-        # TASK-FIX-SIBTESTENV01: distinguish a genuine ran-and-failed sibling
-        # suite from a pure-ABSENT one (declared but never executed — e.g. a
-        # collection ImportError from an environment mismatch). Only the
-        # pure-absent shape is marked signal-absent; mixed result sets stay
-        # stall-stackable because at least one suite genuinely failed.
-        has_ran_and_failed = any(
-            r.command and r.ran and not r.passed for r in results
-        )
         logger.warning(
             "Sibling-repo tests block %s turn %s:\n%s",
             task_id, turn, blocking_reason,
@@ -11941,7 +6293,6 @@ class AutoBuildOrchestrator:
             worktree=worktree,
             rationale=blocking_reason,
             start_time=start_time,
-            evidence_repo_signal_absent=(not has_ran_and_failed),
         )
 
     def _attach_whole_feature_check(
@@ -11953,8 +6304,7 @@ class AutoBuildOrchestrator:
         one, ``gather_evidence`` has already run the check on a complete
         gathering; when it did not (gathering stopped early, or the record
         could not be built) the record says the check was not run, with the
-        attempt that started the round. The record is remembered for this
-        turn so the loop's early stop reads GuardKit's own run. Never raises.
+        attempt that started the round. Never raises.
         """
         repair = getattr(self, "_feature_check_repair", None)
         if repair is None or evidence_bundle is None:
@@ -11975,306 +6325,11 @@ class AutoBuildOrchestrator:
                 )
                 record = whole_feature_check_record(repair, skip_reason=reason)
                 evidence_bundle.whole_feature_check = record
-            self._whole_feature_check_by_turn[turn] = record
         except Exception as exc:  # noqa: BLE001 — evidence never fails a turn
             logger.warning(
                 "Whole-feature check record not attached for turn %s: %s",
                 turn, type(exc).__name__,
             )
-
-    def _direct_mode_evidence_gate(
-        self,
-        validator: "CoachValidator",
-        task_id: str,
-        turn: int,
-        worktree: Worktree,
-        start_time: float,
-        *,
-        acceptance_criteria: Optional[List[str]],
-        task_type: Optional[str],
-        player_report: Optional[Dict[str, Any]] = None,
-    ) -> Optional[AgentInvocationResult]:
-        """Deterministic direct-mode verification gate (TASK-FIX-DIRECTFG01).
-
-        Closes the ``implementation_mode: direct`` false-green: in direct mode
-        the Player's quality gates are written ``quality_gates_relaxed: True``
-        (coverage/arch relaxed), and the Coach would otherwise approve without
-        verifying that the acceptance criteria were actually delivered, that
-        authored wiring resolves, or that a registered CLI producer the task
-        authored actually runs.
-
-        Mirrors ``_evidence_repo_gate`` EXACTLY: shared by BOTH Coach paths
-        (primary LLM Coach and legacy ``GUARDKIT_COACH_LEGACY=1``) so neither
-        implementation can bypass it; returns a blocking synthetic-feedback
-        ``AgentInvocationResult`` (``decision: "feedback"``) when an authored
-        deliverable is unverified, or ``None`` when there is nothing to block on
-        (including for every non-direct-mode task — the AC5 guard).
-
-        Three checks, collected into ``must_fix`` issues:
-
-        - **AC1** — AC-level disk verification via ``validator.validate_requirements``.
-          An unmet criterion (no disk/promise evidence) blocks in direct mode.
-        - **AC2** — wiring consultation via ``_run_wiring_analysis``. An UNWIRED
-          authored bin-entry blocks; everything else (factory absent, advisory
-          findings) is non-blocking (fail-open — no invented false-reds).
-        - **AC3** — bin-entry producer execution: a registered, authored CLI
-          producer that raises on ``python <path>`` blocks (the FEAT-9DDE case).
-
-        Non-blocking advisories (e.g. non-Python bin-entries) are logged but do
-        not block — they ride alongside the synthetic feedback only when some
-        ``must_fix`` issue already fired.
-
-        When the gate blocks and ``player_report`` shows why the coder left no
-        report of its own, the feedback says so first, as a must-fix issue
-        with a suggestion (build FEAT-2C42, 8 October 2026): the turn ran out
-        of time, or it ended without a report in a working copy other tasks
-        share. Before this, 27 of 31 blocks came straight after a timeout and
-        the feedback never mentioned it.
-        """
-        # AC5 guard: only direct mode (quality_gates_relaxed) is ever gated.
-        # This flag is written ONLY by agent_invoker._write_direct_mode_results;
-        # full task-work never sets it, so this gate is a structural no-op for
-        # every non-direct task.
-        task_work_results = validator.read_quality_gate_results(task_id)
-        if not isinstance(task_work_results, dict):
-            return None
-        quality_gates = task_work_results.get("quality_gates")
-        if not (
-            isinstance(quality_gates, dict)
-            and quality_gates.get("quality_gates_relaxed") is True
-        ):
-            return None
-
-        authored = sorted(
-            set(
-                (task_work_results.get("files_created") or [])
-                + (task_work_results.get("files_modified") or [])
-            )
-        )
-
-        must_fix: List[Dict[str, Any]] = []
-        advisories: List[Dict[str, Any]] = []
-        # close-the-loop 2026-08-14 (CURE 2): gate-scope handle on the AC
-        # measurement, so a blocking verdict can report what it measured.
-        gate_req_validation = None
-
-        # --- AC1: AC-level disk verification ----------------------------------
-        criteria = acceptance_criteria or []
-        if criteria:
-            try:
-                req_validation = validator.validate_requirements(
-                    task={
-                        "acceptance_criteria": criteria,
-                        "task_type": task_type,
-                    },
-                    task_work_results=task_work_results,
-                    turn=turn,
-                )
-            except Exception as exc:  # noqa: BLE001 — verification must not crash Coach
-                logger.warning(
-                    "Direct-mode AC verification raised for %s turn %s: %s "
-                    "(skipping AC1 check).",
-                    task_id, turn, exc,
-                )
-                req_validation = None
-
-            gate_req_validation = req_validation
-
-            if req_validation is not None and not req_validation.all_criteria_met:
-                unmet_ids = [
-                    cr.criterion_id
-                    for cr in req_validation.criteria_results
-                    # B9 Lane C: a promise-backed criterion is now recorded as
-                    # "claimed", which still counts as met. Naming it "unmet"
-                    # here would send the Player after a criterion the Coach
-                    # already counted. The decision is unchanged either way —
-                    # this list only names criteria in the message.
-                    if cr.result not in MET_RESULTS
-                ]
-                total = req_validation.criteria_total
-                unmet = total - req_validation.criteria_met
-                # Bounded, so a task with many criteria cannot push the rest
-                # of the feedback out (FEAT-2C42).
-                shown_ids = unmet_ids[:_GATE_UNMET_IDS_SHOWN]
-                if len(unmet_ids) > len(shown_ids):
-                    shown_ids = shown_ids + [
-                        f"and {len(unmet_ids) - len(shown_ids)} more"
-                    ]
-                must_fix.append(
-                    {
-                        "severity": "must_fix",
-                        "category": "direct_mode_ac_unverified",
-                        "description": (
-                            # close-the-loop 2026-08-14 (CURE 2, message
-                            # honesty): this check reads the Player's
-                            # ``completion_promises``; it never touches disk.
-                            # The old wording ("no disk evidence") sent a
-                            # Player off writing extra tests to manufacture
-                            # disk evidence — and it was rejected
-                            # byte-identically, because the real miss was a
-                            # promise that had not been matched.
-                            f"Direct mode: {unmet}/{total} acceptance criteria "
-                            f"have an absent or explicitly incomplete completion promise "
-                            f"(unmet: {shown_ids}). Direct mode relaxes "
-                            f"coverage/arch but NOT AC delivery."
-                        ),
-                        "details": {"unmet_ids": unmet_ids, "total": total},
-                    }
-                )
-
-        # --- AC2: wiring consultation -----------------------------------------
-        try:
-            from guardkit.orchestrator.quality_gates.coach_validator import (
-                _run_wiring_analysis,
-            )
-
-            stack_template = detect_stack_template(worktree.path)
-            # task_type is pinned to "feature" so the FEATURE/REFACTOR/INTEGRATION
-            # outer gate lets the probe run for direct-mode tasks. We do NOT
-            # mutate any resolved task_type elsewhere — the factory uses task_type
-            # only for that outer gate.
-            wiring_result = _run_wiring_analysis(
-                worktree_path=worktree.path,
-                authored_files=authored,
-                task_type="feature",
-                stack_template=stack_template,
-                bdd_dict=None,
-                task_id=task_id,
-            )
-        except Exception as exc:  # noqa: BLE001 — wiring must not crash Coach
-            logger.warning(
-                "Direct-mode wiring analysis raised for %s turn %s: %s "
-                "(skipping AC2 check).",
-                task_id, turn, exc,
-            )
-            wiring_result = None
-
-        if wiring_result is not None:
-            wiring = wiring_result.get("wiring") or {}
-            # Re-read the manifest here (AC3's _check_direct_mode_bin_entries
-            # reads it too, but does not expose its parsed set): the AC2 gate
-            # only blocks UNWIRED findings on a *registered* bin-entry. The
-            # manifest is small and worktree-local, so the second read is
-            # negligible.
-            bin_entries = set(_read_bin_entries(Path(worktree.path)))
-            authored_bin_entries = bin_entries & set(authored)
-            # The factory serialises each finding as
-            # ``{file, symbol, kind, severity, pattern}`` (guardkitfactory
-            # wiring/analyzer.py): the UNWIRED/MOCKED discriminator is
-            # ``pattern`` (``kind`` is the *symbol* kind, e.g. "function"),
-            # and the file path is ``file``. Read ``path`` as a defensive
-            # fallback for hand-built finding shapes — it can only ever match
-            # an already-authored registered entry, so it cannot manufacture a
-            # false-red.
-            unwired_registered = [
-                (finding.get("file") or finding.get("path"))
-                for finding in wiring.get("findings", [])
-                if finding.get("pattern") == "UNWIRED_PATH"
-                and (finding.get("file") or finding.get("path"))
-                in authored_bin_entries
-            ]
-            if unwired_registered:
-                must_fix.append(
-                    {
-                        "severity": "must_fix",
-                        "category": "direct_mode_wiring_gap",
-                        "description": (
-                            f"Direct mode: registered bin-entry path(s) "
-                            f"{unwired_registered} are UNWIRED (no non-test "
-                            f"reference / registration). A registered CLI "
-                            f"producer must be reachable."
-                        ),
-                        "details": {"unwired_registered": unwired_registered},
-                    }
-                )
-
-        # --- AC3: bin-entry producer execution --------------------------------
-        python_exe = (
-            str(validator._venv_python)
-            if getattr(validator, "_venv_python", None) is not None
-            else sys.executable
-        )
-        try:
-            bin_issues = _check_direct_mode_bin_entries(
-                Path(worktree.path), authored, python_exe
-            )
-        except Exception as exc:  # noqa: BLE001 — probe must not crash Coach
-            logger.warning(
-                "Direct-mode bin-entry probe raised for %s turn %s: %s "
-                "(skipping AC3 check).",
-                task_id, turn, exc,
-            )
-            bin_issues = []
-        for issue in bin_issues:
-            if issue.get("severity") == "must_fix":
-                must_fix.append(issue)
-            else:
-                advisories.append(issue)
-
-        if advisories:
-            logger.info(
-                "Direct-mode gate advisories for %s turn %s: %s",
-                task_id,
-                turn,
-                [a.get("category") for a in advisories],
-            )
-
-        if not must_fix:
-            return None
-
-        categories = sorted({issue["category"] for issue in must_fix})
-        # Detail lines are indented bullets, not "- " lines: in the feedback
-        # text a line starting "- " begins a new issue, so the old form cut
-        # every detail (which criteria are unmet) out of this must-fix item
-        # before it reached the coder (FEAT-2C42, 8 October 2026).
-        detail_lines = "\n".join(
-            f"  \u2022 [{issue['category']}] {issue['description']}"
-            for issue in must_fix
-        )
-        rationale = (
-            "Direct-mode evidence gate blocked the turn "
-            f"({', '.join(categories)}). Direct mode relaxes coverage/arch "
-            "gates but still requires verifiable AC delivery, resolved wiring, "
-            "and runnable registered producers:\n"
-            f"{detail_lines}"
-        )
-        # Said first, as its own issue with a suggestion, so the Player reads
-        # why it has no report before the criteria it could not be credited.
-        leading_issues = self._why_no_player_report_issues(
-            task_id, turn, player_report
-        )
-        logger.warning(
-            "Direct-mode evidence gate blocks %s turn %s:\n%s%s",
-            task_id, turn,
-            "".join(
-                f"[{issue['category']}] {issue['description']}\n"
-                for issue in leading_issues
-            ),
-            rationale,
-        )
-        return self._emit_synthetic_coach_feedback(
-            task_id=task_id,
-            turn=turn,
-            worktree=worktree,
-            rationale=rationale,
-            start_time=start_time,
-            # close-the-loop 2026-08-14 (CURE 2): this gate MEASURED the
-            # criteria — say so, and name the blocker as this gate rather
-            # than a Coach exception that never happened (the LLM Coach is
-            # not invoked on this path at all).
-            requirements=gate_req_validation,
-            category="direct_mode_gate",
-            leading_issues=leading_issues,
-            suggestion=(
-                completion_promise_suggestion(turn + 1)
-                if "direct_mode_ac_unverified" in categories
-                else None
-            ),
-            # 18 October 2026 (design review R1): the gate's blockers as data,
-            # one entry per leading issue and per must-fix item, so the loop
-            # reads them by schema and never from the prose above.
-            gate_blockers=_direct_mode_gate_blockers(leading_issues, must_fix),
-        )
 
     @staticmethod
     def _why_no_player_report_issues(
@@ -12399,135 +6454,46 @@ class AutoBuildOrchestrator:
         worktree: Worktree,
         rationale: str,
         start_time: float,
-        # TASK-FIX-SIBTESTENV01 (arch-review REC-1): only the
-        # _evidence_repo_gate call site sets this True (pure-absent sibling
-        # signal); every other caller leaves it False.
-        evidence_repo_signal_absent: bool = False,
-        # close-the-loop 2026-08-14 (CURE 2): when the *caller* already
-        # measured the acceptance criteria, hand that measurement through so
-        # the synthetic report states what was actually measured instead of
-        # nulls. Only ``_direct_mode_evidence_gate`` passes these; every
-        # other call site keeps today's byte-identical report.
-        requirements: Optional["RequirementsValidation"] = None,
-        category: str = "coach_primary_exception",
-        # FEAT-2C42 (8 October 2026): issues placed before the blocking one,
-        # each with its own suggestion. Only ``_direct_mode_evidence_gate``
-        # passes them; every other caller keeps today's single issue.
-        leading_issues: Optional[List[Dict[str, Any]]] = None,
-        # FEAT-2C42: how to fix the blocking issue, when the caller knows.
-        suggestion: Optional[str] = None,
-        # 18 October 2026: the direct-mode gate's blockers as structured data,
-        # ``[{category, unmet_ids}]``. Only ``_direct_mode_evidence_gate``
-        # passes it; every other caller's report stays byte-identical.
-        gate_blockers: Optional[List[Dict[str, Any]]] = None,
-        # 19 October 2026: True only for the primary path's invalid-task-type
-        # fast-exit (TASK-ABFIX-003), so the loop stops instead of retrying.
-        # Every other caller's report stays byte-identical.
-        is_configuration_error: bool = False,
+        category: str = "evidence_repo_tests_failed",
     ) -> AgentInvocationResult:
-        """Write a synthetic feedback coach_turn_N.json and return its result.
+        """Write a feedback coach_turn_N.json and return its result.
 
-        Used by the primary Coach flow (``_invoke_coach_primary``) when
-        ``gather_evidence`` or ``AgentInvoker.invoke_coach`` raises an
-        unexpected exception. Per Phase 2.5 review finding #1 and plan §3,
-        the primary path MUST NOT fall back to ``CoachValidator.validate()`` —
-        falsifier #1 ("the path autobuild._invoke_coach -> CoachValidator.validate()
-        for the decision is GONE") requires that the validator never silently
-        re-becomes the decision-maker on exception. ``GUARDKIT_COACH_LEGACY=1``
-        remains the sole, intentional, operator-controlled revert.
-
-        The synthetic decision schema mirrors ``CoachValidationResult.to_dict``
-        closely enough that downstream consumers (autobuild's
-        ``_display_criteria_progress``, ``_count_criteria_passed``) see a
-        consistent shape: ``decision: "feedback"``, populated rationale,
-        empty ``criteria_verification`` (no AC evaluation occurred).
+        Used when a declared sibling repository's tests ran and failed
+        (``_evidence_repo_gate``): the turn goes back to the Player with the
+        failure, and the reviewer is not run.
         """
-        import time
 
         from guardkit.orchestrator.paths import TaskArtifactPaths
 
         duration = time.time() - start_time
-        # TASK-SBHO-002: synthetic feedback also goes to the private dir
-        # so the Player cannot read the judge's verdict even in the
-        # exception-handling path.
         decision_path = TaskArtifactPaths.private_artifact_path(
             task_id, f"coach_turn_{turn}.json", worktree.path
         )
         decision_path.parent.mkdir(parents=True, exist_ok=True)
-
-        # close-the-loop 2026-08-14 (CURE 2). Default (``requirements=None``)
-        # keeps the historical nulls byte-for-byte. When a caller DID measure
-        # the criteria, report that measurement: leaving it null made
-        # ``_count_criteria_passed`` return 0 structurally, which made
-        # ``_is_feedback_stalled`` take its "true zero progress —
-        # unrecoverable" branch on turns that had in fact verified 4 of 6
-        # criteria. No decision logic is changed here; only the inputs those
-        # readers see become honest.
-        requirements_block: Optional[Dict[str, Any]] = None
-        criteria_results_block: List[Dict[str, Any]] = []
-        if requirements is not None:
-            requirements_block = {
-                "criteria_total": requirements.criteria_total,
-                "criteria_met": requirements.criteria_met,
-                "all_criteria_met": requirements.all_criteria_met,
-                "missing": list(requirements.missing),
-            }
-            criteria_results_block = [cr.to_dict() for cr in requirements.criteria_results]
-
         synthetic = {
             "task_id": task_id,
             "turn": turn,
             "decision": "feedback",
-            "validation_results": {
-                "quality_gates": None,
-                "independent_tests": None,
-                "requirements": requirements_block,
-            },
-            "criteria_verification": [],
-            "acceptance_criteria_verification": {
-                "criteria_results": criteria_results_block
-            },
             "issues": [
-                *(dict(issue) for issue in (leading_issues or [])),
                 {
                     "severity": "must_fix",
                     "category": category,
                     "description": rationale,
-                    **({"suggestion": suggestion} if suggestion else {}),
                 },
             ],
             "rationale": rationale,
-            "context_used": None,
-            "approved_without_independent_tests": False,
-            "is_configuration_error": is_configuration_error,
-            "environment_conditional_approval": False,
-            "honesty_verification": None,
             "coach_primary_synthetic_feedback": True,
-            # TASK-FIX-SIBTESTENV01 (CRITICAL-1): this MUST stay a TOP-LEVEL
-            # report key (same level as coach_primary_synthetic_feedback),
-            # never nested inside "issues" — the stall-immunity extractor
-            # (_extract_absent_evidence_repo_signal) reads it via
-            # report.get("evidence_repo_signal_absent") and would silently
-            # never fire on a nested placement.
-            "evidence_repo_signal_absent": evidence_repo_signal_absent,
         }
-        if gate_blockers is not None:
-            # A TOP-LEVEL key, like evidence_repo_signal_absent: the loop's
-            # schema-only reader (_extract_direct_mode_blockers) reads it
-            # from here and nowhere else.
-            synthetic["direct_mode_blockers"] = [
-                dict(blocker) for blocker in gate_blockers
-            ]
         try:
             with open(decision_path, "w") as f:
                 json.dump(synthetic, f, indent=2)
             logger.info(
-                "Wrote synthetic feedback decision to %s (rationale: %s)",
+                "Wrote feedback decision to %s (rationale: %s)",
                 decision_path, rationale,
             )
         except OSError as write_exc:
             logger.error(
-                "Failed to write synthetic feedback decision to %s: %s",
+                "Failed to write feedback decision to %s: %s",
                 decision_path, write_exc,
             )
 
@@ -12546,44 +6512,20 @@ class AutoBuildOrchestrator:
         report: Optional[Dict[str, Any]],
         evidence_bundle: Optional["CoachEvidenceBundle"],
     ) -> Optional[Dict[str, Any]]:
-        """Thread the deterministic gate's test signal into the LLM-Coach report.
+        """Copy this turn's own test run into the reviewer's report.
 
-        TASK-AB-CKPTGATE01. The default LLM Coach's ``coach_result.report``
-        carries only ``{decision, issues, criteria_verification, rationale}`` —
-        it omits ``validation_results.quality_gates``. The authoritative
-        ``tests=True`` verdict the deterministic gate computed lives in the Coach
-        *evidence bundle*, not in the returned report. ``_extract_tests_passed``
-        (the checkpoint-layer consumer) therefore found nothing and recorded a
-        genuinely-passing turn as ``UNKNOWN`` rather than ``pass`` — costing
-        ``find_last_passing_checkpoint`` a valid rollback target. This is the
-        residual gap left by TASK-FIX-CKPTTESTRED01's scope boundary.
+        The reviewer's report carries only its verdict. The project's own test
+        run lives in the evidence bundle; this copies its result
+        (``signal_absent``, ``tests_passed``, command, summary) into
+        ``report["validation_results"]["independent_tests"]`` so the checkpoint
+        layer (``_extract_tests_passed``) records what the run showed, and puts
+        the run's failure facts under ``SUITE_RECEIPT_KEY`` for the Player's
+        feedback. An orchestrator-side enrichment, never a reviewer write.
 
-        This helper copies the bundle's ``quality_gates.tests_passed`` and
-        ``independent_tests.signal_absent`` (+ ``tests_passed``) into
-        ``report["validation_results"]`` so the checkpoint layer reads the same
-        oracle the gate logged. It is an orchestrator-side enrichment of the
-        returned report object — NOT a Coach write — so the Coach read-only
-        invariant (``feature-build-invariants.md`` FB-004) is preserved.
-
-        Invariants honoured:
-
-        * **Absence-of-failure**
-          (``.claude/rules/absence-of-failure-is-not-success.md``): when the
-          bundle's ``independent_tests.signal_absent`` is ``True`` the merged
-          report still resolves to ``UNKNOWN``. ``_extract_tests_passed`` reads
-          ``signal_absent`` *before* ``quality_gates.tests_passed``, so a passing
-          deterministic gate never overrides an absent independent signal.
-        * **Non-clobbering**: a field already present in the report wins (a real
-          Coach verdict that carries its own ``validation_results`` is never
-          overwritten). The synthetic-feedback path is never routed through this
-          helper, so it stays absent → ``UNKNOWN`` (the Coach produced no
-          verdict there).
-
-        Returns the (mutated) ``report`` for call-site convenience; no-ops and
-        returns the input unchanged when either argument is absent — except
-        that the run's failure facts (``SUITE_RECEIPT_KEY``) are only ever
-        this turn's own: whatever the model's report held under that key is
-        removed first, so with no independent run there are none.
+        A field already in the report is never overwritten, except
+        ``SUITE_RECEIPT_KEY``: whatever the model's report held under that key
+        is removed first, so with no independent run there are none. Returns
+        the (mutated) ``report``; unchanged when either argument is absent.
         """
         from guardkit.orchestrator.failing_test_feedback import SUITE_RECEIPT_KEY
 
@@ -12597,17 +6539,7 @@ class AutoBuildOrchestrator:
             validation = {}
             report["validation_results"] = validation
 
-        # Deterministic quality-gate test signal (the authoritative tests=True).
-        gates = evidence_bundle.quality_gates
-        if gates is not None:
-            gates_dict = validation.get("quality_gates")
-            if not isinstance(gates_dict, dict):
-                gates_dict = {}
-                validation["quality_gates"] = gates_dict
-            gates_dict.setdefault("tests_passed", gates.tests_passed)
-
-        # Independent-test absence signal — read FIRST by _extract_tests_passed,
-        # so it gates the quality-gate signal above (absence-of-failure).
+        # The project's own test run (an absent run reads as UNKNOWN).
         independent = evidence_bundle.independent_tests
         if independent is not None:
             indep_dict = validation.get("independent_tests")
@@ -12634,40 +6566,6 @@ class AutoBuildOrchestrator:
             receipt = receipt_of() if callable(receipt_of) else None
             if isinstance(receipt, dict):
                 report[SUITE_RECEIPT_KEY] = receipt
-
-        # Preserve the deterministic per-criterion result for metadata
-        # consumers. The LLM Coach remains the decision owner: this enriches
-        # validation_results only and never rewrites decision/issues or the
-        # Coach-authored criteria_verification list.
-        requirements = evidence_bundle.requirements
-        if requirements is not None:
-            requirements_dict = validation.get("requirements")
-            if not isinstance(requirements_dict, dict):
-                requirements_dict = {}
-                validation["requirements"] = requirements_dict
-            requirements_dict.setdefault("criteria_total", requirements.criteria_total)
-            requirements_dict.setdefault("criteria_met", requirements.criteria_met)
-            requirements_dict.setdefault(
-                "all_criteria_met", requirements.all_criteria_met
-            )
-            requirements_dict.setdefault("missing", list(requirements.missing))
-            requirements_dict.setdefault(
-                "criteria_results",
-                [result.to_dict() for result in requirements.criteria_results],
-            )
-
-        # Phase 4 can supply an explicit count independently of the prose test
-        # summary. Keep that generic integer when present; direct mode has no
-        # Phase-4 count and is handled by the independent summary fallback.
-        tests = evidence_bundle.tests
-        if isinstance(tests, dict):
-            tests_dict = validation.get("tests")
-            if not isinstance(tests_dict, dict):
-                tests_dict = {}
-                validation["tests"] = tests_dict
-            for count_name in ("tests_run", "tests_passed", "tests_failed"):
-                if count_name in tests:
-                    tests_dict.setdefault(count_name, tests.get(count_name))
 
         return report
 
@@ -12953,173 +6851,10 @@ class AutoBuildOrchestrator:
             return f"Feedback: {fallback_text[:80]}..."
         return f"Feedback: {fallback_text}"
 
-    def _build_verifier_infrastructure_stall_diagnostic(
-        self,
-        turn_history: List["TurnRecord"],
-        threshold: int = STALL_CLASSIFICATION_THRESHOLD,
-    ) -> Optional[str]:
-        """Build the verifier-infrastructure stall message (TASK-AB-ZEROTESTLOUD01).
-
-        Returns a diagnostic naming VERIFIER INFRASTRUCTURE (not Player
-        quality), the resolved interpreter, the probed test command, and the
-        remediation, when the trailing ``threshold`` turns ALL carry the
-        ``verifier_infrastructure`` marker. Returns ``None`` otherwise —
-        callers fall through to the TASK-ABSR-C3D4 environment diagnostic /
-        generic stall message. Schema-match only (same extractor
-        ``classify_stall`` uses), never feedback-text matching.
-
-        2026-07-04 code review (FIX 2): ``threshold`` defaults to the shared
-        ``STALL_CLASSIFICATION_THRESHOLD`` and callers must thread the SAME
-        value they passed to ``classify_stall`` — a diverged window makes the
-        sub-type fire while this diagnostic silently returns ``None`` (the
-        generic quality-implying message).
-        """
-        if len(turn_history) < threshold:
-            return None
-        recent = turn_history[-threshold:]
-        vi_signals = [
-            _extract_verifier_infrastructure_signal(tr) for tr in recent
-        ]
-        if not all(signal is not None for signal in vi_signals):
-            return None
-
-        latest = vi_signals[-1] or {}
-        details = latest.get("details") if isinstance(latest.get("details"), dict) else {}
-        resolved_interpreter = details.get("resolved_interpreter") or "unknown"
-        test_command = details.get("test_command") or "unknown"
-
-        n_turns = len(turn_history)
-        if all(
-            ((signal or {}).get("details") or {}).get("exit_code") == 0
-            for signal in vi_signals
-        ):
-            # The declared check ran and exited 0 but showed no test running,
-            # on every trailing turn (23 October 2026). Nothing in the
-            # environment is broken, so the venv advice below would not
-            # apply. A window with any other exit code keeps that advice.
-            return "\n".join([
-                f"Unrecoverable stall detected after {n_turns} turn(s) "
-                f"[{STALL_ENVIRONMENT}].",
-                f"The declared check (command: {test_command}) ran and "
-                "exited 0 on every trailing turn, but its output showed no "
-                "test running, so no test count was recognised and the "
-                "Player's reported tests could not be confirmed.",
-                "Remediation: make that command run this task's tests and "
-                "print their results.",
-                "Worktree preserved for inspection.",
-            ])
-        parts = [
-            f"Unrecoverable stall detected after {n_turns} turn(s) "
-            f"[{STALL_ENVIRONMENT}].",
-            "Verifier infrastructure failure: the Phase-4/independent test "
-            "oracle collected/ran ZERO tests on every trailing turn — the "
-            "Coach was blind, NOT rejecting the Player on quality. This is "
-            "not a signal about the implementation.",
-            f"Resolved interpreter: {resolved_interpreter}",
-            f"Probed test command: {test_command}",
-            "Remediation: check the worktree venv (<worktree>/.venv or "
-            "legacy <worktree>/.guardkit/venv) resolves and has the "
-            "project's deps installed, or re-run environment bootstrap "
-            "(a --resume hash-match skip must still thread venv_python — "
-            "see TASK-AB-RESUMEVENV01).",
-            "Worktree preserved for inspection.",
-        ]
-        return "\n".join(parts)
-
-    def _build_environment_stall_diagnostic(
-        self,
-        turn_history: List["TurnRecord"],
-    ) -> Optional[str]:
-        """Build the environment_stall diagnostic message (TASK-ABSR-C3D4).
-
-        Returns ``None`` when the worktree has no Python manifest — callers
-        fall through to the generic stall message in that case. Reading the
-        bootstrap state file and the manifest is best-effort: missing or
-        unparseable inputs are silently omitted rather than raising.
-        """
-        n_turns = len(turn_history)
-
-        # Resolve the worktree root for this task. The orchestrator clears
-        # ``_active_worktree_path`` on finalize, so reconstruct from the
-        # worktrees dir and the last turn's task_id.
-        worktree_root: Optional[Path] = None
-        if self._worktree_manager is not None and turn_history:
-            last = turn_history[-1]
-            if last.player_result and last.player_result.task_id:
-                candidate = (
-                    self._worktree_manager.worktrees_dir
-                    / last.player_result.task_id
-                )
-                if candidate.exists():
-                    worktree_root = candidate
-
-        # Per the task spec: enrich only the Python-project case. If there is
-        # no pyproject.toml, fall through to the generic diagnostic.
-        if worktree_root is None or not (worktree_root / "pyproject.toml").exists():
-            return None
-
-        parts = [
-            f"Unrecoverable stall detected after {n_turns} turn(s) [{STALL_ENVIRONMENT}].",
-            "Stall driven by repeated infrastructure-class failures while all Player gates passed.",
-        ]
-
-        # Bootstrap state — best-effort.
-        bootstrap_state_path = worktree_root / ".guardkit" / "bootstrap_state.json"
-        if bootstrap_state_path.exists():
-            try:
-                state = json.loads(
-                    bootstrap_state_path.read_text(encoding="utf-8")
-                )
-                if isinstance(state, dict):
-                    fields: List[str] = []
-                    if "success" in state:
-                        fields.append(f"success={state.get('success')}")
-                    if "installs_attempted" in state:
-                        fields.append(
-                            f"installs_attempted={state.get('installs_attempted')}"
-                        )
-                    if "installs_failed" in state:
-                        fields.append(
-                            f"installs_failed={state.get('installs_failed')}"
-                        )
-                    if fields:
-                        parts.append("Bootstrap state: " + ", ".join(fields))
-            except (OSError, json.JSONDecodeError, ValueError):
-                pass
-
-        # Active interpreter version.
-        parts.append(f"Active Python interpreter: {platform.python_version()}")
-
-        # requires-python from the manifest, via DetectedManifest helper.
-        try:
-            from guardkit.orchestrator.environment_bootstrap import (
-                DetectedManifest,
-            )
-
-            manifest = DetectedManifest(
-                path=worktree_root / "pyproject.toml",
-                stack="python",
-                is_lock_file=False,
-                install_command=[],
-            )
-            requires_python = manifest.get_requires_python()
-        except Exception:
-            requires_python = None
-        if requires_python:
-            parts.append(f"Manifest requires-python: {requires_python}")
-
-        parts.append(
-            "Remediation: Install a compatible interpreter with `uv python install <X>`, "
-            "`pyenv install <X>`, or `conda create -n <name> python=<X>`."
-        )
-        parts.append("Worktree preserved for inspection.")
-
-        return "\n".join(parts)
-
     def _build_summary_details(
         self,
         turn_history: List[TurnRecord],
-        final_decision: Literal["approved", "already_satisfied", "max_turns_exceeded", "unrecoverable_stall", "player_invocation_stall", "error", "cancelled", "timeout", "timeout_budget_exhausted", "configuration_error", "pre_loop_blocked", "design_extraction_failed", "honesty_collapse"],
+        final_decision: Literal["approved", "max_turns_exceeded", "error", "cancelled", "timeout", "timeout_budget_exhausted", "pre_loop_blocked", "design_extraction_failed"],
     ) -> str:
         """
         Build detailed summary text for final report.
@@ -13136,65 +6871,8 @@ class AutoBuildOrchestrator:
         str
             Formatted summary details
         """
-        if final_decision == DECISION_ALREADY_SATISFIED:
-            # The third outcome, said in plain words: this task is finished
-            # and nothing was written for it.
-            last_turn = turn_history[-1] if turn_history else None
-            if last_turn is None:
-                return (
-                    "This task was already satisfied by the code in the "
-                    "tree. Nothing was written, and there is nothing to "
-                    "merge for it. The task is COMPLETE."
-                )
-            task_name = "This task"
-            if last_turn.player_result is not None:
-                task_name = getattr(
-                    last_turn.player_result, "task_id", None
-                ) or "This task"
-            return (
-                _already_satisfied_message(
-                    task_name, last_turn, len(turn_history)
-                )
-                + f"\nWorktree preserved at: "
-                f"{self._worktree_manager.worktrees_dir}"
-            )
 
         if final_decision == "approved":
-            # Check if this was a conditional approval (infrastructure-dependent)
-            last_coach = turn_history[-1] if turn_history else None
-            coach_report = (
-                last_coach.coach_result.report
-                if last_coach and last_coach.coach_result
-                else None
-            )
-            if coach_report and coach_report.get("environment_conditional_approval"):
-                # TASK-ABSR-2468: environment-class conditional approval
-                # — the worktree's bootstrap was observably broken and
-                # Player did everything right in the (broken) venv. Label
-                # this distinctly so the human reviewer doesn't read it as
-                # a generic "infra deps not configured" approval.
-                return (
-                    f"APPROVED with environment flag "
-                    f"(known-broken bootstrap, independent tests skipped) "
-                    f"after {len(turn_history)} turn(s).\n"
-                    f"Worktree preserved at: {self._worktree_manager.worktrees_dir}\n"
-                    f"Review and merge manually when ready.\n"
-                    f"Note: Independent tests failed with environment-class "
-                    f"infrastructure error (ImportError/ModuleNotFoundError) on "
-                    f"a worktree whose bootstrap install is reported broken. "
-                    f"Player's gates passed; the failure is environmental. "
-                    f"Verify the implementation against a healthy bootstrap "
-                    f"before merging."
-                )
-            if coach_report and coach_report.get("approved_without_independent_tests"):
-                return (
-                    f"APPROVED (infra-dependent, independent tests skipped) "
-                    f"after {len(turn_history)} turn(s).\n"
-                    f"Worktree preserved at: {self._worktree_manager.worktrees_dir}\n"
-                    f"Review and merge manually when ready.\n"
-                    f"Note: Independent tests were skipped due to infrastructure "
-                    f"dependencies without Docker."
-                )
             return (
                 f"Coach approved implementation after {len(turn_history)} turn(s).\n"
                 f"Worktree preserved at: {self._worktree_manager.worktrees_dir}\n"
@@ -13206,389 +6884,6 @@ class AutoBuildOrchestrator:
                 f"Maximum turns ({self.max_turns}) reached without approval.\n"
                 f"Worktree preserved for inspection.\n"
                 f"Review implementation and provide manual guidance."
-            )
-
-        elif final_decision == "honesty_collapse":
-            # TASK-FIX-HEAB: rolling-average honesty collapse short-circuits
-            # the loop. The diagnostic produced by _check_honesty_early_abort
-            # was logged at abort time and is the actionable artefact —
-            # mirror it into the summary so terminal users see the same
-            # context without grepping the log.
-            n_turns = len(turn_history)
-            avg = (
-                sum(self._honesty_history[-self.honesty_early_abort_window:])
-                / self.honesty_early_abort_window
-            ) if len(self._honesty_history) >= self.honesty_early_abort_window else 0.0
-            return (
-                f"Honesty collapse detected after {n_turns} turn(s) "
-                f"[honesty_early_abort].\n"
-                f"Rolling average over last {self.honesty_early_abort_window} "
-                f"turns: {avg:.2f} < threshold {self.honesty_early_abort_threshold:.2f}.\n"
-                f"Worktree preserved for inspection.\n"
-                f"Suggested action: inspect the most-recent Coach honesty "
-                f"discrepancies and the worktree's .gitignore for "
-                f"silently-excluded paths the Player keeps re-claiming."
-            )
-
-        elif final_decision == "player_invocation_stall":
-            # Signal-based classification (TASK-FIX-7A02): Player never produced
-            # a real report for N consecutive turns (SDK-layer failure or
-            # synthetic-recovery report). Quote the first-turn error and list
-            # the affected turn numbers so the summary points at the env, not
-            # the task.
-            player_error_turns = [
-                tr for tr in turn_history
-                if self._is_player_invocation_failure(tr)
-            ]
-            first_turn = player_error_turns[0] if player_error_turns else None
-            first_error = (
-                _player_turn_error(first_turn) if first_turn else None
-            ) or "unavailable"
-            affected_turns = ", ".join(str(tr.turn) for tr in player_error_turns)
-            n_failed = len(player_error_turns)
-            # Build FEAT-2C42 (8 October 2026): every failed turn had run out
-            # of time, yet this summary blamed "player_report" and pointed at
-            # sign-in and SDK checks that do not apply to a local model. When
-            # a turn ran out of time, say so, show the timings, and leave the
-            # sign-in and SDK checks out.
-            timed_out = {
-                tr.turn: _player_turn_timeout(tr) for tr in player_error_turns
-            }
-            if any(timed_out.values()):
-                lines = []
-                for tr in player_error_turns:
-                    details = timed_out[tr.turn]
-                    if details:
-                        allowed = details.get("timeout_seconds")
-                        ran = details.get("elapsed_seconds")
-                        timing = ", ".join(
-                            part for part in (
-                                f"allowed {allowed} s" if allowed else "",
-                                f"ran {ran} s" if ran else "",
-                            ) if part
-                        )
-                        lines.append(
-                            f"  turn {tr.turn}: ran out of time before "
-                            f"writing its report"
-                            f"{f' ({timing})' if timing else ''}"
-                        )
-                    else:
-                        lines.append(
-                            f"  turn {tr.turn}: "
-                            f"{_player_turn_error(tr) or 'no report written'}"
-                        )
-                n_timed_out = sum(1 for d in timed_out.values() if d)
-                return (
-                    f"Player-invocation stall detected after "
-                    f"{len(turn_history)} turn(s).\n"
-                    f"The coder ran out of time on {n_timed_out} of "
-                    f"{n_failed} turn(s) without a report of its own "
-                    f"(turns: {affected_turns}). It was still working when "
-                    f"its time ran out.\n"
-                    f"Timings:\n" + "\n".join(lines) + "\n"
-                    f"Worktree preserved for inspection.\n"
-                    f"Suggested action: give each turn more time, or split "
-                    f"the task so a turn can finish and write its report."
-                )
-            head = (
-                f"Player-invocation stall detected after {len(turn_history)} turn(s).\n"
-                f"Player failed {n_failed}\u00d7 at the SDK layer before producing "
-                f"any work (turns: {affected_turns}).\n"
-                f"Underlying error (turn {first_turn.turn if first_turn else '?'}): "
-                f"{first_error!r}\n"
-                f"Worktree preserved for inspection.\n"
-            )
-            # The sign-in and package checks only apply when the run really
-            # calls Anthropic through claude-agent-sdk, decided from the
-            # configured harness and base URL (FEAT-2C42: a local-model run
-            # was told to check `claude login`).
-            from guardkit.orchestrator.harness.selector import (
-                is_anthropic_sdk_run,
-            )
-
-            if is_anthropic_sdk_run():
-                return head + (
-                    f"Suggested checks:\n"
-                    f"  (a) `claude` is logged in on this host "
-                    f"(claude auth status / claude login)\n"
-                    f"  (b) `pip show claude-agent-sdk` matches the working "
-                    f"environment (version + install path)."
-                )
-            return head + (
-                "Suggested checks: the coder's model server is reachable and "
-                "answering, and the coder's log for these turns shows why it "
-                "stopped."
-            )
-
-        elif final_decision == "unrecoverable_stall":
-            # Check if the stall was caused by SDK API errors (TASK-FIX-d5e6).
-            # TASK-FIX-7A02: This is now the *fallback* path — the new
-            # signal-based branch (player_invocation_stall) takes precedence
-            # when detected. This branch preserves TASK-REV-8A08's diagnostic
-            # for the case where Coach feedback text happens to carry the
-            # "SDK API error" substring but the Player reports were real.
-            recent_feedback = [
-                tr.feedback for tr in turn_history
-                if tr.feedback and tr.decision == "feedback"
-            ]
-            # TASK-FIX-7A07: Delegate stall sub-classification to the shared
-            # classify_stall() helper. The new coach_agent_invocations_stall
-            # branch takes precedence over the legacy SDK-API-error fallback
-            # and the generic task-blaming hint \u2014 it names the specific
-            # sub-agents the Player should invoke via the Task tool rather
-            # than blaming the task's acceptance criteria.
-            # 18 October 2026: the plain early stop says one sentence, and
-            # that sentence is the whole message.
-            stop_sentence = getattr(self, "_plan_contradicts_check_sentence", None)
-            if stop_sentence:
-                return stop_sentence
-            classification = classify_stall(
-                turn_history,
-                final_decision,
-                threshold=STALL_CLASSIFICATION_THRESHOLD,
-                context_pollution_fired=getattr(
-                    self, "_context_pollution_no_checkpoint_fired", False
-                ),
-            )
-            # 2026-07-04 code review (FIX 1): the interference hint + peer map
-            # are ADDITIVE, keyed off co_fires alone — rendered whichever
-            # primary branch below builds the surrounding message, so the
-            # CAUSE the sub-type carries is never lost to branch nesting.
-            interference_block = _render_parallel_interference_block(
-                classification,
-                turn_history,
-                threshold=STALL_CLASSIFICATION_THRESHOLD,
-            )
-            # TASK-AB-NOCHANGE01: the generator wrote nothing. Rendered
-            # before every other sub-type because it is the primary label
-            # whenever it fires (see classify_stall) and because the other
-            # messages would describe consequences of it.
-            if (
-                classification is not None
-                and STALL_NO_FILE_CHANGES in classification.co_fires
-            ):
-                task_id_str = (
-                    turn_history[-1].player_result.task_id
-                    if turn_history and turn_history[-1].player_result
-                    else "this task"
-                )
-                message = self._no_file_change_stall_message(
-                    task_id_str, turn_history
-                )
-                if len(classification.co_fires) > 1:
-                    others = [
-                        cf
-                        for cf in classification.co_fires
-                        if cf != STALL_NO_FILE_CHANGES
-                    ]
-                    message += (
-                        f"\nOther stall sub-types also fired: "
-                        f"{', '.join(others)}."
-                    )
-                if interference_block:
-                    message += f"\n{interference_block}"
-                return message
-
-            if (
-                classification is not None
-                and STALL_COACH_AGENT_INVOCATIONS in classification.co_fires
-            ):
-                worktree_root = (
-                    self._worktree_manager.worktrees_dir
-                    if self._worktree_manager is not None
-                    else None
-                )
-                stack_template = detect_stack_template(worktree_root)
-                task_id_str = (
-                    turn_history[-1].player_result.task_id
-                    if turn_history and turn_history[-1].player_result
-                    else "{task_id}"
-                )
-                missing_phases_list = classification.missing_phases or ["4", "5"]
-                # TASK-GK-PROF-001: pass workspace_root so Phase-3 resolution
-                # consults the installed specialist set rather than the
-                # hardcoded stack→specialist map.
-                specialist_lines = render_missing_phase_list(
-                    missing_phases_list,
-                    stack_template=stack_template,
-                    workspace_root=worktree_root,
-                )
-                specialist_block = "\n".join(
-                    f"  - {line}" for line in specialist_lines
-                )
-                n_turns = len(turn_history)
-                exp = classification.expected_phases
-                actual = classification.actual_invocations
-                co_fire_suffix = ""
-                if len(classification.co_fires) > 1:
-                    others = [
-                        cf for cf in classification.co_fires
-                        if cf != STALL_COACH_AGENT_INVOCATIONS
-                    ]
-                    co_fire_suffix = (
-                        f"\nCo-fired stall sub-types: {', '.join(others)}."
-                    )
-                # FIX 1: additive interference block (empty when interference
-                # did not co-fire — byte-compatible with the pre-fix message).
-                interference_suffix = (
-                    f"\n{interference_block}" if interference_block else ""
-                )
-                return (
-                    f"Unrecoverable stall detected after {n_turns} turn(s) "
-                    f"[{classification.decision_subtype}].\n"
-                    f"Coach's agent-invocations gate rejected the Player's "
-                    f"task-work results for {n_turns} consecutive turns "
-                    f"(missing phases: {sorted(missing_phases_list)}; "
-                    f"expected {exp if exp is not None else '?'}, "
-                    f"actual {actual if actual is not None else '?'}).\n"
-                    f"The Player appears to have completed the work inline "
-                    f"without invoking the required sub-agents via the "
-                    f"Task tool. Inspect "
-                    f"`.guardkit/autobuild/{task_id_str}/task_work_results.json "
-                    f"\u2192 agent_invocations_validation`.\n"
-                    f"Remediation options:\n"
-                    f"  (a) ensure the Player's system prompt mandates "
-                    f"Task-tool invocation for the missing phases. "
-                    f"Required specialists:\n"
-                    f"{specialist_block}\n"
-                    f"  (b) set `implementation_mode: direct` in the task "
-                    f"frontmatter if the task's complexity does not warrant "
-                    f"the specialist pipeline."
-                    f"{co_fire_suffix}"
-                    f"{interference_suffix}\n"
-                    f"Worktree preserved for inspection."
-                )
-
-            # environment_stall branch: emit env-aware diagnostic naming the
-            # bootstrap state, active interpreter, and requires-python
-            # constraint. Falls through to the generic message when the
-            # worktree has no Python manifest (TASK-ABSR-C3D4).
-            if (
-                classification is not None
-                and STALL_ENVIRONMENT in classification.co_fires
-            ):
-                # TASK-AB-ZEROTESTLOUD01 (AC-003): when the stall window is
-                # all verifier_infrastructure-marked turns (zero collected
-                # tests every turn), name verifier infrastructure, the
-                # resolved interpreter, and the venv remediation instead of
-                # implying Player quality.
-                vi_message = (
-                    self._build_verifier_infrastructure_stall_diagnostic(
-                        turn_history,
-                        threshold=STALL_CLASSIFICATION_THRESHOLD,
-                    )
-                )
-                if vi_message is not None:
-                    if interference_block:
-                        vi_message += f"\n{interference_block}"
-                    return vi_message
-                env_message = self._build_environment_stall_diagnostic(
-                    turn_history
-                )
-                if env_message is not None:
-                    if interference_block:
-                        env_message += f"\n{interference_block}"
-                    return env_message
-
-            # Fallback: Check if the stall was caused by SDK API errors
-            # (TASK-FIX-d5e6). This preserves TASK-REV-8A08's diagnostic for
-            # the case where Coach feedback text happens to carry the
-            # "SDK API error" substring but the Player reports were real.
-            if recent_feedback and all(
-                "SDK API error" in fb for fb in recent_feedback[-3:]
-            ):
-                stall_hint = (
-                    "Stall caused by SDK API errors \u2014 check "
-                    "ANTHROPIC_BASE_URL configuration and SDK model name "
-                    "compatibility (see vllm-serve.sh SERVED_MODEL_NAME)."
-                )
-            elif (
-                classification is not None
-                and STALL_CONTEXT_POLLUTION in classification.co_fires
-            ):
-                stall_hint = (
-                    "Context pollution detected but no passing checkpoint "
-                    "existed to roll back to \u2014 review the Player's "
-                    "early turns for regression patterns."
-                )
-            elif interference_block is not None:
-                # 2026-07-04 code review (FIX 1): an interference-ONLY stall
-                # (e.g. the feedback-stall exit, which never sets the
-                # pollution flag) must carry the isolation hint, NOT the
-                # generic task_type hint \u2014 the additive block appended below
-                # IS the hint.
-                stall_hint = ""
-            else:
-                stall_hint = (
-                    "Review task_type classification and acceptance criteria."
-                )
-
-            # TASK-AB-STALLTAX01 (a) / 2026-07-04 review (FIX 1): the
-            # isolation hint + contention-peer map are additive, keyed off
-            # co_fires alone \u2014 appended whichever primary hint branch ran,
-            # so the Coach layer's per-turn contention knowledge is never
-            # discarded before the terminal message.
-            if interference_block is not None:
-                stall_hint = (
-                    f"{stall_hint}\n{interference_block}"
-                    if stall_hint
-                    else interference_block
-                )
-            # TASK-AB-STALLTAX01 (b): name the failing tests across the
-            # stall window so the operator sees WHICH tests failed without
-            # grepping coach_turn_N.json. Renders for the context-pollution
-            # AND interference cases (2026-07-04 review FIX 1).
-            if classification is not None and (
-                STALL_CONTEXT_POLLUTION in classification.co_fires
-                or STALL_PARALLEL_INTERFERENCE in classification.co_fires
-            ):
-                failing_lines = _aggregate_failing_test_lines(
-                    turn_history, threshold=STALL_CLASSIFICATION_THRESHOLD
-                )
-                if failing_lines:
-                    failing_block = "\n".join(
-                        f"    {line}" for line in failing_lines
-                    )
-                    stall_hint += (
-                        "\n  Failing tests across the stall window:\n"
-                        f"{failing_block}"
-                    )
-            return (
-                f"Unrecoverable stall detected after {len(turn_history)} turn(s).\n"
-                f"AutoBuild cannot make forward progress.\n"
-                f"{_stall_refusal_line(turn_history)}"
-                f"Worktree preserved for inspection.\n"
-                f"Suggested action: {stall_hint}"
-            )
-
-        elif final_decision == "configuration_error":
-            config_turn = next(
-                (t for t in reversed(turn_history) if t.is_configuration_error), None
-            )
-            documents_refusal = getattr(self, "_project_documents_refusal", None)
-            if config_turn is None and documents_refusal:
-                # Stopped at task start by the binding-documents check: say
-                # which files, their sizes and the limit, not a task_type hint.
-                return (
-                    f"Stopped before any model call: the project's binding "
-                    f"documents could not be given to the Coach whole.\n"
-                    f"Detail: {documents_refusal}\n"
-                    f"Action: fix autobuild.player.required_documents or the "
-                    f"documents it names, then retry.\n"
-                    f"Worktree preserved for inspection."
-                )
-            detail, is_task_type = _configuration_error_cause(config_turn)
-            detail = detail or "unknown configuration error"
-            action = (
-                "Fix the task_type in the task .md file and retry."
-                if is_task_type
-                else "Fix the cause above and retry; the Player cannot fix it."
-            )
-            return (
-                f"Configuration error detected — loop exited immediately.\n"
-                f"Detail: {detail}\n"
-                f"Action: {action}\n"
-                f"Worktree preserved for inspection."
             )
 
         elif final_decision == "pre_loop_blocked":
@@ -13664,7 +6959,7 @@ class AutoBuildOrchestrator:
 
     def _build_error_message(
         self,
-        final_decision: Literal["approved", "already_satisfied", "max_turns_exceeded", "unrecoverable_stall", "player_invocation_stall", "error", "cancelled", "timeout", "timeout_budget_exhausted", "configuration_error", "pre_loop_blocked", "design_extraction_failed", "honesty_collapse"],
+        final_decision: Literal["approved", "max_turns_exceeded", "error", "cancelled", "timeout", "timeout_budget_exhausted", "pre_loop_blocked", "design_extraction_failed"],
         turn_history: List[TurnRecord],
     ) -> str:
         """
@@ -13685,44 +6980,8 @@ class AutoBuildOrchestrator:
         if final_decision == "max_turns_exceeded":
             return f"Maximum turns ({self.max_turns}) exceeded without approval"
 
-        elif final_decision == "honesty_collapse":
-            # TASK-FIX-HEAB: rolling honesty average dropped below threshold;
-            # short-circuit instead of burning the rest of max_turns.
-            return (
-                f"Honesty collapse: rolling avg over last "
-                f"{self.honesty_early_abort_window} turns dropped below "
-                f"threshold {self.honesty_early_abort_threshold:.2f} after "
-                f"{len(turn_history)} turn(s)"
-            )
 
-        elif final_decision == "unrecoverable_stall":
-            # 18 October 2026: the plain early stop's sentence is the error.
-            stop_sentence = getattr(self, "_plan_contradicts_check_sentence", None)
-            if stop_sentence:
-                return stop_sentence
-            refusal = _stall_refusal_line(turn_history).strip()
-            return (
-                f"Unrecoverable stall detected after {len(turn_history)} turn(s). "
-                f"AutoBuild cannot make forward progress."
-                + (f" {refusal}" if refusal else "")
-            )
 
-        elif final_decision == "configuration_error":
-            config_turn = next(
-                (t for t in reversed(turn_history) if t.is_configuration_error), None
-            )
-            detail, is_task_type = _configuration_error_cause(config_turn)
-            if detail:
-                if is_task_type:
-                    return (
-                        f"Configuration error: {detail}. "
-                        f"Fix the task_type in the task .md file and retry."
-                    )
-                return f"Configuration error: {detail}"
-            documents_refusal = getattr(self, "_project_documents_refusal", None)
-            if documents_refusal:
-                return f"Stopped before any model call: {documents_refusal}"
-            return "Configuration error (no cause recorded)"
 
         elif final_decision == "pre_loop_blocked":
             return "Pre-loop quality gates blocked execution"
@@ -14096,6 +7355,12 @@ class AutoBuildOrchestrator:
             value = quality_gates.get("tests_passed")
             return None if value is None else bool(value)
 
+        # The project's own test run, copied in by
+        # _merge_evidence_test_signal_into_report.
+        if "tests_passed" in independent:
+            value = independent.get("tests_passed")
+            return None if value is None else bool(value)
+
         # Fallback: top-level tests_passed (backward compatibility).
         if "tests_passed" in validation:
             value = validation.get("tests_passed")
@@ -14331,10 +7596,8 @@ def finalize_autobuild(
     >>> print(result["next_steps"])
     ['Review changes: cd .guardkit/worktrees/TASK-XXX-YYYY', ...]
     """
-    # Map final_decision to task status. Both complete outcomes — the Coach
-    # approved, or the Coach verified that the tree already satisfied the task
-    # — leave the task finished, never blocked.
-    if loop_result.final_decision in TASK_COMPLETE_DECISIONS:
+    # Map final_decision to task status.
+    if loop_result.final_decision == "approved":
         status = "in_review"
     else:
         status = "blocked"
@@ -14352,27 +7615,11 @@ def finalize_autobuild(
             "Merge if approved: git checkout main && git merge autobuild/{task_id}",
             f"Cleanup worktree: guardkit worktree cleanup {task_id}",
         ]
-    elif loop_result.final_decision == DECISION_ALREADY_SATISFIED:
-        next_steps = [
-            "Nothing was written: the code in the tree already satisfied "
-            "this task, and the reviewer confirmed it.",
-            f"Read the reviewer's citations: cat .guardkit/autobuild/{task_id}/coach_turn_{loop_result.total_turns}.json",
-            "Close the task. There is no diff to review and nothing to merge.",
-        ]
     elif loop_result.final_decision == "max_turns_exceeded":
         next_steps = [
             f"Review implementation: cd {worktree_path}",
             f"Check last feedback: cat .guardkit/autobuild/{task_id}/coach_turn_{loop_result.total_turns}.json",
             "Consider manual intervention or increase max_turns",
-        ]
-    elif loop_result.final_decision == "honesty_collapse":
-        # TASK-FIX-HEAB: rolling-average honesty collapse — guide the operator
-        # at the most-flagged claim and the worktree's .gitignore (the typical
-        # silent-exclusion failure that motivated TASK-FIX-IGNR + this gate).
-        next_steps = [
-            f"Inspect Coach honesty issues: cat .guardkit/autobuild/{task_id}/coach_turn_{loop_result.total_turns}.json",
-            f"Check the worktree's .gitignore: cd {worktree_path} && cat .gitignore",
-            "Re-run with relaxed --honesty-early-abort-threshold once the cause is understood.",
         ]
     elif loop_result.final_decision == "pre_loop_blocked":
         next_steps = [
@@ -14401,8 +7648,6 @@ def finalize_autobuild(
 
 __all__ = [
     "AutoBuildOrchestrator",
-    "DECISION_ALREADY_SATISFIED",
-    "TASK_COMPLETE_DECISIONS",
     "ContextStatus",
     "OrchestrationResult",
     "TurnRecord",

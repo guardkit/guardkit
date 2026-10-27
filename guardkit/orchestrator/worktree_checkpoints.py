@@ -35,12 +35,6 @@ Example:
     >>> # Create checkpoint after turn completes
     >>> checkpoint = manager.create_checkpoint(turn=1, tests_passed=True)
     >>> print(f"Created checkpoint: {checkpoint.commit_hash[:8]}")
-    >>>
-    >>> # Detect pollution and rollback if needed
-    >>> if manager.should_rollback():
-    ...     target_turn = manager.find_last_passing_checkpoint()
-    ...     if target_turn:
-    ...         manager.rollback_to(target_turn)
 """
 
 import fcntl
@@ -48,8 +42,6 @@ import hashlib
 import json
 import logging
 import os
-import re
-import shutil
 import stat
 import subprocess
 import threading
@@ -1081,12 +1073,6 @@ class WorktreeCheckpointManager:
         ...     tests_passed=True,
         ...     test_count=15,
         ... )
-        >>>
-        >>> # Check for pollution and rollback if needed:
-        >>> if manager.should_rollback():
-        ...     target = manager.find_last_passing_checkpoint()
-        ...     if target:
-        ...         manager.rollback_to(target)
     """
 
     # Class-level thread locks keyed by resolved worktree path.
@@ -1633,448 +1619,9 @@ class WorktreeCheckpointManager:
         commit = (result.stdout or "").strip()
         return commit or None
 
-    def rollback_to(self, turn: int) -> bool:
-        """Rollback worktree to checkpoint at specified turn.
-
-        This method performs a hard reset to the git commit at the specified
-        turn, discarding all changes made in subsequent turns. Before the
-        reset it snapshots per-turn audit JSONs (``coach_turn_*.json``,
-        ``player_turn_*.json``, ``turn_state_turn_*.json``) for turns
-        ``> turn`` to ``_rollback_archive/`` so the forensic audit trail of
-        the polluted turns survives the reset (TASK-FIX-RBSS AC-3).
-
-        Note:
-            This method is **filesystem-only by design**. Resetting the
-            Player SDK resume session is the *caller*'s responsibility —
-            see ``autobuild.py`` rollback branch which calls
-            ``AgentInvoker.set_player_resume_session(None)`` immediately
-            after this method returns (TASK-FIX-RBSS AC-1, AC-7). Without
-            that caller-side reset the next turn resumes the polluted
-            cumulative-authoring memory and re-emits the file claims the
-            rollback just deleted, defeating the rollback's purpose.
-
-        Args:
-            turn: Turn number to rollback to (1-indexed)
-
-        Returns:
-            True if rollback succeeded, False if checkpoint not found
-
-        Raises:
-            subprocess.CalledProcessError: If git reset fails
-        """
-        from guardkit.orchestrator.task_work_scope import current_lease, ScopeUnavailable
-        lease = current_lease(self.worktree_path)
-        if lease is None or self.task_work_scope is None or self.task_work_scope is not lease.scope:
-            raise ScopeUnavailable("Rollback requires its retained admitted task scope")
-        lease.verify(self.task_work_scope)
-        declared = {(r.name, str(r.root.resolve())) for r in self.evidence_repos}
-        admitted = {(r.name, r.root) for r in self.task_work_scope.repositories[1:]}
-        if declared != admitted:
-            raise ScopeUnavailable("Checkpoint sibling membership differs from admitted scope")
-        # Only this round's checkpoints are rollback targets (20 October
-        # 2026): a repair round numbers its turns from 1 again, so a turn
-        # number alone can name an earlier, approved round's checkpoint, and
-        # resetting to it would throw away approved work.
-        index = self._find_checkpoint_index(turn, current_round_only=True)
-        if index is None:
-            logger.warning(f"No checkpoint found for turn {turn} in this round")
-            return False
-        checkpoint = self.checkpoints[index]
-        target = checkpoint
-        if target is None or target.scope_id != self.task_work_scope.scope_id:
-            raise ScopeUnavailable("Rollback target is outside this admitted scope; work preserved")
-        expected_target = {str(self.worktree_path.resolve()): target.commit_hash}
-        for sibling in self.evidence_repos:
-            if sibling.name not in target.evidence_commits:
-                raise ScopeUnavailable("Rollback has no retained sibling checkpoint; work preserved")
-            expected_target[str(sibling.root.resolve())] = target.evidence_commits[sibling.name]
-        if tuple(sorted(expected_target.items())) not in lease.checkpoints:
-            raise ScopeUnavailable("Saved checkpoint is not a live owned checkpoint; rollback refused")
-
-        logger.info(
-            f"Rolling back {self.task_id} to turn {turn} "
-            f"(commit: {checkpoint.commit_hash[:8]})"
-        )
-
-        try:
-            # Preserve the full scope-qualified checkpoint history before a
-            # rollback truncates the active list. It remains diagnostic only.
-            import uuid
-            from guardkit.orchestrator.paths import TaskArtifactPaths
-            history_path = TaskArtifactPaths.private_artifact_path(
-                self.task_id, f"checkpoint-history-{self.task_work_scope.scope_id}-{uuid.uuid4().hex}.json",
-                self.worktree_path,
-            )
-            history_path.parent.mkdir(parents=True, exist_ok=True)
-            history_path.write_text(json.dumps({"task_id": self.task_id,
-                "scope_id": self.task_work_scope.scope_id,
-                "checkpoints": [cp.to_dict() for cp in self.checkpoints]}, indent=2))
-            # TASK-FIX-RBSS AC-3: snapshot per-turn audit JSONs for turns
-            # > target_turn before `git reset --hard` discards them. Audit
-            # archival is best-effort: a snapshot failure must not block
-            # the rollback itself (the SDK-session reset that follows is
-            # load-bearing for recovery; archival is forensic hygiene).
-            try:
-                self._archive_post_target_audit_files(turn)
-            except Exception as archive_error:  # noqa: BLE001
-                logger.warning(
-                    f"[rollback] Audit-trail archive failed (continuing "
-                    f"with reset): {archive_error}"
-                )
-
-            # Hard reset to checkpoint commit
-            self.git_executor.execute(
-                ["git", "reset", "--hard", checkpoint.commit_hash],
-                cwd=self.worktree_path,
-            )
-            if self.expected_branch:
-                record_git_operation(
-                    self.worktree_path,
-                    actor="guardkit rollback",
-                    operation=(
-                        f"reset --hard to turn {turn} checkpoint "
-                        f"{checkpoint.commit_hash[:12]}"
-                    ),
-                    task_id=self.task_id,
-                )
-
-            # TASK-AB-XREPOEV01 (AC-004): reset declared sibling repos to the
-            # hash they were committed at in THIS target checkpoint. Guarded:
-            # only repos with a recorded hash in the target are reset (we never
-            # hard-reset a sibling repo to an unknown state); best-effort so a
-            # sibling reset failure cannot break the worktree rollback that
-            # already succeeded.
-            self._rollback_evidence_repos(checkpoint)
-
-            # Remove checkpoints after rollback point (by position: turn
-            # numbers repeat once a gate has re-opened the task)
-            self.checkpoints = self.checkpoints[: index + 1]
-            self._save_checkpoints()
-
-            logger.info(
-                f"Rollback successful to turn {turn}, "
-                f"{len(self.checkpoints)} checkpoints remaining"
-            )
-            lease.checkpoint_completed()
-            return True
-
-        except subprocess.CalledProcessError as e:
-            logger.error(f"Rollback failed: {e}")
-            raise
-
-    def should_rollback(self, consecutive_failures: int = 3) -> bool:
-        """Detect if rollback is needed based on test failure patterns.
-
-        This method analyzes recent checkpoint history to detect context pollution.
-        The primary indicator is consecutive test failures, suggesting accumulated
-        broken state.
-
-        Checkpoints loaded from a prior orchestration session (``from_prior_run``)
-        are excluded — they cannot be evidence of pollution accumulating in the
-        current run, and counting them would trigger a spurious context-pollution
-        short-circuit on turn 1 of any ``[R]esume`` (TASK-FIX-F4A3).
-
-        A checkpoint counts as a "failure" ONLY when its test signal is
-        explicitly ``tests_passed is False`` (a test oracle ran and failed).
-        A checkpoint with an UNKNOWN signal (``tests_passed is None`` — no
-        oracle produced a verdict that turn, e.g. the LLM Coach report carried
-        no quality-gate result) is NOT a failure: it is absent evidence, and
-        treating it as a failure is a false-red generator (TASK-FIX-CKPTTESTRED01,
-        the checkpoint-layer instance of
-        ``.claude/rules/absence-of-failure-is-not-success.md``). An unknown
-        checkpoint in the recent window therefore breaks the consecutive-failure
-        run and suppresses the spurious stall — while genuine consecutive
-        ran-and-failed turns still stall as designed.
-
-        Args:
-            consecutive_failures: Number of consecutive failures to trigger rollback
-                                 (default: 3, allows recovery from incomplete sessions)
-
-        Returns:
-            True if rollback should be triggered, False otherwise
-        """
-        current_run = [cp for cp in self.checkpoints if not cp.from_prior_run]
-
-        if len(current_run) < consecutive_failures:
-            return False
-
-        # Check last N current-run checkpoints for consecutive failures.
-        # Only an explicit ``tests_passed is False`` counts as a failure;
-        # ``None`` (unknown) and ``True`` (pass) both break the run.
-        recent = current_run[-consecutive_failures:]
-        all_failing = all(cp.tests_passed is False for cp in recent)
-
-        if all_failing:
-            logger.warning(
-                f"Context pollution detected: {consecutive_failures} consecutive "
-                f"test failures in turns {[cp.turn for cp in recent]}"
-            )
-            return True
-
-        return False
-
-    def find_last_passing_checkpoint(self) -> Optional[int]:
-        """Find the most recent checkpoint with passing tests.
-
-        This method scans checkpoints in reverse order to find the last clean
-        state for rollback.
-
-        Only this round's checkpoints are searched (see
-        :meth:`_current_round_start`): the turn number returned is the one
-        :meth:`rollback_to` resolves, and an earlier round's turn number would
-        name a different checkpoint.
-
-        Returns:
-            Turn number of last passing checkpoint, or None if none found
-        """
-        for checkpoint in reversed(self._current_round()):
-            # Only an explicit pass is a rollback target. ``None`` (unknown)
-            # is not a known-good state (TASK-FIX-CKPTTESTRED01).
-            if checkpoint.tests_passed is True:
-                logger.info(
-                    f"Found last passing checkpoint at turn {checkpoint.turn} "
-                    f"(commit: {checkpoint.commit_hash[:8]})"
-                )
-                return checkpoint.turn
-
-        logger.warning("No passing checkpoints found in history")
-        return None
-
-    def get_checkpoint(self, turn: int) -> Optional[Checkpoint]:
-        """Get checkpoint for specific turn.
-
-        Args:
-            turn: Turn number
-
-        Returns:
-            Checkpoint if found, None otherwise
-        """
-        return self._find_checkpoint(turn)
-
-    def get_checkpoint_count(self) -> int:
-        """Get total number of checkpoints.
-
-        Returns:
-            Checkpoint count
-        """
-        return len(self.checkpoints)
-
-    def clear_checkpoints(self) -> None:
-        """Clear all checkpoints (use with caution).
-
-        This method removes all checkpoint history. Use only for testing or
-        when starting fresh.
-        """
-        logger.warning(f"Clearing all checkpoints for {self.task_id}")
-        self.checkpoints = []
-        self._save_checkpoints()
-
     # ========================================================================
     # Private Helper Methods
     # ========================================================================
-
-    def _current_round_start(self) -> int:
-        """Where this round's checkpoints begin in the list.
-
-        A gate that fails after a task was approved re-opens it for a repair
-        round, and the round numbers its turns from 1 again, so one task's
-        list can read ``[1, 2, 1, 2, 3, 4]`` (20 October 2026). Every round
-        starts at turn 1 and a resumed round continues its numbering, so this
-        round starts at the last checkpoint for turn 1 (the start of the list
-        when there is none).
-        """
-        for index in range(len(self.checkpoints) - 1, -1, -1):
-            if self.checkpoints[index].turn == 1:
-                return index
-        return 0
-
-    def _current_round(self) -> List[Checkpoint]:
-        """This round's checkpoints, oldest first."""
-        return self.checkpoints[self._current_round_start():]
-
-    def _find_checkpoint_index(
-        self, turn: int, current_round_only: bool = False
-    ) -> Optional[int]:
-        """The position of the checkpoint for ``turn``, this round first.
-
-        The latest matching checkpoint of this round; failing that, unless
-        ``current_round_only``, the latest matching one of an earlier round.
-        """
-        start = self._current_round_start()
-        for index in range(len(self.checkpoints) - 1, start - 1, -1):
-            if self.checkpoints[index].turn == turn:
-                return index
-        if current_round_only:
-            return None
-        for index in range(start - 1, -1, -1):
-            if self.checkpoints[index].turn == turn:
-                return index
-        return None
-
-    def _find_checkpoint(self, turn: int) -> Optional[Checkpoint]:
-        """Find checkpoint by turn number, preferring this round's.
-
-        Args:
-            turn: Turn number
-
-        Returns:
-            Checkpoint if found, None otherwise
-        """
-        index = self._find_checkpoint_index(turn)
-        return None if index is None else self.checkpoints[index]
-
-    def _rollback_evidence_repos(self, checkpoint: Checkpoint) -> None:
-        """Hard-reset declared sibling repos to their hash in ``checkpoint``.
-
-        Only repos with a recorded ``evidence_commits[name]`` in the target
-        checkpoint are reset -- we never hard-reset a shared sibling repo to a
-        state we did not record. Best-effort: a sibling reset failure is logged
-        and skipped so the (already-completed) worktree rollback stands.
-
-        Repos declared now but absent from the target checkpoint (e.g. the
-        checkpoint predates a config change) are surfaced as a WARNING: their
-        sibling state is NOT rolled back, which the operator must know.
-        """
-        if not self.evidence_repos:
-            return
-
-        rolled_back: List[str] = []
-        not_rolled_back: List[str] = []
-        for repo in self.evidence_repos:
-            self._require_sibling_owner(repo)
-            target = checkpoint.evidence_commits.get(repo.name)
-            if not target:
-                not_rolled_back.append(repo.name)
-                logger.warning(
-                    "Rollback: sibling repo %s has no recorded commit in the "
-                    "target checkpoint (turn %d); its state is NOT rolled back.",
-                    repo.name,
-                    checkpoint.turn,
-                )
-                continue
-            try:
-                self.git_executor.execute(
-                    ["git", "reset", "--hard", target],
-                    cwd=repo.root,
-                    check=True,
-                    timeout=_EVIDENCE_GIT_TIMEOUT_S,
-                )
-                rolled_back.append(repo.name)
-                logger.info(
-                    "Rollback: reset sibling repo %s to %s (turn %d)",
-                    repo.name,
-                    target[:8],
-                    checkpoint.turn,
-                )
-            except Exception as exc:
-                from guardkit.orchestrator.task_work_scope import ScopeUnavailable
-                raise ScopeUnavailable(f"Sibling rollback failed; partial changes preserved: {repo.name}: {exc}") from exc
-
-        # Summary line so an operator diagnosing a worktree/sibling mismatch can
-        # see at a glance which repos diverged from the rolled-back worktree.
-        if not_rolled_back:
-            logger.warning(
-                "Rollback turn %d: sibling repos rolled back=%s; NOT rolled "
-                "back=%s (worktree and these repos may be inconsistent).",
-                checkpoint.turn,
-                rolled_back or "[]",
-                not_rolled_back,
-            )
-
-    # Audit JSONs the rollback wipes when their committing turn is rolled
-    # away by ``git reset --hard``. Pattern groups: 1=turn number.
-    _AUDIT_FILE_PATTERNS: ClassVar[Tuple[Tuple[str, "re.Pattern[str]"], ...]] = (
-        ("coach", re.compile(r"^coach_turn_(\d+)\.json$")),
-        ("player", re.compile(r"^player_turn_(\d+)\.json$")),
-        ("turn_state", re.compile(r"^turn_state_turn_(\d+)\.json$")),
-        ("qav_shadow", re.compile(r"^qav_shadow_turn_(\d+)\.json$")),
-    )
-
-    def _archive_post_target_audit_files(self, target_turn: int) -> int:
-        """Snapshot per-turn audit JSONs for turns > ``target_turn``.
-
-        Copies every ``coach_turn_<N>.json``, ``player_turn_<N>.json`` and
-        ``turn_state_turn_<N>.json`` under ``.guardkit/autobuild/<task>/``
-        whose turn number is strictly greater than ``target_turn`` into
-        ``.guardkit/autobuild/<task>/_rollback_archive/turn_<target>_<ts>/``
-        before the caller's ``git reset --hard`` would otherwise destroy
-        them. Also writes a defensive ``.gitignore`` inside
-        ``_rollback_archive/`` so the archived files self-exclude from any
-        future ``git add -A`` checkpoint commit — that prevents subsequent
-        rollbacks from recursively wiping prior archives even when the
-        consumer project's root ``.gitignore`` does not list the archive
-        path (TASK-FIX-RBSS AC-5).
-
-        Audit-trail archival is best-effort. The caller is expected to
-        catch any exception and continue with the reset — the SDK-session
-        reset that follows is load-bearing; this is forensic hygiene.
-
-        Args:
-            target_turn: Rollback target. Files for turns ``> target_turn``
-                are archived; the target turn itself is preserved by the
-                git reset and does not need archival.
-
-        Returns:
-            Number of files archived. Zero is a valid no-op (e.g. test
-            fixtures with no per-turn JSONs on disk).
-        """
-        if not self._autobuild_dir.exists():
-            return 0
-
-        rollback_archive_dir = self._autobuild_dir / "_rollback_archive"
-        rollback_archive_dir.mkdir(parents=True, exist_ok=True)
-
-        # Defensive in-directory .gitignore so the snapshots are never
-        # picked up by `git add -A` in the next checkpoint, regardless of
-        # what the project's root .gitignore says. ``!.gitignore`` keeps
-        # the marker file itself committable so the directory's intent is
-        # discoverable in git history.
-        archive_gitignore = rollback_archive_dir / ".gitignore"
-        if not archive_gitignore.exists():
-            archive_gitignore.write_text("*\n!.gitignore\n", encoding="utf-8")
-
-        timestamp = datetime.now().strftime("%Y%m%dT%H%M%SZ")
-        snapshot_dir = rollback_archive_dir / f"turn_{target_turn}_{timestamp}"
-        snapshot_dir.mkdir(parents=True, exist_ok=True)
-
-        archived_count = 0
-        # Iterate only top-level files in the autobuild dir; we explicitly
-        # do NOT descend into _rollback_archive/ so we cannot pick up
-        # prior snapshots.
-        # TASK-SBHO-002: also scan the private dir for coach_turn files.
-        private_dir = self._autobuild_dir.parent / "autobuild-private" / self.task_id
-        scan_dirs = [self._autobuild_dir]
-        if private_dir.exists():
-            scan_dirs.append(private_dir)
-        for scan_dir in scan_dirs:
-            for entry in scan_dir.iterdir():
-                if not entry.is_file():
-                    continue
-                for _kind, pattern in self._AUDIT_FILE_PATTERNS:
-                    match = pattern.match(entry.name)
-                    if not match:
-                        continue
-                    try:
-                        file_turn = int(match.group(1))
-                    except ValueError:
-                        break
-                    if file_turn <= target_turn:
-                        break
-                    try:
-                        shutil.copy2(entry, snapshot_dir / entry.name)
-                        archived_count += 1
-                    except OSError as copy_error:
-                        logger.warning(
-                            f"[rollback] Failed to archive {entry.name}: "
-                            f"{copy_error}"
-                        )
-                    break
-
-        logger.info(
-            f"[rollback] Archived {archived_count} audit file(s) to "
-            f"_rollback_archive/{snapshot_dir.name}/"
-        )
-        return archived_count
 
     def _save_checkpoints(self) -> None:
         """Save checkpoint history to JSON file.
@@ -2145,6 +1692,39 @@ class WorktreeCheckpointManager:
         except Exception as e:
             logger.warning(f"Failed to load checkpoints: {e}")
             self.checkpoints = []
+
+    def get_checkpoint(self, turn: int) -> Optional[Checkpoint]:
+        """Get checkpoint for specific turn.
+
+        Args:
+            turn: Turn number
+
+        Returns:
+            Checkpoint if found (the latest one for that turn), None otherwise
+        """
+        for checkpoint in reversed(self.checkpoints):
+            if checkpoint.turn == turn:
+                return checkpoint
+        return None
+
+    def get_checkpoint_count(self) -> int:
+        """Get total number of checkpoints.
+
+        Returns:
+            Checkpoint count
+        """
+        return len(self.checkpoints)
+
+    def clear_checkpoints(self) -> None:
+        """Clear all checkpoints (use with caution).
+
+        This method removes all checkpoint history. Use only for testing or
+        when starting fresh.
+        """
+        logger.warning(f"Clearing all checkpoints for {self.task_id}")
+        self.checkpoints = []
+        self._save_checkpoints()
+
 
 
 # ============================================================================

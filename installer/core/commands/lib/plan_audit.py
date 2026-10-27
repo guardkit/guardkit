@@ -654,7 +654,11 @@ class PlanAuditor:
             observed = collect_changes(self.task_work_scope)
         except (ScopeUnavailable, OSError, ValueError):
             return None
-        changed_this_round = sorted(set(observed['created'] + observed['modified'] + observed['deleted']))
+        changed_this_round = sorted(
+            path
+            for path in set(observed['created'] + observed['modified'] + observed['deleted'])
+            if not self._is_player_excluded(path)
+        )
         return {
             "round_number": getattr(round_, "round_number", None),
             "start_commit": start,
@@ -707,7 +711,11 @@ class PlanAuditor:
             changed = collect_changes(self.task_work_scope)
         except (ScopeUnavailable, OSError, ValueError):
             return None
-        return {"created": changed["created"], "modified": sorted(set(changed["modified"] + changed["deleted"]))}
+        def counted(paths):
+            return sorted(p for p in set(paths) if not self._is_player_excluded(p))
+
+        return {"created": counted(changed["created"]),
+                "modified": counted(changed["modified"] + changed["deleted"])}
 
     def _is_player_excluded(self, rel_path: str) -> bool:
         """Whether a changed path is never counted as this task's work: the

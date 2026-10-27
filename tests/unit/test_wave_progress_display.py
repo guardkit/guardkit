@@ -350,7 +350,7 @@ class TestSummaryDisplay:
         assert "SUCCESS" in output_text
         assert "FEAT-TEST" in output_text
         assert "Test Feature" in output_text
-        assert "2/2 completed" in output_text
+        assert "Tasks: 2 approved, 0 deferred" in output_text
 
     def test_render_final_summary_failure(self, display, mock_console):
         """Test rendering final summary for failed feature."""

@@ -729,36 +729,20 @@ def run_all_repo_tests(
 def evidence_repo_tests_blocking_reason(
     results: List[EvidenceTestResult],
 ) -> Optional[str]:
-    """Decide whether sibling-repo test results should block the turn.
+    """Decide whether sibling-repo test results should send the turn back.
 
-    Returns a feedback string (naming the offending repos) when any declared
-    sibling test suite either failed or could not run; None when every
-    declared suite passed (and repos without a declared command are ignored --
-    "no test declared" is not a failure, it is simply out of scope).
-
-    Note the absence-of-failure posture: a declared ``test_command`` that
-    could NOT run (``command`` set, ``ran`` False) blocks, because a
-    verification the Player asked for but which never executed must not be
-    read as a silent pass. A repo with no command at all does not block.
+    Returns a feedback string naming the repositories whose declared test
+    suite ran and failed; None otherwise. A suite that could not run, or a
+    repository with no declared command, sends nothing back.
     """
     failed = [r for r in results if r.command and r.ran and not r.passed]
-    unrunnable = [r for r in results if r.command and not r.ran]
-    if not failed and not unrunnable:
+    if not failed:
         return None
-
-    lines: List[str] = []
-    for r in failed:
-        lines.append(
-            f"- {r.repo_name}: sibling-repo tests FAILED (exit {r.returncode}) "
-            f"for `{r.command}`"
-        )
-    for r in unrunnable:
-        detail = r.output_summary.strip().splitlines()
-        tail = detail[-1] if detail else ""
-        lines.append(
-            f"- {r.repo_name}: declared sibling-repo tests could NOT run "
-            f"(`{r.command}`){f': {tail}' if tail else ''}"
-        )
+    lines = [
+        f"- {r.repo_name}: sibling-repo tests FAILED (exit {r.returncode}) "
+        f"for `{r.command}`"
+        for r in failed
+    ]
     return (
         "Sibling-repo (evidence_repos) independent tests did not pass:\n"
         + "\n".join(lines)

@@ -19,6 +19,10 @@ The fix makes the test signal tri-state (True / False / None=UNKNOWN) and
 excludes UNKNOWN from the consecutive-failure tally. A genuine
 ``tests_passed is False`` (oracle ran and failed) still stalls as designed.
 
+27 October 2026 cull: the pollution detector and its rollback are deleted,
+so the stall tests went with them. The tri-state extraction and the
+checkpoint's "unknown" rendering stay and are tested here.
+
 See:
 - .claude/rules/absence-of-failure-is-not-success.md (this is its
   checkpoint-layer, false-red instance)
@@ -39,10 +43,10 @@ sys.path.insert(0, str(_test_root))
 
 from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
 from guardkit.orchestrator.worktree_checkpoints import (
-    Checkpoint,
     WorktreeCheckpointManager,
     format_test_status,
 )
+from tests.task_scope_fixtures import admitted_task, init_checkout
 
 
 # ============================================================================
@@ -57,24 +61,18 @@ def orchestrator():
 
 
 @pytest.fixture
-def mock_git_executor():
-    """Git executor that returns a stable hash for every command."""
-    executor = Mock()
-    executor.execute.return_value = Mock(returncode=0, stdout="deadbeef\n", stderr="")
-    return executor
-
-
-@pytest.fixture
-def checkpoint_manager(tmp_path, mock_git_executor):
-    """Checkpoint manager backed by a mock git executor (no evidence repos)."""
-    worktree_path = tmp_path / "worktree"
-    worktree_path.mkdir()
-    (worktree_path / ".guardkit" / "autobuild" / "TASK-TSJ-001").mkdir(parents=True)
-    return WorktreeCheckpointManager(
-        worktree_path=worktree_path,
-        task_id="TASK-TSJ-001",
-        git_executor=mock_git_executor,
-    )
+def checkpoint_manager(tmp_path):
+    """Checkpoint manager on a real checkout with its admitted task scope."""
+    worktree_path = init_checkout(tmp_path / "worktree")
+    with admitted_task(worktree_path, "TASK-TSJ-001", register=True) as (_, scope):
+        (worktree_path / ".guardkit" / "autobuild" / "TASK-TSJ-001").mkdir(
+            parents=True
+        )
+        yield WorktreeCheckpointManager(
+            worktree_path=worktree_path,
+            task_id="TASK-TSJ-001",
+            task_work_scope=scope,
+        )
 
 
 def _llm_coach_feedback_turn_record() -> Mock:
@@ -149,84 +147,17 @@ class TestExtractTestsPassedTriState:
 
 
 # ============================================================================
-# AC: end-to-end run-5 reproduction — absent signal must not stall
+# AC: an UNKNOWN checkpoint is recorded as unknown, never as a failure
 # ============================================================================
 
 
-class TestPollutionDetectionAbsentSignal:
-    def test_run5_three_unknown_turns_do_not_stall(
-        self, orchestrator, checkpoint_manager
-    ):
-        """Full pipeline: 3 LLM-Coach feedback turns (UNKNOWN) → no rollback.
-
-        Reproduces FEAT-9DDE run 5: extract → checkpoint → pollution. Before
-        the fix this recorded tests: fail x3 and fired unrecoverable_stall.
-        """
-        for turn in (1, 2, 3):
-            signal = orchestrator._extract_tests_passed(
-                _llm_coach_feedback_turn_record()
-            )
-            assert signal is None  # absent → UNKNOWN
-            checkpoint_manager.create_checkpoint(
-                turn=turn, tests_passed=signal, test_count=0
-            )
-
-        # The false-red is gone: 3 unknown turns are not 3 consecutive failures.
-        assert checkpoint_manager.should_rollback() is False
-        # And there is no passing checkpoint to roll back to — but crucially
-        # no stall was triggered to need one.
-        assert checkpoint_manager.find_last_passing_checkpoint() is None
-
+class TestCheckpointRecordsUnknown:
     def test_checkpoint_records_unknown_status_string(self, checkpoint_manager):
         """An UNKNOWN checkpoint renders 'unknown', never 'fail'."""
         cp = checkpoint_manager.create_checkpoint(turn=1, tests_passed=None)
         assert cp.tests_passed is None
         assert "unknown" in cp.message
         assert "fail" not in cp.message
-
-    def test_unknown_breaks_consecutive_failure_run(self, checkpoint_manager):
-        """A single UNKNOWN in the recent window suppresses a stall."""
-        checkpoint_manager.checkpoints = [
-            Checkpoint(turn=1, tests_passed=False, test_count=0,
-                       commit_hash="c1", timestamp="t", message="f"),
-            Checkpoint(turn=2, tests_passed=None, test_count=0,
-                       commit_hash="c2", timestamp="t", message="u"),
-            Checkpoint(turn=3, tests_passed=False, test_count=0,
-                       commit_hash="c3", timestamp="t", message="f"),
-        ]
-        # Not all 3 recent are explicit failures → no pollution.
-        assert checkpoint_manager.should_rollback() is False
-
-
-# ============================================================================
-# AC: genuine pollution case unchanged (real consecutive failures still stall)
-# ============================================================================
-
-
-class TestGenuinePollutionPreserved:
-    def test_three_real_failures_still_stall(self, checkpoint_manager):
-        """3 explicit ran-and-failed checkpoints still trigger rollback."""
-        checkpoint_manager.checkpoints = [
-            Checkpoint(turn=1, tests_passed=False, test_count=5,
-                       commit_hash="c1", timestamp="t", message="f"),
-            Checkpoint(turn=2, tests_passed=False, test_count=5,
-                       commit_hash="c2", timestamp="t", message="f"),
-            Checkpoint(turn=3, tests_passed=False, test_count=5,
-                       commit_hash="c3", timestamp="t", message="f"),
-        ]
-        assert checkpoint_manager.should_rollback() is True
-
-    def test_passing_checkpoint_is_rollback_target(self, checkpoint_manager):
-        """An explicit pass is still found as a rollback target; UNKNOWN is not."""
-        checkpoint_manager.checkpoints = [
-            Checkpoint(turn=1, tests_passed=True, test_count=10,
-                       commit_hash="c1", timestamp="t", message="p"),
-            Checkpoint(turn=2, tests_passed=None, test_count=0,
-                       commit_hash="c2", timestamp="t", message="u"),
-            Checkpoint(turn=3, tests_passed=False, test_count=5,
-                       commit_hash="c3", timestamp="t", message="f"),
-        ]
-        assert checkpoint_manager.find_last_passing_checkpoint() == 1
 
 
 # ============================================================================
