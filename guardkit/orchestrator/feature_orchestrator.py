@@ -34,7 +34,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Literal, Optional, Sequence, Set, Tuple
+from typing import Any, Dict, List, Literal, Optional, Sequence, Set, Tuple
 
 from rich.console import Console
 from rich.panel import Panel
@@ -176,13 +176,11 @@ from guardkit.orchestrator.environment_bootstrap import (
     ProjectEnvironmentDetector,
     EnvironmentBootstrapper,
     BootstrapResult,
-    BootstrapFailureDetail,
     RequiresPythonMismatch,
     UvSourcesRequireUvError,
     _create_worktree_uv_sources_symlinks,
     _resolve_uv_sources_symlinks,
     check_requires_python_precheck,
-    format_requires_python_remediation,
     probe_worktree_venv,
 )
 from guardkit.orchestrator.toolchain_declaration import ToolchainDeclarationError
@@ -547,32 +545,18 @@ class SmokeGatePhaseOutcome:
 class WiringGatePhaseOutcome:
     """Outcome of the post-wave wiring-gate phase (TASK-AB-WIREGATE01).
 
-    Returned by :meth:`FeatureOrchestrator._run_post_wave_wiring_gate`, which
-    owns the bounded wiring-feedback-retry loop (mocked-seam-of-authored-service
-    + composition-root ctor-arity). Mirrors :class:`SmokeGatePhaseOutcome` so
-    the wave-enumerate loop handles both gates uniformly.
+    Returned by :meth:`FeatureOrchestrator._run_post_wave_wiring_gate`
+    (mocked-seam-of-authored-service + composition-root ctor-arity). Since
+    step 2 (26 October 2026) the check is advice: it never re-runs the wave,
+    replaces its result or stops the build.
 
     Attributes
     ----------
-    terminate : bool
-        Always ``False`` since step 2 (26 October 2026): a re-run wave the
-        Coach rejected no longer stops the build. Wiring findings NEVER terminate
-        the feature (warning-severity heuristics — AC#1 "not a hard
-        terminator"): an unresolved finding after the retry budget is spent
-        becomes advisory and the build continues (``terminate=False``).
-    final_wave_result : WaveExecutionResult
-        The wave result that should replace ``wave_results[-1]`` (the FINAL
-        attempt's result — replace, never append, so the outcome classifier
-        does not double-count a re-run wave).
     findings_unresolved : bool
-        ``True`` when turn-rejecting wiring findings remained after the retry
-        budget was spent. The wave-enumerate loop uses this to gate
-        ``_mark_wave_completed`` only while a retry is still in flight, never as
-        a terminal block.
+        ``True`` when the check found mocked-seam or constructor-arity
+        findings (advice).
     """
 
-    terminate: bool
-    final_wave_result: WaveExecutionResult
     findings_unresolved: bool = False
     #: ``True`` when at least one task in the wave has no recorded authored
     #: file list, so the gate could not analyse the wave (2026-09-21). Never a
@@ -639,10 +623,6 @@ class FeatureOrchestrationError(Exception):
 # Bootstrap failure-mode config loader (TASK-FIX-7A04)
 # ============================================================================
 
-BOOTSTRAP_FAILURE_MODES = ("block", "warn")
-DEFAULT_BOOTSTRAP_FAILURE_MODE = "warn"
-
-
 # ============================================================================
 # Late-approval reconciliation (TASK-ATR-003)
 # ============================================================================
@@ -658,207 +638,6 @@ DEFAULT_BOOTSTRAP_FAILURE_MODE = "warn"
 LATE_APPROVAL_GRACE_S: int = int(
     os.environ.get("GUARDKIT_LATE_APPROVAL_GRACE", "60")
 )
-
-
-def compute_default_bootstrap_failure_mode(manifests: Iterable[Any]) -> str:
-    """
-    Compute the smart default for ``bootstrap_failure_mode`` from detected manifests.
-
-    Returns ``"block"`` when any manifest in ``manifests`` declares a
-    non-empty ``requires-python`` constraint (via ``get_requires_python()``)
-    and ``"warn"`` otherwise. The premise: if a manifest declares an
-    interpreter constraint, a pip install with the wrong interpreter will
-    fail downstream — better to hard-fail at preflight than silently
-    continue into a feedback-stall trapdoor (TASK-REV-FA04 / TASK-ABSR-A1B2).
-
-    Manifests that don't expose ``get_requires_python()`` (or whose
-    accessor returns ``None`` / empty) are silently ignored — this is
-    correct for non-Python stacks and for ``requirements.txt`` /
-    lock-file manifests.
-
-    Parameters
-    ----------
-    manifests : Iterable[Any]
-        Detected manifests. Each item may expose
-        ``get_requires_python() -> Optional[str]``.
-
-    Returns
-    -------
-    str
-        Either ``"block"`` or ``"warn"`` (always one of
-        :data:`BOOTSTRAP_FAILURE_MODES`).
-    """
-    for m in manifests:
-        getter = getattr(m, "get_requires_python", None)
-        if getter is None:
-            continue
-        try:
-            constraint = getter()
-        except Exception:
-            continue
-        if constraint:
-            return "block"
-    return "warn"
-
-
-def load_bootstrap_config(
-    repo_root: Path,
-    override_failure_mode: Optional[str] = None,
-) -> Dict[str, Any]:
-    """
-    Load bootstrap configuration from ``.guardkit/config.yaml``.
-
-    Reads the ``autobuild.bootstrap`` section. Recognized keys:
-
-    - ``failure_mode`` — ``"block"`` or ``"warn"`` (default: see below).
-    - ``optional_stacks`` — list of stack identifiers that should NOT be
-      considered essential when deciding whether to hard-fail. Defaults to
-      ``[]`` (all detected stacks are essential).
-
-    Precedence (highest first):
-
-    1. CLI override (``override_failure_mode``) when valid.
-    2. Explicit yaml value when valid.
-    3. Smart default — applied later (in
-       :meth:`FeatureOrchestrator._bootstrap_environment`) once manifests
-       have been detected. See
-       :func:`compute_default_bootstrap_failure_mode`.
-
-    Invalid values (unknown mode strings, unexpected types) fall back to
-    the documented baseline default with a warning — this loader never
-    raises.
-
-    The returned dict carries a ``failure_mode_explicit`` flag so the
-    orchestrator can tell whether the resolved value came from a real
-    user choice (yaml / CLI) or from the baseline. The smart default
-    only applies when ``failure_mode_explicit`` is ``False``.
-
-    Parameters
-    ----------
-    repo_root : Path
-        Repository root. The loader reads ``repo_root/.guardkit/config.yaml``.
-    override_failure_mode : Optional[str]
-        CLI-provided override. When not None and valid, wins over the yaml.
-
-    Returns
-    -------
-    Dict[str, Any]
-        Dict with keys:
-        - ``failure_mode`` (str) — resolved baseline mode.
-        - ``optional_stacks`` (List[str]).
-        - ``failure_mode_explicit`` (bool) — True when yaml or CLI set
-          ``failure_mode`` explicitly. When False, the orchestrator should
-          apply the smart default after manifest detection.
-    """
-    result: Dict[str, Any] = {
-        "failure_mode": DEFAULT_BOOTSTRAP_FAILURE_MODE,
-        "optional_stacks": [],
-        "failure_mode_explicit": False,
-    }
-
-    config_path = repo_root / ".guardkit" / "config.yaml"
-    if config_path.exists():
-        try:
-            import yaml
-
-            data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
-            if isinstance(data, dict):
-                autobuild_cfg = data.get("autobuild", {})
-                if isinstance(autobuild_cfg, dict):
-                    bootstrap_cfg = autobuild_cfg.get("bootstrap", {})
-                    if isinstance(bootstrap_cfg, dict):
-                        yaml_mode = bootstrap_cfg.get("failure_mode")
-                        if isinstance(yaml_mode, str) and yaml_mode in BOOTSTRAP_FAILURE_MODES:
-                            result["failure_mode"] = yaml_mode
-                            result["failure_mode_explicit"] = True
-                        elif yaml_mode is not None:
-                            logger.warning(
-                                "Ignoring invalid autobuild.bootstrap.failure_mode=%r "
-                                "in %s (valid: %s)",
-                                yaml_mode,
-                                config_path,
-                                ", ".join(BOOTSTRAP_FAILURE_MODES),
-                            )
-                        optional_stacks = bootstrap_cfg.get("optional_stacks")
-                        if isinstance(optional_stacks, list):
-                            result["optional_stacks"] = [
-                                s for s in optional_stacks if isinstance(s, str)
-                            ]
-        except Exception as exc:
-            logger.warning("Failed to load %s: %s", config_path, exc)
-
-    # CLI override wins over yaml.
-    if override_failure_mode is not None:
-        if override_failure_mode in BOOTSTRAP_FAILURE_MODES:
-            result["failure_mode"] = override_failure_mode
-            result["failure_mode_explicit"] = True
-        else:
-            logger.warning(
-                "Ignoring invalid bootstrap_failure_mode override %r (valid: %s)",
-                override_failure_mode,
-                ", ".join(BOOTSTRAP_FAILURE_MODES),
-            )
-
-    return result
-
-
-def _format_bootstrap_hardfail_message(
-    result: BootstrapResult,
-    essential_stacks: List[str],
-) -> str:
-    """
-    Build the error message raised when the bootstrap hard-fail gate trips.
-
-    Includes: attempted stacks, the PEP-668 stderr excerpt from the first
-    essential failure (when present), the manifest's ``requires-python``
-    constraint (when declared), and a hint for overriding the gate.
-
-    The first essential-stack failure is the "lead" detail chosen because
-    zero-success means all essential installs failed; the first is
-    representative and keeps the message bounded.
-    """
-    lines: List[str] = [
-        f"Bootstrap hard-fail: 0/{result.installs_attempted} install(s) succeeded "
-        f"for essential stack(s): {', '.join(essential_stacks)}.",
-    ]
-
-    essential_failures = [d for d in result.failure_details if d.essential]
-    uv_venv_creation_failure = False
-    if essential_failures:
-        lead = essential_failures[0]
-        lines.append(f"Manifest: {lead.manifest_path}")
-        if lead.requires_python:
-            lines.append(f"Manifest requires-python: {lead.requires_python}")
-        if lead.is_pep668:
-            lines.append("Detected PEP 668 externally-managed-environment failure.")
-        # AB60: detect the worktree-local-venv-creation hard-fail by the
-        # marker the bootstrapper writes into stderr_excerpt. We do not
-        # want to suggest warn-mode for this row — warn would let agents
-        # run against a broken environment instead of fixing the venv.
-        if lead.stderr_excerpt and "uv venv creation failed" in lead.stderr_excerpt:
-            uv_venv_creation_failure = True
-            lines.append(
-                "Detected uv-sources install path failed to create a "
-                "worktree-local venv (TASK-FIX-AB60)."
-            )
-        if lead.stderr_excerpt:
-            lines.append("Install stderr (tail):")
-            lines.append(lead.stderr_excerpt)
-
-    if uv_venv_creation_failure:
-        lines.append(
-            "Hint: investigate why `uv venv <worktree>/.venv` is failing "
-            "(permissions, disk, or uv version). Switching "
-            "`bootstrap_failure_mode` to `warn` is NOT a fix here — task "
-            "agents would then run against a missing environment."
-        )
-    else:
-        lines.append(
-            "Hint: set `bootstrap_failure_mode: warn` in .guardkit/config.yaml "
-            "(or pass `--bootstrap-failure-mode warn`) to downgrade this to a "
-            "non-blocking warning."
-        )
-    return "\n".join(lines)
 
 
 # ============================================================================
@@ -926,7 +705,6 @@ class FeatureOrchestrator:
         skip_validation: bool = False,
         emitter: Optional[Any] = None,
         task_log_interval: int = 60,
-        bootstrap_failure_mode: Optional[str] = None,
         honesty_early_abort_threshold: float = 0.3,
         honesty_early_abort_window: int = 3,
         model: Optional[str] = None,
@@ -983,13 +761,6 @@ class FeatureOrchestrator:
         task_log_interval : int, optional
             Seconds between per-task progress log snapshots (default: 60).
             Each parallel task writes to .guardkit/autobuild/{task_id}/progress.log.
-        bootstrap_failure_mode : Optional[str], optional
-            Override for the bootstrap hard-fail gate (TASK-FIX-7A04).
-            One of ``"block"`` or ``"warn"``. When None, reads from
-            ``.guardkit/config.yaml`` (``autobuild.bootstrap.failure_mode``),
-            defaulting to ``"warn"`` (preserve current behavior). ``"block"``
-            raises :class:`FeatureOrchestrationError` when bootstrap attempts
-            at least one install and every essential-stack install failed.
 
         Raises
         ------
@@ -1051,21 +822,6 @@ class FeatureOrchestrator:
             )
         except (TypeError, ValueError):
             self._smoke_gate_max_retries = 1
-        # TASK-AB-WIREGATE01: bounded retry budget for the post-wave wiring
-        # gate (mocked-seam-of-authored-service + composition-root ctor-arity).
-        # On turn-rejecting findings the wave is re-entered with the findings
-        # fed back to the Player as turn-1 feedback, up to this many extra
-        # rounds. Default 1; 0 disables feed-back (the gate still runs and
-        # logs → advisory-only). Unlike the smoke gate, exhausting the budget
-        # NEVER hard-terminates the feature — wiring findings are
-        # warning-severity heuristics, so an unresolved finding becomes
-        # advisory and the build continues (per AC#1: "not a hard terminator").
-        try:
-            self._wiring_gate_max_retries = max(
-                0, int(os.environ.get("GUARDKIT_WIRING_GATE_MAX_RETRIES", "1"))
-            )
-        except (TypeError, ValueError):
-            self._wiring_gate_max_retries = 1
         # B9 correction (2026-09-19): bounded retry budget for the
         # whole-feature check that runs after the last wave. On a failure the
         # LAST wave is re-entered with the check's own output, the request's
@@ -1113,20 +869,6 @@ class FeatureOrchestrator:
         self._emitter = emitter if emitter is not None else NullEmitter()  # TASK-INST-004
         self.task_log_interval = task_log_interval  # TASK-FIX-OBS2
         self.features_dir = features_dir or self.repo_root / ".guardkit" / "features"
-
-        # TASK-FIX-7A04: Resolve bootstrap failure-mode from CLI override or yaml.
-        # TASK-ABSR-A1B2: When neither yaml nor CLI provided a value, the
-        # final mode is decided by ``compute_default_bootstrap_failure_mode``
-        # *after* manifest detection (in ``_bootstrap_environment``).
-        bootstrap_cfg = load_bootstrap_config(
-            self.repo_root,
-            override_failure_mode=bootstrap_failure_mode,
-        )
-        self.bootstrap_failure_mode: str = bootstrap_cfg["failure_mode"]
-        self.bootstrap_optional_stacks: List[str] = list(bootstrap_cfg["optional_stacks"])
-        self._bootstrap_failure_mode_explicit: bool = bool(
-            bootstrap_cfg.get("failure_mode_explicit", False)
-        )
 
         # Raise file descriptor limit for parallel task execution
         self._raise_fd_limit()
@@ -1938,10 +1680,7 @@ class FeatureOrchestrator:
         / ``url``) → silent no-op.
 
         Symlink-creation OSErrors are surfaced with a hint that names the
-        symlink path, target, and OS error. The hint deliberately does
-        NOT point at ``bootstrap_failure_mode: warn`` — this is a
-        worktree-arrangement step, not a bootstrap install (mirrors the
-        AB60 hint-correction pattern).
+        symlink path, target, and OS error.
         """
         source_pyproject = self.repo_root / "pyproject.toml"
         worktree_pyproject = worktree.path / "pyproject.toml"
@@ -1982,10 +1721,10 @@ class FeatureOrchestrator:
         Detect and install project dependencies in the worktree.
 
         Called after worktree creation (Phase 1.5) and between waves.
-        Default behavior is non-blocking: failed installs log warnings.
-        When ``bootstrap_failure_mode`` is ``"block"`` and every essential
-        stack's install failed, raises :class:`FeatureOrchestrationError`
-        before Wave 1 starts (TASK-FIX-7A04 / review TASK-REV-E4F5).
+        Failed installs and an interpreter that does not meet a manifest's
+        ``requires-python`` are warnings, never a stop (step 2, 26 October
+        2026): when the project's tests then cannot start, the reviewer is
+        told "The project's tests could not be run: <reason>".
 
         Parameters
         ----------
@@ -2008,9 +1747,7 @@ class FeatureOrchestrator:
         Raises
         ------
         FeatureOrchestrationError
-            When ``bootstrap_failure_mode == "block"`` and the gate evaluates
-            to hard-fail (see :meth:`_should_hardfail_bootstrap`). In every
-            mode, when the toolchain declaration cannot be read or declares a
+            When the toolchain declaration cannot be read or declares a
             component ``cwd`` that is refused, or when the bootstrap refused a
             declared install input (one outside the worktree or unreadable).
         """
@@ -2038,19 +1775,11 @@ class FeatureOrchestrator:
             stacks = sorted(set(m.stack for m in manifests))
             console.print(f"[cyan]\u2699[/cyan] Bootstrapping environment: {', '.join(stacks)}")
 
-            # TASK-ABSR-A1B2: Smart-default bootstrap failure mode after
-            # manifest detection. Runs only when the user didn't set an
-            # explicit value via yaml or CLI. Decided here (rather than at
-            # __init__) so the function has access to the manifest list.
-            # Logged at INFO once per orchestration run so the resolved
-            # default \u2014 and which manifests drove it \u2014 is visible.
-            self._resolve_smart_default_failure_mode(manifests)
-
-            # TASK-REV-JMBP Workstream E: pre-check requires-python before pip
-            # runs so the error path names the interpreter mismatch up front
-            # rather than leaving users to decode pip's "requires a different
-            # Python" line.
-            self._maybe_hardfail_requires_python(manifests)
+            # TASK-REV-JMBP Workstream E: name an interpreter that does not
+            # meet requires-python before pip runs, so the warning says it up
+            # front rather than leaving users to decode pip's "requires a
+            # different Python" line. Advice only (step 2).
+            self._warn_requires_python(manifests)
 
             bootstrapper = EnvironmentBootstrapper(worktree.path)
             result = bootstrapper.bootstrap(manifests)
@@ -2075,10 +1804,6 @@ class FeatureOrchestrator:
                     f"[yellow]\u26a0[/yellow] Environment bootstrap partial: "
                     f"{result.installs_attempted - result.installs_failed}/{result.installs_attempted} succeeded"
                 )
-
-            # TASK-FIX-7A04: Evaluate hard-fail gate. In "warn" mode this is a
-            # no-op; in "block" mode we raise on total-failure + essential-stack.
-            self._maybe_hardfail_bootstrap(result)
 
             # TASK-FIX-7A05: capture the bootstrap interpreter so downstream
             # AutoBuildOrchestrator / Coach pytest invocations use it
@@ -2105,8 +1830,8 @@ class FeatureOrchestrator:
 
             return result
         except FeatureOrchestrationError:
-            # Hard-fail from the gate \u2014 propagate so the orchestrator stops
-            # before Wave 1. Don't swallow in the generic except below.
+            # A refused declared input: propagate. Don't swallow it in the
+            # generic except below.
             raise
         except UvSourcesRequireUvError as e:
             # TASK-FIX-F09A2: pyproject declares [tool.uv.sources] but uv is
@@ -2138,97 +1863,14 @@ class FeatureOrchestrator:
             console.print(f"[yellow]\u26a0[/yellow] Environment bootstrap failed: {e}")
             return None
 
-    def _resolve_smart_default_failure_mode(self, manifests: List[Any]) -> None:
-        """
-        Apply the smart default for ``bootstrap_failure_mode`` (TASK-ABSR-A1B2).
-
-        When the user did not set ``failure_mode`` explicitly via
-        ``.guardkit/config.yaml`` or ``--bootstrap-failure-mode``, decide
-        the mode from the detected manifests: ``"block"`` when any manifest
-        declares a ``requires-python`` constraint, ``"warn"`` otherwise.
-
-        Once applied, the resolved value is treated as explicit so a
-        second invocation (between waves) does not re-evaluate.
-
-        The decision is logged at ``INFO`` so a developer reading the
-        startup log can see which mode is active and which manifest(s)
-        drove a ``"block"`` resolution.
-        """
-        if self._bootstrap_failure_mode_explicit:
-            return
-
-        smart_mode = compute_default_bootstrap_failure_mode(manifests)
-        triggers = [
-            str(getattr(m, "path", "<unknown manifest>"))
-            for m in manifests
-            if getattr(m, "get_requires_python", lambda: None)()
-        ]
-
-        if triggers:
-            logger.info(
-                "Bootstrap failure-mode smart default = %r (manifests "
-                "declaring requires-python: %s)",
-                smart_mode,
-                ", ".join(triggers),
-            )
-        else:
-            logger.info(
-                "Bootstrap failure-mode smart default = %r (no manifests "
-                "declare requires-python)",
-                smart_mode,
-            )
-
-        self.bootstrap_failure_mode = smart_mode
-        self._bootstrap_failure_mode_explicit = True
-
-    def _maybe_hardfail_bootstrap(self, result: BootstrapResult) -> None:
-        """
-        Raise :class:`FeatureOrchestrationError` when the bootstrap gate trips.
-
-        Gate trips when ALL of the following hold:
-        - ``self.bootstrap_failure_mode == "block"``
-        - ``result.installs_attempted > 0``
-        - ``result.installs_failed == result.installs_attempted`` (zero
-          essential-stack successes \u2014 matches F6/R4a in TASK-REV-E4F5)
-        - At least one detected stack is essential (i.e. not listed in
-          ``self.bootstrap_optional_stacks``)
-
-        In ``"warn"`` mode the method is a no-op, preserving current behavior.
-        """
-        if self.bootstrap_failure_mode != "block":
-            return
-        if result.installs_attempted == 0:
-            return
-        if result.installs_failed != result.installs_attempted:
-            return
-
-        essential_stacks = [
-            s for s in result.stacks_detected
-            if s not in self.bootstrap_optional_stacks
-        ]
-        if not essential_stacks:
-            # Every detected stack was declared optional \u2014 don't block.
-            logger.info(
-                "Bootstrap failed for all attempted installs but every stack "
-                "(%s) is listed as optional \u2014 not hard-failing.",
-                ", ".join(result.stacks_detected),
-            )
-            return
-
-        raise FeatureOrchestrationError(
-            _format_bootstrap_hardfail_message(result, essential_stacks)
-        )
-
-    def _maybe_hardfail_requires_python(self, manifests: list) -> None:
+    def _warn_requires_python(self, manifests: list) -> None:
         """
         Run the requires-python pre-check (TASK-REV-JMBP Workstream E).
 
-        In ``mode == "warn"`` each mismatch is logged as a structured warning
-        line (``Python X does not satisfy requires-python=``) and execution
-        continues — pip will issue its own error shortly after and remains
-        authoritative. In ``mode == "block"`` the first mismatch raises
-        :class:`FeatureOrchestrationError` with a remediation hint naming
-        ``uv`` / ``pyenv`` / ``conda`` installation commands.
+        Each mismatch is logged as a structured warning line (``Python X
+        does not satisfy requires-python=``) and execution continues; pip
+        remains authoritative. Since step 2 (26 October 2026) a mismatch
+        never stops the build.
 
         Manifests without a ``requires-python`` constraint, non-Python
         manifests, and environments missing ``packaging.specifiers`` are all
@@ -2238,31 +1880,6 @@ class FeatureOrchestrator:
         if not mismatches:
             return
 
-        if self.bootstrap_failure_mode == "block":
-            # Raise on the first mismatch so the error message is focused.
-            # The remediation hint is the primary actionable signal for the
-            # MacBook/jarvis class of incident (TASK-REV-JMBP).
-            hint = format_requires_python_remediation(mismatches[0])
-            extra_msg = (
-                ""
-                if len(mismatches) == 1
-                else (
-                    f"\n(+{len(mismatches) - 1} additional manifest(s) with "
-                    f"unsatisfied requires-python — fix the active "
-                    f"interpreter and re-run.)"
-                )
-            )
-            raise FeatureOrchestrationError(
-                f"Bootstrap requires-python mismatch (pre-pip).\n{hint}"
-                f"{extra_msg}\n"
-                f"Hint: set `bootstrap_failure_mode: warn` in "
-                f".guardkit/config.yaml (or pass "
-                f"`--bootstrap-failure-mode warn`) to downgrade this to a "
-                f"non-blocking warning."
-            )
-
-        # warn mode: structured per-mismatch warning, then fall through to
-        # pip so it can be authoritative.
         for m in mismatches:
             warning = (
                 f"Python {m.active_version} does not satisfy "
@@ -2724,26 +2341,21 @@ The detailed specifications are in the task markdown file.
                 if outcome.terminate:
                     break
 
-            # Post-wave wiring gate (TASK-AB-WIREGATE01). Fires AFTER the smoke
-            # gate (skipped if smoke already terminated above) and BEFORE
+            # Post-wave wiring check (TASK-AB-WIREGATE01). Fires AFTER the
+            # smoke gate (skipped if smoke already terminated above) and BEFORE
             # wave-completion is persisted. Statically analyzes the assembled
-            # feature and feeds mocked-primary-seam + composition-root
-            # ctor-arity findings back to the Player as turn-1 feedback, bounded
-            # by _wiring_gate_max_retries. It REPLACES wave_results[-1] (never
-            # appends) and NEVER hard-terminates.
+            # feature; since step 2 (26 October 2026) its mocked-primary-seam
+            # and composition-root ctor-arity findings are advice in the
+            # group's record. The wave is not re-run and its result stands.
             wiring_outcome = self._run_post_wave_wiring_gate(
-                wave_number, task_ids, feature, worktree, wave_result
+                wave_number, task_ids, feature, worktree
             )
-            wave_result = wiring_outcome.final_wave_result
-            wave_results[-1] = wave_result
             # Keep what this gate did (21 September 2026). It used to be
             # printed and dropped, so the end-of-build summary could say
             # nothing at all about the groups.
             record = getattr(wiring_outcome, "record", None)
             if isinstance(record, dict):
                 self._group_code_check_records.append(record)
-            if wiring_outcome.terminate:
-                break
 
             # TASK-AB-COACHRUNPARITY01 (C1): mark the wave completed only AFTER
             # the smoke phase resolves — gated on task success AND smoke success
@@ -2753,12 +2365,8 @@ The detailed specifications are in the task markdown file.
             # recorded as completed on disk, so a resume cannot skip an
             # unverified wave.
             #
-            # TASK-AB-WIREGATE01: wiring findings do NOT block completion — they
-            # are warning-severity heuristics, and once the retry budget is
-            # spent they are advisory only. The mid-retry case never reaches
-            # here (the gate loops internally until findings clear or the budget
-            # is spent), so no wave with an in-flight wiring retry is ever
-            # marked completed.
+            # TASK-AB-WIREGATE01: wiring findings do NOT block completion; they
+            # are advice (step 2, 26 October 2026).
             smoke_blocked = (
                 wave_result.smoke_gate_result is not None
                 and not wave_result.smoke_gate_result.passed
@@ -4151,53 +3759,6 @@ The detailed specifications are in the task markdown file.
             return {}
 
     @staticmethod
-    def _build_wiring_feedback(findings: List[Dict[str, Any]]) -> str:
-        """Compose Player-facing feedback from turn-rejecting wiring findings.
-
-        Frames the failure as per-task-green ≠ feature-green: the unit suite
-        passed but the assembled feature is wired wrong (a primary seam is
-        mocked away, or the composition root constructs a service with the
-        wrong arity). See
-        ``.claude/rules/per-task-green-is-not-feature-green.md``.
-        """
-        seam = [f for f in findings if f.get("pattern") == "MOCKED_SEAM"]
-        ctor = [f for f in findings if f.get("pattern") == "CTOR_ARITY"]
-        lines = [
-            "FEATURE WIRING FAILURE (post-wave wiring gate)",
-            "",
-            "Your tasks' unit tests passed, but the ASSEMBLED feature is wired "
-            "incorrectly. Per-task-green is not feature-green: a passing unit "
-            "suite that mocks the seam it claims to integrate, or a composition "
-            "root that constructs a service with the wrong constructor args, "
-            "ships a non-functional feature. Fix the wiring below.",
-        ]
-        if seam:
-            lines.append("")
-            lines.append(
-                "MOCKED PRIMARY SEAM — an integration-tier test mocks a "
-                "first-party service this feature is supposed to wire together. "
-                "Replace the mock of the in-repo seam with the real object (mock "
-                "only true external boundaries — HTTP clients, DB drivers):"
-            )
-            for f in seam:
-                lines.append(
-                    f"  - {f.get('file')}:{f.get('lineno')} mocks "
-                    f"'{f.get('symbol')}'"
-                )
-        if ctor:
-            lines.append("")
-            lines.append(
-                "COMPOSITION-ROOT CONSTRUCTOR ARITY — the composition root "
-                "constructs a first-party service with the wrong number of "
-                "__init__ arguments. Pass every required argument:"
-            )
-            for f in ctor:
-                lines.append(
-                    f"  - {f.get('file')}:{f.get('lineno')} — {f.get('why')}"
-                )
-        return "\n".join(lines)
-
-    @staticmethod
     def _advisory_wiring_findings(
         wiring_result: Optional[Dict[str, Any]],
     ) -> List[Dict[str, Any]]:
@@ -4307,27 +3868,22 @@ The detailed specifications are in the task markdown file.
         task_ids: List[str],
         feature: Feature,
         worktree: Worktree,
-        wave_result: WaveExecutionResult,
     ) -> WiringGatePhaseOutcome:
-        """Run the post-wave wiring gate with a bounded feedback-retry loop.
+        """Run the post-wave wiring check once, as advice.
 
-        TASK-AB-WIREGATE01. After a wave's tasks pass, statically analyze the
-        ASSEMBLED feature (the wave-aggregate authored set) via
-        ``guardkitfactory.wiring.analyze_wiring`` and feed turn-rejecting
-        findings (mocked-primary-seam + composition-root ctor-arity) back to the
-        Player as turn-1 ``seed_feedback``, re-entering the wave bounded by
-        ``_wiring_gate_max_retries``.
-
-        Disposition (per smoke-gate-is-feedback-not-terminator + AC#1):
+        TASK-AB-WIREGATE01. After a wave, statically analyze the ASSEMBLED
+        feature (the wave-aggregate authored set) via
+        ``guardkitfactory.wiring.analyze_wiring``. Step 2 (26 October 2026):
+        findings (mocked-primary-seam + composition-root ctor-arity) are
+        advice. They are printed and kept in the group's code-check record
+        for the end-of-build summary; the wave is never re-run and its result
+        is never replaced.
 
         * No findings (or an absent signal — analyzer unavailable, unsupported
-          stack, parse-degraded, probe didn't run): ``terminate=False``,
-          ``findings_unresolved=False`` — neutral, the wave proceeds.
-        * Findings + retries remaining: feed back, re-execute the wave, re-run
-          the gate.
-        * Findings + retries exhausted: log a prominent warning and continue
-          (``terminate=False``, ``findings_unresolved=True``). Wiring findings
-          are warning-severity heuristics and NEVER hard-terminate the feature.
+          stack, parse-degraded, probe didn't run): neutral record,
+          ``findings_unresolved=False``.
+        * Findings: a warning and a "found something" record,
+          ``findings_unresolved=True``.
         """
         # Lazy import: the orchestrator must import without guardkitfactory
         # (pip install guardkit-py without the [autobuild] extra). Absent ⇒
@@ -4340,8 +3896,6 @@ The detailed specifications are in the task markdown file.
                 "unavailable", wave_number,
             )
             return WiringGatePhaseOutcome(
-                terminate=False,
-                final_wave_result=wave_result,
                 record=code_check_group_record(
                     wave_number,
                     state=CODE_CHECK_NOT_CHECKED,
@@ -4349,166 +3903,103 @@ The detailed specifications are in the task markdown file.
                 ),
             )
 
-        retries_remaining = self._wiring_gate_max_retries
-        attempt = 0
-        while True:
-            authored, not_recorded = self._wave_authored_files(task_ids)
-            if not_recorded:
-                # 2026-09-21. At least one task's file list was never
-                # recorded, so the union is incomplete and this gate cannot
-                # say the assembled feature is wired. Report it; never treat
-                # it as "no findings", and never fall back to the
-                # modified-files list.
-                console.print(
-                    f"[yellow]⚠ Wiring gate after wave {wave_number}: "
-                    f"{NOT_CHECKED_REASON} for "
-                    f"{', '.join(not_recorded)}[/yellow]"
-                )
-                logger.warning(
-                    "[wave %s] wiring gate %s for %s",
-                    wave_number,
-                    NOT_CHECKED_REASON,
-                    ", ".join(not_recorded),
-                )
-                return WiringGatePhaseOutcome(
-                    terminate=False,
-                    final_wave_result=wave_result,
-                    not_checked=True,
-                    record=code_check_group_record(
-                        wave_number,
-                        state=CODE_CHECK_NOT_CHECKED,
-                        reason=NOT_CHECKED_REASON,
-                        tasks_without_a_file_list=not_recorded,
-                    ),
-                )
-            if not authored:
-                return WiringGatePhaseOutcome(
-                    terminate=False,
-                    final_wave_result=wave_result,
-                    record=code_check_group_record(
-                        wave_number,
-                        state=CODE_CHECK_DOES_NOT_APPLY,
-                        reason=(
-                            "no task in this group recorded a file it wrote "
-                            "with its own file tools"
-                        ),
-                    ),
-                )
-            try:
-                wiring_result = self._checked_writer(worktree, analyze_wiring,
-                    authored_files=authored,
-                    worktree_path=worktree.path,
-                    task_type="feature",
-                    stack=None,  # infer dialects from authored file extensions
-                )
-            except Exception as exc:  # fail-open: absent signal, never a block
-                logger.warning(
-                    "[wave %s] wiring gate analyzer error (continuing): %s",
-                    wave_number, exc, exc_info=exc,
-                )
-                return WiringGatePhaseOutcome(
-                    terminate=False,
-                    final_wave_result=wave_result,
-                    record=code_check_group_record(
-                        wave_number,
-                        state=CODE_CHECK_NOT_CHECKED,
-                        reason="this check stopped on an error of its own",
-                    ),
-                )
-
-            # WS3-S3 (advisory-only; §8 promotion gate not yet passed): surface
-            # CALLSITE_DRIFT (aperture A via feature-base sources + aperture B
-            # from analyze_wiring) and SYS_MODULES_TAMPER as advisory evidence.
-            # These are NOT added to the turn-rejecting set until the §8
-            # fixture+cohort gate flips them. Fail-open.
-            self._surface_advisory_seam_findings(
-                wiring_result, authored, worktree, wave_number
-            )
-
-            findings = self._collect_turn_rejecting_wiring_findings(wiring_result)
-            advisory = self._advisory_wiring_findings(wiring_result)
-            if not findings:
-                return WiringGatePhaseOutcome(
-                    terminate=False,
-                    final_wave_result=wave_result,
-                    record=self._wiring_gate_record(
-                        wave_number, wiring_result, advisory
-                    ),
-                )
-
-            if retries_remaining <= 0:
-                # Budget spent (or disabled): the finding becomes advisory and
-                # the build continues. NEVER a hard terminator (AC#1).
-                console.print(
-                    f"[yellow]⚠ Wiring gate found {len(findings)} unresolved "
-                    f"finding(s) after wave {wave_number}[/yellow] "
-                    f"(retry budget spent); continuing with the findings as "
-                    f"advisory evidence."
-                )
-                for f in findings:
-                    console.print(
-                        f"[yellow]  - {f.get('pattern')} {f.get('file')}:"
-                        f"{f.get('lineno')} {f.get('symbol')}[/yellow]"
-                    )
-                return WiringGatePhaseOutcome(
-                    terminate=False,
-                    final_wave_result=wave_result,
-                    findings_unresolved=True,
-                    record=code_check_group_record(
-                        wave_number,
-                        state=CODE_CHECK_FOUND_SOMETHING,
-                        reason="unresolved after the retry budget was spent",
-                        findings=list(findings) + list(advisory),
-                    ),
-                )
-
-            # Retry: feed the wiring findings back and re-enter the wave.
-            retries_remaining -= 1
-            attempt += 1
-            wiring_feedback = self._build_wiring_feedback(findings)
+        authored, not_recorded = self._wave_authored_files(task_ids)
+        if not_recorded:
+            # 2026-09-21. At least one task's file list was never
+            # recorded, so the union is incomplete and this gate cannot
+            # say the assembled feature is wired. Report it; never treat
+            # it as "no findings", and never fall back to the
+            # modified-files list.
             console.print(
-                f"[yellow]↻ Wiring gate found {len(findings)} finding(s) after "
-                f"wave {wave_number}[/yellow] — re-entering the wave with the "
-                f"wiring errors as Player feedback "
-                f"(retry {attempt}/{self._wiring_gate_max_retries})."
+                f"[yellow]⚠ Wiring gate after wave {wave_number}: "
+                f"{NOT_CHECKED_REASON} for "
+                f"{', '.join(not_recorded)}[/yellow]"
             )
-            if self._wave_display:
-                # The re-entered wave runs under the same rule as the first
-                # pass, so the banner asks the resolver rather than printing
-                # the wave size (read only, log=False — the dispatcher emits
-                # the authoritative log). The answer is the cached one, so it
-                # cannot differ from what the executor enforces.
-                retry_max_parallel = resolve_max_parallel(
-                    self._parallel_config,
-                    wave_number=wave_number,
-                    wave_size=len(task_ids),
-                    log=False,
-                    wave_task_paths=self._wave_task_paths(
-                        wave_number, task_ids, feature, worktree
+            logger.warning(
+                "[wave %s] wiring gate %s for %s",
+                wave_number,
+                NOT_CHECKED_REASON,
+                ", ".join(not_recorded),
+            )
+            return WiringGatePhaseOutcome(
+                not_checked=True,
+                record=code_check_group_record(
+                    wave_number,
+                    state=CODE_CHECK_NOT_CHECKED,
+                    reason=NOT_CHECKED_REASON,
+                    tasks_without_a_file_list=not_recorded,
+                ),
+            )
+        if not authored:
+            return WiringGatePhaseOutcome(
+                record=code_check_group_record(
+                    wave_number,
+                    state=CODE_CHECK_DOES_NOT_APPLY,
+                    reason=(
+                        "no task in this group recorded a file it wrote "
+                        "with its own file tools"
                     ),
-                )
-                self._wave_display.start_wave(
-                    wave_number, task_ids, max_parallel=retry_max_parallel
-                )
-            wave_result = self._execute_wave(
-                wave_number, task_ids, feature, worktree,
-                seed_feedback=wiring_feedback, attempt=attempt,
+                ),
             )
-            if self._wave_display:
-                passed = sum(1 for r in wave_result.results if r.success)
-                failed = len(wave_result.results) - passed
-                skipped = sum(
-                    1 for r in wave_result.results
-                    if r.final_decision == "skipped"
-                )
-                recovered = sum(
-                    1 for r in wave_result.results if r.recovery_count > 0
-                )
-                self._wave_display.complete_wave(
-                    wave_number, passed, failed, skipped, recovered
-                )
+        try:
+            wiring_result = self._checked_writer(worktree, analyze_wiring,
+                authored_files=authored,
+                worktree_path=worktree.path,
+                task_type="feature",
+                stack=None,  # infer dialects from authored file extensions
+            )
+        except Exception as exc:  # fail-open: absent signal, never a block
+            logger.warning(
+                "[wave %s] wiring gate analyzer error (continuing): %s",
+                wave_number, exc, exc_info=exc,
+            )
+            return WiringGatePhaseOutcome(
+                record=code_check_group_record(
+                    wave_number,
+                    state=CODE_CHECK_NOT_CHECKED,
+                    reason="this check stopped on an error of its own",
+                ),
+            )
 
-            # Loop: re-run the wiring gate against the re-executed wave.
+        # WS3-S3 (advisory-only; §8 promotion gate not yet passed): surface
+        # CALLSITE_DRIFT (aperture A via feature-base sources + aperture B
+        # from analyze_wiring) and SYS_MODULES_TAMPER as advisory evidence.
+        # These are NOT added to the turn-rejecting set until the §8
+        # fixture+cohort gate flips them. Fail-open.
+        self._surface_advisory_seam_findings(
+            wiring_result, authored, worktree, wave_number
+        )
+
+        findings = self._collect_turn_rejecting_wiring_findings(wiring_result)
+        advisory = self._advisory_wiring_findings(wiring_result)
+        if not findings:
+            return WiringGatePhaseOutcome(
+                record=self._wiring_gate_record(
+                    wave_number, wiring_result, advisory
+                ),
+            )
+
+        # Step 2 (26 October 2026): advice. Printed and recorded; the wave's
+        # result stands and nothing is sent back.
+        console.print(
+            f"[yellow]⚠ Wiring check found {len(findings)} "
+            f"finding(s) after wave {wave_number}[/yellow] "
+            f"(advice; the build continues)."
+        )
+        for f in findings:
+            console.print(
+                f"[yellow]  - {f.get('pattern')} {f.get('file')}:"
+                f"{f.get('lineno')} {f.get('symbol')}[/yellow]"
+            )
+        return WiringGatePhaseOutcome(
+            findings_unresolved=True,
+            record=code_check_group_record(
+                wave_number,
+                state=CODE_CHECK_FOUND_SOMETHING,
+                reason="advice: found after the group, the build continued",
+                findings=list(findings) + list(advisory),
+            ),
+        )
 
     async def _execute_wave_parallel(
         self,
@@ -6043,8 +5534,10 @@ The detailed specifications are in the task markdown file.
                 # The full lease serializes this once-per-wave preparation.
                 # Product files generated by installers stay in this scope.
                 if getattr(self, "_bootstrap_pending", False):
-                    self._bootstrap_environment(worktree, feature=feature)
+                    # Cleared first: an install that fails is reported once
+                    # for the wave, not again for every later task.
                     self._bootstrap_pending = False
+                    self._bootstrap_environment(worktree, feature=feature)
                 if getattr(self, "_baseline_probe_pending", False):
                     self._run_baseline_probe(feature, worktree)
                     self._baseline_probe_pending = False

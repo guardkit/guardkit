@@ -921,9 +921,10 @@ class TestBannerAgreesWithTheDecision:
 # 6. A RE-ENTERED wave's banner tells the same truth as the first pass
 # ============================================================================
 #
-# Two gates can send a wave round again after its tasks have passed: the
-# post-wave smoke gate and the post-wave wiring gate. Both re-print the wave
-# banner before re-running it. Both used to print the wave size, which was
+# The post-wave smoke gate can send a wave round again after its tasks have
+# passed (the wiring check is advice since step 2, 26 October 2026, and never
+# re-runs a wave). It re-prints the wave banner before re-running it. It used
+# to print the wave size, which was
 # harmless only while parallelism was unlimited; under this rule it would be a
 # lie — "Wave 2/1: TASK-STAT-002, TASK-STAT-003 (parallel: 2)" above a wave
 # the dispatcher runs one task at a time.
@@ -1083,91 +1084,3 @@ class TestTheSmokeGateRetryBannerAgrees:
         assert allowance == 4
         assert printed[0] == min(allowance, len(task_ids))
 
-
-@patch(
-    "guardkit.orchestrator.agent_invoker.detect_timeout_multiplier",
-    return_value=1.0,
-)
-class TestTheWiringGateRetryBannerAgrees:
-    """The wiring gate re-enters the wave; its banner must not say two either."""
-
-    def _drive(self, tmp_path, mock_worktree_manager, frontmatter):
-        import sys
-        import types
-
-        feature, worktree = _real_feature_and_worktree(
-            tmp_path, mock_worktree_manager, frontmatter
-        )
-        task_ids = list(frontmatter)
-        orch = _orchestrator(tmp_path, mock_worktree_manager)
-        orch._wiring_gate_max_retries = 1
-        output = _display_on(orch)
-        wave_result = _wave_result(task_ids)
-
-        finding = {
-            "file": "tests/users/router.test.ts",
-            "lineno": 7,
-            "symbol": "UserService",
-            "pattern": "MOCKED_SEAM",
-            "authored_this_turn": True,
-        }
-
-        def _wiring(findings):
-            return {
-                "status": "complete",
-                "mocked_seam": {
-                    "status": "ran",
-                    "findings": findings,
-                    "external_mocks_ignored": [],
-                },
-                "ctor_arity": {"status": "ran", "findings": []},
-            }
-
-        answers = iter([_wiring([finding]), _wiring([])])
-
-        # guardkitfactory is an optional extra and is absent here, so the gate
-        # would skip itself. Stand a module in its place carrying the one
-        # function the gate calls, so the RETRY PATH itself really runs.
-        package = types.ModuleType("guardkitfactory")
-        wiring_module = types.ModuleType("guardkitfactory.wiring")
-        wiring_module.analyze_wiring = lambda **kwargs: next(answers)
-        package.wiring = wiring_module
-
-        with patch.dict(
-            sys.modules,
-            {"guardkitfactory": package, "guardkitfactory.wiring": wiring_module},
-        ), patch.object(
-            orch, "_wave_authored_files", return_value=(["src/users/schemas.ts"], [])
-        ), patch.object(
-            orch, "_execute_wave", return_value=_wave_result(task_ids)
-        ) as executed:
-            outcome = orch._run_post_wave_wiring_gate(
-                1, task_ids, feature, worktree, wave_result
-            )
-
-        assert executed.call_count == 1, "the wave must actually have been re-entered"
-        assert outcome.terminate is False
-        return orch, task_ids, feature, worktree, output
-
-    def test_overlapping_wave_is_re_entered_one_at_a_time(
-        self, mock_detect, tmp_path, mock_worktree_manager
-    ):
-        orch, task_ids, feature, worktree, output = self._drive(
-            tmp_path, mock_worktree_manager, _OVERLAPPING
-        )
-        printed = _banner_numbers(output)
-        assert printed == [1], printed
-        assert printed[0] == _authoritative(orch, task_ids, feature, worktree)
-        assert printed[0] != len(task_ids)
-
-    def test_independent_wave_still_runs_both_tasks_together(
-        self, mock_detect, tmp_path, mock_worktree_manager
-    ):
-        orch, task_ids, feature, worktree, output = self._drive(
-            tmp_path, mock_worktree_manager, _INDEPENDENT
-        )
-        printed = _banner_numbers(output)
-        assert printed == [2], printed
-        allowance = _authoritative(orch, task_ids, feature, worktree)
-        assert allowance == 4
-        assert printed[0] == min(allowance, len(task_ids))

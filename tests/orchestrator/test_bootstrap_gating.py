@@ -1,13 +1,12 @@
-"""Tests for TASK-FIX-7A04: bootstrap hard-fail gate (``bootstrap_failure_mode``).
+"""Bootstrap failures and interpreter mismatches are advice, never a stop.
 
-Covers the four AC branches from the task:
-  1. ``mode=block`` + zero-success + essential stack → raises.
-  2. ``mode=block`` + partial success → proceeds (warning logged).
-  3. ``mode=warn``  + zero-success → proceeds (today's behavior).
-  4. CLI flag override wins over ``.guardkit/config.yaml``.
-
-Plus the supporting surface: config loader, optional-stacks filter, and the
-actionable error message (stacks, PEP-668 excerpt, requires-python, hint).
+Step 2 (26 October 2026): the bootstrap hard-fail gate
+(``bootstrap_failure_mode``, TASK-FIX-7A04) and its requires-python smart
+default (TASK-ABSR-A1B2) are removed. An install that fails, or an interpreter
+that does not meet a manifest's ``requires-python``, is a warning and the
+build goes on; when the project's tests then cannot start, the reviewer is
+told so. What still stops the bootstrap: a toolchain declaration that cannot
+be read, a refused component ``cwd`` and a refused declared input.
 """
 
 from __future__ import annotations
@@ -26,13 +25,8 @@ from guardkit.orchestrator.environment_bootstrap import (
     format_requires_python_remediation,
 )
 from guardkit.orchestrator.feature_orchestrator import (
-    BOOTSTRAP_FAILURE_MODES,
-    DEFAULT_BOOTSTRAP_FAILURE_MODE,
     FeatureOrchestrationError,
     FeatureOrchestrator,
-    _format_bootstrap_hardfail_message,
-    compute_default_bootstrap_failure_mode,
-    load_bootstrap_config,
 )
 
 
@@ -66,380 +60,16 @@ def _make_result(
     )
 
 
-def _build_orchestrator(
-    tmp_path: Path,
-    *,
-    failure_mode: str | None = None,
-    write_config: dict | None = None,
-) -> FeatureOrchestrator:
-    """
-    Instantiate FeatureOrchestrator with the repo_root pinned to ``tmp_path``.
-
-    Optionally writes a ``.guardkit/config.yaml`` before construction so the
-    loader sees it.
-    """
-    if write_config is not None:
-        import yaml
-
-        cfg_dir = tmp_path / ".guardkit"
-        cfg_dir.mkdir(parents=True, exist_ok=True)
-        (cfg_dir / "config.yaml").write_text(
-            yaml.safe_dump(write_config), encoding="utf-8"
-        )
-
+def _build_orchestrator(tmp_path: Path) -> FeatureOrchestrator:
+    """Instantiate FeatureOrchestrator with the repo_root pinned to ``tmp_path``."""
     # WorktreeManager validates that repo_root is a real git checkout during
     # __init__; in these unit tests tmp_path is not a repo, so inject a
     # MagicMock in its place — these tests never exercise the manager.
     return FeatureOrchestrator(
         repo_root=tmp_path,
-        bootstrap_failure_mode=failure_mode,
         skip_validation=True,
         worktree_manager=MagicMock(),
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-1: mode=block + zero-success + essential stack → raises
-# ---------------------------------------------------------------------------
-
-
-def test_block_mode_all_failed_essential_stack_raises(tmp_path: Path) -> None:
-    orchestrator = _build_orchestrator(tmp_path, failure_mode="block")
-
-    result = _make_result(
-        installs_attempted=1,
-        installs_failed=1,
-        stacks_detected=["python"],
-        failure_details=[
-            BootstrapFailureDetail(
-                stack="python",
-                manifest_path=str(tmp_path / "pyproject.toml"),
-                stderr_excerpt="ERROR: externally-managed-environment",
-                is_pep668=True,
-                requires_python=">=3.13",
-                essential=True,
-            )
-        ],
-    )
-
-    with pytest.raises(FeatureOrchestrationError) as exc:
-        orchestrator._maybe_hardfail_bootstrap(result)
-
-    msg = str(exc.value)
-    # The message must cite the attempted stacks, the stderr excerpt, the
-    # requires-python, and the override hint (AC-2 points).
-    assert "python" in msg
-    assert "0/1" in msg
-    assert "externally-managed-environment" in msg
-    assert ">=3.13" in msg
-    assert "bootstrap_failure_mode: warn" in msg
-
-
-# ---------------------------------------------------------------------------
-# AC-2: mode=block + partial success → proceeds
-# ---------------------------------------------------------------------------
-
-
-def test_block_mode_partial_success_does_not_raise(tmp_path: Path) -> None:
-    orchestrator = _build_orchestrator(tmp_path, failure_mode="block")
-
-    result = _make_result(
-        installs_attempted=2,
-        installs_failed=1,
-        stacks_detected=["python", "node"],
-    )
-
-    # Must NOT raise — at least one install succeeded.
-    orchestrator._maybe_hardfail_bootstrap(result)
-
-
-# ---------------------------------------------------------------------------
-# AC-3: mode=warn + zero-success → proceeds (no regression)
-# ---------------------------------------------------------------------------
-
-
-def test_warn_mode_all_failed_proceeds(tmp_path: Path) -> None:
-    orchestrator = _build_orchestrator(tmp_path, failure_mode="warn")
-    assert orchestrator.bootstrap_failure_mode == "warn"
-
-    result = _make_result(
-        installs_attempted=1,
-        installs_failed=1,
-        stacks_detected=["python"],
-    )
-
-    # Today's behavior preserved: warn mode never raises on zero-success.
-    orchestrator._maybe_hardfail_bootstrap(result)
-
-
-def test_init_baseline_is_warn_when_no_config_no_override(tmp_path: Path) -> None:
-    """
-    At ``__init__`` time (before manifest detection) the baseline default
-    is still ``"warn"`` and the orchestrator records that the user did
-    NOT set the mode explicitly. The smart default fires later, in
-    :meth:`FeatureOrchestrator._bootstrap_environment`.
-    """
-    orchestrator = _build_orchestrator(tmp_path)
-    assert orchestrator.bootstrap_failure_mode == "warn"
-    assert orchestrator._bootstrap_failure_mode_explicit is False
-    # Baseline constant is preserved (kept-and-supplemented per AC).
-    assert DEFAULT_BOOTSTRAP_FAILURE_MODE == "warn"
-
-
-# ---------------------------------------------------------------------------
-# AC-4: CLI flag overrides yaml default
-# ---------------------------------------------------------------------------
-
-
-def test_cli_override_beats_yaml_default(tmp_path: Path) -> None:
-    # yaml says warn, CLI passes block → block wins.
-    orchestrator = _build_orchestrator(
-        tmp_path,
-        failure_mode="block",
-        write_config={"autobuild": {"bootstrap": {"failure_mode": "warn"}}},
-    )
-    assert orchestrator.bootstrap_failure_mode == "block"
-
-
-def test_yaml_block_no_cli_override_picks_yaml(tmp_path: Path) -> None:
-    orchestrator = _build_orchestrator(
-        tmp_path,
-        failure_mode=None,
-        write_config={"autobuild": {"bootstrap": {"failure_mode": "block"}}},
-    )
-    assert orchestrator.bootstrap_failure_mode == "block"
-
-
-# ---------------------------------------------------------------------------
-# Gate: attempted=0 must never raise (skipped/no-manifest worktrees)
-# ---------------------------------------------------------------------------
-
-
-def test_block_mode_nothing_attempted_does_not_raise(tmp_path: Path) -> None:
-    orchestrator = _build_orchestrator(tmp_path, failure_mode="block")
-
-    result = _make_result(
-        installs_attempted=0,
-        installs_failed=0,
-        stacks_detected=[],
-    )
-
-    # No installs attempted → gate is a no-op even in block mode.
-    orchestrator._maybe_hardfail_bootstrap(result)
-
-
-# ---------------------------------------------------------------------------
-# Gate: all detected stacks listed optional → don't block
-# ---------------------------------------------------------------------------
-
-
-def test_block_mode_all_stacks_optional_does_not_raise(tmp_path: Path) -> None:
-    orchestrator = _build_orchestrator(
-        tmp_path,
-        failure_mode="block",
-        write_config={
-            "autobuild": {
-                "bootstrap": {
-                    "failure_mode": "block",
-                    "optional_stacks": ["python", "node"],
-                }
-            }
-        },
-    )
-    assert orchestrator.bootstrap_optional_stacks == ["python", "node"]
-
-    result = _make_result(
-        installs_attempted=1,
-        installs_failed=1,
-        stacks_detected=["python"],
-    )
-
-    # Stack is declared optional → no hard-fail even with 0/1.
-    orchestrator._maybe_hardfail_bootstrap(result)
-
-
-def test_block_mode_mixed_optional_still_blocks_on_essential(tmp_path: Path) -> None:
-    orchestrator = _build_orchestrator(
-        tmp_path,
-        failure_mode="block",
-        write_config={
-            "autobuild": {
-                "bootstrap": {
-                    "failure_mode": "block",
-                    "optional_stacks": ["node"],
-                }
-            }
-        },
-    )
-
-    result = _make_result(
-        installs_attempted=2,
-        installs_failed=2,
-        stacks_detected=["python", "node"],
-        failure_details=[
-            BootstrapFailureDetail(
-                stack="python",
-                manifest_path="/tmp/pyproject.toml",
-                stderr_excerpt="pip install failed",
-                essential=True,
-            ),
-            BootstrapFailureDetail(
-                stack="node",
-                manifest_path="/tmp/package.json",
-                stderr_excerpt="npm failed",
-                essential=False,
-            ),
-        ],
-    )
-
-    with pytest.raises(FeatureOrchestrationError) as exc:
-        orchestrator._maybe_hardfail_bootstrap(result)
-    # Only python survives the optional filter.
-    assert "python" in str(exc.value)
-
-
-# ---------------------------------------------------------------------------
-# Config loader: robustness
-# ---------------------------------------------------------------------------
-
-
-def test_load_bootstrap_config_missing_file_returns_default(tmp_path: Path) -> None:
-    cfg = load_bootstrap_config(tmp_path)
-    assert cfg["failure_mode"] == "warn"
-    assert cfg["optional_stacks"] == []
-    # TASK-ABSR-A1B2: when no yaml/CLI value, the resolved baseline is NOT
-    # explicit — the smart default applies later, after manifest detection.
-    assert cfg["failure_mode_explicit"] is False
-
-
-def test_load_bootstrap_config_invalid_mode_falls_back(
-    tmp_path: Path, caplog: pytest.LogCaptureFixture
-) -> None:
-    import yaml
-
-    (tmp_path / ".guardkit").mkdir()
-    (tmp_path / ".guardkit" / "config.yaml").write_text(
-        yaml.safe_dump(
-            {"autobuild": {"bootstrap": {"failure_mode": "nonsense"}}}
-        )
-    )
-
-    with caplog.at_level("WARNING"):
-        cfg = load_bootstrap_config(tmp_path)
-    assert cfg["failure_mode"] == "warn"
-    assert any("nonsense" in rec.message for rec in caplog.records)
-
-
-def test_load_bootstrap_config_invalid_override_falls_back(
-    tmp_path: Path, caplog: pytest.LogCaptureFixture
-) -> None:
-    with caplog.at_level("WARNING"):
-        cfg = load_bootstrap_config(tmp_path, override_failure_mode="maybe")
-    assert cfg["failure_mode"] == "warn"
-
-
-def test_load_bootstrap_config_optional_stacks_filters_non_strings(
-    tmp_path: Path,
-) -> None:
-    import yaml
-
-    (tmp_path / ".guardkit").mkdir()
-    (tmp_path / ".guardkit" / "config.yaml").write_text(
-        yaml.safe_dump(
-            {
-                "autobuild": {
-                    "bootstrap": {
-                        "failure_mode": "block",
-                        "optional_stacks": ["python", 42, None, "node"],
-                    }
-                }
-            }
-        )
-    )
-
-    cfg = load_bootstrap_config(tmp_path)
-    assert cfg["failure_mode"] == "block"
-    assert cfg["optional_stacks"] == ["python", "node"]
-
-
-def test_load_bootstrap_config_corrupt_yaml_returns_default(tmp_path: Path) -> None:
-    (tmp_path / ".guardkit").mkdir()
-    (tmp_path / ".guardkit" / "config.yaml").write_text("not: valid: yaml: :\n-")
-    cfg = load_bootstrap_config(tmp_path)
-    # Either defaults returned or at least failure_mode normalized; loader
-    # never raises.
-    assert cfg["failure_mode"] in BOOTSTRAP_FAILURE_MODES
-
-
-# ---------------------------------------------------------------------------
-# Message formatter
-# ---------------------------------------------------------------------------
-
-
-def test_format_message_without_failure_details_still_cites_stacks() -> None:
-    result = _make_result(
-        installs_attempted=1,
-        installs_failed=1,
-        stacks_detected=["python"],
-    )
-    msg = _format_bootstrap_hardfail_message(result, ["python"])
-    assert "0/1" in msg
-    assert "python" in msg
-    assert "bootstrap_failure_mode: warn" in msg
-
-
-def test_format_message_includes_pep668_marker() -> None:
-    detail = BootstrapFailureDetail(
-        stack="python",
-        manifest_path="/repo/pyproject.toml",
-        stderr_excerpt="externally-managed-environment",
-        is_pep668=True,
-        requires_python=">=3.13",
-        essential=True,
-    )
-    result = _make_result(
-        installs_attempted=1,
-        installs_failed=1,
-        stacks_detected=["python"],
-        failure_details=[detail],
-    )
-    msg = _format_bootstrap_hardfail_message(result, ["python"])
-    assert "PEP 668" in msg
-    assert ">=3.13" in msg
-    assert "/repo/pyproject.toml" in msg
-
-
-def test_format_message_swaps_hint_for_uv_venv_creation_failure() -> None:
-    """TASK-FIX-AB60: warn-mode hint must NOT be suggested when the AB60
-    path failed at venv creation. ``warn`` would let agents run against
-    a broken environment instead of fixing the venv-creation root cause.
-    """
-    detail = BootstrapFailureDetail(
-        stack="python",
-        manifest_path="/repo/pyproject.toml",
-        stderr_excerpt=(
-            "uv venv creation failed: permission denied\n"
-            "Original uv pip install stderr:\n"
-            "error: No virtual environment found\n"
-        ),
-        is_pep668=False,
-        requires_python=None,
-        essential=True,
-    )
-    result = _make_result(
-        installs_attempted=1,
-        installs_failed=1,
-        stacks_detected=["python"],
-        failure_details=[detail],
-    )
-    msg = _format_bootstrap_hardfail_message(result, ["python"])
-    # The AB60-specific hint fires.
-    assert "TASK-FIX-AB60" in msg
-    assert "uv venv" in msg
-    assert "permissions, disk, or uv version" in msg
-    # The misleading warn-mode hint is suppressed.
-    assert "bootstrap_failure_mode: warn" not in msg
-    assert "downgrade this to a non-blocking warning" not in msg
 
 
 # ---------------------------------------------------------------------------
@@ -513,57 +143,28 @@ def test_format_remediation_includes_uv_pyenv_conda_and_version_example() -> Non
     assert "3.12" in msg  # example version picked from specifier
     assert "/repo/pyproject.toml" in msg
 
-
-def test_hardfail_requires_python_block_mode_raises_with_hint(
-    tmp_path: Path,
-) -> None:
-    orchestrator = _build_orchestrator(tmp_path, failure_mode="block")
-
-    manifest = _FakeManifest("python", requires_python="<3.13,>=3.12")
-    # Patch the module-level pre-check so we don't depend on the runner's
-    # actual Python version.
-    with patch(
-        "guardkit.orchestrator.feature_orchestrator.check_requires_python_precheck",
-        return_value=[
-            RequiresPythonMismatch(
-                manifest_path="/repo/pyproject.toml",
-                specifier="<3.13,>=3.12",
-                active_version="3.14.2",
-            )
-        ],
-    ):
-        with pytest.raises(FeatureOrchestrationError) as exc:
-            orchestrator._maybe_hardfail_requires_python([manifest])
-
-    msg = str(exc.value)
-    assert "requires-python" in msg
-    assert "<3.13,>=3.12" in msg
-    assert "uv python install" in msg  # remediation hint
-    assert "bootstrap_failure_mode: warn" in msg  # override hint
+_MISMATCH = RequiresPythonMismatch(
+    manifest_path="/repo/pyproject.toml",
+    specifier="<3.13,>=3.12",
+    active_version="3.14.2",
+)
 
 
-def test_hardfail_requires_python_warn_mode_logs_structured_warning(
+def test_requires_python_mismatch_logs_structured_warning(
     tmp_path: Path,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    orchestrator = _build_orchestrator(tmp_path, failure_mode="warn")
+    orchestrator = _build_orchestrator(tmp_path)
 
     manifest = _FakeManifest("python", requires_python="<3.13,>=3.12")
     with patch(
         "guardkit.orchestrator.feature_orchestrator.check_requires_python_precheck",
-        return_value=[
-            RequiresPythonMismatch(
-                manifest_path="/repo/pyproject.toml",
-                specifier="<3.13,>=3.12",
-                active_version="3.14.2",
-            )
-        ],
+        return_value=[_MISMATCH],
     ):
         with caplog.at_level("WARNING"):
-            orchestrator._maybe_hardfail_requires_python([manifest])
+            orchestrator._warn_requires_python([manifest])
 
-    # Warn mode must not raise and must emit the structured warning shape
-    # specified by AC-REQPY-PRECHECK.
+    # The structured warning shape specified by AC-REQPY-PRECHECK; no raise.
     assert any(
         "does not satisfy requires-python=" in rec.message
         for rec in caplog.records
@@ -574,30 +175,13 @@ def test_hardfail_requires_python_warn_mode_logs_structured_warning(
     )
 
 
-def test_hardfail_requires_python_no_mismatch_is_noop(tmp_path: Path) -> None:
-    orchestrator = _build_orchestrator(tmp_path, failure_mode="block")
-    # Empty mismatches → method does nothing (neither raises nor logs).
+def test_requires_python_no_mismatch_is_noop(tmp_path: Path) -> None:
+    orchestrator = _build_orchestrator(tmp_path)
     with patch(
         "guardkit.orchestrator.feature_orchestrator.check_requires_python_precheck",
         return_value=[],
     ):
-        orchestrator._maybe_hardfail_requires_python([])
-
-
-def test_hardfail_requires_python_block_reports_additional_manifests(
-    tmp_path: Path,
-) -> None:
-    orchestrator = _build_orchestrator(tmp_path, failure_mode="block")
-    with patch(
-        "guardkit.orchestrator.feature_orchestrator.check_requires_python_precheck",
-        return_value=[
-            RequiresPythonMismatch("/a/pyproject.toml", ">=3.12", "3.11.9"),
-            RequiresPythonMismatch("/b/pyproject.toml", ">=3.13", "3.11.9"),
-        ],
-    ):
-        with pytest.raises(FeatureOrchestrationError) as exc:
-            orchestrator._maybe_hardfail_requires_python([])
-    assert "+1 additional manifest" in str(exc.value)
+        orchestrator._warn_requires_python([])
 
 
 # ---------------------------------------------------------------------------
@@ -633,11 +217,8 @@ class _FakeWorktree:
     def __init__(self, path: Path) -> None:
         self.path = path
 
-
-def test_bootstrap_environment_raises_in_block_mode(tmp_path: Path) -> None:
-    orchestrator = _build_orchestrator(tmp_path, failure_mode="block")
-
-    fake_result = _make_result(
+def _all_installs_failed(tmp_path: Path) -> BootstrapResult:
+    return _make_result(
         installs_attempted=1,
         installs_failed=1,
         stacks_detected=["python"],
@@ -653,306 +234,43 @@ def test_bootstrap_environment_raises_in_block_mode(tmp_path: Path) -> None:
         ],
     )
 
-    with patch(
-        "guardkit.orchestrator.feature_orchestrator.ProjectEnvironmentDetector"
-    ) as det_cls, patch(
-        "guardkit.orchestrator.feature_orchestrator.EnvironmentBootstrapper"
-    ) as boot_cls:
-        det_cls.return_value.detect.return_value = [_FakeManifest("python")]
-        boot_cls.return_value.bootstrap.return_value = fake_result
 
-        worktree = _FakeWorktree(tmp_path)
-        with pytest.raises(FeatureOrchestrationError):
-            orchestrator._bootstrap_environment(worktree)
-
-
-def test_bootstrap_environment_returns_result_in_warn_mode(tmp_path: Path) -> None:
-    orchestrator = _build_orchestrator(tmp_path, failure_mode="warn")
-
-    fake_result = _make_result(
-        installs_attempted=1,
-        installs_failed=1,
-        stacks_detected=["python"],
-    )
+def test_bootstrap_environment_with_every_install_failed_goes_on(
+    tmp_path: Path, capsys: pytest.CaptureFixture
+) -> None:
+    """Every essential install failing is a warning; the result is returned
+    and the build goes on (step 2; formerly a stop in block mode)."""
+    orchestrator = _build_orchestrator(tmp_path)
+    fake_result = _all_installs_failed(tmp_path)
 
     with patch(
         "guardkit.orchestrator.feature_orchestrator.ProjectEnvironmentDetector"
     ) as det_cls, patch(
         "guardkit.orchestrator.feature_orchestrator.EnvironmentBootstrapper"
     ) as boot_cls:
-        det_cls.return_value.detect.return_value = [_FakeManifest("python")]
+        det_cls.return_value.detect.return_value = [
+            _FakeManifest("python", requires_python=">=3.13")
+        ]
         boot_cls.return_value.bootstrap.return_value = fake_result
 
-        worktree = _FakeWorktree(tmp_path)
-        got = orchestrator._bootstrap_environment(worktree)
+        got = orchestrator._bootstrap_environment(_FakeWorktree(tmp_path))
 
     assert got is fake_result
+    assert "Environment bootstrap partial: 0/1 succeeded" in capsys.readouterr().out
 
 
-def test_bootstrap_environment_requires_python_precheck_blocks_before_pip(
-    tmp_path: Path,
-) -> None:
-    """
-    End-to-end wire check: when the pre-check finds a mismatch in block mode,
-    ``_bootstrap_environment`` must raise BEFORE the bootstrapper runs pip.
-    """
-    orchestrator = _build_orchestrator(tmp_path, failure_mode="block")
-
-    with patch(
-        "guardkit.orchestrator.feature_orchestrator.ProjectEnvironmentDetector"
-    ) as det_cls, patch(
-        "guardkit.orchestrator.feature_orchestrator.EnvironmentBootstrapper"
-    ) as boot_cls, patch(
-        "guardkit.orchestrator.feature_orchestrator.check_requires_python_precheck",
-        return_value=[
-            RequiresPythonMismatch(
-                manifest_path=str(tmp_path / "pyproject.toml"),
-                specifier="<3.13,>=3.12",
-                active_version="3.14.2",
-            )
-        ],
-    ):
-        det_cls.return_value.detect.return_value = [_FakeManifest("python")]
-        worktree = _FakeWorktree(tmp_path)
-
-        with pytest.raises(FeatureOrchestrationError) as exc:
-            orchestrator._bootstrap_environment(worktree)
-
-    # The bootstrapper.bootstrap() method must NOT have been invoked — the
-    # whole point of the pre-check is to skip the wasted pip round-trip.
-    boot_cls.return_value.bootstrap.assert_not_called()
-    msg = str(exc.value)
-    assert "<3.13,>=3.12" in msg
-    assert "uv python install" in msg
-
-
-# ---------------------------------------------------------------------------
-# TASK-ABSR-A1B2 — smart-default bootstrap_failure_mode
-# ---------------------------------------------------------------------------
-
-
-def test_compute_default_blocks_when_any_manifest_declares_requires_python() -> None:
-    manifests = [
-        _FakeManifest("python", requires_python=">=3.12"),
-        _FakeManifest("node"),
-    ]
-    assert compute_default_bootstrap_failure_mode(manifests) == "block"
-
-
-def test_compute_default_warns_when_no_requires_python() -> None:
-    manifests = [
-        _FakeManifest("python", requires_python=None),
-        _FakeManifest("node"),
-    ]
-    assert compute_default_bootstrap_failure_mode(manifests) == "warn"
-
-
-def test_compute_default_warns_for_empty_manifests() -> None:
-    assert compute_default_bootstrap_failure_mode([]) == "warn"
-
-
-def test_compute_default_ignores_objects_without_get_requires_python() -> None:
-    class _NoAccessor:
-        stack = "python"
-
-    assert compute_default_bootstrap_failure_mode([_NoAccessor()]) == "warn"
-
-
-def test_smart_default_blocks_when_requires_python_declared(tmp_path: Path) -> None:
-    """
-    AC: with no yaml and no CLI override, a manifest declaring
-    ``requires-python`` must flip the resolved mode to ``"block"`` after
-    manifest detection — and the resolution must fire BEFORE the
-    requires-python pre-check / pip call.
-    """
-    orchestrator = _build_orchestrator(tmp_path)
-    # Baseline at __init__ — still warn, not yet resolved.
-    assert orchestrator.bootstrap_failure_mode == "warn"
-    assert orchestrator._bootstrap_failure_mode_explicit is False
-
-    fake_result = _make_result(
-        installs_attempted=1,
-        installs_failed=0,
-        stacks_detected=["python"],
-    )
-
-    with patch(
-        "guardkit.orchestrator.feature_orchestrator.ProjectEnvironmentDetector"
-    ) as det_cls, patch(
-        "guardkit.orchestrator.feature_orchestrator.EnvironmentBootstrapper"
-    ) as boot_cls, patch(
-        "guardkit.orchestrator.feature_orchestrator.check_requires_python_precheck",
-        return_value=[],
-    ):
-        det_cls.return_value.detect.return_value = [
-            _FakeManifest("python", requires_python=">=3.12")
-        ]
-        boot_cls.return_value.bootstrap.return_value = fake_result
-
-        orchestrator._bootstrap_environment(_FakeWorktree(tmp_path))
-
-    # After resolution: smart default flipped to block, and the orchestrator
-    # is now treating the choice as explicit (so a between-wave second pass
-    # does not re-evaluate).
-    assert orchestrator.bootstrap_failure_mode == "block"
-    assert orchestrator._bootstrap_failure_mode_explicit is True
-
-
-def test_smart_default_warns_when_no_requires_python(tmp_path: Path) -> None:
-    """AC: no manifest declares requires-python → resolved mode stays warn."""
-    orchestrator = _build_orchestrator(tmp_path)
-
-    fake_result = _make_result(
-        installs_attempted=1,
-        installs_failed=0,
-        stacks_detected=["python"],
-    )
-
-    with patch(
-        "guardkit.orchestrator.feature_orchestrator.ProjectEnvironmentDetector"
-    ) as det_cls, patch(
-        "guardkit.orchestrator.feature_orchestrator.EnvironmentBootstrapper"
-    ) as boot_cls, patch(
-        "guardkit.orchestrator.feature_orchestrator.check_requires_python_precheck",
-        return_value=[],
-    ):
-        det_cls.return_value.detect.return_value = [
-            _FakeManifest("python", requires_python=None),
-            _FakeManifest("node"),
-        ]
-        boot_cls.return_value.bootstrap.return_value = fake_result
-
-        orchestrator._bootstrap_environment(_FakeWorktree(tmp_path))
-
-    assert orchestrator.bootstrap_failure_mode == "warn"
-    assert orchestrator._bootstrap_failure_mode_explicit is True
-
-
-def test_explicit_yaml_warn_overrides_smart_default_block(tmp_path: Path) -> None:
-    """
-    AC: an explicit yaml ``warn`` wins over the smart default that would
-    otherwise have produced ``"block"``. The smart default is only applied
-    when the user has not provided a value.
-    """
-    orchestrator = _build_orchestrator(
-        tmp_path,
-        write_config={"autobuild": {"bootstrap": {"failure_mode": "warn"}}},
-    )
-    # Yaml made the choice explicit — orchestrator records that.
-    assert orchestrator.bootstrap_failure_mode == "warn"
-    assert orchestrator._bootstrap_failure_mode_explicit is True
-
-    fake_result = _make_result(
-        installs_attempted=1,
-        installs_failed=0,
-        stacks_detected=["python"],
-    )
-
-    with patch(
-        "guardkit.orchestrator.feature_orchestrator.ProjectEnvironmentDetector"
-    ) as det_cls, patch(
-        "guardkit.orchestrator.feature_orchestrator.EnvironmentBootstrapper"
-    ) as boot_cls, patch(
-        "guardkit.orchestrator.feature_orchestrator.check_requires_python_precheck",
-        return_value=[],
-    ):
-        det_cls.return_value.detect.return_value = [
-            _FakeManifest("python", requires_python=">=3.12")
-        ]
-        boot_cls.return_value.bootstrap.return_value = fake_result
-
-        orchestrator._bootstrap_environment(_FakeWorktree(tmp_path))
-
-    # Explicit yaml warn must NOT be flipped to block by the smart default.
-    assert orchestrator.bootstrap_failure_mode == "warn"
-
-
-def test_explicit_cli_warn_overrides_smart_default_block(tmp_path: Path) -> None:
-    """
-    AC: a CLI ``--bootstrap-failure-mode warn`` wins over both the yaml
-    value and the smart default. Demonstrated against a yaml that says
-    ``block`` and a manifest that would otherwise drive the smart default
-    to ``block``.
-    """
-    orchestrator = _build_orchestrator(
-        tmp_path,
-        failure_mode="warn",
-        write_config={"autobuild": {"bootstrap": {"failure_mode": "block"}}},
-    )
-    assert orchestrator.bootstrap_failure_mode == "warn"
-    assert orchestrator._bootstrap_failure_mode_explicit is True
-
-    fake_result = _make_result(
-        installs_attempted=1,
-        installs_failed=0,
-        stacks_detected=["python"],
-    )
-
-    with patch(
-        "guardkit.orchestrator.feature_orchestrator.ProjectEnvironmentDetector"
-    ) as det_cls, patch(
-        "guardkit.orchestrator.feature_orchestrator.EnvironmentBootstrapper"
-    ) as boot_cls, patch(
-        "guardkit.orchestrator.feature_orchestrator.check_requires_python_precheck",
-        return_value=[],
-    ):
-        det_cls.return_value.detect.return_value = [
-            _FakeManifest("python", requires_python=">=3.12")
-        ]
-        boot_cls.return_value.bootstrap.return_value = fake_result
-
-        orchestrator._bootstrap_environment(_FakeWorktree(tmp_path))
-
-    assert orchestrator.bootstrap_failure_mode == "warn"
-
-
-def test_smart_default_logs_resolved_value_at_info(
+def test_replay_feat_j004_702c_preflight_warns_and_installs(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """The resolved smart default is logged at INFO once per orchestration run."""
-    orchestrator = _build_orchestrator(tmp_path)
-
-    fake_result = _make_result(
-        installs_attempted=1,
-        installs_failed=0,
-        stacks_detected=["python"],
-    )
-
-    with patch(
-        "guardkit.orchestrator.feature_orchestrator.ProjectEnvironmentDetector"
-    ) as det_cls, patch(
-        "guardkit.orchestrator.feature_orchestrator.EnvironmentBootstrapper"
-    ) as boot_cls, patch(
-        "guardkit.orchestrator.feature_orchestrator.check_requires_python_precheck",
-        return_value=[],
-    ):
-        det_cls.return_value.detect.return_value = [
-            _FakeManifest("python", requires_python=">=3.12")
-        ]
-        boot_cls.return_value.bootstrap.return_value = fake_result
-
-        with caplog.at_level("INFO"):
-            orchestrator._bootstrap_environment(_FakeWorktree(tmp_path))
-
-    assert any(
-        "smart default" in rec.message and "block" in rec.message
-        for rec in caplog.records
-    )
-
-
-def test_replay_feat_j004_702c_preflight_blocks_before_wave1(tmp_path: Path) -> None:
     """
     Replay TASK-REV-FA04 / FEAT-J004-702C: a worktree whose pyproject
-    declares a ``requires-python`` the active interpreter cannot satisfy,
-    with no explicit ``bootstrap_failure_mode`` set. The smart default
-    must flip to ``"block"`` and the requires-python pre-check must raise
-    ``FeatureOrchestrationError`` *before* the bootstrapper runs pip,
-    closing the silent-continue trapdoor that produced the original stall.
+    declares a ``requires-python`` the active interpreter cannot satisfy.
+    Since step 2 the mismatch is named in a warning before pip runs, the
+    install is still attempted and its result returned; the build is not
+    stopped. If the project's tests then cannot start, the reviewer is told.
     """
     orchestrator = _build_orchestrator(tmp_path)
-    # Confirm baseline pre-resolution.
-    assert orchestrator.bootstrap_failure_mode == "warn"
-    assert orchestrator._bootstrap_failure_mode_explicit is False
+    fake_result = _all_installs_failed(tmp_path)
 
     with patch(
         "guardkit.orchestrator.feature_orchestrator.ProjectEnvironmentDetector"
@@ -971,23 +289,22 @@ def test_replay_feat_j004_702c_preflight_blocks_before_wave1(tmp_path: Path) -> 
         det_cls.return_value.detect.return_value = [
             _FakeManifest("python", requires_python="<3.13,>=3.12")
         ]
+        boot_cls.return_value.bootstrap.return_value = fake_result
 
-        with pytest.raises(FeatureOrchestrationError) as exc:
-            orchestrator._bootstrap_environment(_FakeWorktree(tmp_path))
+        with caplog.at_level("WARNING"):
+            got = orchestrator._bootstrap_environment(_FakeWorktree(tmp_path))
 
-    # The bootstrapper.bootstrap() must NOT have been invoked — preflight
-    # caught it and saved the wasted wave.
-    boot_cls.return_value.bootstrap.assert_not_called()
-    msg = str(exc.value)
-    assert "<3.13,>=3.12" in msg
-    assert "uv python install" in msg
-    # Smart default flipped the mode to block during resolution.
-    assert orchestrator.bootstrap_failure_mode == "block"
+    boot_cls.return_value.bootstrap.assert_called_once()
+    assert got is fake_result
+    assert any(
+        "does not satisfy requires-python=`<3.13,>=3.12`" in rec.message
+        for rec in caplog.records
+    )
 
 
 # ---------------------------------------------------------------------------
-# Follow-up fixes 2026-10-13 (3b): a refused component ``cwd`` stops the build
-# in every failure mode, through the real detector and bootstrapper.
+# Follow-up fixes 2026-10-13 (3b): a refused component ``cwd`` stops the build,
+# through the real detector and bootstrapper.
 # ---------------------------------------------------------------------------
 
 
@@ -1021,12 +338,11 @@ def _no_installs() -> MagicMock:
     return MagicMock(return_value=MagicMock(returncode=0, stdout="", stderr=""))
 
 
-@pytest.mark.parametrize("failure_mode", ["warn", None], ids=["warn", "default"])
 @pytest.mark.parametrize("escaping", ["../outside-web", "/srv/outside-web"])
 def test_a_refused_component_cwd_stops_the_bootstrap_in_every_mode(
-    tmp_path: Path, failure_mode, escaping
+    tmp_path: Path, escaping
 ) -> None:
-    orchestrator = _build_orchestrator(tmp_path, failure_mode=failure_mode)
+    orchestrator = _build_orchestrator(tmp_path)
     worktree = _declared_web_worktree(tmp_path, escaping)
 
     with patch("subprocess.run", _no_installs()) as run:
@@ -1045,7 +361,7 @@ def test_a_component_cwd_escaping_through_a_symlink_stops_the_bootstrap(
     """The refused-input result (not an exception) stops the build too."""
     import shutil
 
-    orchestrator = _build_orchestrator(tmp_path, failure_mode="warn")
+    orchestrator = _build_orchestrator(tmp_path)
     worktree = _declared_web_worktree(tmp_path, "apps/web")
     outside = tmp_path / "outside-web"
     outside.mkdir()
@@ -1065,7 +381,7 @@ def test_a_component_cwd_that_is_a_symlink_loop_stops_the_bootstrap(
     component and path), not swallowed as a generic error in warning mode."""
     import shutil
 
-    orchestrator = _build_orchestrator(tmp_path, failure_mode="warn")
+    orchestrator = _build_orchestrator(tmp_path)
     worktree = _declared_web_worktree(tmp_path, "apps/web")
     shutil.rmtree(worktree / "apps" / "web")
     (worktree / "apps" / "web").symlink_to("web")
@@ -1080,7 +396,7 @@ def test_a_component_cwd_that_is_a_symlink_loop_stops_the_bootstrap(
 
 def test_a_valid_component_cwd_bootstraps_as_today(tmp_path: Path) -> None:
     """Control: a relative ``cwd`` inside the worktree loads and installs."""
-    orchestrator = _build_orchestrator(tmp_path, failure_mode="warn")
+    orchestrator = _build_orchestrator(tmp_path)
     worktree = _declared_web_worktree(tmp_path, "apps/web")
 
     with patch("subprocess.run", _no_installs()) as run:
@@ -1128,9 +444,8 @@ def test_a_refused_component_cwd_stops_admitted_bootstrap_before_player(tmp_path
         lease.admit("TASK-NEXT")
 
 
-@pytest.mark.parametrize("failure_mode", ["warn", None], ids=["warn", "default"])
 def test_an_inaccessible_declaration_directory_stops_the_bootstrap(
-    tmp_path: Path, failure_mode
+    tmp_path: Path
 ) -> None:
     """``.guardkit`` cannot be searched, so whether the declaration exists is
     unknown. That stops the build in every mode instead of escaping as a
@@ -1139,7 +454,7 @@ def test_an_inaccessible_declaration_directory_stops_the_bootstrap(
 
     if hasattr(os, "geteuid") and os.geteuid() == 0:
         pytest.skip("root can search a mode-000 directory")
-    orchestrator = _build_orchestrator(tmp_path, failure_mode=failure_mode)
+    orchestrator = _build_orchestrator(tmp_path)
     worktree = _declared_web_worktree(tmp_path, "apps/web")
     guardkit_dir = worktree / ".guardkit"
     guardkit_dir.chmod(0)
@@ -1153,15 +468,14 @@ def test_an_inaccessible_declaration_directory_stops_the_bootstrap(
     assert not any(list(c.args[0]) == ["npm", "ci"] for c in run.call_args_list)
 
 
-@pytest.mark.parametrize("failure_mode", ["warn", None], ids=["warn", "default"])
 def test_a_missing_declaration_directory_bootstraps_as_today(
-    tmp_path: Path, failure_mode
+    tmp_path: Path
 ) -> None:
     """Control: no ``.guardkit`` at all means "not declared"; the install is
     inferred from the lockfile as before."""
     import shutil
 
-    orchestrator = _build_orchestrator(tmp_path, failure_mode=failure_mode)
+    orchestrator = _build_orchestrator(tmp_path)
     worktree = _declared_web_worktree(tmp_path, "apps/web")
     shutil.rmtree(worktree / ".guardkit")
 
@@ -1186,7 +500,7 @@ def _skip_if_root() -> None:
 
 
 def _bootstrap_once_then_restrict(
-    tmp_path: Path, failure_mode, worktree: Path, restricted: Path, mode: int
+    tmp_path: Path, worktree: Path, restricted: Path, mode: int
 ):
     """Bootstrap successfully, then restrict *restricted* and bootstrap again.
 
@@ -1194,7 +508,7 @@ def _bootstrap_once_then_restrict(
     subprocess mock, and whether the saved state was left unchanged.
     Permissions are restored before returning.
     """
-    orchestrator = _build_orchestrator(tmp_path, failure_mode=failure_mode)
+    orchestrator = _build_orchestrator(tmp_path)
     with patch("subprocess.run", _no_installs()):
         first = orchestrator._bootstrap_environment(_FakeWorktree(worktree))
     assert first is not None and first.success is True
@@ -1211,9 +525,8 @@ def _bootstrap_once_then_restrict(
     return exc.value, run, state_file.read_bytes() == saved
 
 
-@pytest.mark.parametrize("failure_mode", ["warn", None], ids=["warn", "default"])
 def test_a_dependency_link_into_an_unsearchable_directory_stops_the_bootstrap(
-    tmp_path: Path, failure_mode
+    tmp_path: Path
 ) -> None:
     """``apps/web/package-lock.json`` links to a file in ``.deps``, which then
     cannot be searched: the link's target cannot be looked up."""
@@ -1227,7 +540,7 @@ def test_a_dependency_link_into_an_unsearchable_directory_stops_the_bootstrap(
     )
 
     error, run, state_unchanged = _bootstrap_once_then_restrict(
-        tmp_path, failure_mode, worktree, deps, 0o644
+        tmp_path, worktree, deps, 0o644
     )
 
     assert "'web'" in str(error) and "apps/web/package-lock.json" in str(error)
@@ -1235,9 +548,8 @@ def test_a_dependency_link_into_an_unsearchable_directory_stops_the_bootstrap(
     assert state_unchanged
 
 
-@pytest.mark.parametrize("failure_mode", ["warn", None], ids=["warn", "default"])
 def test_an_unsearchable_intermediate_directory_stops_the_bootstrap(
-    tmp_path: Path, failure_mode
+    tmp_path: Path
 ) -> None:
     """``packages/ui`` is readable but cannot be searched, so whether the
     declared ``packages/ui/lib`` exists is unknown; it is not "absent"."""
@@ -1254,7 +566,7 @@ def test_an_unsearchable_intermediate_directory_stops_the_bootstrap(
     cfg.write_text(yaml.safe_dump(block), encoding="utf-8")
 
     error, run, state_unchanged = _bootstrap_once_then_restrict(
-        tmp_path, failure_mode, worktree, worktree / "packages" / "ui", 0o444
+        tmp_path, worktree, worktree / "packages" / "ui", 0o444
     )
 
     assert "'ui'" in str(error) and "packages/ui/lib" in str(error)
@@ -1262,13 +574,12 @@ def test_an_unsearchable_intermediate_directory_stops_the_bootstrap(
     assert state_unchanged
 
 
-@pytest.mark.parametrize("failure_mode", ["warn", None], ids=["warn", "default"])
 def test_a_missing_declared_directory_is_still_absent(
-    tmp_path: Path, failure_mode
+    tmp_path: Path
 ) -> None:
     """Control: a declared ``cwd`` that does not exist is an "absent" entry;
     the install runs, and creating the directory later reruns it."""
-    orchestrator = _build_orchestrator(tmp_path, failure_mode=failure_mode)
+    orchestrator = _build_orchestrator(tmp_path)
     worktree = _declared_web_worktree(tmp_path, "apps/not-yet")
 
     with patch("subprocess.run", _no_installs()) as run:

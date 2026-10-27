@@ -222,8 +222,8 @@ def _complete_feature_tasks(feature, task_ids: List[str]) -> None:
             task.status = "completed"
 
 
-def _pass_the_wiring_gate(wave_number, task_ids, feature, worktree, wave_result):
-    return MagicMock(final_wave_result=wave_result, terminate=False)
+def _pass_the_wiring_gate(wave_number, task_ids, feature, worktree):
+    return MagicMock(record=None)
 
 
 def _common_patches(orchestrator: FeatureOrchestrator):

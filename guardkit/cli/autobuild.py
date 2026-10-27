@@ -897,20 +897,6 @@ def status(ctx, task_id: str, verbose: bool):
     show_default=True,
 )
 @click.option(
-    "--bootstrap-failure-mode",
-    "bootstrap_failure_mode",
-    default=None,
-    type=click.Choice(["block", "warn"]),
-    help=(
-        "Bootstrap hard-fail gate (TASK-FIX-7A04). "
-        "'block' raises an error when every essential-stack install fails; "
-        "'warn' only logs. The smart default (TASK-ABSR-A1B2) applies "
-        "'block' when any manifest declares requires-python and 'warn' "
-        "otherwise. Overrides autobuild.bootstrap.failure_mode in "
-        ".guardkit/config.yaml."
-    ),
-)
-@click.option(
     "--honesty-early-abort-threshold",
     "honesty_early_abort_threshold",
     default=0.3,
@@ -955,7 +941,6 @@ def feature(
     max_parallel_strategy: str,
     skip_validation: bool,
     task_log_interval: int,
-    bootstrap_failure_mode: Optional[str],
     honesty_early_abort_threshold: float,
     honesty_early_abort_window: int,
 ):
@@ -1115,8 +1100,7 @@ def feature(
         f"resume={resume}, fresh={fresh}, refresh={refresh}, "
         f"sdk_timeout={sdk_timeout}, enable_pre_loop={enable_pre_loop}, "
         f"timeout_multiplier={timeout_multiplier}, max_parallel={max_parallel}, "
-        f"max_parallel_strategy={max_parallel_strategy}, "
-        f"bootstrap_failure_mode={bootstrap_failure_mode})"
+        f"max_parallel_strategy={max_parallel_strategy})"
     )
 
     # Create instrumentation emitter (TASK-INST-013)
@@ -1143,7 +1127,6 @@ def feature(
             skip_validation=skip_validation,
             emitter=emitter,
             task_log_interval=task_log_interval,
-            bootstrap_failure_mode=bootstrap_failure_mode,
             honesty_early_abort_threshold=honesty_early_abort_threshold,
             honesty_early_abort_window=honesty_early_abort_window,
             model=model,  # TASK-FIX-LGFM: thread --model to per-task AutoBuildOrchestrator (load-bearing for LangGraph)

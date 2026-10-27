@@ -3416,7 +3416,18 @@ class AutoBuildOrchestrator:
     def orchestrate(self, task_id, requirements, acceptance_criteria, base_branch="main", **kwargs):
         from guardkit.orchestrator.task_work_scope import checkout_lease, ScopeUnavailable
         if self._existing_worktree is None:
-            self._existing_worktree = self._worktree_manager.create(task_id=task_id, base_branch=base_branch)
+            saved = self._worktree_manager.worktrees_dir / task_id
+            if self.resume and saved.exists():
+                # Step 2 (27 October 2026): a resumed single-task build goes on
+                # in the checkout it left, under the same exclusive lease.
+                self._existing_worktree = Worktree(
+                    task_id=task_id,
+                    branch_name=self._worktree_manager._build_branch_name(task_id),
+                    path=saved,
+                    base_branch=base_branch,
+                )
+            else:
+                self._existing_worktree = self._worktree_manager.create(task_id=task_id, base_branch=base_branch)
         from guardkit.orchestrator.task_work_scope import current_lease, bind_fresh_footprint
         if current_lease() is None and not self.resume:
             task_path = kwargs.get("task_file_path")
@@ -13098,9 +13109,7 @@ class AutoBuildOrchestrator:
             parts.append(f"Manifest requires-python: {requires_python}")
 
         parts.append(
-            "Remediation: Set `bootstrap_failure_mode: block` in "
-            "`.guardkit/config.yaml` (or pass `--bootstrap-failure-mode block`). "
-            "Install a compatible interpreter with `uv python install <X>`, "
+            "Remediation: Install a compatible interpreter with `uv python install <X>`, "
             "`pyenv install <X>`, or `conda create -n <name> python=<X>`."
         )
         parts.append("Worktree preserved for inspection.")

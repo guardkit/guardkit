@@ -466,7 +466,9 @@ class TestEnvironmentStallDiagnostic:
         assert "uv python install" in message
         assert "pyenv install" in message
         assert "conda create" in message
-        assert "bootstrap_failure_mode" in message
+        # Step 2 (26 October 2026): the block setting is gone, so the advice
+        # no longer names it.
+        assert "bootstrap_failure_mode" not in message
 
     def test_environment_stall_diagnostic_falls_through_for_non_python_worktree(
         self, tmp_path

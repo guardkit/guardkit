@@ -7,11 +7,9 @@ Covers the four guardkit-side units of the gate:
 2. ``_collect_turn_rejecting_wiring_findings`` — only mocked-primary-seam +
    ctor-arity are turn-rejecting; UNWIRED stays advisory; absent signals
    (None / error / unsupported / skipped) are never turn-rejecting.
-3. ``_build_wiring_feedback`` — frames per-task-green ≠ feature-green and names
-   the seams + ctor mismatches.
-4. ``_run_post_wave_wiring_gate`` — bounded feed-back retry, replace-not-append,
-   never hard-terminates on findings, absence-of-failure-safe, and a
-   Coach-rejected re-run does not terminate either.
+3. ``_run_post_wave_wiring_gate`` — one pass, advice only (step 2, 26 October
+   2026): findings are printed and recorded, the wave is never re-run, and
+   absent signals are never findings.
 
 Coverage Target: >=85%
 """
@@ -27,7 +25,6 @@ import pytest
 
 from guardkit.orchestrator.feature_orchestrator import (
     FeatureOrchestrator,
-    WaveExecutionResult,
 )
 
 
@@ -82,16 +79,6 @@ def _checkout(tmp_path: Path) -> MagicMock:
     subprocess.run(git + ["add", "-A"], cwd=root, check=True)
     subprocess.run(git + ["commit", "-q", "-m", "start"], cwd=root, check=True)
     return MagicMock(path=str(root))
-
-
-def _wave_result(task_ids, all_succeeded=True) -> WaveExecutionResult:
-    return WaveExecutionResult(
-        wave_number=1,
-        task_ids=list(task_ids),
-        results=[],
-        all_succeeded=all_succeeded,
-        smoke_gate_result=None,
-    )
 
 
 def _write_results(repo_root: Path, task_id: str, payload: dict) -> None:
@@ -224,31 +211,7 @@ class TestCollectTurnRejecting:
 
 
 # ============================================================================
-# 3. _build_wiring_feedback
-# ============================================================================
-
-
-class TestBuildWiringFeedback:
-    def test_feedback_names_seam_and_ctor(self, tmp_path):
-        orch = _orchestrator(tmp_path)
-        fb = orch._build_wiring_feedback([_SEAM, _CTOR])
-        assert "FEATURE WIRING FAILURE" in fb
-        assert "per-task-green is not feature-green" in fb.lower()
-        assert "tests/integration/test_router.py:7" in fb
-        assert "VoiceService" in fb
-        assert "main.py:5" in fb
-        assert "MOCKED PRIMARY SEAM" in fb
-        assert "CONSTRUCTOR ARITY" in fb
-
-    def test_feedback_seam_only(self, tmp_path):
-        orch = _orchestrator(tmp_path)
-        fb = orch._build_wiring_feedback([_SEAM])
-        assert "MOCKED PRIMARY SEAM" in fb
-        assert "CONSTRUCTOR ARITY" not in fb
-
-
-# ============================================================================
-# 4. _run_post_wave_wiring_gate
+# 3. _run_post_wave_wiring_gate — advice only
 # ============================================================================
 
 
@@ -256,137 +219,78 @@ class TestRunPostWaveWiringGate:
     @_requires_guardkitfactory
     def test_no_findings_is_neutral_no_reentry(self, tmp_path):
         orch = _orchestrator(tmp_path)
-        wr = _wave_result(["TASK-A"])
         with patch.object(orch, "_wave_authored_files", return_value=(["a.py"], [])), \
              patch("guardkitfactory.wiring.analyze_wiring",
                    return_value=_wiring_dict()), \
              patch.object(orch, "_execute_wave") as exec_wave:
             outcome = orch._run_post_wave_wiring_gate(
-                1, ["TASK-A"], MagicMock(), _checkout(tmp_path), wr
+                1, ["TASK-A"], MagicMock(), _checkout(tmp_path)
             )
-        assert outcome.terminate is False
         assert outcome.findings_unresolved is False
         exec_wave.assert_not_called()
 
     @_requires_guardkitfactory
     def test_empty_authored_set_is_noop(self, tmp_path):
         orch = _orchestrator(tmp_path)
-        wr = _wave_result(["TASK-A"])
         with patch.object(orch, "_wave_authored_files", return_value=([], [])), \
              patch("guardkitfactory.wiring.analyze_wiring") as az, \
              patch.object(orch, "_execute_wave") as exec_wave:
             outcome = orch._run_post_wave_wiring_gate(
-                1, ["TASK-A"], MagicMock(), _checkout(tmp_path), wr
+                1, ["TASK-A"], MagicMock(), _checkout(tmp_path)
             )
-        assert outcome.terminate is False
+        assert outcome.findings_unresolved is False
         az.assert_not_called()
         exec_wave.assert_not_called()
 
     @_requires_guardkitfactory
     def test_analyzer_error_is_absent_signal_no_reentry(self, tmp_path):
         orch = _orchestrator(tmp_path)
-        wr = _wave_result(["TASK-A"])
         with patch.object(orch, "_wave_authored_files", return_value=(["a.py"], [])), \
              patch("guardkitfactory.wiring.analyze_wiring",
                    side_effect=RuntimeError("boom")), \
              patch.object(orch, "_execute_wave") as exec_wave:
             outcome = orch._run_post_wave_wiring_gate(
-                1, ["TASK-A"], MagicMock(), _checkout(tmp_path), wr
+                1, ["TASK-A"], MagicMock(), _checkout(tmp_path)
             )
-        assert outcome.terminate is False
+        assert outcome.findings_unresolved is False
         exec_wave.assert_not_called()
 
     def test_guardkitfactory_unavailable_is_noop(self, tmp_path):
         orch = _orchestrator(tmp_path)
-        wr = _wave_result(["TASK-A"])
         # Setting the module to None in sys.modules makes the local import raise.
         with patch.dict(sys.modules, {"guardkitfactory.wiring": None}), \
              patch.object(orch, "_execute_wave") as exec_wave:
             outcome = orch._run_post_wave_wiring_gate(
-                1, ["TASK-A"], MagicMock(), _checkout(tmp_path), wr
+                1, ["TASK-A"], MagicMock(), _checkout(tmp_path)
             )
-        assert outcome.terminate is False
+        assert outcome.findings_unresolved is False
         exec_wave.assert_not_called()
 
     @_requires_guardkitfactory
-    def test_findings_feed_back_and_clear_on_retry(self, tmp_path):
+    @pytest.mark.parametrize("found", [
+        {"seam_findings": [_SEAM]}, {"ctor_findings": [_CTOR]},
+    ], ids=["mocked-seam", "ctor-arity"])
+    def test_findings_are_advice_and_the_wave_is_not_rerun(self, tmp_path, found):
+        """Step 2 (26 October 2026): a finding is printed and recorded as
+        advice; the wave is analysed once and never re-run."""
         orch = _orchestrator(tmp_path)
-        orch._wiring_gate_max_retries = 1
-        wr = _wave_result(["TASK-A"])
-        rerun = _wave_result(["TASK-A"], all_succeeded=True)
-        # First analyze → findings; after the re-run → clean.
-        results = [_wiring_dict(seam_findings=[_SEAM]), _wiring_dict()]
         with patch.object(orch, "_wave_authored_files", return_value=(["a.py"], [])), \
              patch("guardkitfactory.wiring.analyze_wiring",
-                   side_effect=results), \
-             patch.object(orch, "_execute_wave", return_value=rerun) as exec_wave:
-            outcome = orch._run_post_wave_wiring_gate(
-                1, ["TASK-A"], MagicMock(), _checkout(tmp_path), wr
-            )
-        exec_wave.assert_called_once()
-        # seed_feedback carries the wiring feedback to turn 1.
-        _, kwargs = exec_wave.call_args
-        assert "FEATURE WIRING FAILURE" in kwargs["seed_feedback"]
-        assert outcome.terminate is False
-        assert outcome.findings_unresolved is False
-        # replace-not-append: the final result is the re-executed wave.
-        assert outcome.final_wave_result is rerun
-
-    @_requires_guardkitfactory
-    def test_findings_persist_after_budget_advisory_not_terminate(self, tmp_path):
-        orch = _orchestrator(tmp_path)
-        orch._wiring_gate_max_retries = 1
-        wr = _wave_result(["TASK-A"])
-        rerun = _wave_result(["TASK-A"], all_succeeded=True)
-        # Findings persist on both the first and the re-run analysis.
-        with patch.object(orch, "_wave_authored_files", return_value=(["a.py"], [])), \
-             patch("guardkitfactory.wiring.analyze_wiring",
-                   return_value=_wiring_dict(ctor_findings=[_CTOR])), \
-             patch.object(orch, "_execute_wave", return_value=rerun) as exec_wave:
-            outcome = orch._run_post_wave_wiring_gate(
-                1, ["TASK-A"], MagicMock(), _checkout(tmp_path), wr
-            )
-        exec_wave.assert_called_once()  # exactly one retry (budget = 1)
-        assert outcome.terminate is False      # NEVER hard-terminates on findings
-        assert outcome.findings_unresolved is True
-
-    @_requires_guardkitfactory
-    def test_retries_disabled_runs_once_advisory(self, tmp_path):
-        orch = _orchestrator(tmp_path)
-        orch._wiring_gate_max_retries = 0
-        wr = _wave_result(["TASK-A"])
-        with patch.object(orch, "_wave_authored_files", return_value=(["a.py"], [])), \
-             patch("guardkitfactory.wiring.analyze_wiring",
-                   return_value=_wiring_dict(seam_findings=[_SEAM])), \
+                   return_value=_wiring_dict(**found)) as az, \
              patch.object(orch, "_execute_wave") as exec_wave:
             outcome = orch._run_post_wave_wiring_gate(
-                1, ["TASK-A"], MagicMock(), _checkout(tmp_path), wr
+                1, ["TASK-A"], MagicMock(), _checkout(tmp_path)
             )
-        exec_wave.assert_not_called()  # budget 0 → no feed-back
-        assert outcome.terminate is False
+        exec_wave.assert_not_called()
+        az.assert_called_once()
         assert outcome.findings_unresolved is True
-
-    @_requires_guardkitfactory
-    def test_a_rejected_rerun_does_not_terminate(self, tmp_path):
-        """Step 2 (26 October 2026): a re-run the Coach rejected no longer
-        stops the build; the gate runs again and its findings stay advice."""
-        orch = _orchestrator(tmp_path)
-        orch._wiring_gate_max_retries = 1
-        wr = _wave_result(["TASK-A"])
-        rejected = _wave_result(["TASK-A"], all_succeeded=False)
-        with patch.object(orch, "_wave_authored_files", return_value=(["a.py"], [])), \
-             patch("guardkitfactory.wiring.analyze_wiring",
-                   return_value=_wiring_dict(seam_findings=[_SEAM])), \
-             patch.object(orch, "_execute_wave", return_value=rejected):
-            outcome = orch._run_post_wave_wiring_gate(
-                1, ["TASK-A"], MagicMock(), _checkout(tmp_path), wr
-            )
-        assert outcome.terminate is False
-        assert outcome.final_wave_result is rejected
+        assert outcome.record["state"] == "found_something"
+        assert outcome.record["reason"].startswith("advice")
+        assert outcome.record["finding_count"] >= 1
 
 
 # ============================================================================
-# 5. _wiring_gate_record — unread input is never "ran and found nothing"
+# 4. _wiring_gate_record — unread input is never "ran and found nothing"
 #    (12 October 2026, web readiness W4)
 # ============================================================================
 

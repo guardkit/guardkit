@@ -1141,8 +1141,7 @@ def _create_worktree_uv_sources_symlinks(
         If symlink creation itself fails (permission denied, target
         unreadable, parent directory creation failed). The caller is
         responsible for surfacing this with a hint that names the
-        symlink path, target, and OS error — and that does NOT point at
-        ``bootstrap_failure_mode: warn`` (mirrors the AB60 hint pattern).
+        symlink path, target, and OS error.
     """
     for symlink_path, target_path in symlinks:
         if symlink_path.is_symlink():

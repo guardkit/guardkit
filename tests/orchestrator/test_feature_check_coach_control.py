@@ -189,9 +189,7 @@ def _drive(main: Path, wt: Path, feature, waves: _Waves):
                 orch,
                 "_run_post_wave_wiring_gate",
                 autospec=True,
-                side_effect=lambda wn, ti, f, w, wr: MagicMock(
-                    final_wave_result=wr, terminate=False
-                ),
+                side_effect=lambda wn, ti, f, w: MagicMock(record=None),
             ),
             patch(
                 "guardkit.orchestrator.feature_orchestrator.FeatureLoader.find_task",

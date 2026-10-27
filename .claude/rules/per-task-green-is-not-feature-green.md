@@ -32,8 +32,8 @@ The remediation is a **post-wave** wiring gate whose aperture is the
 **wave-aggregate authored set** (the assembled feature), pairing the binary
 per-task verdict with a positive integration-evidence precondition: the primary
 seams are exercised, not mocked, and the composition root constructs each
-first-party service with all required `__init__` args. Findings feed back to the
-Player (bounded retry), never hard-terminate (warning-severity heuristics).
+first-party service with all required `__init__` args. Findings are advice
+(step 2, 26 October 2026): recorded, never a re-run and never a stop.
 
 ## Why this rule exists
 
@@ -110,12 +110,10 @@ rg "per-task-green-is-not-feature-green|evidence-boundary-narrower|absence-of-fa
    call site or in the signature, parse-degraded — all are **absent** signals,
    never a pass and never a turn-rejection. Only a *ran-and-found* result feeds
    back. Bias toward no-finding on any uncertainty.
-5. **Feed back, do not terminate** (per
-   `smoke-gate-is-feedback-not-terminator.md`): findings become turn-1
-   `seed_feedback` bounded by `GUARDKIT_WIRING_GATE_MAX_RETRIES` (default 1).
-   Unlike the smoke gate, exhausting the budget NEVER hard-terminates the
-   feature — wiring findings are warning-severity heuristics, so an unresolved
-   finding becomes advisory and the build continues.
+5. **Advice only** (step 2, 26 October 2026): findings are printed and kept
+   in the group's code-check record for the end-of-build summary. The wave is
+   never re-run, its result is never replaced and the feature is never
+   stopped — wiring findings are warning-severity heuristics.
 6. **Boundary mocks are legitimate.** Mocking a true external boundary
    (HTTP clients, DB drivers, allow-listed third-party modules) is NOT flagged.
    The signal is specifically a **first-party** seam being mocked away.
@@ -132,7 +130,7 @@ rg -n "_run_post_wave_wiring_gate" guardkit/orchestrator/feature_orchestrator.py
 # Collector fingerprint — only seam(authored)+ctor are turn-rejecting:
 rg -n "authored_this_turn is True|ctor.get\(.status.\) == .ran." \
    guardkit/orchestrator/feature_orchestrator.py
-# Never-terminate fingerprint — findings_unresolved, terminate stays False:
+# Advice fingerprint — findings_unresolved, never a re-run:
 rg -n "findings_unresolved" guardkit/orchestrator/feature_orchestrator.py
 # Factory analysis fingerprint (stack-agnostic, in guardkitfactory):
 rg -n "def _summarise_params|CtorArityResult|mock_call_query" \
@@ -186,9 +184,9 @@ write surface, here it is an assembly aperture covering the *composed* feature
   `_summarise_call_args` in `wiring/analyzer.py`, ctor-arity + spec-mock query
   data in `wiring/dialects/python.py`. guardkit:
   `_run_post_wave_wiring_gate` / `_wave_authored_files` /
-  `_collect_turn_rejecting_wiring_findings` / `_build_wiring_feedback` +
-  `WiringGatePhaseOutcome` + `GUARDKIT_WIRING_GATE_MAX_RETRIES` in
-  `feature_orchestrator.py`.
+  `_collect_turn_rejecting_wiring_findings` + `WiringGatePhaseOutcome` in
+  `feature_orchestrator.py` (the feedback builder and
+  `GUARDKIT_WIRING_GATE_MAX_RETRIES` were removed in step 2, 26 October 2026).
 - **Reproducer tests**: `guardkitfactory/tests/wiring/test_ctor_arity.py`
   (AC#6 a/b/c fixtures), `tests/unit/orchestrator/test_wiring_gate.py`,
   `tests/orchestrator/test_wiring_ctor_arity_seam.py`.

@@ -204,16 +204,16 @@ def _pass_the_wiring_gate(
     task_ids: List[str],
     feature,
     worktree: Worktree,
-    wave_result: WaveExecutionResult,
 ):
-    """Stand-in for the wiring gate that hands the wave back unchanged.
+    """Stand-in for the wiring check that records nothing (advice only since
+    step 2, 26 October 2026; it never touches the wave).
 
     Its parameters mirror the real method's by name, and it is installed with
     ``autospec=True``, so it is bound against the real signature — a stand-in
     that accepted anything would hide exactly the kind of drift this whole
     gate exists to catch.
     """
-    return MagicMock(final_wave_result=wave_result, terminate=False)
+    return MagicMock(record=None)
 
 
 def _common_patches(orchestrator):

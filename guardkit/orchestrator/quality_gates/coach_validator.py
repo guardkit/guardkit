@@ -2885,11 +2885,10 @@ class CoachValidator:
             # ambiguous infrastructure failures (ImportError /
             # ModuleNotFoundError without service-client context) when the
             # worktree's bootstrap install is observably broken and all
-            # Player gates passed. Pairs with the bootstrap_failure_mode
-            # smart default from TASK-ABSR-A1B2: when a user opts into
-            # ``warn`` mode and ships on a half-installed venv, this clause
-            # prevents the feedback-stall trapdoor from firing on what is
-            # purely an environment problem.
+            # Player gates passed. A failed install is a warning, not a stop
+            # (step 2, 26 October 2026), so a build can run on a
+            # half-installed venv; this clause prevents the feedback-stall
+            # trapdoor from firing on what is purely an environment problem.
             environment_conditional_approval = (
                 failure_class == "infrastructure"
                 and failure_confidence == "ambiguous"

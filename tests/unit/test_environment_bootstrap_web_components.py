@@ -391,7 +391,6 @@ class TestDeclaredInstallFailsSafely:
 
         orchestrator = FeatureOrchestrator(
             repo_root=web_repo.parent,
-            bootstrap_failure_mode="warn",
             skip_validation=True,
             worktree_manager=MagicMock(),
         )
