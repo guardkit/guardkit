@@ -18,7 +18,10 @@ The stand-in project:
 * ``scripts/check.sh`` exits 1 unless every dependency is installed, then
   prints a pass line;
 * the config declares ``toolchain.install``, ``toolchain.test`` and
-  ``launch.scratch: [STANDIN_CACHE]`` (plus a ``launch.settings`` name).
+  ``launch.scratch: [STANDIN_CACHE]`` (plus a ``launch.settings`` name), and
+  protects its judge scripts (``autobuild.player.protected_paths``), so the
+  merge checks with main's copy of them (28 October 2026: only protected
+  judge files are; :class:`TestAJudgeOutsideTheProtectedPaths`).
 
 Both scripts also leave marker files in a folder outside every repository, so
 a test can prove that an install or a check did, or did not, run.
@@ -116,8 +119,15 @@ def config_text(
     launch: Optional[str] = (
         "launch:\n  scratch: [STANDIN_CACHE]\n  settings: [STANDIN_SETTING]\n"
     ),
+    protected: Optional[tuple] = ("scripts", "tools", "check=suite.sh"),
 ) -> str:
-    lines = ["toolchain:\n"]
+    lines = []
+    if protected is not None:
+        lines.append(
+            "autobuild:\n  player:\n    protected_paths: "
+            f"{json.dumps(list(protected))}\n"
+        )
+    lines.append("toolchain:\n")
     if install is not None:
         lines.append(f"  install: {json.dumps(install)}\n")
     if test is not None:
@@ -1624,6 +1634,93 @@ class TestTheMergeCheckUsesTheTargetsJudges:
         assert _clean(standin.folder)
 
 
+class TestAJudgeOutsideTheProtectedPaths:
+    """28 October 2026, step 2 request 7 (FEAT-9107): a feature whose task was
+    to add its part's checks to the root ``scripts/check.sh`` failed its own
+    tests of that script, because the merge checked the join with main's
+    copy. Only judge files under the project's protected paths, read on the
+    target, are put back; the merge runs the build's copy of the others and
+    says so."""
+
+    def test_a_build_that_extends_an_unprotected_check_runs_its_own_version(
+        self, standin: Standin
+    ):
+        standin.init(config=config_text(protected=None))
+        extended = standin.script(CHECK_SH + 'echo appended >> "@MARKERS@/check-ran"\n')
+        standin.branch({"scripts/check.sh": extended})
+
+        report = standin.merge()
+
+        assert report.verify_status == "passed", report.verify_detail
+        assert report.judged_with_main_copies == ()
+        assert report.judged_with_build_copies == ("scripts/check.sh",)
+        assert standin.lines("check-ran") == ["check", "check", "appended"]
+        receipt = "\n".join(report.receipt_lines())
+        assert "ran this build's version" in receipt
+        assert "scripts/check.sh" in receipt
+        assert report.to_dict()["judged_with_build_copies"] == ["scripts/check.sh"]
+        assert _clean(standin.folder)
+
+    def test_the_career_layout_keeps_the_design_check_and_runs_the_root_check(
+        self, standin: Standin
+    ):
+        design = (
+            "#!/bin/sh\n"
+            'echo design >> "@MARKERS@/design-ran"\n'
+            "if [ -f broken.txt ]; then exit 1; fi\n"
+        )
+        standin.init(
+            config=config_text(
+                test="bash reference/check.sh && bash scripts/check.sh",
+                protected=("reference",),
+            ),
+            files={"reference/check.sh": standin.script(design)},
+        )
+        extended = standin.script(CHECK_SH + 'echo appended >> "@MARKERS@/check-ran"\n')
+        standin.branch(
+            {
+                "broken.txt": "the build broke something\n",
+                "reference/check.sh": standin.script(ALWAYS_GREEN_SH),
+                "scripts/check.sh": extended,
+            }
+        )
+
+        report = standin.merge()
+
+        # The design's check is main's copy, and it still fails the join.
+        assert report.verify_status == "failed", report.verify_detail
+        assert report.judged_with_main_copies == ("reference/check.sh",)
+        assert report.judged_with_build_copies == ("scripts/check.sh",)
+        assert "edited" not in standin.lines("check-ran")
+
+    def test_the_protected_paths_are_read_on_the_target_not_the_build(
+        self, standin: Standin
+    ):
+        standin.init()
+        standin.branch(
+            {
+                ".guardkit/config.yaml": config_text(protected=None),
+                "scripts/check.sh": standin.script(ALWAYS_GREEN_SH),
+            }
+        )
+
+        report = standin.merge()
+
+        assert report.judged_with_main_copies == ("scripts/check.sh",)
+        assert report.judged_with_build_copies == ()
+        assert standin.build_copy_never_ran()
+
+    def test_the_rule_matches_whole_path_parts(self):
+        from guardkit.orchestrator.merge_environment import judges_kept_from_target
+
+        paths = ["reference/check.sh", "reference2/check.sh", "scripts/check.sh", "AGENTS.md"]
+        assert judges_kept_from_target(paths, ["reference/", "AGENTS.md"]) == [
+            "reference/check.sh",
+            "AGENTS.md",
+        ]
+        assert judges_kept_from_target(paths, []) == []
+
+
 class TestJudgeFilesThatAreLinks:
     """Codex design round 1 (R1): a judge reached through a symbolic link, in
     the target's tree, the build's tree or the join's, means no verdict, and
@@ -1930,7 +2027,8 @@ class TestFileNamesThatAreNotUtf8:
     def test_an_odd_name_at_a_judge_path_is_left_out_and_put_back(
         self, standin: Standin
     ):
-        judge = f"{self.ODD}/check.sh"  # matched by the name check.sh
+        # Matched by the name check.sh, under a protected folder.
+        judge = f"tools/{self.ODD}/check.sh"
         standin.init()
         standin.branch({judge: standin.script(ALWAYS_GREEN_SH)})
 
@@ -2188,7 +2286,7 @@ class TestOddNamesInSentences:
     def test_a_receipt_naming_an_odd_judge_left_out_prints_cleanly(
         self, standin: Standin, folder: str, shown: str
     ):
-        judge = f"{folder}/check.sh"
+        judge = f"tools/{folder}/check.sh"  # under a protected folder
         standin.init()
         standin.branch({judge: standin.script(ALWAYS_GREEN_SH)})
 
@@ -2208,8 +2306,9 @@ class TestOddNamesInSentences:
     def test_a_failed_restore_naming_an_odd_judge_prints_cleanly(
         self, standin: Standin, monkeypatch: pytest.MonkeyPatch
     ):
-        judge = f"{self.NEWLINE}/check.sh"
-        standin.init(files={judge: standin.script(CHECK_SH)})
+        judge = f"tools/{self.NEWLINE}/check.sh"  # under a protected folder
+        # Its own content, so its stored copy is not scripts/check.sh's too.
+        standin.init(files={judge: standin.script(CHECK_SH + "# the odd one\n")})
         standin.branch({judge: standin.script(ALWAYS_GREEN_SH)})
         oid = _git(standin.repo, "rev-parse", "main:" + judge)
         from guardkit.orchestrator import merge_executor
@@ -2223,7 +2322,7 @@ class TestOddNamesInSentences:
         report = standin.merge()
 
         assert report.verify_status == "unverified"
-        assert f"the stored copy of {self.NEWLINE_SHOWN}/check.sh" in report.verify_detail
+        assert f"the stored copy of tools/{self.NEWLINE_SHOWN}/check.sh" in report.verify_detail
         _as_the_cli_prints(report)
         assert all("\n" not in line for line in report.receipt_lines())
 

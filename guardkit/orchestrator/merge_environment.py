@@ -38,6 +38,7 @@ the scratch names are whatever the project declares, carried as plain text.
 from __future__ import annotations
 
 import os
+import posixpath
 import re
 import shlex
 import unicodedata
@@ -69,6 +70,7 @@ __all__ = [
     "judge_files",
     "judge_links",
     "judge_words",
+    "judges_kept_from_target",
     "links_on_judge_paths",
     "shown_path",
     "tree_entries",
@@ -93,6 +95,10 @@ class MergeDeclarations:
 
     toolchain: Optional[ToolchainDeclaration] = None
     launch: Optional[LaunchDeclaration] = None
+    # ``autobuild.player.protected_paths``, read by the builder's own parser
+    # (28 October 2026): the judge files under them are the ones the merge
+    # checks with the target's copy (:func:`judges_kept_from_target`).
+    protected_paths: Tuple[str, ...] = ()
 
     @property
     def declared_test(self) -> Optional[str]:
@@ -200,7 +206,22 @@ def read_merge_declarations(
         if launch.is_empty:
             launch = None
 
-    return MergeDeclarations(toolchain=toolchain, launch=launch), None
+    from guardkit.orchestrator.harness.selector import _parse_player_project_inputs
+
+    try:
+        player = _parse_player_project_inputs(
+            text, config_path=_CONFIG_NAME, has_file=lambda _rel: False
+        )
+    except Exception as exc:  # the builder refuses this file too
+        return None, f"the protected paths in {_CONFIG_NAME} cannot be read ({_why(exc)})"
+    protected = tuple(
+        posixpath.normpath(str(p)) for p in player.get("protected_paths") or ()
+    )
+
+    return (
+        MergeDeclarations(toolchain=toolchain, launch=launch, protected_paths=protected),
+        None,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -307,6 +328,25 @@ def _match_keys(word: str) -> List[str]:
         if key:
             result.append(key)
     return result
+
+
+def judges_kept_from_target(
+    paths: Sequence[str], protected_paths: Sequence[str]
+) -> List[str]:
+    """The judge files the merge checks with the target's copy: those at or
+    under a path the project declares protected (28 October 2026).
+
+    Every other judge file is the build's own work, and the merge runs the
+    build's copy of it. Step 2's request 7 (FEAT-9107): a feature whose task
+    was to add its part's checks to the root ``scripts/check.sh`` failed its
+    own tests of that script, because the merge ran main's copy instead.
+    """
+    roots = [p.rstrip("/") for p in protected_paths if p.rstrip("/")]
+    return [
+        path
+        for path in paths
+        if any(path == root or path.startswith(root + "/") for root in roots)
+    ]
 
 
 def judge_files(changed: Sequence[str], words: Sequence[str]) -> List[str]:
@@ -429,9 +469,12 @@ class MergeEnvironment:
     # The plain words of the pinned test command and install, for the
     # judge-file comparison.
     judge_words: Tuple[str, ...] = ()
+    # The project's protected paths, as declared on the target.
+    protected_paths: Tuple[str, ...] = ()
     # The judge files this build changed (15 October 2026). Kept for the card
     # and the receipt only: they no longer stop the check, and they do not
-    # decide what is put back, which is every judge file the target names.
+    # decide what is put back, which is every judge file the target names
+    # under its protected paths (:func:`judges_kept_from_target`).
     judge_files_changed: Tuple[str, ...] = ()
 
 
@@ -474,6 +517,7 @@ def pin_merge_environment(
             install_timeout=install_timeout,
             launch=declarations.launch,
             judge_words=tuple(words),
+            protected_paths=declarations.protected_paths,
         ),
         None,
     )

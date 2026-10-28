@@ -78,6 +78,7 @@ from guardkit.orchestrator.merge_environment import (
     MergeEnvironment,
     judge_files,
     judge_links,
+    judges_kept_from_target,
     pin_merge_environment,
     read_merge_declarations,
     shown_path,
@@ -190,6 +191,10 @@ class MergeReport:
     # Those of them the joined-onto commit does not have: they were left out
     # of the folder for the install and the check.
     judge_files_not_on_target: Tuple[str, ...] = ()
+    # The judge files whose joined version differed from the target's and
+    # are not under the project's protected paths, so the checks after the
+    # join ran the joined (the build's) version (28 October 2026).
+    judged_with_build_copies: Tuple[str, ...] = ()
 
     @property
     def verify_ok(self) -> bool:
@@ -234,6 +239,7 @@ class MergeReport:
             "notes": list(self.notes),
             "judged_with_main_copies": list(self.judged_with_main_copies),
             "judge_files_not_on_target": list(self.judge_files_not_on_target),
+            "judged_with_build_copies": list(self.judged_with_build_copies),
         }
 
     def receipt_lines(self) -> List[str]:
@@ -357,6 +363,15 @@ class MergeReport:
                         f"the commit the build was joined onto ({at}), so "
                         f"{'it was' if one else 'they were'} left out for the "
                         f"install and checks after the join."
+                    )
+                ran_own = [shown_path(p) for p in self.judged_with_build_copies]
+                if ran_own:
+                    one = len(ran_own) == 1
+                    lines.append(
+                        f"This build changed {', '.join(ran_own)}, which "
+                        f"{'is' if one else 'are'} not under the project's "
+                        f"protected paths, so the install and checks after the "
+                        f"join ran this build's {'version' if one else 'versions'}."
                     )
                 if self.charged_failures:
                     lines.append(
@@ -1141,8 +1156,9 @@ def _pin_the_judge_on_target(
     * the judge files the build changed are recorded on ``pinned``
       (``judge_files_changed``) for the card and the receipt, when git can
       list them. Since 15 October 2026 they no longer stop the check: the
-      join is checked with the target's copy of every judge file
-      (:func:`put_main_judges_in_place`).
+      join is checked with the target's copy of every judge file under the
+      project's protected paths (:func:`put_main_judges_in_place`), and with
+      the build's copy of the others (28 October 2026).
 
     ``problem`` is the plain reason nothing may run, before or after the
     merge. ``pinned`` is what runs both installs and both checks otherwise.
@@ -1859,6 +1875,7 @@ def execute_merge(
     final = replace(
         final,
         judged_with_main_copies=judges.judged_with_main_copies,
+        judged_with_build_copies=judges.judged_with_build_copies,
         judge_files_not_on_target=tuple(
             p for p in judges.judged_with_main_copies
             if p not in judges.target_paths
@@ -1888,6 +1905,7 @@ class _JudgeRestore:
 
     restored: List[str] = field(default_factory=list)
     judged_with_main_copies: Tuple[str, ...] = ()
+    judged_with_build_copies: Tuple[str, ...] = ()
     target_paths: frozenset = frozenset()
 
 
@@ -1949,11 +1967,17 @@ def _put_target_judges_in_place(
             "the target's copies of the files the declared commands name "
             "could not be put in place"
         )
-    restored = judge_files(
+    named = judge_files(
         sorted(set(target_entries) | set(joined_entries)), pinned.judge_words
     )
+    restored = judges_kept_from_target(named, pinned.protected_paths)
     judges.judged_with_main_copies = tuple(
         p for p in restored if target_entries.get(p) != joined_entries.get(p)
+    )
+    judges.judged_with_build_copies = tuple(
+        p
+        for p in named
+        if p not in restored and target_entries.get(p) != joined_entries.get(p)
     )
     judges.target_paths = frozenset(target_entries)
     judges.restored = restored
