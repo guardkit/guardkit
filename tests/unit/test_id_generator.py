@@ -322,13 +322,14 @@ def test_generate_1000_ids_under_1_second():
     """Test that 1,000 IDs can be generated in under 1 second."""
     # Use 6-char hash to minimize collision retries for performance test
     with patch.object(id_generator, 'count_existing_tasks', return_value=2000):
-        # CPU time, not wall-clock: a loaded or shared machine stretches wall
-        # time without the code being slower (28 October 2026).
-        start_time = time.process_time()
+        # This thread's CPU time, not wall-clock or the whole process's: a
+        # loaded or shared machine stretches those without the code being
+        # slower (28 October 2026).
+        start_time = time.thread_time()
 
         ids = [generate_task_id() for _ in range(1000)]
 
-        elapsed_time = time.process_time() - start_time
+        elapsed_time = time.thread_time() - start_time
 
         # Should complete in under 1 second
         assert elapsed_time < 1.0, f"Took {elapsed_time:.2f}s, expected < 1.0s"
@@ -345,11 +346,12 @@ def test_count_tasks_performance(mock_task_dirs, temp_task_dirs):
         (backlog_dir / f"TASK-{i:04d}.md").touch()
 
     # Measure counting time
-    # CPU time, not wall-clock: GitHub's run of 28 October 2026 took 1.17 s
+    # This thread's CPU time (not wall-clock, and not the whole process's, which counts
+    # other tests' leftover threads): GitHub's run of 28 October 2026 took 1.17 s
     # wall-clock under load, and the rerun of the same commit passed.
-    start_time = time.process_time()
+    start_time = time.thread_time()
     count = count_existing_tasks()
-    elapsed_time = time.process_time() - start_time
+    elapsed_time = time.thread_time() - start_time
 
     # Should count correctly
     assert count == 10000
