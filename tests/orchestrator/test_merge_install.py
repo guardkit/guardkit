@@ -1721,6 +1721,34 @@ class TestAJudgeOutsideTheProtectedPaths:
         assert judges_kept_from_target(paths, []) == []
 
 
+class TestAFailedCheckKeepsItsOutput:
+    """28 October 2026, step 2 request 9 (FEAT-0A55): the check after the join
+    failed with "exit 1, no failing tests named" and the receipt held nothing
+    else. The report now keeps the end of what a failed check printed."""
+
+    def test_a_failed_check_keeps_the_end_of_its_output(self, standin: Standin):
+        # The build's own check script runs (nothing is protected) and fails.
+        broken = CHECK_SH.replace(
+            'echo "STANDIN-PASS', 'echo "the join is broken here" >&2\nexit 1\necho "STANDIN-PASS'
+        )
+        standin.init(config=config_text(protected=None))
+        standin.branch({"scripts/check.sh": standin.script(broken)})
+
+        report = standin.merge()
+
+        assert report.verify_status == "failed", report.verify_detail
+        assert "the join is broken here" in report.verify_output_tail
+        assert "the join is broken here" in report.to_dict()["verify_output_tail"]
+
+    def test_a_passing_check_keeps_nothing(self, standin: Standin):
+        standin.init().branch({"feature.txt": "built\n"})
+
+        report = standin.merge()
+
+        assert report.verify_status == "passed", report.verify_detail
+        assert report.verify_output_tail == ""
+
+
 class TestJudgeFilesThatAreLinks:
     """Codex design round 1 (R1): a judge reached through a symbolic link, in
     the target's tree, the build's tree or the join's, means no verdict, and

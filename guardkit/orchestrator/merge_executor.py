@@ -197,6 +197,11 @@ class MergeReport:
     # 2026). Like ``judged_with_main_copies``, it says what was in place,
     # not what ran.
     judged_with_build_copies: Tuple[str, ...] = ()
+    # The last part of what the check after the join printed, when it did not
+    # pass (28 October 2026). Step 2 request 9 (FEAT-0A55) failed with "exit
+    # 1, no failing tests named" and nothing else, so the cause could not be
+    # read without running the check again.
+    verify_output_tail: str = ""
 
     @property
     def verify_ok(self) -> bool:
@@ -242,6 +247,7 @@ class MergeReport:
             "judged_with_main_copies": list(self.judged_with_main_copies),
             "judge_files_not_on_target": list(self.judge_files_not_on_target),
             "judged_with_build_copies": list(self.judged_with_build_copies),
+            "verify_output_tail": self.verify_output_tail,
         }
 
     def receipt_lines(self) -> List[str]:
@@ -2047,6 +2053,9 @@ def _report_from_the_check(
         # now: this is the command that actually ran, on both ends.
         verify_command=verify_command,
         verify_source=verify_source,
+        verify_output_tail=(
+            verification.output_tail if verdict_status != "passed" else ""
+        ),
         notes=tuple(list(report.notes) + pre_merge_notes + notes),
     )
 
