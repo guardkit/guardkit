@@ -322,15 +322,11 @@ def test_generate_1000_ids_under_1_second():
     """Test that 1,000 IDs can be generated in under 1 second."""
     # Use 6-char hash to minimize collision retries for performance test
     with patch.object(id_generator, 'count_existing_tasks', return_value=2000):
-        # Wall-clock, best of three (28 October 2026): one slow moment on a
-        # loaded or shared machine no longer fails it, and the code must
-        # still finish inside the budget at least once.
-        timings = []
-        for _ in range(3):
-            start_time = time.perf_counter()
-            ids = [generate_task_id() for _ in range(1000)]
-            timings.append(time.perf_counter() - start_time)
-        elapsed_time = min(timings)
+        start_time = time.time()
+
+        ids = [generate_task_id() for _ in range(1000)]
+
+        elapsed_time = time.time() - start_time
 
         # Should complete in under 1 second
         assert elapsed_time < 1.0, f"Took {elapsed_time:.2f}s, expected < 1.0s"
@@ -347,15 +343,9 @@ def test_count_tasks_performance(mock_task_dirs, temp_task_dirs):
         (backlog_dir / f"TASK-{i:04d}.md").touch()
 
     # Measure counting time
-    # Wall-clock, best of three: GitHub's run of 28 October 2026 took 1.17 s
-    # under load, and the rerun of the same commit passed. The code must
-    # still finish inside the budget at least once.
-    timings = []
-    for _ in range(3):
-        start_time = time.perf_counter()
-        count = count_existing_tasks()
-        timings.append(time.perf_counter() - start_time)
-    elapsed_time = min(timings)
+    start_time = time.time()
+    count = count_existing_tasks()
+    elapsed_time = time.time() - start_time
 
     # Should count correctly
     assert count == 10000
