@@ -320,3 +320,39 @@ class TestAutobuildSnapshotPin:
         between = source[setup:toolchain]
         for forbidden in ("_loop_phase", "invoke_", "_execute_turn", "await "):
             assert forbidden not in between
+
+
+# =========================================================================
+# Language servers (28 October 2026): accepted, never run by GuardKit
+# =========================================================================
+
+
+class TestLanguageServers:
+    _GO = {"command": ["gopls"], "files": ["**/*.go"], "root": "packages/career_agent",
+           "env": {"GOFLAGS": "-tags=live"}}
+
+    def test_a_declared_server_keeps_the_rest_of_the_toolchain(self):
+        decl = parse_toolchain_block({"test": "go test ./...", "language_servers": [self._GO]})
+        assert decl.test == "go test ./..."
+        assert decl.language_servers is not None
+        assert decl.language_servers[0].command == ["gopls"]
+        assert decl.language_servers[0].env == {"GOFLAGS": "-tags=live"}
+
+    def test_optional_fields_default(self):
+        decl = parse_toolchain_block(
+            {"test": "pytest", "language_servers": [{"command": ["pyright-langserver", "--stdio"],
+                                                      "files": ["**/*.py"]}]})
+        server = decl.language_servers[0]
+        assert server.root == "." and server.env is None and server.language_id is None
+
+    def test_no_servers_is_todays_declaration(self):
+        assert parse_toolchain_block({"test": "pytest"}).language_servers is None
+
+    @pytest.mark.parametrize("bad", [
+        {"command": ["gopls"], "files": ["**/*.go"], "rot": "."},   # typo'd key
+        {"command": [], "files": ["**/*.go"]},                      # no program
+        {"command": ["gopls"], "files": []},                        # no files
+    ])
+    def test_a_malformed_server_is_loud(self, bad):
+        with pytest.raises(ValueError):
+            parse_toolchain_block({"test": "pytest", "language_servers": [bad]})

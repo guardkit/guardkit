@@ -349,6 +349,29 @@ class ComponentToolchain(_ToolchainCommands):
         return "/".join(parts) if parts else "."
 
 
+class LanguageServer(BaseModel):
+    """One language server the repo names for code tools (28 October 2026).
+
+    guardkitfactory's ``code_references`` tool asks the server for a symbol's
+    references. The factory keeps no list of languages or servers: the repo
+    names which one to run (``command``, a program the factory's image
+    provides), for which files, from which folder, with which settings.
+    Nothing here installs or runs anything; GuardKit only accepts the shape so
+    a repo that declares a server keeps the rest of its toolchain. The tool
+    checks the values (program names only, a root inside the repo, no PATH in
+    ``env``). ``extra="forbid"`` so a typo'd key is loud, as everywhere here.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    command: List[str] = Field(min_length=1)
+    files: List[str] = Field(min_length=1)
+    root: str = "."
+    env: Optional[Dict[str, str]] = None
+    initialization_options: Optional[Any] = None
+    language_id: Optional[str] = None
+
+
 class ToolchainDeclaration(_ToolchainCommands):
     """The repo's declared toolchain: THE ROOT COMPONENT, plus its components.
 
@@ -360,6 +383,9 @@ class ToolchainDeclaration(_ToolchainCommands):
 
     # ---- per-path sections (the monorepo seam, design §B.2(iii)) ---------
     components: Optional[Dict[str, ComponentToolchain]] = None
+
+    # ---- code tools (read by guardkitfactory, not by GuardKit) -----------
+    language_servers: Optional[List[LanguageServer]] = None
 
     @field_validator("components")
     @classmethod

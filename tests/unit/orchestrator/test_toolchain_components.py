@@ -96,7 +96,10 @@ class TestComponentSchemaGood:
 
     def test_a_component_carries_the_same_fields_as_the_root(self):
         """"the SAME fields" is a claim; this is the check."""
-        root_fields = set(ToolchainDeclaration.model_fields) - {"components"}
+        # ``components`` and ``language_servers`` are repo-level only: neither is
+        # a command field a component could carry (the code tools read the
+        # servers from the root block alone).
+        root_fields = set(ToolchainDeclaration.model_fields) - {"components", "language_servers"}
         component_fields = set(ComponentToolchain.model_fields) - {"cwd"}
         assert root_fields == component_fields
 
