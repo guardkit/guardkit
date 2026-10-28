@@ -72,6 +72,19 @@ def _alive(pid: int) -> bool:
     return data[data.rindex(b")") + 2 :].split()[0] not in (b"Z", b"X")
 
 
+def _ended(pid: int, within: float = 5.0) -> bool:
+    """The process has ended, allowing it the moment a killed process takes
+    to go. Asserting at once raced on a loaded machine: GitHub's run of
+    28 October 2026 saw a process the cleanup had already signalled still
+    alive (the rerun of the same commit passed)."""
+    deadline = time.monotonic() + within
+    while _alive(pid):
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(0.05)
+    return True
+
+
 def _pid(folder: Path, name: str) -> int:
     return int((folder / name).read_text().strip())
 
@@ -120,7 +133,7 @@ class TestLeftoversAreEnded:
 
         assert proc.returncode == 0
         assert proc.stdout == "started\n"
-        assert not _alive(_pid(tmp_path, "bg.pid"))
+        assert _ended(_pid(tmp_path, "bg.pid"))
         assert caplog.records[-1].getMessage() == (
             "A project command finished but left 1 process running; it was "
             f"stopped. The command: {command}"
@@ -135,7 +148,7 @@ class TestLeftoversAreEnded:
         )
 
         assert (run.returncode, run.stdout, run.timed_out) == (0, "started\n", False)
-        assert not _alive(_pid(tmp_path, "bg.pid"))
+        assert _ended(_pid(tmp_path, "bg.pid"))
 
     def test_a_process_in_a_group_of_its_own_is_ended(
         self, tmp_path: Path, started: List[int], caplog: pytest.LogCaptureFixture
@@ -153,8 +166,8 @@ class TestLeftoversAreEnded:
             )
 
         assert proc.returncode == 0
-        assert not _alive(_pid(tmp_path, "bg.pid"))
-        assert not _alive(_pid(tmp_path, "inner.pid"))
+        assert _ended(_pid(tmp_path, "bg.pid"))
+        assert _ended(_pid(tmp_path, "inner.pid"))
         assert "left 2 processes running; they were stopped" in caplog.text
 
     def test_a_process_in_a_session_of_its_own_is_ended(
@@ -168,7 +181,7 @@ class TestLeftoversAreEnded:
             + _WAIT_FOR.format(name="bg.pid"),
         )
 
-        assert not _alive(_pid(tmp_path, "bg.pid"))
+        assert _ended(_pid(tmp_path, "bg.pid"))
 
     def test_a_process_without_the_marker_is_ended_by_its_session(
         self, tmp_path: Path, started: List[int]
@@ -183,7 +196,7 @@ class TestLeftoversAreEnded:
             "exec sleep 300' >/dev/null 2>&1 & " + _WAIT_FOR.format(name="bg.pid"),
         )
 
-        assert not _alive(_pid(tmp_path, "bg.pid"))
+        assert _ended(_pid(tmp_path, "bg.pid"))
 
     def test_a_process_that_ignores_sigterm_is_killed(
         self, tmp_path: Path, started: List[int], caplog: pytest.LogCaptureFixture
@@ -205,8 +218,8 @@ class TestLeftoversAreEnded:
         took = time.monotonic() - began
 
         assert proc.returncode == 0
-        assert not _alive(_pid(tmp_path, "bg.pid"))
-        assert not _alive(_pid(tmp_path, "inner.pid"))
+        assert _ended(_pid(tmp_path, "bg.pid"))
+        assert _ended(_pid(tmp_path, "inner.pid"))
         assert took >= 0.5
         assert "left 2 processes running; they were stopped" in caplog.text
         assert "still running" not in caplog.text
@@ -246,7 +259,7 @@ class TestLeftoversAreEnded:
         monkeypatch.undo()  # the clean-up below signals the one left running
 
         assert proc.returncode == 0
-        assert not _alive(_pid(tmp_path, "bg.pid"))
+        assert _ended(_pid(tmp_path, "bg.pid"))
         assert _alive(_pid(tmp_path, "inner.pid"))
         assert (
             "left 2 processes running; 1 was stopped. 1 process outside the "
@@ -282,7 +295,7 @@ class TestLeftoversAreEnded:
             )
         monkeypatch.undo()
 
-        assert not _alive(_pid(tmp_path, "bg.pid"))
+        assert _ended(_pid(tmp_path, "bg.pid"))
         assert _alive(_pid(tmp_path, "inner.pid"))
         assert "left 2 processes running; 1 was stopped. 1 process outside" in caplog.text
 
@@ -368,8 +381,8 @@ class TestLeftoversAreEnded:
 
         # Ended, not waited for: the command would run ten minutes.
         assert time.monotonic() - began < 30
-        assert not _alive(_pid(tmp_path, "bg.pid"))
-        assert not _alive(_pid(tmp_path, "fg.pid"))
+        assert _ended(_pid(tmp_path, "bg.pid"))
+        assert _ended(_pid(tmp_path, "fg.pid"))
 
     def test_a_group_that_refuses_the_signal_is_said_plainly(
         self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
@@ -392,7 +405,7 @@ class TestLeftoversAreEnded:
 
         assert took < 20
         assert (proc.returncode, proc.stdout) == (0, "done\n")
-        assert not _alive(_pid(tmp_path, "bg.pid"))
+        assert _ended(_pid(tmp_path, "bg.pid"))
 
     def test_a_timeout_ends_the_command_and_everything_it_started(
         self, tmp_path: Path, started: List[int], caplog: pytest.LogCaptureFixture
@@ -411,8 +424,8 @@ class TestLeftoversAreEnded:
 
         assert took < 20
         assert caught.value.stdout == "partial\n"
-        assert not _alive(_pid(tmp_path, "bg.pid"))
-        assert not _alive(_pid(tmp_path, "fg.pid"))
+        assert _ended(_pid(tmp_path, "bg.pid"))
+        assert _ended(_pid(tmp_path, "fg.pid"))
         assert "ran past its time limit (2s)" in caplog.text
 
     def test_processes_the_command_did_not_start_are_left_alone(
@@ -436,7 +449,7 @@ class TestLeftoversAreEnded:
 
             assert proc.returncode == 0
             assert len(strangers) == 2
-            assert not _alive(_pid(tmp_path, "bg.pid"))
+            assert _ended(_pid(tmp_path, "bg.pid"))
             assert all(_alive(p.pid) for p in strangers)
         finally:
             timer.cancel()
@@ -461,7 +474,7 @@ class TestLeftoversAreEnded:
             started.append(worker)
             process_group.end_process_group(proc, grace=0.5)
             assert proc.returncode is None, "the leader was collected during the cleanup"
-            assert not _alive(worker)
+            assert _ended(worker)
         finally:
             proc.wait(timeout=10)
             proc.stdout.close()
@@ -665,7 +678,7 @@ class TestCleanupCapability:
         )
         monkeypatch.undo()
 
-        assert not _alive(_pid(tmp_path, "bg.pid"))
+        assert _ended(_pid(tmp_path, "bg.pid"))
 
     @linux_only
     def test_without_wrappers_or_system_calls_the_python_build_is_named(
@@ -717,7 +730,7 @@ class TestCleanupCapability:
         with pytest.raises(subprocess.TimeoutExpired):
             _run(tmp_path, "echo $$ > fg.pid; exec sleep 300", timeout=1, grace=0.2)
         monkeypatch.undo()
-        assert not _alive(_pid(tmp_path, "fg.pid"))
+        assert _ended(_pid(tmp_path, "fg.pid"))
 
     def test_collecting_the_leader_never_waits_without_bound(
         self, started: List[int], monkeypatch: pytest.MonkeyPatch,
@@ -778,9 +791,9 @@ class TestCleanupCapability:
         monkeypatch.undo()
 
         assert time.monotonic() - began < 30
-        assert not _alive(_pid(tmp_path, "fg.pid"))
-        assert not _alive(_pid(tmp_path, "bg.pid"))
-        assert not _alive(_pid(tmp_path, "inner.pid"))
+        assert _ended(_pid(tmp_path, "fg.pid"))
+        assert _ended(_pid(tmp_path, "bg.pid"))
+        assert _ended(_pid(tmp_path, "inner.pid"))
 
     @linux_only
     def test_the_declared_install_runs_with_the_reduced_clean_up(
@@ -899,7 +912,7 @@ class TestTheRuleOnAFactoryLaunch:
             _run(tmp_path, "sleep 300 >/dev/null 2>&1 & echo $! > bg.pid; echo $$ > fg.pid")
         monkeypatch.undo()
         # The command's own group was still ended, by its pinned number.
-        assert not _alive(_pid(tmp_path, "bg.pid"))
+        assert _ended(_pid(tmp_path, "bg.pid"))
 
     @linux_only
     @pytest.mark.personal_run
@@ -935,7 +948,7 @@ class TestTheRuleOnAFactoryLaunch:
         monkeypatch.undo()
         assert time.monotonic() - began < 30
         if (tmp_path / "fg.pid").exists():
-            assert not _alive(_pid(tmp_path, "fg.pid"))
+            assert _ended(_pid(tmp_path, "fg.pid"))
 
     @linux_only
     def test_a_refused_pidfd_mid_run_ends_a_factory_command(
@@ -1242,7 +1255,7 @@ class TestProcGoneAfterTheSelfTest:
             )
         monkeypatch.undo()
         # The escaped child was ended by the bounded emergency clean-up.
-        assert not _alive(_pid(tmp_path, "bg.pid"))
+        assert _ended(_pid(tmp_path, "bg.pid"))
 
     def test_proc_lost_at_the_fallback_never_reduces_a_factory_cleanup(
         self, tmp_path: Path, started: List[int], monkeypatch: pytest.MonkeyPatch
@@ -1266,7 +1279,7 @@ class TestProcGoneAfterTheSelfTest:
         monkeypatch.undo()
         # The first check saw /proc. Losing it at the fallback still took the
         # bounded emergency path, which ended the escaped child.
-        assert not _alive(_pid(tmp_path, "bg.pid"))
+        assert _ended(_pid(tmp_path, "bg.pid"))
 
     def test_an_unrelated_process_is_untouched(
         self, tmp_path: Path, started: List[int], monkeypatch: pytest.MonkeyPatch
@@ -1335,8 +1348,8 @@ class TestWithoutWaitid:
                 timeout=1,
                 grace=0.2,
             )
-        assert not _alive(_pid(tmp_path, "bg.pid"))
-        assert not _alive(_pid(tmp_path, "fg.pid"))
+        assert _ended(_pid(tmp_path, "bg.pid"))
+        assert _ended(_pid(tmp_path, "fg.pid"))
 
 
 # ---------------------------------------------------------------------------
