@@ -192,8 +192,10 @@ class MergeReport:
     # of the folder for the install and the check.
     judge_files_not_on_target: Tuple[str, ...] = ()
     # The judge files whose joined version differed from the target's and
-    # are not under the project's protected paths, so the checks after the
-    # join ran the joined (the build's) version (28 October 2026).
+    # are not under the project's protected paths, so the joined (the
+    # build's) version was kept for the checks after the join (28 October
+    # 2026). Like ``judged_with_main_copies``, it says what was in place,
+    # not what ran.
     judged_with_build_copies: Tuple[str, ...] = ()
 
     @property
@@ -370,8 +372,9 @@ class MergeReport:
                     lines.append(
                         f"This build changed {', '.join(ran_own)}, which "
                         f"{'is' if one else 'are'} not under the project's "
-                        f"protected paths, so the install and checks after the "
-                        f"join ran this build's {'version' if one else 'versions'}."
+                        f"protected paths, so this build's "
+                        f"{'version was' if one else 'versions were'} kept for "
+                        f"the install and checks after the join."
                     )
                 if self.charged_failures:
                     lines.append(

@@ -1656,7 +1656,7 @@ class TestAJudgeOutsideTheProtectedPaths:
         assert report.judged_with_build_copies == ("scripts/check.sh",)
         assert standin.lines("check-ran") == ["check", "check", "appended"]
         receipt = "\n".join(report.receipt_lines())
-        assert "ran this build's version" in receipt
+        assert "this build's version was kept" in receipt
         assert "scripts/check.sh" in receipt
         assert report.to_dict()["judged_with_build_copies"] == ["scripts/check.sh"]
         assert _clean(standin.folder)
