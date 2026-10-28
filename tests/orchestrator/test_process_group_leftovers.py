@@ -134,10 +134,17 @@ class TestLeftoversAreEnded:
         assert proc.returncode == 0
         assert proc.stdout == "started\n"
         assert _ended(_pid(tmp_path, "bg.pid"))
-        assert caplog.records[-1].getMessage() == (
+        # This command's own cleanup line, exactly, wherever it falls: other
+        # warnings (another test's leftover, processes that are not this
+        # command's) can land in the same log (28 October 2026).
+        cleanup = [
+            r.getMessage() for r in caplog.records
+            if r.getMessage().endswith(f"The command: {command}")
+        ]
+        assert cleanup == [
             "A project command finished but left 1 process running; it was "
             f"stopped. The command: {command}"
-        )
+        ]
 
     def test_run_in_own_group_ends_it_too(
         self, tmp_path: Path, started: List[int]
