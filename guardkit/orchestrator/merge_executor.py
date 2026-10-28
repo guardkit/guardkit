@@ -1789,11 +1789,13 @@ def execute_merge(
     if pre_merge_problem is not None:
         return could_not_run(pre_merge_problem)
 
-    # The target's judge files in the join's folder (15 October 2026). EVERY
-    # file the target's commands name is put back from the target commit,
-    # whether or not the build changed it, so the check never runs the
-    # build's copy of one (a rename on the target cannot carry the build's
-    # edits past this either). A link on a judge's path in the joined tree is
+    # The target's judge files in the join's folder (15 October 2026). Every
+    # file the target's commands name under the project's protected paths
+    # (28 October 2026) is put back from the target commit, whether or not
+    # the build changed it, so the check never runs the build's copy of one
+    # (a rename on the target cannot carry the build's edits past this
+    # either); the build's copy of any other is kept. A link on a judge's
+    # path in the joined tree is
     # refused first. Putting them in place, the install and the check all sit
     # inside one cleanup: the joined files are put back afterwards on every
     # path, and a git command that times out or fails on the way ends in the
