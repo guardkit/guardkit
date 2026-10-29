@@ -530,5 +530,3 @@ def test_player_prompt_with_design_context_and_feedback(
     design_idx = prompt.index("## Design Context")
     feedback_idx = prompt.index("## Coach Feedback")
     assert design_idx < feedback_idx
-
-
