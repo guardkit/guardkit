@@ -1,7 +1,6 @@
 """The builder gets the language servers AutoBuild pinned.
 
-29 October 2026 (ai-transition
-docs/designs/builder-tools-and-instructions-2026-10-29.md, Part 1). Before
+29 October 2026 (the builder tools design, Part 1). Before
 the builder's first turn AutoBuild pins the project's toolchain declaration
 and keeps its ``language_servers`` in memory. The agent invoker passes that
 in-memory list to the builder's harness, so an edit to the pinned snapshot

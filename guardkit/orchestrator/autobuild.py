@@ -1862,8 +1862,8 @@ class AutoBuildOrchestrator:
         read at this same moment, before any builder turn (29 October 2026).
         The agent invoker passes them to the builder's ``code_references``, so
         an edit to the snapshot file, which sits in a folder the builder can
-        write, changes nothing for this run (ai-transition
-        docs/designs/builder-tools-and-instructions-2026-10-29.md).
+        write, changes nothing for this run (the builder tools
+        design of 29 October 2026).
         """
         language_servers = None
         try:
