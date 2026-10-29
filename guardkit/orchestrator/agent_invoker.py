@@ -206,6 +206,19 @@ def _read_file_path(name: object, tool_input: object) -> Optional[str]:
     return path if isinstance(path, str) and path else None
 
 
+def _successful_read_paths(
+    requests: Sequence[Tuple[str, str]], results: Sequence[Tuple[str, bool]]
+) -> List[str]:
+    """The paths of the read requests whose result came back without error.
+
+    Matched by tool call id (Codex review R1, 29 October 2026): a read that
+    failed, for example of a missing file, is not a read. A request with no
+    id, or with no result, is not counted.
+    """
+    succeeded = {call_id for call_id, is_error in results if call_id and not is_error}
+    return [path for call_id, path in requests if call_id and call_id in succeeded]
+
+
 def _declared_reads(worktree: Path, read_paths: Sequence[str]) -> Dict[str, Any]:
     """Which declared skill files and documents the builder read, with counts.
 
@@ -214,7 +227,8 @@ def _declared_reads(worktree: Path, read_paths: Sequence[str]) -> Dict[str, Any]
     declares are kept: files inside an ``autobuild.player.skills`` folder
     (``skills``) and the ``autobuild.player.required_documents``
     (``documents``), each as a repository-relative path (links such as
-    ``.agents/skills`` resolved) with the number of read_file calls. Every
+    ``.agents/skills`` resolved) with the number of read_file calls that
+    succeeded (the caller passes only those, Codex review R1). Every
     other path is ignored and no file content is kept. It only records:
     nothing here can refuse or change the work, and a failure leaves the
     record empty with ``"unavailable": true``.
@@ -9035,7 +9049,9 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
         terminal_usage: object = None
         typed_tool_uses: List[Tuple[str, str]] = []
         typed_tool_results: List[Tuple[str, bool]] = []
-        typed_read_paths: List[str] = []
+        # (tool call id, path) of each read_file request; only those whose
+        # result came back without error are counted (Codex review R1).
+        typed_read_paths: List[Tuple[str, str]] = []
         attempt_wall_duration_ms = 0
 
         try:
@@ -9214,7 +9230,14 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                                         and len(typed_read_paths)
                                         < _DECLARED_READ_CALLS_LIMIT
                                     ):
-                                        typed_read_paths.append(_read_path)
+                                        typed_read_paths.append(
+                                            (
+                                                event.tool_use_id
+                                                if isinstance(event.tool_use_id, str)
+                                                else "",
+                                                _read_path,
+                                            )
+                                        )
                                     # 2026-09-21 repair. Every harness yields
                                     # one typed event per tool call; only the
                                     # hosted one also fills ``event.raw``, and
@@ -9464,7 +9487,10 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                 sdk_turns_used=reported_sdk_turns,
                 sdk_max_turns=reported_sdk_max_turns,
                 wall_timeout_seconds=self.sdk_timeout_seconds,
-                declared_reads=_declared_reads(self.worktree_path, typed_read_paths),
+                declared_reads=_declared_reads(
+                    self.worktree_path,
+                    _successful_read_paths(typed_read_paths, typed_tool_results),
+                ),
             )
 
             # Write task_work_results.json for Coach validation.

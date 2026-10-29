@@ -17,6 +17,7 @@ from guardkit.orchestrator.agent_invoker import AgentInvoker
 from guardkit.orchestrator.harness import (
     AssistantMessageEvent,
     ResultMessageEvent,
+    ToolResultEvent,
     ToolUseEvent,
 )
 
@@ -64,6 +65,20 @@ def _read(index, path, name="read_file"):
     )
 
 
+def _result(index, *, error=False):
+    """The result of ``_read(index, ...)``: the call succeeded, or failed."""
+    return ToolResultEvent(
+        tool_use_id=f"read-{index}",
+        content="Error: file not found" if error else "file text",
+        is_error=error,
+    )
+
+
+def _answered(*reads):
+    """Each read followed by its successful result."""
+    return [event for read in reads for event in (read, _result(int(read.tool_use_id[5:])))]
+
+
 async def _run_turn(tmp_path, monkeypatch, events, worktree):
     invoker = AgentInvoker(
         worktree_path=worktree, max_turns_per_agent=5, sdk_timeout_seconds=60
@@ -104,16 +119,18 @@ async def test_turn_records_declared_skill_and_document_reads(tmp_path, monkeypa
     outside = tmp_path / "outside-secret.md"
     outside.write_text("outside")
     events = [
-        # Read through the link dcode lists, then directly: one skill file.
-        _read(1, worktree / ".agents/skills/react-best-practices/SKILL.md"),
-        _read(2, worktree / "skills/react-best-practices/SKILL.md"),
-        _read(3, worktree / "skills/react-best-practices/rules/memo.md"),
-        _read(4, worktree / "docs/SCOPE.md"),
-        _read(5, "docs/SCOPE.md"),
-        # Ignored: an undeclared file, a path outside the worktree, a listing,
-        # and a write.
-        _read(6, worktree / "docs/undeclared.md"),
-        _read(7, outside),
+        *_answered(
+            # Read through the link dcode lists, then directly: one skill file.
+            _read(1, worktree / ".agents/skills/react-best-practices/SKILL.md"),
+            _read(2, worktree / "skills/react-best-practices/SKILL.md"),
+            _read(3, worktree / "skills/react-best-practices/rules/memo.md"),
+            _read(4, worktree / "docs/SCOPE.md"),
+            _read(5, "docs/SCOPE.md"),
+            # Ignored: an undeclared file, a path outside the worktree.
+            _read(6, worktree / "docs/undeclared.md"),
+            _read(7, outside),
+        ),
+        # Ignored: a listing and a write.
         ToolUseEvent(tool_use_id="ls-1", name="ls", input={"path": str(worktree / "skills")}),
         ToolUseEvent(
             tool_use_id="write-1",
@@ -145,7 +162,7 @@ async def test_unreadable_declarations_leave_an_empty_record_and_the_turn_goes_o
     (worktree / ".guardkit" / "config.yaml").write_text("autobuild: [not, a, mapping\n")
 
     evidence = await _run_turn(
-        tmp_path, monkeypatch, [_read(1, worktree / "docs/SCOPE.md")], worktree
+        tmp_path, monkeypatch, _answered(_read(1, worktree / "docs/SCOPE.md")), worktree
     )
 
     assert evidence["declared_reads"] == {
@@ -155,6 +172,30 @@ async def test_unreadable_declarations_leave_an_empty_record_and_the_turn_goes_o
         "unavailable": True,
     }
     assert evidence["categories"]["read"] == 1
+
+
+@pytest.mark.asyncio
+async def test_only_reads_that_succeeded_are_counted(tmp_path, monkeypatch):
+    """Codex review R1: a read that failed (a missing rule file here) is not a
+    read. Only the declared file whose read came back without error is
+    counted; a request with no result is not counted either."""
+    worktree = _worktree(tmp_path)
+    missing = worktree / "skills/react-best-practices/rules/missing.md"
+    events = [
+        _read(1, missing),
+        _result(1, error=True),
+        _read(2, worktree / "skills/react-best-practices/rules/memo.md"),
+        _result(2),
+        _read(3, worktree / "docs/SCOPE.md"),  # no result came back
+    ]
+
+    evidence = await _run_turn(tmp_path, monkeypatch, events, worktree)
+
+    assert evidence["declared_reads"] == {
+        "skills": {"skills/react-best-practices/rules/memo.md": 1},
+        "documents": {},
+        "truncated": False,
+    }
 
 
 def test_distinct_paths_are_bounded(tmp_path):
