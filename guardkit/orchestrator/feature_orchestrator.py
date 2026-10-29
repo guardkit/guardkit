@@ -5100,6 +5100,17 @@ The detailed specifications are in the task markdown file.
         # whole-feature record (21 September 2026). Never raises, and a build
         # is never failed by it.
         self._write_code_checks_summary(feature, worktree)
+        # What each task's final review left (the build reviewer design of 29
+        # October 2026), at most ten, beside it for the merge card. Never
+        # raises, and a build is never failed by it.
+        from guardkit.orchestrator.build_review import write_feature_notes
+
+        write_feature_notes(
+            getattr(feature, "id", ""),
+            [str(getattr(task, "id", "") or "") for task in getattr(feature, "tasks", None) or []
+             if getattr(task, "id", None)],
+            Path(worktree.path),
+        )
 
         # When the whole-feature check failed during the wave phase, the
         # feature is already failed by its gate result — say WHY in the

@@ -535,7 +535,6 @@ class TestARepairRoundThatWanders:
         assert outcome["decision"] == "approved"
         report = outcome["history"][-1].coach_result.report
         assert report["decision"] == "approve"
-        assert report["reviewer_decision"] == "feedback"
 
     def test_a_protected_file_is_refused_whatever_the_reviewer_says(
         self, approved_round_one: Path
@@ -581,8 +580,6 @@ class TestTheReviewerSeesEveryChange:
         section = _repair_section(outcome["prompts"])
         assert "- `apps/api/src/server.ts`" in section
         assert outcome["decision"] == "approved"
-        report = outcome["history"][-1].coach_result.report
-        assert report["reviewer_decision"] == "feedback"
 
 
 class TestSequentialReEntries:

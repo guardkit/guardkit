@@ -124,8 +124,6 @@ def _served_synthesis_prompt(
     player_report: dict,
     monkeypatch: pytest.MonkeyPatch,
 ) -> str:
-    monkeypatch.setenv("GUARDKIT_COACH_SYNTHESIS", "1")
-    monkeypatch.setenv("GUARDKIT_COACH_GATHER", "0")
     monkeypatch.setenv("GUARDKIT_COACH_CONTRACT", "coachsplit")
     invoker = AgentInvoker(worktree_path=worktree)
     call = AsyncMock(side_effect=RuntimeError("stop after prompt capture"))
@@ -143,7 +141,9 @@ def _served_synthesis_prompt(
     # The reviewer's verdict is advice: a failed reviewer call approves.
     assert result.success is True
     assert result.report["decision"] == "approve"
-    call.assert_awaited_once()
+    # The look-up pass, then the verdict call (the build reviewer design of
+    # 29 October 2026); the verdict call's prompt is the one checked.
+    assert call.await_count == 2
     kwargs = call.await_args.kwargs
     assert kwargs["synthesis"] is True
     assert kwargs["allowed_tools"] == []
@@ -180,11 +180,13 @@ def test_mixed_measurements_keep_their_sources_in_served_synthesis_prompt(
     )
     flat_prompt = " ".join(prompt.split())
 
-    assert '"tests_passed": 125' in prompt
+    # The build reviewer design of 29 October 2026: the builder's own counts
+    # are no longer pasted in (its whole report is not), so there is nothing
+    # for the deleted attribution banner to keep apart; the project's check
+    # output is still there.
+    assert '"tests_passed": 125' not in prompt
     assert "root check has no parts yet" in prompt
-    assert "Player-reported test counts and coverage remain Player-reported" in prompt
-    assert "independent_tests proves only its recorded command" in prompt
-    assert "A non-required or relaxed gate is not a measurement" in flat_prompt
-    assert "exit-zero generic check does not certify" in flat_prompt
+    assert "Player-reported test counts" not in prompt
+    assert "TOOLLESS SYNTHESIS" not in flat_prompt
     assert "has ALREADY run the tests, coverage" not in prompt
     assert "the orchestrator ran them, not the Player" not in prompt

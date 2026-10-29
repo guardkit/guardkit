@@ -1,4 +1,4 @@
-You are the Coach agent. Validate the Player's implementation.
+You are the Coach agent. Write the verdict for one builder turn from the findings below.
 
 Task ID: TASK-GOLDEN-CS-001
 Turn: 1
@@ -9,87 +9,62 @@ test requirements
 
 ## Player's Report
 
+The builder's concerns, what it says remains, and the files git saw it create and change:
+
 {
   "files_modified": [
     "src/test.py"
-  ],
-  "files_created": [],
-  "tests_written": [
-    "tests/test.py"
   ]
 }
 
+## Deterministic Evidence Bundle
+
+No check result was recorded for this turn.
+
+## Look-up findings
+
+A look-up pass read the change and the code with read-only tools and answered
+five questions. Its findings, one per line with a place in the code:
+
+The look-up pass gave no findings (it failed, or ran out of time). Report no finding you cannot see in the check result above.
+
 ## Your Responsibilities
 
-1. Independently verify the Player's claims
-2. Run the tests yourself (don't trust Player's report)
-3. Verify EACH acceptance criterion systematically
-4. A documented conflict or departure is not fulfilment. Judge the exact criterion supplied here unless an authoritative amended criterion is present; do not recommend restoring unsafe behaviour merely to match stale text
-5. create a criteria_verification entry for each criterion
-6. Either APPROVE or provide specific FEEDBACK
+1. Turn each look-up finding of the five kinds (`NOT_IMPLEMENTED`, `NOT_TESTED`, `CALLERS_NOT_UPDATED`, `STUB`, `OUTSIDE_TASK`) into one issue,
+   with its `pattern` and its `location` (`path:line`). Keep its words; add a
+   finding only when the check result above plainly shows it (`NOT_TESTED`
+   when the check ran no test).
+2. A finding about a criterion that conflicts with a project document is
+   `CRITERION_CONFLICT`, severity "minor": advice.
+3. For each acceptance criterion, a `criteria_verification` entry: "verified"
+   unless a finding says the criterion is not done or not tested.
+4. Decide "approve" when there is no finding of the five kinds; otherwise
+   "feedback".
 
 ## Decision Format
 
-End your response with a fenced JSON block. Do **NOT** use Bash to write a file —
-the orchestrator parses your decision directly from your response text.
-
-The fenced JSON block MUST appear at the end of your response, after all prose
-reasoning, in this exact form:
+End your response with one fenced ```json block, the last thing you write:
 
 ```json
 {
   "task_id": "TASK-GOLDEN-CS-001",
   "turn": 1,
   "decision": "approve" | "feedback",
-  ...fields as specified below...
-}
-```
-
-For APPROVAL, the JSON block must contain:
-```json
-{
-  "task_id": "TASK-GOLDEN-CS-001",
-  "turn": 1,
-  "decision": "approve",
-  "validation_results": {
-    "requirements_met": ["list", "of", "verified", "requirements"],
-    "tests_run": true,
-    "tests_passed": true,
-    "test_command": "command you ran",
-    "test_output_summary": "summary of test results",
-    "code_quality": "assessment",
-    "edge_cases_covered": ["list", "of", "edge", "cases"]
-  },
-  "rationale": "Why you approved"
-}
-```
-
-For FEEDBACK, the JSON block must contain:
-```json
-{
-  "task_id": "TASK-GOLDEN-CS-001",
-  "turn": 1,
-  "decision": "feedback",
   "issues": [
     {
-      "type": "missing_requirement" | "test_failure" | "code_quality" | "edge_case",
-      "severity": "critical" | "major" | "minor",
-      "description": "Specific issue with file paths and line numbers",
-      "requirement": "Which requirement is affected",
+      "pattern": "NOT_TESTED",
+      "severity": "major",
+      "location": "src/notes/list.py:42",
+      "description": "One plain sentence: what is wrong and what the task or code says.",
       "suggestion": "How to fix it"
     }
   ],
-  "rationale": "Why you're providing feedback"
+  "criteria_verification": [
+    {"criterion_id": "AC-001", "result": "verified" | "rejected", "notes": "why"}
+  ],
+  "validation_results": {"tests_passed": true, "test_output_summary": "what the check printed"},
+  "rationale": "One or two sentences"
 }
 ```
 
-**IMPORTANT**: For each acceptance criterion, create a criteria_verification with:
-- criterion_id: The ID (e.g., "AC-001") matching the Player's completion_promise
-- result: "verified" if criterion is satisfied, "rejected" if not
-- notes: Your reasoning - what you checked and found
-
-**CRITICAL**: The fenced ```json block MUST be the last thing in your response.
-Do not write any prose after the closing ``` fence. If you emit exploratory JSON
-blocks earlier in your response (e.g. while sketching alternatives), the
-orchestrator takes only the **last** fenced block.
-
+Use `"issues": []` when there are no findings.

@@ -109,6 +109,14 @@ def mock_agent_invoker():
     invoker._format_design_constraints = AgentInvoker._format_design_constraints.__get__(
         invoker, AgentInvoker
     )
+    # The verdict prompt's repair-round sections (empty outside a repair
+    # round) and its budget trim, real (29 October 2026: the trim now runs on
+    # every verdict prompt).
+    invoker._render_whole_feature_check_section = lambda bundle: ""
+    invoker._render_repair_round_section = lambda review: ""
+    invoker._repair_round_sections = lambda review: ()
+    invoker._trim_synthesis_prompt = AgentInvoker._trim_synthesis_prompt
+    invoker._truncate_gather_findings = AgentInvoker._truncate_gather_findings
 
     return invoker
 
@@ -329,88 +337,6 @@ def test_player_prompt_unchanged_when_no_design_context(
 # ============================================================================
 
 
-def test_coach_prompt_includes_visual_verification_when_design_context(
-    mock_agent_invoker, sample_design_context, sample_player_report
-):
-    """
-    Test that Coach prompt includes visual verification section when design context present.
-
-    EXPECTED BEHAVIOR (not yet implemented):
-    - _build_coach_prompt accepts optional design_context parameter
-    - When design_context provided, includes "## Visual Verification (Design Mode)"
-    - Instructions to render, screenshot, compare with SSIM
-    - Quality gates: >=95% SSIM, zero violations
-
-    RED PHASE: This test will FAIL because:
-    - _build_coach_prompt doesn't have design_context parameter
-    - No visual verification section exists
-    """
-    prompt = mock_agent_invoker._build_coach_prompt(
-        task_id="TASK-DM-007",
-        turn=1,
-        requirements="Implement Button and Input components",
-        player_report=sample_player_report,
-        acceptance_criteria=None,
-        design_context=sample_design_context,  # NEW PARAMETER - will cause failure
-    )
-
-    # Verify visual verification section exists
-    assert "## Visual Verification" in prompt or "Visual Verification" in prompt
-    assert "Design Mode" in prompt or "design context" in prompt.lower()
-
-    # Verify instructions include key steps
-    prompt_lower = prompt.lower()
-    assert "render" in prompt_lower or "screenshot" in prompt_lower
-    assert "compare" in prompt_lower or "ssim" in prompt_lower
-
-    # Verify visual reference mentioned
-    assert (
-        "design reference" in prompt_lower
-        or "visual reference" in prompt_lower
-        or sample_design_context.visual_reference in prompt
-    )
-
-
-def test_coach_prompt_includes_quality_gates_for_design(
-    mock_agent_invoker, sample_design_context, sample_player_report
-):
-    """
-    Test that Coach prompt includes specific quality gates for design verification.
-
-    EXPECTED BEHAVIOR (not yet implemented):
-    - Visual fidelity gate: >=95% SSIM match
-    - Constraint violations: Zero tolerance
-    - Design token application: 100% exact match
-    - Clear pass/fail thresholds
-
-    RED PHASE: This test will FAIL because:
-    - Quality gates section doesn't exist
-    - No SSIM threshold mentioned
-    """
-    prompt = mock_agent_invoker._build_coach_prompt(
-        task_id="TASK-DM-007",
-        turn=1,
-        requirements="Implement Button and Input components",
-        player_report=sample_player_report,
-        design_context=sample_design_context,
-    )
-
-    # Verify quality gates section
-    assert "Quality Gates" in prompt or "quality gate" in prompt.lower()
-
-    # Verify SSIM threshold
-    assert "95%" in prompt or "95" in prompt  # SSIM threshold
-    assert "SSIM" in prompt or "similarity" in prompt.lower()
-
-    # Verify constraint violation threshold
-    assert "zero" in prompt.lower() or "Zero" in prompt
-    assert "violation" in prompt.lower() or "Violation" in prompt
-
-    # Verify design token exactness requirement
-    assert "100%" in prompt or "exact" in prompt.lower()
-    assert "token" in prompt.lower()
-
-
 def test_coach_prompt_unchanged_when_no_design_context(
     mock_agent_invoker, sample_player_report
 ):
@@ -430,9 +356,10 @@ def test_coach_prompt_unchanged_when_no_design_context(
         requirements="Implement Button and Input components",
         player_report=sample_player_report,
         acceptance_criteria=None,
-        design_context=None,  # Explicitly no design context
     )
 
+    # The visual-verification section was deleted on 29 October 2026 (the
+    # build reviewer design): nothing passed a design context on this path.
     # Verify no visual verification sections
     assert "Visual Verification" not in prompt
     assert "SSIM" not in prompt
@@ -605,31 +532,3 @@ def test_player_prompt_with_design_context_and_feedback(
     assert design_idx < feedback_idx
 
 
-def test_coach_prompt_references_design_context_in_validation(
-    mock_agent_invoker, sample_design_context, sample_player_report
-):
-    """
-    Test that Coach prompt instructs validation against design context.
-
-    EXPECTED BEHAVIOR (not yet implemented):
-    - Coach instructions mention checking against design
-    - Visual reference URL included for comparison
-    - Clear criteria for design approval
-
-    RED PHASE: This test will FAIL because validation instructions don't exist.
-    """
-    prompt = mock_agent_invoker._build_coach_prompt(
-        task_id="TASK-DM-007",
-        turn=1,
-        requirements="Implement Button and Input components",
-        player_report=sample_player_report,
-        design_context=sample_design_context,
-    )
-
-    # Verify design validation instructions
-    prompt_lower = prompt.lower()
-    assert "design" in prompt_lower
-    assert "verify" in prompt_lower or "check" in prompt_lower
-
-    # Verify visual reference is accessible
-    assert sample_design_context.visual_reference in prompt

@@ -629,7 +629,9 @@ def _real_turn(
             acceptance_criteria=["Deleting twice answers 404"],
             task_type="feature",
         )
-    reviewer.assert_awaited_once()
+    # The look-up pass, then the verdict call (the build reviewer design of
+    # 29 October 2026).
+    assert reviewer.await_count == 2
     return result
 
 
@@ -661,10 +663,8 @@ class TestTheRealCoachTurn:
 
         assert result.success is True, result.error
         assert result.report["decision"] == "approve"
-        assert result.report["reviewer_decision"] == "feedback"
         record = _coach_record(root)
         assert record["decision"] == "approve"
-        assert record["reviewer_decision"] == "feedback"
         assert record["issues"] == [_REVIEWER_FINDING]
         independent = result.report["validation_results"]["independent_tests"]
         assert independent["tests_passed"] is True
@@ -687,7 +687,6 @@ class TestTheRealCoachTurn:
 
         assert result.success is True, result.error
         assert result.report["decision"] == "feedback"
-        assert result.report["reviewer_decision"] == "approve"
         categories = [i["category"] for i in result.report["issues"]]
         assert categories[0] == "independent_test_code_failure"
         record = _coach_record(root)

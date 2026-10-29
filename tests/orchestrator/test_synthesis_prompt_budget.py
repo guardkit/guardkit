@@ -115,7 +115,6 @@ def _build_synthesis_prompt(
             {"id": "AC-001", "text": "Criterion 1"},
             {"id": "AC-002", "text": "Criterion 2"},
         ],
-        synthesis=True,
     )
 
 

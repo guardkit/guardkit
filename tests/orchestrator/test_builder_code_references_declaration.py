@@ -6,8 +6,9 @@ and keeps its ``language_servers`` in memory. The agent invoker passes that
 in-memory list to the builder's harness, so an edit to the pinned snapshot
 file (it sits in a folder the builder's shell can write) changes nothing for
 this run. A resumed task has no list in memory: the builder gets the
-snapshot file's list. The reviewer gets none: factory builds do not run its
-tool-using pass.
+snapshot file's list. The review's look-up pass (the build reviewer design of
+29 October 2026) gets the in-memory list only: none on a resumed task, and
+none for the toolless verdict call.
 
 Checked through the real ``_snapshot_toolchain_declaration`` and the real
 ``_invoke_with_role`` / ``_invoke_task_work_implement``, with only the
@@ -53,6 +54,10 @@ class _StubHarness:
             session_id=None, stop_reason="end_turn", usage=None, raw=None
         )
 
+    async def invoke_synthesis(self, **kwargs: Any):
+        async for event in self.invoke(**kwargs):
+            yield event
+
     async def cancel(self) -> None:  # pragma: no cover - not reached
         return None
 
@@ -79,16 +84,23 @@ def _fresh_task(root: Path, worktree: Path) -> AgentInvoker:
     return invoker
 
 
-async def _harness_kwargs(invoker: AgentInvoker, agent_type: str) -> Dict[str, Any]:
-    """The kwargs one ``_invoke_with_role`` call gives the harness selector."""
+async def _harness_kwargs(
+    invoker: AgentInvoker, agent_type: str, *, synthesis: bool = False
+) -> Dict[str, Any]:
+    """The kwargs one ``_invoke_with_role`` call gives the harness selector.
+
+    The coach's call is the review's look-up pass (read-only tools) unless
+    ``synthesis``, the toolless verdict call."""
     seen: List[Dict[str, Any]] = []
 
     def _select(**kwargs: Any) -> _StubHarness:
         seen.append(kwargs)
         return _StubHarness()
 
-    tools = (["Read", "Bash", "Grep", "Glob"] if agent_type == "coach"
+    tools = (["Read", "Search", "Grep", "Glob"] if agent_type == "coach"
              else ["Read", "Write", "Edit", "Bash", "Grep", "Glob"])
+    if synthesis:
+        tools = []
     with patch("guardkit.orchestrator.agent_invoker.select_harness", side_effect=_select):
         await invoker._invoke_with_role(
             prompt=f"{_TASK} one turn",
@@ -97,6 +109,7 @@ async def _harness_kwargs(invoker: AgentInvoker, agent_type: str) -> Dict[str, A
             permission_mode="bypassPermissions" if agent_type == "coach" else "acceptEdits",
             task_id=_TASK,
             turn=1,
+            synthesis=synthesis,
         )
     (kwargs,) = seen
     return kwargs
@@ -112,14 +125,19 @@ def _edit_snapshot(worktree: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_a_fresh_task_gives_the_pinned_list_to_the_builder_only(
+async def test_a_fresh_task_gives_the_pinned_list_to_the_builder_and_the_review(
     tmp_path: Path,
 ) -> None:
     root, worktree = _repo(tmp_path)
     invoker = _fresh_task(root, worktree)
 
     assert (await _harness_kwargs(invoker, "player"))["language_servers"] == _DECLARED
-    assert (await _harness_kwargs(invoker, "coach"))["language_servers"] is None
+    # The review's look-up pass gets the same in-memory list; the toolless
+    # verdict call gets none.
+    assert (await _harness_kwargs(invoker, "coach"))["language_servers"] == _DECLARED
+    assert (
+        await _harness_kwargs(invoker, "coach", synthesis=True)
+    )["language_servers"] is None
 
 
 @pytest.mark.asyncio
@@ -132,10 +150,11 @@ async def test_editing_the_snapshot_after_the_first_turn_changes_nothing(
     _edit_snapshot(worktree)
 
     assert (await _harness_kwargs(invoker, "player"))["language_servers"] == _DECLARED
+    assert (await _harness_kwargs(invoker, "coach"))["language_servers"] == _DECLARED
 
 
 @pytest.mark.asyncio
-async def test_a_resumed_task_gives_the_snapshot_to_the_builder_only(
+async def test_a_resumed_task_gives_the_snapshot_to_the_builder_and_none_to_the_review(
     tmp_path: Path,
 ) -> None:
     root, worktree = _repo(tmp_path)

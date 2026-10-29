@@ -185,8 +185,6 @@ class TestRanAndFailed:
         """AC-1. A discovered independent oracle that ran and failed
         overrides an ``approve`` Coach verdict to ``feedback`` with a
         ``must_fix`` issue naming the oracle and its failure output."""
-        monkeypatch.delenv("GUARDKIT_COACH_SYNTHESIS", raising=False)
-        monkeypatch.delenv("GUARDKIT_COACH_GATHER", raising=False)
         invoker = _make_invoker(tmp_path)
 
         oracle = {
@@ -211,8 +209,6 @@ class TestRanAndFailed:
     ) -> None:
         """AC-1. The override issue names the oracle path and includes
         its failure output."""
-        monkeypatch.delenv("GUARDKIT_COACH_SYNTHESIS", raising=False)
-        monkeypatch.delenv("GUARDKIT_COACH_GATHER", raising=False)
         invoker = _make_invoker(tmp_path)
 
         oracle_path = str(tmp_path / "tests" / "acceptance" / "sample_roundtrip.py")
@@ -243,8 +239,6 @@ class TestRanAndFailed:
         """AC-2. The on-disk ``coach_turn_N.json`` must also flip to
         ``feedback`` — Layer-4 late-approval reconciliation cannot
         resurrect the stale approve."""
-        monkeypatch.delenv("GUARDKIT_COACH_SYNTHESIS", raising=False)
-        monkeypatch.delenv("GUARDKIT_COACH_GATHER", raising=False)
         invoker = _make_invoker(tmp_path)
 
         oracle = {
@@ -277,8 +271,6 @@ class TestNoneSafety:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """AC-3. The guard is a no-op when the bundle is ``None``."""
-        monkeypatch.delenv("GUARDKIT_COACH_SYNTHESIS", raising=False)
-        monkeypatch.delenv("GUARDKIT_COACH_GATHER", raising=False)
         invoker = _make_invoker(tmp_path)
 
         result = _run_coach(
@@ -292,8 +284,6 @@ class TestNoneSafety:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """AC-3. The guard is a no-op when ``behavioural_oracle`` is ``None``."""
-        monkeypatch.delenv("GUARDKIT_COACH_SYNTHESIS", raising=False)
-        monkeypatch.delenv("GUARDKIT_COACH_GATHER", raising=False)
         invoker = _make_invoker(tmp_path)
 
         result = _run_coach(
@@ -308,8 +298,6 @@ class TestNoneSafety:
     ) -> None:
         """AC-3. The guard is a no-op when the outcome is anything but
         ran-and-failed."""
-        monkeypatch.delenv("GUARDKIT_COACH_SYNTHESIS", raising=False)
-        monkeypatch.delenv("GUARDKIT_COACH_GATHER", raising=False)
         invoker = _make_invoker(tmp_path)
 
         oracle = {
@@ -337,8 +325,6 @@ class TestPassPath:
     ) -> None:
         """AC-4. A passing oracle records the result in the bundle but
         no override fires — the ``approve`` stands."""
-        monkeypatch.delenv("GUARDKIT_COACH_SYNTHESIS", raising=False)
-        monkeypatch.delenv("GUARDKIT_COACH_GATHER", raising=False)
         invoker = _make_invoker(tmp_path)
 
         oracle = {
@@ -369,8 +355,6 @@ class TestTimeoutAsymmetry:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """AC-6. Started-then-timed-out → ran-and-failed (fires the override)."""
-        monkeypatch.delenv("GUARDKIT_COACH_SYNTHESIS", raising=False)
-        monkeypatch.delenv("GUARDKIT_COACH_GATHER", raising=False)
         invoker = _make_invoker(tmp_path)
 
         oracle = {
@@ -394,8 +378,6 @@ class TestTimeoutAsymmetry:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """AC-6. Failed-to-start → absent WARN (no override)."""
-        monkeypatch.delenv("GUARDKIT_COACH_SYNTHESIS", raising=False)
-        monkeypatch.delenv("GUARDKIT_COACH_GATHER", raising=False)
         invoker = _make_invoker(tmp_path)
 
         oracle = {
@@ -423,8 +405,6 @@ class TestAbsenceDiscipline:
     ) -> None:
         """AC-7. No declared oracle → ``behavioural_oracle`` stays
         ``None``; the guard is a no-op."""
-        monkeypatch.delenv("GUARDKIT_COACH_SYNTHESIS", raising=False)
-        monkeypatch.delenv("GUARDKIT_COACH_GATHER", raising=False)
         invoker = _make_invoker(tmp_path)
 
         result = _run_coach(
@@ -447,8 +427,6 @@ class TestDogfoodEndToEnd:
         """AC-8. An end-to-end test drives a fixture worktree with a real
         (not mocked) failing round-trip oracle through the Coach path and
         asserts the final persisted verdict is ``feedback``."""
-        monkeypatch.delenv("GUARDKIT_COACH_SYNTHESIS", raising=False)
-        monkeypatch.delenv("GUARDKIT_COACH_GATHER", raising=False)
 
         # Create a fixture worktree with a real failing oracle
         worktree = _make_fixture_worktree(tmp_path)

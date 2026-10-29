@@ -356,8 +356,10 @@ class TestInvokeCoachRemainingBudget:
                         remaining_budget=120.0,
                     )
 
-        assert len(captured_timeouts) == 1
-        assert captured_timeouts[0] == 120
+        # The look-up pass runs in its slice (40%, at least 60 s), then the
+        # verdict call at the capped budget (the build reviewer design of 29
+        # October 2026).
+        assert captured_timeouts == [60, 120]
         # Timeout restored after invocation
         assert agent_invoker.sdk_timeout_seconds == original
 

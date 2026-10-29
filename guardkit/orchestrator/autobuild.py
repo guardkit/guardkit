@@ -6187,11 +6187,15 @@ class AutoBuildOrchestrator:
                 # project's binding documents, never dropped silently.
                 if project_documents and "project_documents" in _sig.parameters:
                     invoke_kwargs["project_documents"] = project_documents
+                # The build reviewer design of 29 October 2026: located
+                # findings get one repair turn only when a turn is left.
+                if "turn_left" in _sig.parameters:
+                    invoke_kwargs["turn_left"] = turn < self.max_turns
                 # TASK-ARCH-COACHBFULL (AC-4 / AC-1): thread structured ACs into
                 # the Coach prompt so the synthesis verdict can populate
                 # criteria_verification per AC (the run-19 empty-array fix) and
-                # the B-full Phase-A gather has an explicit per-AC checklist to
-                # investigate. Normalize the List[str] ACs to [{id,text}],
+                # the look-up pass has the criteria to check against.
+                # Normalize the List[str] ACs to [{id,text}],
                 # deriving the id with the SAME extractor CoachValidator uses
                 # to match Player completion_promises (TASK-CVAC-001) so the
                 # Coach's criterion IDs line up with the Player's. Behind a
@@ -6782,9 +6786,14 @@ class AutoBuildOrchestrator:
             key=_feedback_issue_order,
         )
 
-        # Build feedback from issues
+        # Build feedback from issues: the top three, or every one when the
+        # turn goes back for the reviewer's located findings (the repair turn,
+        # the build reviewer design of 29 October 2026).
+        from guardkit.orchestrator.build_review import REPAIR_KEY
+
+        limit = len(ordered) if coach_report.get(REPAIR_KEY) else 3
         feedback_lines = []
-        for issue in ordered[:3]:  # Limit to top 3 issues
+        for issue in ordered[:limit]:
             desc = issue.get("description", "")
             if _feedback_issue_is_must_fix(issue):
                 desc = f"{MUST_FIX_MARKER}{desc}"
@@ -6814,8 +6823,8 @@ class AutoBuildOrchestrator:
                 else:
                     feedback_lines.append(f"- {desc}")
 
-        if len(ordered) > 3:
-            feedback_lines.append(f"... and {len(ordered) - 3} more issues")
+        if len(ordered) > limit:
+            feedback_lines.append(f"... and {len(ordered) - limit} more issues")
 
         return "\n".join(feedback_lines)
 

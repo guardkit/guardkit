@@ -65,8 +65,6 @@ CLASSES = ["code", "infrastructure", "parallel_contention", None]
 @pytest.fixture(autouse=True)
 def _pin_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("GUARDKIT_HARNESS", "sdk")
-    monkeypatch.delenv("GUARDKIT_COACH_SYNTHESIS", raising=False)
-    monkeypatch.delenv("GUARDKIT_COACH_GATHER", raising=False)
     monkeypatch.delenv("GUARDKIT_AUTOBUILD_BASELINE_DIFF", raising=False)
 
 

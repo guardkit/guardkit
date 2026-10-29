@@ -12,16 +12,15 @@ fakes only at the model and validator seams:
   the repository, and is opt-in; since the cull (27 October 2026) a document
   that cannot be read (missing, a symbolic link, a link leading outside, not
   UTF-8) is left out, and there is no size limit;
-* the Coach prompt carries a ``## Project documents`` section beside the
-  requirements, and a project with nothing declared gets today's prompt;
-* an oversized player report and evidence bundle, forcing the synthesis
-  trimmer and its last-resort tail cut, leave the section whole in the prompt
-  the harness receives (checked by hash); a reviewer turn is never refused
-  for documents;
+* since the build reviewer design of 29 October 2026 the documents' text is
+  in no reviewer prompt: the review's look-up pass is told their paths and
+  reads the part a question needs (the ``## Project documents`` section, its
+  ``coach_project_documents_turn_N.json`` record and the trimmer's
+  protection of it were deleted, and their tests with them);
 * the documents are captured once per build from the commit the build started
   from (the base branch's fork point, not the caller's checkout), reused by
-  every task of a feature and by a resume, and a Player's later edits reach
-  only the turn record's drift note;
+  every task of a feature and by a resume, and a Player's later edits are
+  marked as drift on the captured set;
 * a declaration that cannot be read never stops the task.
 """
 
@@ -377,173 +376,38 @@ _CRITERIA = [{"id": "AC-001", "text": "Count endpoint answers"}]
 
 
 class TestCoachPrompt:
-    def test_section_beside_requirements_with_paths_hashes_and_text(
+    """The build reviewer design of 29 October 2026: the documents' full text
+    is no longer pasted into the reviewer's prompts. The look-up pass is told
+    their paths and reads the part a question needs; the verdict call never
+    sees them."""
+
+    def test_the_lookup_pass_gets_the_paths_and_no_prompt_gets_the_text(
         self, tmp_path: Path
     ) -> None:
         docs = _docs(tmp_path)
-        prompt = _invoker(tmp_path)._build_coach_prompt(
-            "TASK-PD-001", 1, "Add the count endpoint.", {"files_modified": []},
-            acceptance_criteria=_CRITERIA, evidence_bundle=_bundle(),
-            synthesis=True, project_documents=docs,
-        )
-        criteria = prompt.index("## Acceptance Criteria to Verify")
-        section = prompt.index("## Project documents")
-        report = prompt.index("## Player's Report")
-        assert criteria < section < report
-        for d in docs:
-            assert f'<project_document path="{d.path}" sha256="{d.sha256}">' in prompt
-            assert d.text in prompt
-
-    @pytest.mark.parametrize("synthesis", [True, False])
-    def test_nothing_to_give_is_todays_prompt(self, tmp_path: Path, synthesis: bool) -> None:
         invoker = _invoker(tmp_path)
-        args = ("TASK-PD-002", 1, "reqs", {"files_modified": []})
-        kwargs = dict(
-            acceptance_criteria=_CRITERIA,
-            evidence_bundle=_bundle() if synthesis else None,
-            synthesis=synthesis,
-        )
-        today = invoker._build_coach_prompt(*args, **kwargs)
-        assert invoker._build_coach_prompt(*args, **kwargs, project_documents=()) == today
-        assert invoker._build_coach_prompt(*args, **kwargs, project_documents=None) == today
-        assert "## Project documents" not in today
+        iwr = AsyncMock(side_effect=RuntimeError("stop-after-capture"))
+        with patch.object(invoker, "_invoke_with_role", iwr):
+            asyncio.run(
+                invoker.invoke_coach(
+                    task_id="TASK-PD-001", turn=1, requirements="Add the count endpoint.",
+                    player_report={"files_modified": []}, evidence_bundle=_bundle(),
+                    acceptance_criteria=_CRITERIA, project_documents=docs,
+                )
+            )
+        lookup, verdict = (c.kwargs["prompt"] for c in iwr.call_args_list)
+        for d in docs:
+            assert f"- {d.path}" in lookup
+        for prompt in (lookup, verdict):
+            assert "<project_document" not in prompt
+            assert "## Project documents" not in prompt
+            assert MISSION not in prompt and TECH not in prompt
+        assert not list(tmp_path.rglob("coach_project_documents_turn_*.json"))
 
     def test_trimmer_without_a_section_is_unchanged(self) -> None:
         prompt = "## Original Requirements\n\n" + "z" * 50
         assert AgentInvoker._trim_synthesis_prompt(prompt) == prompt
         assert AgentInvoker._trim_synthesis_prompt(prompt, protected_section="") == prompt
-
-
-def _oversized_player_report() -> Dict[str, Any]:
-    return {
-        "task_id": "TASK-PD-003",
-        "turn": 1,
-        "completion_promises": [
-            {"criterion_id": f"AC-{i:03d}", "evidence": "e" * 400} for i in range(200)
-        ],
-    }
-
-
-class TestTrimmerKeepsTheSectionWhole:
-    """R2: oversized report and evidence force the trimmer AND its tail cut."""
-
-    def _run(self, tmp_path: Path, docs, coach_context: str):
-        invoker = _invoker(tmp_path)
-        iwr = AsyncMock(side_effect=RuntimeError("stop-after-capture"))
-        bundle = _bundle(
-            independent_tests={"tests_passed": True, "raw_output": "R" * 40_000},
-            behavioural_oracle={"status": "ran", "passed": True, "output_tail": "T" * 30_000},
-        )
-        with patch.object(invoker, "_invoke_with_role", iwr):
-            result = asyncio.run(
-                invoker.invoke_coach(
-                    task_id="TASK-PD-003",
-                    turn=2,
-                    requirements="Add the count endpoint.",
-                    player_report=_oversized_player_report(),
-                    evidence_bundle=bundle,
-                    coach_context=coach_context,
-                    acceptance_criteria=_CRITERIA,
-                    project_documents=docs,
-                )
-            )
-        return invoker, iwr, result
-
-    def test_section_intact_in_the_prompt_the_harness_receives(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.delenv("GUARDKIT_COACH_SYNTHESIS", raising=False)
-        monkeypatch.delenv("GUARDKIT_COACH_GATHER", raising=False)
-        # Documents near the budget (but under it), plus an untrimmable memory
-        # context after them, so the last-resort tail cut must fire.
-        _docs(tmp_path)
-        filler = "Binding rule line.\n" * ((40 * 1024) // 19)
-        (tmp_path / "docs" / "rules.md").write_text(filler, encoding="utf-8")
-        (tmp_path / ".guardkit" / "config.yaml").write_text(
-            "autobuild:\n  player:\n    required_documents:\n"
-            "      - docs/mission.md\n      - docs/tech.md\n      - docs/rules.md\n",
-            encoding="utf-8",
-        )
-        _player_commits(tmp_path)
-        docs = _load(tmp_path)
-
-        invoker, iwr, _ = self._run(tmp_path, docs, coach_context="M" * 400_000)
-
-        iwr.assert_awaited_once()
-        sent = iwr.call_args.kwargs["prompt"]
-        assert len(sent) <= AgentInvoker._COACH_SYNTHESIS_MAX_CHARS
-        assert "player_report truncated" in sent  # step 1 fired
-        assert "evidence_bundle truncated" in sent  # the bundle was cut too
-        assert "prompt truncated at" in sent  # the tail cut fired
-        section = invoker._render_project_documents_section(docs)
-        start = sent.index("## Project documents") - 1
-        assert _sha(sent[start:start + len(section)].encode()) == _sha(section.encode())
-
-        record = json.loads(
-            TaskArtifactPaths.private_artifact_path(
-                "TASK-PD-003", "coach_project_documents_turn_2.json", tmp_path
-            ).read_text()
-        )
-        assert record["section_sha256"] == _sha(section.encode())
-        assert record["refused"] is None
-        assert [(r["path"], r["sha256"], r["bytes"]) for r in record["documents"]] == [
-            (d.path, d.sha256, d.size) for d in docs
-        ]
-
-    def test_a_prompt_that_cannot_keep_them_whole_still_reaches_the_reviewer(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """Requirements alone (never trimmed) overflow the prompt limit, so the
-        documents cannot be kept: the reviewer still runs, and the record says
-        no section was sent."""
-        monkeypatch.delenv("GUARDKIT_COACH_SYNTHESIS", raising=False)
-        monkeypatch.delenv("GUARDKIT_COACH_GATHER", raising=False)
-        docs = _docs(tmp_path)
-        invoker = _invoker(tmp_path)
-        iwr = AsyncMock(side_effect=RuntimeError("the reviewer gave nothing"))
-        with patch.object(invoker, "_invoke_with_role", iwr):
-            result = asyncio.run(
-                invoker.invoke_coach(
-                    task_id="TASK-PD-004",
-                    turn=1,
-                    requirements="Q" * (AgentInvoker._COACH_SYNTHESIS_MAX_CHARS + 10),
-                    player_report={"files_modified": []},
-                    evidence_bundle=_bundle(),
-                    project_documents=docs,
-                )
-            )
-        iwr.assert_awaited_once()
-        assert result.success is True
-        assert result.report["decision"] == "approve"
-        record = json.loads(
-            TaskArtifactPaths.private_artifact_path(
-                "TASK-PD-004", "coach_project_documents_turn_1.json", tmp_path
-            ).read_text()
-        )
-        assert record["section_sha256"] is None
-        assert record["refused"] is None
-
-    def test_large_documents_reach_the_reviewer(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.delenv("GUARDKIT_COACH_SYNTHESIS", raising=False)
-        monkeypatch.delenv("GUARDKIT_COACH_GATHER", raising=False)
-        big = ProjectDocument(
-            path="docs/big.md", sha256="0" * 64, text="x", size=200 * 1024
-        )
-        invoker = _invoker(tmp_path)
-        iwr = AsyncMock(side_effect=RuntimeError("the reviewer gave nothing"))
-        with patch.object(invoker, "_invoke_with_role", iwr):
-            result = asyncio.run(
-                invoker.invoke_coach(
-                    task_id="TASK-PD-005", turn=1, requirements="r",
-                    player_report={}, evidence_bundle=_bundle(),
-                    project_documents=(big,),
-                )
-            )
-        iwr.assert_awaited_once()
-        assert result.success is True
-        assert '<project_document path="docs/big.md"' in iwr.call_args.kwargs["prompt"]
 
 
 # ---------------------------------------------------------------------------
@@ -640,7 +504,7 @@ class TestInvokeCoachSafely:
         # Exactly the keyword set the base commit passed.
         assert set(invoke.call_args.kwargs) == {
             "task_id", "turn", "requirements", "player_report", "remaining_budget",
-            "evidence_bundle",
+            "evidence_bundle", "turn_left",
         }
         assert not list(root.rglob("coach_project_documents_turn_*.json"))
 
@@ -650,8 +514,6 @@ class TestInvokeCoachSafely:
         """The real invoker under the orchestrator, AGENTS.md present, nothing
         declared: the prompt the harness receives equals the one built by a
         direct call that never mentions project documents (today's call)."""
-        monkeypatch.delenv("GUARDKIT_COACH_SYNTHESIS", raising=False)
-        monkeypatch.delenv("GUARDKIT_COACH_GATHER", raising=False)
         root = tmp_path / "wt"
         _write_project(root, documents={})
         invoker = _invoker(root)
@@ -670,10 +532,11 @@ class TestInvokeCoachSafely:
                     player_report={"files_modified": []}, evidence_bundle=_bundle(),
                 )
             )
-        assert len(captured) == 2
-        assert captured[0] == captured[1]
-        assert "## Project documents" not in captured[0]
-        assert "Run the root check" not in captured[0]  # AGENTS.md not delivered
+        # Each review is the look-up pass and the verdict call.
+        assert len(captured) == 4
+        assert captured[:2] == captured[2:]
+        assert "## Project documents" not in captured[1]
+        assert "Run the root check" not in "".join(captured)  # AGENTS.md not delivered
         assert not list(root.rglob("coach_project_documents_turn_*.json"))
 
     def test_an_unreadable_document_is_left_out_and_the_turn_runs(
@@ -696,38 +559,16 @@ class TestInvokeCoachSafely:
 # ---------------------------------------------------------------------------
 
 
-def _record(root: Path, task_id: str, turn: int) -> dict:
-    return json.loads(
-        TaskArtifactPaths.private_artifact_path(
-            task_id, f"coach_project_documents_turn_{turn}.json", root
-        ).read_text()
-    )
-
-
 def _no_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    for name in ("GUARDKIT_COACH_SYNTHESIS", "GUARDKIT_COACH_GATHER"):
-        monkeypatch.delenv(name, raising=False)
+    monkeypatch.delenv("GUARDKIT_REVIEW_REPAIR_TURN", raising=False)
 
 
-def _coach_prompt(orch: AutoBuildOrchestrator, invoker: AgentInvoker, worktree, task_id: str) -> str:
-    prompts: list[str] = []
-
-    async def capture(**kwargs: Any) -> None:
-        prompts.append(kwargs["prompt"])
-        raise RuntimeError("stop-after-capture")
-
-    with patch("guardkit.orchestrator.autobuild.CoachValidator") as validator_class, \
-            patch.object(invoker, "_invoke_with_role", side_effect=capture):
-        validator = MagicMock()
-        validator.gather_evidence.return_value = _bundle()
-        validator_class.return_value = validator
-        orch._evidence_repo_gate = MagicMock(return_value=None)  # type: ignore[method-assign]
-        orch._invoke_coach_safely(
-            task_id=task_id, turn=1, requirements="reqs",
-            player_report={"files_modified": []}, worktree=worktree,
-        )
-    assert len(prompts) == 1
-    return prompts[0]
+def _reviewed(orch: AutoBuildOrchestrator, worktree, task_id: str) -> Dict[str, Any]:
+    """The captured documents a review turn uses, by path, each with its
+    text, worktree hash (when the worktree copy changed) and source note."""
+    return {
+        d.path: d for d in orch._coach_documents_for_turn(task_id, worktree)
+    }
 
 
 class TestCapturedFromTheBuildCommit:
@@ -748,20 +589,15 @@ class TestCapturedFromTheBuildCommit:
         (root / "docs" / "mission.md").write_text(edited)
         _player_commits(root)
 
-        prompt = _coach_prompt(orch, invoker, worktree, "TASK-PD-010")
-        assert MISSION in prompt and "EDITED BY THE PLAYER" not in prompt
-        record = _record(root, "TASK-PD-010", 1)
-        assert record["changed_since_task_start"] == [
-            {
-                "path": "docs/mission.md",
-                "captured_sha256": _sha(MISSION.encode()),
-                "worktree_sha256": _sha(edited.encode()),
-            }
-        ]
-        assert record["captured_from"] == [
+        docs = _reviewed(orch, worktree, "TASK-PD-010")
+        mission = docs["docs/mission.md"]
+        assert mission.text == MISSION and "EDITED BY THE PLAYER" not in mission.text
+        assert mission.sha256 == _sha(MISSION.encode())
+        assert mission.worktree_sha256 == _sha(edited.encode())
+        assert {d.captured_from for d in docs.values()} == {
             f"the committed content of {start[:12]} (where the worktree branched "
             "from main), read when the build started"
-        ]
+        }
 
     def test_base_branch_not_the_callers_checkout(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -809,12 +645,15 @@ class TestCapturedFromTheBuildCommit:
         for d in captured:  # the Player-visible worktree copy, byte for byte
             assert d.sha256 == _sha((wt_path / d.path).read_bytes())
             assert d.worktree_sha256 is None
-        prompt = _coach_prompt(orch, invoker, worktree, "TASK-PD-070")
-        assert MISSION in prompt and TECH in prompt and "# Agents on release" in prompt
-        assert "MAIN'S MISSION" not in prompt and "# Agents on main" not in prompt
-        record = _record(wt_path, "TASK-PD-070", 1)
-        assert record["changed_since_task_start"] == []
-        assert "where the worktree branched from release" in record["captured_from"][0]
+        docs = _reviewed(orch, worktree, "TASK-PD-070")
+        texts = "".join(d.text for d in docs.values())
+        assert MISSION in texts and TECH in texts and "# Agents on release" in texts
+        assert "MAIN'S MISSION" not in texts and "# Agents on main" not in texts
+        assert all(d.worktree_sha256 is None for d in docs.values())
+        assert all(
+            "where the worktree branched from release" in d.captured_from
+            for d in docs.values()
+        )
 
     def test_feature_mode_tasks_share_one_capture(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -840,15 +679,9 @@ class TestCapturedFromTheBuildCommit:
             side_effect=AssertionError("task B must reuse the build's snapshot"),
         ):
             assert task_b._capture_coach_project_documents("TASK-B", worktree) is None
-        prompt = _coach_prompt(task_b, invoker, worktree, "TASK-B")
-        assert MISSION in prompt and "EDITED BY TASK A" not in prompt
-        assert _record(shared, "TASK-B", 1)["changed_since_task_start"] == [
-            {
-                "path": "docs/mission.md",
-                "captured_sha256": _sha(MISSION.encode()),
-                "worktree_sha256": _sha(edited.encode()),
-            }
-        ]
+        mission = _reviewed(task_b, worktree, "TASK-B")["docs/mission.md"]
+        assert mission.text == MISSION and "EDITED BY TASK A" not in mission.text
+        assert mission.worktree_sha256 == _sha(edited.encode())
 
     def test_deleted_document_is_noted_not_refused(self, tmp_path: Path) -> None:
         root = tmp_path / "wt"
@@ -916,15 +749,12 @@ class TestResume:
         ) is None
         assert any("capturing them now, at resume" in r.getMessage() for r in caplog.records)
         docs = orch._coach_documents_for_turn("TASK-PD-060", _worktree(root))
-        from guardkit.orchestrator.agent_invoker import write_coach_project_documents_record
-
-        write_coach_project_documents_record(root, "TASK-PD-060", 3, docs, section_sha256="x")
         start = _git(root, "rev-parse", "main").strip()
-        assert _record(root, "TASK-PD-060", 3)["captured_from"] == [
+        assert {d.captured_from for d in docs} == {
             f"the committed content of {start[:12]} (where the worktree branched "
             "from main), read at resume, not at task start (no task-start "
             "snapshot was found)"
-        ]
+        }
 
 
 class TestNothingStopsTheTask:
@@ -1077,10 +907,11 @@ class TestSnapshotIsTheBuildsIdentity:
         assert [(d.path, d.sha256) for d in docs] == [
             (item["path"], item["sha256"]) for item in recorded["documents"]
         ]
-        prompt = _coach_prompt(again, invoker, resumed, "TASK-2")
-        assert MISSION in prompt and TECH in prompt
-        assert "DOCUMENTS B" not in prompt
-        note = _record(wt, "TASK-2", 1)["captured_from"][0]
+        reviewed = _reviewed(again, resumed, "TASK-2")
+        texts = "".join(d.text for d in reviewed.values())
+        assert MISSION in texts and TECH in texts
+        assert "DOCUMENTS B" not in texts
+        note = next(iter(reviewed.values())).captured_from
         assert (
             f"this invocation's source revision is {main_commit[:12]} (where the "
             f"worktree branched from main), not the build's {release_commit[:12]}; "

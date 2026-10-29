@@ -1,25 +1,20 @@
-"""TASK-ARCH-COACHBFULL — the B-full investigating Coach (Phase-A gather).
+"""The review's look-up pass runs on every review (the build reviewer design
+of 29 October 2026; it was the opt-in "B-full gather", TASK-ARCH-COACHBFULL).
 
-Covers the GuardKit-orchestrator side of the two-phase Coach:
+Covers the GuardKit-orchestrator side:
 
-* the GUARDKIT_COACH_GATHER gate (``_coach_gather_enabled``) — default OFF,
-* the Phase-A gather prompt (``_build_coach_gather_prompt``: investigation
-  framing, per-AC checklist, NO fenced JSON verdict),
-* ``invoke_coach`` routing with gather ON vs OFF (AC-1: a tool-bound gather
-  call precedes the toolless synthesis; OFF stays pure B-min),
-* strict dominance (AC-2): a Phase-A failure / empty findings degrades to
-  B-min and the turn still produces a valid verdict,
-* cancellation + budget (AC-5): a CancelledError mid-gather propagates (is NOT
-  swallowed); the gather runs under a bounded timeout slice and Phase B keeps
-  the full effective timeout,
-* criteria threading (AC-4): acceptance_criteria reach the synthesis prompt so
-  the verdict can populate criteria_verification (the run-19 empty-array fix).
+* every review runs the read-only look-up pass first, asking only for
+  ``["Read", "Search", "Grep", "Glob"]`` (no shell), then the toolless verdict
+  call, which carries its findings;
+* a failed or empty look-up pass leaves the verdict call to run without it;
+* a CancelledError in the look-up pass propagates; the pass has its slice of
+  the review's time and the verdict call keeps the full time;
+* acceptance criteria reach the verdict prompt;
+* the look-up pass carries the per-tool-result cut and no step ceiling (its
+  bound is guardkitfactory's shared tool limit, which ends with an answer);
+* the findings text in the verdict prompt is capped with a visible marker.
 
-The bundle-green-but-AC-unmet falsifier (AC-3) lives in
-``tests/integration/orchestrator/test_coach_bfull_falsifier.py``.
-
-Async tests use ``asyncio.run`` to stay free of a pytest-asyncio dependency,
-matching ``test_coach_synthesis_split.py``.
+Async tests use ``asyncio.run`` to stay free of a pytest-asyncio dependency.
 """
 
 from __future__ import annotations
@@ -30,10 +25,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from guardkit.orchestrator.agent_invoker import (
-    AgentInvoker,
-    _coach_gather_enabled,
-)
+from guardkit.orchestrator.agent_invoker import AgentInvoker
 from guardkit.orchestrator.harness import (
     AssistantMessageEvent,
     ResultMessageEvent,
@@ -57,7 +49,7 @@ def _make_invoker(worktree: Path) -> AgentInvoker:
 
 def _make_bundle():
     """Minimal complete CoachEvidenceBundle so invoke_coach takes the synthesis
-    path (synthesis — and therefore the gather — is gated on bundle presence)."""
+    path."""
     from guardkit.orchestrator.quality_gates.coach_evidence import (
         CoachEvidenceBundle,
     )
@@ -88,111 +80,58 @@ def _findings_events(text: str):
 
 
 # ---------------------------------------------------------------------------
-# Gate — _coach_gather_enabled (GUARDKIT_COACH_GATHER), default OFF
+# The look-up prompt (build_review.build_lookup_prompt)
 # ---------------------------------------------------------------------------
 
 
-class TestGatherGate:
-    def test_default_is_disabled(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.delenv("GUARDKIT_COACH_GATHER", raising=False)
-        assert _coach_gather_enabled() is False
-
-    @pytest.mark.parametrize("val", ["1", "true", "True", "YES", "on", " on "])
-    def test_enabled_values(
-        self, monkeypatch: pytest.MonkeyPatch, val: str
-    ) -> None:
-        monkeypatch.setenv("GUARDKIT_COACH_GATHER", val)
-        assert _coach_gather_enabled() is True
-
-    @pytest.mark.parametrize("val", ["0", "false", "no", "off", "anything-else"])
-    def test_disabled_values(
-        self, monkeypatch: pytest.MonkeyPatch, val: str
-    ) -> None:
-        monkeypatch.setenv("GUARDKIT_COACH_GATHER", val)
-        assert _coach_gather_enabled() is False
-
-
-# ---------------------------------------------------------------------------
-# Phase-A gather prompt (_build_coach_gather_prompt)
-# ---------------------------------------------------------------------------
-
-
-class TestGatherPrompt:
-    def test_gather_prompt_is_investigation_not_verdict(
+class TestLookupPrompt:
+    def test_lookup_prompt_asks_the_five_questions_not_for_a_verdict(
         self, tmp_path: Path
     ) -> None:
+        from guardkit.orchestrator.build_review import ReviewChange
+
         prompt = _make_invoker(tmp_path)._build_coach_gather_prompt(
             task_id="TASK-GA-001",
             turn=1,
             requirements="do the thing",
-            player_report={"files_modified": ["src/foo.py"]},
+            player_report={"files_modified": ["src/foo.py"], "concerns": ["slow"]},
             evidence_bundle=_make_bundle(),
             acceptance_criteria=[
                 {"id": "AC-001", "text": "feature works"},
                 {"id": "AC-002", "text": "edge case handled"},
             ],
+            change=ReviewChange("diff --git a/src/foo.py b/src/foo.py\n", None, "a" * 40),
         )
-        # Framed as investigation, with the read-only tool set.
-        assert "INVESTIGATION" in prompt
-        assert "Read, Bash, Grep, Glob" in prompt
-        # Per-AC checklist is present.
+        for pattern in ("NOT_IMPLEMENTED", "NOT_TESTED", "CALLERS_NOT_UPDATED",
+                        "STUB", "OUTSIDE_TASK", "CRITERION_CONFLICT"):
+            assert pattern in prompt
         assert "AC-001" in prompt and "AC-002" in prompt
-        # It must NOT instruct the model to emit the fenced JSON verdict —
-        # that is Phase B's job.
-        assert "THIS IS NOT THE VERDICT" in prompt
-        assert "emit a fenced ```json decision block" in prompt
-        # Evidence dossier is rendered so the gather knows what's been checked.
+        assert "Do not write a JSON verdict" in prompt
         assert "<evidence_bundle>" in prompt
-        # The local harness's read-only code search tools are named
-        # (guardkitfactory adds them to the Coach's gather graph).
-        for tool in ("code_search", "code_outline", "code_pattern"):
+        assert "diff --git a/src/foo.py" in prompt
+        assert '"concerns"' in prompt
+        # No shell, and the not-findings list.
+        assert "There is no shell" in prompt
+        assert "not independently verified" in prompt
+        for tool in ("code_search", "code_outline", "code_pattern", "code_references"):
             assert tool in prompt
+        # The old investigation framing is gone.
+        assert "INVESTIGATION" not in prompt
+        assert "Bash" not in prompt
 
 
 # ---------------------------------------------------------------------------
-# invoke_coach routing with gather (AC-1) + OFF stays B-min
+# invoke_coach: the look-up pass, then the verdict
 # ---------------------------------------------------------------------------
 
 
 class TestInvokeCoachGatherRouting:
-    def test_gather_off_is_pure_bmin_single_call(
+    def test_every_review_runs_the_read_only_lookup_then_the_verdict(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Default (flag unset) ⇒ NO gather call: exactly one synthesis call."""
-        monkeypatch.delenv("GUARDKIT_COACH_GATHER", raising=False)  # default OFF
-        monkeypatch.delenv("GUARDKIT_COACH_SYNTHESIS", raising=False)  # synth ON
-        invoker = _make_invoker(tmp_path)
-
-        calls: list[dict] = []
-
-        async def _iwr(**kwargs):
-            calls.append(kwargs)
-            return _verdict_events("TASK-OFF-001")
-
-        invoker._invoke_with_role = _iwr  # type: ignore[method-assign]
-        result = asyncio.run(
-            invoker.invoke_coach(
-                task_id="TASK-OFF-001",
-                turn=1,
-                requirements="reqs",
-                player_report={"files_modified": []},
-                evidence_bundle=_make_bundle(),
-            )
-        )
-
-        assert result.success is True
-        assert len(calls) == 1
-        assert calls[0]["synthesis"] is True  # the only call is the synthesis
-        assert "Coach Investigation Findings" not in calls[0]["prompt"]
-
-    def test_gather_on_runs_toolbound_then_toolless(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """AC-1: gather ON ⇒ first call is tool-bound (synthesis=False, read-only
-        tools), second is toolless+grammar; the gather findings are threaded
-        into the synthesis prompt."""
-        monkeypatch.setenv("GUARDKIT_COACH_GATHER", "1")
-        monkeypatch.delenv("GUARDKIT_COACH_SYNTHESIS", raising=False)  # synth ON
+        """With no setting at all: the first call is the read-only look-up
+        pass (Read/Search/Grep/Glob, no shell), the second the toolless
+        verdict call, which carries the look-up findings."""
         invoker = _make_invoker(tmp_path)
 
         calls: list[dict] = []
@@ -200,9 +139,9 @@ class TestInvokeCoachGatherRouting:
         async def _iwr(**kwargs):
             calls.append(kwargs)
             if not kwargs.get("synthesis"):
-                # Phase A gather: emit findings text.
+                # The look-up pass: findings text.
                 return _findings_events(
-                    "AC-002: FAIL — behaviour stubbed at src/foo.py:10"
+                    "STUB src/foo.py:10: the behaviour returns a fixed answer"
                 )
             return _verdict_events("TASK-ON-001")
 
@@ -221,25 +160,23 @@ class TestInvokeCoachGatherRouting:
         assert len(calls) == 2
 
         gather, synth = calls[0], calls[1]
-        # Phase A — tool-bound investigation.
+        # The look-up pass: read-only tools.
         assert gather["synthesis"] is False
-        assert gather["allowed_tools"] == ["Read", "Bash", "Grep", "Glob"]
+        assert gather["allowed_tools"] == ["Read", "Search", "Grep", "Glob"]
         assert gather["agent_type"] == "coach"
-        assert "THIS IS NOT THE VERDICT" in gather["prompt"]
-        # Phase B — toolless grammar synthesis, now carrying the findings.
+        assert "The five questions" in gather["prompt"]
+        # The verdict — toolless grammar call, now carrying the findings.
         assert synth["synthesis"] is True
         assert synth["allowed_tools"] == []
-        assert "Coach Investigation Findings (Phase A)" in synth["prompt"]
-        assert "AC-002: FAIL" in synth["prompt"]
+        assert "## Look-up findings" in synth["prompt"]
+        assert "STUB src/foo.py:10" in synth["prompt"]
 
-    def test_gather_failure_degrades_to_bmin(
+    def test_lookup_failure_leaves_the_verdict_to_run(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """AC-2 strict dominance: a Phase-A exception (e.g. tool-parse 500)
-        degrades to B-min — synthesis still runs, a valid verdict emerges, the
-        turn is NOT failed, and the synthesis prompt has no findings section."""
-        monkeypatch.setenv("GUARDKIT_COACH_GATHER", "1")
-        monkeypatch.delenv("GUARDKIT_COACH_SYNTHESIS", raising=False)
+        """A look-up pass exception (e.g. tool-parse 500): the verdict call
+        still runs, a valid verdict emerges, the turn is NOT failed, and the
+        verdict prompt says the look-up pass gave no findings."""
         invoker = _make_invoker(tmp_path)
 
         calls: list[dict] = []
@@ -265,16 +202,13 @@ class TestInvokeCoachGatherRouting:
         assert result.report["decision"] == "approve"
         assert len(calls) == 2  # gather (raised, caught) + synthesis
         assert calls[1]["synthesis"] is True
-        assert "Coach Investigation Findings" not in calls[1]["prompt"]
+        assert "The look-up pass gave no findings" in calls[1]["prompt"]
 
-    def test_empty_findings_degrade_to_bmin(
+    def test_empty_lookup_answer_is_no_findings(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """AC-2/AC-6: an empty gather (whitespace-only findings) degrades to
-        B-min — no findings section is injected (absent evidence must not be
-        dressed up as positive signal)."""
-        monkeypatch.setenv("GUARDKIT_COACH_GATHER", "1")
-        monkeypatch.delenv("GUARDKIT_COACH_SYNTHESIS", raising=False)
+        """An empty look-up answer (whitespace only) is said as no findings:
+        absent evidence is not dressed up as a positive signal."""
         invoker = _make_invoker(tmp_path)
 
         calls: list[dict] = []
@@ -298,16 +232,14 @@ class TestInvokeCoachGatherRouting:
 
         assert result.success is True
         assert len(calls) == 2
-        assert "Coach Investigation Findings" not in calls[1]["prompt"]
+        assert "The look-up pass gave no findings" in calls[1]["prompt"]
 
-    def test_cancellation_during_gather_propagates(
+    def test_cancellation_during_lookup_propagates(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """AC-5: a genuine CancelledError mid-gather is NOT swallowed by the
-        degrade-to-B-min handler (it is BaseException, not Exception) — it
-        propagates and the synthesis call is never made."""
-        monkeypatch.setenv("GUARDKIT_COACH_GATHER", "1")
-        monkeypatch.delenv("GUARDKIT_COACH_SYNTHESIS", raising=False)
+        """A genuine CancelledError in the look-up pass is NOT swallowed (it
+        is BaseException, not Exception): it propagates and the verdict call
+        is never made."""
         invoker = _make_invoker(tmp_path)
 
         calls: list[dict] = []
@@ -333,14 +265,12 @@ class TestInvokeCoachGatherRouting:
         assert len(calls) == 1  # only the gather; synthesis never reached
         assert calls[0]["synthesis"] is False
 
-    def test_gather_budget_is_bounded_synthesis_keeps_full(
+    def test_lookup_time_is_a_slice_and_the_verdict_keeps_full(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """AC-5: Phase A runs under a bounded slice (≤ 40% of effective, floored
-        at 60s); Phase B keeps the full effective timeout. effective=600 ⇒
-        gather sees 240, synthesis sees 600."""
-        monkeypatch.setenv("GUARDKIT_COACH_GATHER", "1")
-        monkeypatch.delenv("GUARDKIT_COACH_SYNTHESIS", raising=False)
+        """The look-up pass runs under a bounded slice (40% of the effective
+        time, floored at 60s); the verdict keeps the full effective time.
+        effective=600 ⇒ look-up sees 240, verdict sees 600."""
         invoker = _make_invoker(tmp_path)  # _calculate_sdk_timeout → 600
 
         seen: list[tuple[bool, int]] = []
@@ -348,7 +278,7 @@ class TestInvokeCoachGatherRouting:
         async def _iwr(**kwargs):
             seen.append((bool(kwargs.get("synthesis")), invoker.sdk_timeout_seconds))
             if not kwargs.get("synthesis"):
-                return _findings_events("AC-001: PASS")
+                return _findings_events("NO FINDINGS")
             return _verdict_events("TASK-BUD-001")
 
         invoker._invoke_with_role = _iwr  # type: ignore[method-assign]
@@ -403,7 +333,6 @@ class TestCriteriaThreading:
                 {"id": "AC-002", "text": "edge case handled"},
             ],
             evidence_bundle=_make_bundle(),
-            synthesis=True,
         )
         assert "Acceptance Criteria to Verify" in prompt
         assert "AC-001" in prompt and "AC-002" in prompt
@@ -411,42 +340,32 @@ class TestCriteriaThreading:
         assert '"criterion_id"' in prompt
 
     def test_no_criteria_section_when_acs_absent(self, tmp_path: Path) -> None:
-        """Back-compat: omitting acceptance_criteria keeps the pre-COACHBFULL
-        prompt (no per-criterion section)."""
+        """Omitting acceptance_criteria gives no per-criterion section."""
         prompt = _make_invoker(tmp_path)._build_coach_prompt(
             task_id="TASK-AC4-002",
             turn=1,
             requirements="do the thing",
             player_report={"files_modified": []},
             evidence_bundle=_make_bundle(),
-            synthesis=True,
         )
         assert "Acceptance Criteria to Verify" not in prompt
 
 
 # ---------------------------------------------------------------------------
-# TASK-PERF-COACHSYNTH — gather is bounded so it cannot overflow the window
-# (AC-1 / AC-2 plumbing) + synthesis-prompt findings truncation (AC-4).
+# The look-up pass's bounds: the tool-result cut, and no step ceiling (its
+# bound is the shared tool limit, which ends with an answer); the verdict
+# call carries neither.
 # ---------------------------------------------------------------------------
 
 
-class TestGatherBoundPlumbing:
-    """The Phase-A gather call must carry the recursion_limit + tool-result
-
-    truncation bounds (the load-bearing F20 fix), and the toolless synthesis
-    call must NOT (so the verdict generation is unconstrained by gather knobs).
-    """
-
-    def test_gather_call_carries_bounds_synthesis_does_not(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+class TestLookupBoundPlumbing:
+    def test_lookup_call_carries_the_cut_and_no_step_ceiling(
+        self, tmp_path: Path
     ) -> None:
         from guardkit.orchestrator.agent_invoker import (
             _COACH_GATHER_MAX_TOOL_RESULT_CHARS,
-            _COACH_GATHER_RECURSION_LIMIT,
         )
 
-        monkeypatch.setenv("GUARDKIT_COACH_GATHER", "1")
-        monkeypatch.delenv("GUARDKIT_COACH_SYNTHESIS", raising=False)
         invoker = _make_invoker(tmp_path)
 
         calls: list[dict] = []
@@ -454,7 +373,7 @@ class TestGatherBoundPlumbing:
         async def _iwr(**kwargs):
             calls.append(kwargs)
             if not kwargs.get("synthesis"):
-                return _findings_events("AC-001: PASS — verified at src/foo.py:5")
+                return _findings_events("NO FINDINGS")
             return _verdict_events("TASK-BND-001")
 
         invoker._invoke_with_role = _iwr  # type: ignore[method-assign]
@@ -469,37 +388,19 @@ class TestGatherBoundPlumbing:
         )
 
         assert len(calls) == 2
-        gather, synth = calls[0], calls[1]
-        # AC-1: gather is bounded — recursion ceiling + per-tool-result cap.
-        assert gather["recursion_limit"] == _COACH_GATHER_RECURSION_LIMIT
-        assert (
-            gather["max_tool_result_chars"]
-            == _COACH_GATHER_MAX_TOOL_RESULT_CHARS
-        )
-        # The bounds must be REAL caps, not disabled.
-        assert gather["recursion_limit"] > 0
-        assert gather["max_tool_result_chars"] > 0
-        # Synthesis (verdict) must not inherit the gather knobs.
-        assert synth.get("recursion_limit") is None
-        assert synth.get("max_tool_result_chars") is None
-
-
-# Plumbing coverage note (TASK-PERF-COACHSYNTH): the two remaining hops are
-# covered elsewhere — the gather → _invoke_with_role kwargs hop by
-# TestGatherBoundPlumbing above, and the select_harness → LangGraphHarness /
-# build_autobuild_backend hop by
-# tests/orchestrator/harness/test_selector.py::TestSelectHarnessGatherBounds.
+        lookup, verdict = calls[0], calls[1]
+        assert lookup.get("recursion_limit") is None
+        assert lookup["max_tool_result_chars"] == _COACH_GATHER_MAX_TOOL_RESULT_CHARS == 12000
+        assert verdict.get("recursion_limit") is None
+        assert verdict.get("max_tool_result_chars") is None
 
 
 class TestGatherFindingsTruncation:
-    """AC-4: the Phase-A findings injected into the synthesis prompt are
-
-    capped (with a visible marker) so synthesis-prompt size cannot grow
-    unbounded with gather volume (the run-20 latency creep).
-    """
+    """The look-up findings in the verdict prompt are capped, with a visible
+    marker."""
 
     def test_under_limit_passthrough(self) -> None:
-        small = "AC-001: PASS\nAC-002: PASS"
+        small = "STUB src/a.py:1: x\nNOT_TESTED src/b.py:2: y"
         assert AgentInvoker._truncate_gather_findings(small) == small
 
     def test_over_limit_is_capped_and_marked(
@@ -512,10 +413,8 @@ class TestGatherFindingsTruncation:
         out = AgentInvoker._truncate_gather_findings(big)
         assert len(out) < len(big)
         assert out.startswith("F" * 100)
-        # The marker is load-bearing — the synthesis must not treat the
-        # truncated checklist as complete (absence-of-failure-is-not-success).
-        assert "truncated" in out
-        assert "FAIL/UNSURE" in out
+        # The marker is load-bearing: the cut is never silent.
+        assert "look-up findings cut here" in out
 
     def test_truncation_applied_in_synthesis_prompt(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -529,11 +428,10 @@ class TestGatherFindingsTruncation:
             requirements="reqs",
             player_report={"files_modified": []},
             evidence_bundle=_make_bundle(),
-            synthesis=True,
             gather_findings="G" * 8000,
         )
         # The findings section is present but bounded + marked.
-        assert "Coach Investigation Findings (Phase A)" in prompt
-        assert "truncated for synthesis-prompt budget" in prompt
+        assert "## Look-up findings" in prompt
+        assert "look-up findings cut here" in prompt
         # The full 8000-char blob must NOT appear verbatim.
         assert "G" * 8000 not in prompt

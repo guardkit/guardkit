@@ -738,8 +738,6 @@ class TestTheRuleOnTheLivePath:
     ) -> None:
         """The reviewer blames the builder; its verdict is kept as advice and
         the turn is approved, because no project check ran and failed."""
-        monkeypatch.delenv("GUARDKIT_COACH_SYNTHESIS", raising=False)
-        monkeypatch.delenv("GUARDKIT_COACH_GATHER", raising=False)
         invoker = _invoker(tmp_path)
 
         result = _ask_the_coach(
@@ -752,7 +750,6 @@ class TestTheRuleOnTheLivePath:
 
         assert result.success is True
         assert result.report["decision"] == "approve"
-        assert result.report["reviewer_decision"] == "feedback"
         # The reviewer's findings stay in the record.
         assert [i["category"] for i in result.report["issues"]] == [
             "absence_of_failure"
@@ -764,8 +761,6 @@ class TestTheRuleOnTheLivePath:
     ) -> None:
         """Negative control: the reviewer approves, the project's own suite
         ran and failed, and the turn goes back with the failing lines."""
-        monkeypatch.delenv("GUARDKIT_COACH_SYNTHESIS", raising=False)
-        monkeypatch.delenv("GUARDKIT_COACH_GATHER", raising=False)
         invoker = _invoker(tmp_path)
         approve = dict(
             _the_reviewer_blames_the_builder(_TASK_ID, 1),
@@ -791,7 +786,6 @@ class TestTheRuleOnTheLivePath:
         )
 
         assert result.report["decision"] == "feedback"
-        assert result.report["reviewer_decision"] == "approve"
         assert result.report["issues"] != []
 
 

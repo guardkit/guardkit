@@ -2,15 +2,15 @@
 
 Covers the GuardKit-orchestrator side of the Coach split:
 
-* the GUARDKIT_COACH_SYNTHESIS gate (``_coach_synthesis_enabled``),
 * the packaged GBNF grammar loader + byte-parity with the docs source,
 * the ``HarnessAdapter.invoke_synthesis`` default (delegates to a TOOLLESS
   ``invoke(tools=[])``), proving substrate-agnostic toolless dispatch,
-* the synthesis variant of ``_build_coach_prompt`` (AC-5: toolless framing
-  and the evidence bundle; legacy variant unchanged),
-* ``invoke_coach`` routing (AC-1: synthesis path dispatches ``_invoke_with_role``
-  with ``allowed_tools=[]``, ``synthesis=True``, and the verdict grammar;
-  the legacy path keeps the read-only tool set).
+* ``_build_coach_prompt`` (the evidence bundle, and no "no tools"
+  attribution banner since the build reviewer design of 29 October 2026),
+* ``invoke_coach`` routing: the verdict call dispatches ``_invoke_with_role``
+  with ``allowed_tools=[]``, ``synthesis=True`` and the verdict grammar, with
+  or without an evidence bundle (the tool-using legacy Coach,
+  ``GUARDKIT_COACH_SYNTHESIS=0``, was deleted on 29 October 2026).
 
 The substrate-level toolless+grammar request shape (AC-2/AC-3) is asserted in
 guardkitfactory's ``test_langgraph_harness_synthesis.py``; the run-19 falsifier
@@ -28,10 +28,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from guardkit.orchestrator.agent_invoker import (
-    AgentInvoker,
-    _coach_synthesis_enabled,
-)
+from guardkit.orchestrator.agent_invoker import AgentInvoker
 from guardkit.orchestrator.coach_grammar import load_coach_verdict_grammar
 from guardkit.orchestrator.harness import (
     AssistantMessageEvent,
@@ -51,31 +48,6 @@ def _build_invoker(worktree: Path) -> AgentInvoker:
     invoker = AgentInvoker.__new__(AgentInvoker)
     invoker.worktree_path = worktree
     return invoker
-
-
-# ---------------------------------------------------------------------------
-# Gate — _coach_synthesis_enabled (GUARDKIT_COACH_SYNTHESIS)
-# ---------------------------------------------------------------------------
-
-
-class TestSynthesisGate:
-    def test_default_is_enabled(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.delenv("GUARDKIT_COACH_SYNTHESIS", raising=False)
-        assert _coach_synthesis_enabled() is True
-
-    @pytest.mark.parametrize("val", ["0", "false", "False", "NO", "off", " off "])
-    def test_disabled_values(
-        self, monkeypatch: pytest.MonkeyPatch, val: str
-    ) -> None:
-        monkeypatch.setenv("GUARDKIT_COACH_SYNTHESIS", val)
-        assert _coach_synthesis_enabled() is False
-
-    @pytest.mark.parametrize("val", ["1", "true", "yes", "on", "anything-else"])
-    def test_enabled_values(
-        self, monkeypatch: pytest.MonkeyPatch, val: str
-    ) -> None:
-        monkeypatch.setenv("GUARDKIT_COACH_SYNTHESIS", val)
-        assert _coach_synthesis_enabled() is True
 
 
 # ---------------------------------------------------------------------------
@@ -176,39 +148,27 @@ class TestAdapterDefaultInvokeSynthesis:
 
 
 class TestSynthesisPrompt:
-    def test_synthesis_prompt_has_toolless_banner_and_responsibilities(
+    def test_verdict_prompt_has_no_toolless_banner_or_paperwork_duties(
         self, tmp_path: Path
     ) -> None:
+        """The build reviewer design of 29 October 2026: the "no tools"
+        attribution banner and its responsibilities (the source of the "not
+        independently verified" findings) are gone from the verdict call."""
         prompt = _build_invoker(tmp_path)._build_coach_prompt(
             task_id="TASK-SYN-001",
             turn=1,
             requirements="do the thing",
             player_report={"files_modified": []},
-            synthesis=True,
-        )
-        assert "TOOLLESS SYNTHESIS" in prompt
-        assert "You have NO tools" in prompt
-        # It must NOT instruct the model to run tools it does not have.
-        assert "Run the tests yourself" not in prompt
-
-    def test_legacy_prompt_unchanged_when_not_synthesis(
-        self, tmp_path: Path
-    ) -> None:
-        prompt = _build_invoker(tmp_path)._build_coach_prompt(
-            task_id="TASK-SYN-001",
-            turn=1,
-            requirements="do the thing",
-            player_report={"files_modified": []},
-            synthesis=False,
         )
         assert "TOOLLESS SYNTHESIS" not in prompt
-        assert "Run the tests yourself" in prompt
+        assert "measurement attribution" not in prompt
+        assert "Run the tests yourself" not in prompt
+        assert "## Look-up findings" in prompt
 
     def test_synthesis_prompt_renders_the_evidence_bundle(
         self, tmp_path: Path
     ) -> None:
-        """With an evidence bundle the synthesis prompt carries it (the
-        synthesis variant only changes the responsibilities/banner)."""
+        """With an evidence bundle the verdict prompt carries it."""
         from guardkit.orchestrator.quality_gates.coach_evidence import (
             CoachEvidenceBundle,
         )
@@ -220,9 +180,7 @@ class TestSynthesisPrompt:
             requirements="zero cardinality",
             player_report={"files_modified": []},
             evidence_bundle=bundle,
-            synthesis=True,
         )
-        assert "TOOLLESS SYNTHESIS" in prompt
         # The deterministic evidence bundle is rendered.
         assert "<evidence_bundle>" in prompt
 
@@ -251,10 +209,13 @@ def _make_bundle():
 
 
 class TestInvokeCoachRouting:
-    def test_synthesis_path_dispatches_toolless_with_grammar(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    @pytest.mark.parametrize("with_bundle", [True, False])
+    def test_verdict_call_dispatches_toolless_with_grammar(
+        self, tmp_path: Path, with_bundle: bool
     ) -> None:
-        monkeypatch.delenv("GUARDKIT_COACH_SYNTHESIS", raising=False)  # default ON
+        """The look-up pass runs first (read-only); the verdict call is
+        toolless with the grammar, whether or not there is an evidence bundle
+        (the legacy tool-using Coach was deleted on 29 October 2026)."""
         invoker = _make_invoker_for_routing(tmp_path)
 
         # Capture _invoke_with_role kwargs, then short-circuit (raise) so the
@@ -267,7 +228,7 @@ class TestInvokeCoachRouting:
                     turn=1,
                     requirements="reqs",
                     player_report={"files_modified": []},
-                    evidence_bundle=_make_bundle(),  # synthesis requires a bundle
+                    evidence_bundle=_make_bundle() if with_bundle else None,
                 )
             )
 
@@ -275,62 +236,13 @@ class TestInvokeCoachRouting:
         # advice, cull of 27 October 2026); this test is about the routing.
         assert result.success is True
         assert result.report["decision"] == "approve"
-        iwr.assert_awaited_once()
-        kwargs = iwr.call_args.kwargs
+        assert iwr.await_count == 2
+        lookup = iwr.call_args_list[0].kwargs
+        assert lookup["allowed_tools"] == ["Read", "Search", "Grep", "Glob"]
+        assert lookup["synthesis"] is False
+        kwargs = iwr.call_args_list[1].kwargs
         assert kwargs["allowed_tools"] == []          # toolless (AC-1)
         assert kwargs["synthesis"] is True            # dispatch invoke_synthesis
         assert kwargs["agent_type"] == "coach"        # preserves model routing
         assert kwargs["grammar"] and "root" in kwargs["grammar"]  # verdict grammar
-        assert "TOOLLESS SYNTHESIS" in kwargs["prompt"]
-
-    def test_no_bundle_falls_back_to_legacy_tools(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """Synthesis is gated on bundle presence: with synthesis ENABLED but no
-        evidence_bundle, invoke_coach must use the legacy tool-using Coach so it
-        can investigate in place of the absent deterministic evidence (review
-        finding — a toolless 'synthesise over the bundle' prompt with no bundle
-        is an absence-of-failure false-green hazard)."""
-        monkeypatch.delenv("GUARDKIT_COACH_SYNTHESIS", raising=False)  # default ON
-        invoker = _make_invoker_for_routing(tmp_path)
-
-        iwr = AsyncMock(side_effect=RuntimeError("stop-after-capture"))
-        with patch.object(invoker, "_invoke_with_role", iwr):
-            asyncio.run(
-                invoker.invoke_coach(
-                    task_id="TASK-RT-003",
-                    turn=1,
-                    requirements="reqs",
-                    player_report={"files_modified": []},
-                    # no evidence_bundle → legacy tool-using path despite synthesis ON
-                )
-            )
-
-        kwargs = iwr.call_args.kwargs
-        assert kwargs["allowed_tools"] == ["Read", "Bash", "Grep", "Glob"]
-        assert kwargs.get("synthesis", False) is False
-        assert "TOOLLESS SYNTHESIS" not in kwargs["prompt"]
-
-    def test_legacy_path_keeps_readonly_tools(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.setenv("GUARDKIT_COACH_SYNTHESIS", "0")  # disable synthesis
-        invoker = _make_invoker_for_routing(tmp_path)
-
-        iwr = AsyncMock(side_effect=RuntimeError("stop-after-capture"))
-        with patch.object(invoker, "_invoke_with_role", iwr):
-            asyncio.run(
-                invoker.invoke_coach(
-                    task_id="TASK-RT-002",
-                    turn=1,
-                    requirements="reqs",
-                    player_report={"files_modified": []},
-                    evidence_bundle=_make_bundle(),  # even with a bundle, gate off → legacy
-                )
-            )
-
-        kwargs = iwr.call_args.kwargs
-        assert kwargs["allowed_tools"] == ["Read", "Bash", "Grep", "Glob"]
-        # Legacy path does not pass the synthesis flag (defaults to False).
-        assert kwargs.get("synthesis", False) is False
         assert "TOOLLESS SYNTHESIS" not in kwargs["prompt"]

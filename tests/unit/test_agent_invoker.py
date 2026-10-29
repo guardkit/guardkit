@@ -407,26 +407,20 @@ class TestCoachInvocation:
             assert result.report["decision"] == sample_coach_approval["decision"]
             assert result.report["task_id"] == sample_coach_approval["task_id"]
             assert result.report["turn"] == sample_coach_approval["turn"]
-            assert result.report["reviewer_decision"] == "approve"
             assert result.duration_seconds > 0
 
-            # Verify SDK was called with read-only permissions and the
-            # COACHOUT01 return_events=True opt-in.
-            #
-            # TASK-ARCH-COACHSPLIT (D-3): this call passes NO evidence_bundle,
-            # so it stays on the legacy tool-using Coach path — toolless
-            # grammar-enforced synthesis is gated on bundle presence (a
-            # toolless "synthesise over the bundle" prompt is incoherent with
-            # no bundle). The synthesis path (with a bundle) is covered by
-            # test_coach_synthesis_split.TestInvokeCoachRouting.
-            mock_sdk.assert_called_once()
-            call_kwargs = mock_sdk.call_args.kwargs
-            assert call_kwargs["agent_type"] == "coach"
-            assert call_kwargs["allowed_tools"] == ["Read", "Bash", "Grep", "Glob"]
-            assert call_kwargs["permission_mode"] == "bypassPermissions"
-            assert call_kwargs["return_events"] is True
-            assert "Write" not in call_kwargs["allowed_tools"]
-            assert "Edit" not in call_kwargs["allowed_tools"]
+            # The build reviewer design of 29 October 2026: two calls, the
+            # read-only look-up pass (no shell, no write) and then the
+            # toolless verdict call, both with the COACHOUT01
+            # return_events=True opt-in. The tool-using legacy Coach is gone.
+            assert mock_sdk.call_count == 2
+            lookup, verdict = (c.kwargs for c in mock_sdk.call_args_list)
+            assert lookup["agent_type"] == verdict["agent_type"] == "coach"
+            assert lookup["allowed_tools"] == ["Read", "Search", "Grep", "Glob"]
+            assert verdict["allowed_tools"] == [] and verdict["synthesis"] is True
+            for call_kwargs in (lookup, verdict):
+                assert call_kwargs["permission_mode"] == "bypassPermissions"
+                assert call_kwargs["return_events"] is True
 
             # Verify parser actually wrote the file the loader reads.
             # TASK-SBHO-002: coach_turn_N.json is now written to the private dir.
@@ -475,7 +469,6 @@ class TestCoachInvocation:
 
             assert result.success is True
             assert result.report["decision"] == "approve"
-            assert result.report["reviewer_decision"] == "feedback"
             assert len(result.report["issues"]) > 0
 
     @pytest.mark.asyncio
@@ -505,7 +498,8 @@ class TestCoachInvocation:
         self, agent_invoker, worktree_path, sample_player_report
     ):
         """The parser no longer checks the verdict's values: whatever the
-        reviewer said is kept as ``reviewer_decision`` and the turn goes on."""
+        reviewer said, the turn goes on (the ``reviewer_decision`` copy
+        nothing read was deleted on 29 October 2026)."""
         unusual_decision = {
             "task_id": "TASK-001",
             "turn": 1,
@@ -524,7 +518,7 @@ class TestCoachInvocation:
 
             assert result.success is True
             assert result.report["decision"] == "approve"
-            assert result.report["reviewer_decision"] == "maybe"
+            assert "reviewer_decision" not in result.report
 
 
 # ==================== Prompt Building Tests ====================
@@ -607,9 +601,12 @@ class TestPromptBuilding:
         assert "Turn: 1" in prompt
         assert "Implement OAuth2 authentication" in prompt
         assert "Player's Report" in prompt
-        # Verify Player report is included as JSON
-        assert '"task_id": "TASK-001"' in prompt
-        assert '"tests_passed": true' in prompt
+        # The build reviewer design of 29 October 2026: only the builder's
+        # concerns, "remaining" list and git's file lists, not its whole
+        # report.
+        assert '"files_modified"' in prompt
+        assert "Implemented OAuth2 flow" not in prompt
+        assert '"tests_written"' not in prompt
 
         # TASK-FIX-COACHOUT01 Shape A — Decision Format contract.
         # The old "Write your decision to {path}" instruction is gone;
@@ -619,10 +616,10 @@ class TestPromptBuilding:
             f"{worktree_path}/.guardkit/autobuild/TASK-001/coach_turn_1.json"
             not in prompt
         )
-        assert "fenced JSON block" in prompt
+        assert "fenced ```json block" in prompt
         assert "```json" in prompt
         # The "last fenced block wins" rule is load-bearing — pin it.
-        assert "last" in prompt.lower()
+        assert "the last thing you write" in prompt
 
 
 # ==================== SDK Integration Tests ====================

@@ -1,7 +1,6 @@
 """AgentInvoker handles Claude Agents SDK invocation for Player and Coach agents."""
 
 import asyncio
-import hashlib
 import json
 import logging
 import os
@@ -28,6 +27,7 @@ if TYPE_CHECKING:
         CoachEvidenceBundle,
     )
     from guardkit.orchestrator.harness.selector import ProjectDocument
+    from guardkit.orchestrator.build_review import ReviewChange
 
 from guardkit.orchestrator.exceptions import (
     AgentInvocationError,
@@ -993,157 +993,20 @@ _SDK_MAX_TURNS_IS_OVERRIDE = _SDK_MAX_TURNS_EXPLICIT is not None
 SDK_MAX_TURNS_FLOOR = 150
 
 
-# TASK-ARCH-COACHSPLIT (D-3): the Coach's verdict synthesis runs as a TOOLLESS,
-# grammar-enforced model call over the deterministic evidence bundle by default.
-# Set GUARDKIT_COACH_SYNTHESIS=0 (or false/no/off) to restore the legacy
-# tool-using Coach that investigates with Read/Bash/Grep/Glob and emits the
-# verdict in the same agentic loop (the path that is fragile on the llama.cpp +
-# Gemma stack — see runs 13/18 and the task forensics). The default is ON
-# because the deterministic bundle already carries the evidence the gather
-# phase would seek, and a toolless synthesis is the only way to (a) honour the
-# GBNF verdict grammar (llama.cpp hard-rejects grammar+tools) and (b) avoid the
-# run-18 tool-parse HTTP 500.
-_COACH_SYNTHESIS_DISABLED_VALUES = frozenset({"0", "false", "no", "off"})
-
-
-def write_coach_project_documents_record(
-    worktree_path: Path,
-    task_id: str,
-    turn: int,
-    documents: Sequence["ProjectDocument"],
-    *,
-    section_sha256: Optional[str] = None,
-    refused: Optional[str] = None,
-    note: Optional[str] = None,
-) -> None:
-    """Write what the Coach was given beside ``coach_turn_N.json``.
-
-    ``coach_project_documents_turn_N.json`` in the orchestrator-private
-    directory: each document's path, SHA-256 and size as captured at task
-    start, the hash of the section actually sent (``None`` when nothing was
-    sent), any document whose worktree copy changed since task start, the
-    refusal sentence if the turn was refused, and a note when the documents
-    were declared but not used. Best-effort, like the evidence bundle beside
-    it: a failed write is logged and never blocks the turn.
-    """
-    record = {
-        "task_id": task_id,
-        "turn": turn,
-        "documents": [
-            {"path": d.path, "sha256": d.sha256, "bytes": d.size}
-            for d in documents
-        ],
-        "total_bytes": sum(d.size for d in documents),
-        "section_sha256": section_sha256,
-        "captured_from": sorted(
-            {d.captured_from for d in documents if getattr(d, "captured_from", None)}
-        ),
-        "changed_since_task_start": [
-            {
-                "path": d.path,
-                "captured_sha256": d.sha256,
-                "worktree_sha256": d.worktree_sha256,
-            }
-            for d in documents
-            if getattr(d, "worktree_sha256", None)
-        ],
-        "refused": refused,
-        "note": note,
-    }
-    try:
-        record_path = TaskArtifactPaths.private_artifact_path(
-            task_id, f"coach_project_documents_turn_{turn}.json", worktree_path
-        )
-        record_path.parent.mkdir(parents=True, exist_ok=True)
-        record_path.write_text(json.dumps(record, indent=2), encoding="utf-8")
-    except Exception as exc:  # noqa: BLE001 — a record never blocks the turn
-        logger.warning(
-            "Could not record the Coach's project documents for %s turn %s: %s",
-            task_id, turn, exc,
-        )
-
-
-def _sha256_text(text: str) -> str:
-    """SHA-256 of ``text`` as UTF-8, in hex (the Coach documents-section check)."""
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()
-
-
-def _coach_synthesis_enabled() -> bool:
-    """Return True when the toolless grammar-enforced Coach synthesis is active.
-
-    Default ON; disabled only by an explicit GUARDKIT_COACH_SYNTHESIS in
-    ``{"0", "false", "no", "off"}`` (case-insensitive). Read at invocation
-    time (not import time) so tests and operators can toggle it per-run.
-    """
-    raw = os.environ.get("GUARDKIT_COACH_SYNTHESIS")
-    if raw is None:
-        return True
-    return raw.strip().lower() not in _COACH_SYNTHESIS_DISABLED_VALUES
-
-
-# TASK-ARCH-COACHBFULL: the B-full investigating Coach runs a tool-using
-# Phase-A "gather" (Read/Bash/Grep/Glob) BEFORE the toolless Phase-B verdict
-# synthesis, feeding investigation findings into the synthesis prompt. It is
-# OPT-IN (default OFF) — the inverse default of GUARDKIT_COACH_SYNTHESIS. B-min
-# (toolless synthesis) is the validated default; B-full re-introduces the
-# tool-bound g31 path D-3 removed for substrate reliability, so the unproven
-# enhancement must not be the default until it earns promotion (see the task's
-# "Flag default + promotion criteria"). Any Phase-A failure degrades to B-min
-# (strict dominance), so enabling it can only add investigation, never regress.
-_COACH_GATHER_ENABLED_VALUES = frozenset({"1", "true", "yes", "on"})
-
-
-def _coach_gather_enabled() -> bool:
-    """Return True when the B-full tool-using Phase-A gather is active.
-
-    Default OFF (opt-in); enabled only by an explicit GUARDKIT_COACH_GATHER in
-    ``{"1", "true", "yes", "on"}`` (case-insensitive). Read at invocation time
-    (not import time) so tests and operators can toggle it per-run.
-    """
-    raw = os.environ.get("GUARDKIT_COACH_GATHER")
-    if raw is None:
-        return False
-    return raw.strip().lower() in _COACH_GATHER_ENABLED_VALUES
-
-
-# TASK-ARCH-COACHBFULL (AC-5): Phase-A gather budget slice. The gather is a
-# tool-bound investigation whose findings are advisory; it must not consume the
-# whole per-turn budget and starve the load-bearing Phase-B synthesis. Phase A
-# is capped at ``max(MIN, FRACTION * effective_timeout)`` (never above the
-# effective timeout); Phase B then runs at the FULL effective timeout. Combined
-# wall-clock is therefore bounded at ``(1 + FRACTION) * effective`` — documented
-# as the opt-in cost. A tighter ``<= 1x`` bound (subtracting gather spend from
-# the synthesis budget) was rejected: it risks synthesis timeouts on the slow
-# substrate. Revisit under promotion criterion P-5 / TASK-PERF-COACHSYNTH.
+# The build reviewer design of 29 October 2026: the review's look-up pass runs
+# on every review (``AgentInvoker._invoke_coach_gather``), read-only, before
+# the toolless, grammar-constrained verdict call. Its time is a slice of the
+# review's: ``max(MIN, FRACTION * effective_timeout)``, never above it; the
+# verdict call then runs at the full effective timeout.
 _COACH_GATHER_BUDGET_FRACTION = 0.4
 _COACH_GATHER_BUDGET_MIN_S = 60
 
-# TASK-PERF-COACHSYNTH: the wall-clock budget above was NECESSARY but NOT
-# SUFFICIENT — run-22 TP05 overflowed gemma4:31b's 98 K window *within* the
-# 40% budget (the gather ran ~19.5 min of HTTP 200s, accumulating tool-result
-# tokens, then 400'd at 108 K). The overflow is one request's own growing
-# context, so the bound must live INSIDE the gather. These two knobs, layered
-# with the gemma4:31b summarisation-profile registration (guardkitfactory
-# model_config) and the existing wall-clock budget, give defence-in-depth:
-#
-#   * _COACH_GATHER_RECURSION_LIMIT — hard ceiling on DeepAgents super-steps
-#     (≈ 2 per tool round-trip). 12 ⇒ ~6 tool round-trips then the model must
-#     conclude. ``max_turns`` is DROPPED on the LangGraph substrate, so this
-#     is the ONLY hard tool-cycle bound there. When it trips, the gather
-#     raises GraphRecursionError → degrades to B-min (a verdict still emerges
-#     within budget — AC-2) rather than eating the whole task budget. A
-#     genuine focused investigation (a handful of reads) concludes well below
-#     this; only a runaway trips it.
-#   * _COACH_GATHER_MAX_TOOL_RESULT_CHARS — per-tool-result truncation budget
-#     so a single ``read`` of a 2 k-line file cannot dump its whole body into
-#     the context in one cycle. ~12 k chars ≈ ~3 k tokens; worst case the
-#     gather adds RECURSION_LIMIT × this ≈ well under the 98 K window.
-#
-# Both are env-overridable for operator tuning on the live substrate
-# (AC-3/AC-5 validation runs).
-_COACH_GATHER_RECURSION_LIMIT = int(
-    os.environ.get("GUARDKIT_COACH_GATHER_RECURSION_LIMIT", "12")
-)
+# TASK-PERF-COACHSYNTH: each look-up tool result is cut at this many
+# characters (with a visible marker), so a single read of a large file cannot
+# fill the model's window; the reviewer pages with offset and limit. Its
+# number of tool calls is bounded by the shared tool limit in guardkitfactory
+# (40 tool-using model turns, then an answer), which replaced the 12-step
+# graph ceiling that threw everything away when it tripped.
 _COACH_GATHER_MAX_TOOL_RESULT_CHARS = int(
     os.environ.get("GUARDKIT_COACH_GATHER_MAX_TOOL_RESULT_CHARS", "12000")
 )
@@ -2973,15 +2836,23 @@ class AgentInvoker:
         coach_context: Optional[str] = None,
         acceptance_criteria: Optional[List[Dict[str, str]]] = None,
         project_documents: Optional[Sequence["ProjectDocument"]] = None,
+        turn_left: bool = False,
     ) -> AgentInvocationResult:
-        """Invoke Coach agent via Claude Agents SDK with honesty verification.
+        """Review one builder turn (the build reviewer design of 29 October 2026).
 
-        The Coach agent:
-        - Has read-only access (Read, Bash only)
-        - Works in same worktree as Player
-        - Validates implementation independently
-        - Receives honesty verification context for Player claims
-        - Creates JSON decision at .guardkit/autobuild/{task_id}/coach_turn_{turn}.json
+        Two model calls (``guardkit/orchestrator/build_review.py``):
+
+        - a read-only look-up pass, given the change itself (git, from the
+          task's starting commit) and the project's check result, that answers
+          five questions against the change and the code with read-only tools
+          bounded by the shared tool limit;
+        - a smaller toolless verdict call that turns its findings into issues
+          carrying a pattern and a location.
+
+        The verdict is advice: the turn is sent back by the five ordinary-code
+        rules, or once per task for located findings when ``turn_left`` (the
+        repair turn). The orchestrator writes the verdict to
+        ``coach_turn_{turn}.json`` in the task's private folder.
 
         Args:
             task_id: Task identifier
@@ -3002,19 +2873,15 @@ class AgentInvoker:
                 threaded into the Coach prompt so the synthesis verdict can
                 carry a populated ``criteria_verification`` per AC
                 (TASK-ARCH-COACHBFULL AC-4 — the run-19 empty-array fix) and so
-                the B-full Phase-A gather (TASK-ARCH-COACHBFULL AC-1) has the
-                explicit per-AC checklist to investigate against. When ``None``
-                the prompt omits the per-criterion section (pre-COACHBFULL
-                behaviour).
+                the look-up pass has the criteria to check. When ``None`` the
+                prompts omit the per-criterion section.
             project_documents: Optional project instructions and binding
-                documents (``harness.selector.load_project_documents_at_commit``: path,
-                SHA-256 and full text each), rendered as their own
-                ``## Project documents`` section beside the requirements. The
-                section is never trimmed; if it would not reach the model whole
-                it is left out and the reviewer still runs. The paths, hashes
-                and the hash of the section actually sent (``None`` when it was
-                left out) are recorded beside ``coach_turn_N.json``.
-                ``None`` or empty gives today's prompt unchanged.
+                documents (``harness.selector.load_project_documents_at_commit``).
+                Only their paths reach the look-up pass, which reads the part
+                of one a question needs (the build reviewer design of 29
+                October 2026: their full text is no longer pasted in).
+            turn_left: Whether the task has a builder turn left after this
+                one, so located findings may get the one repair turn.
 
         Returns:
             AgentInvocationResult with Coach's decision
@@ -3035,53 +2902,6 @@ class AgentInvoker:
         try:
             documents = tuple(project_documents or ())
 
-            # TASK-ARCH-COACHSPLIT (D-3): default to TOOLLESS, grammar-enforced
-            # verdict synthesis over the deterministic evidence bundle. The
-            # bundle (gather_evidence) already carries the test/coverage/
-            # honesty/plan_audit/bdd/arch_review signal the legacy tool-using
-            # Coach would investigate, so the Coach can synthesise its verdict
-            # without tools — which (a) lets the GBNF grammar enforce the
-            # verdict schema (llama.cpp hard-rejects grammar+tools) and (b)
-            # eliminates the run-18 tool-parse HTTP 500. GUARDKIT_COACH_SYNTHESIS=0
-            # restores the legacy tool-using Coach.
-            #
-            # Synthesis needs the evidence bundle; a caller without one
-            # keeps the tool-using Coach so it can look at the work itself.
-            synthesis_enabled = (
-                _coach_synthesis_enabled() and evidence_bundle is not None
-            )
-
-            # TASK-ARCH-COACHBFULL (B-full): optional tool-using Phase-A gather
-            # BEFORE the toolless Phase-B synthesis. When enabled (opt-in), the
-            # Coach investigates with Read/Bash/Grep/Glob and produces findings
-            # TEXT (not a verdict); those findings are threaded into the
-            # synthesis prompt below. The gather is gated on synthesis being
-            # active (a B-full gather only makes sense ahead of the toolless
-            # grammar verdict) and on the opt-in flag. Any failure inside
-            # _invoke_coach_gather returns None → degrade to B-min (strict
-            # dominance, AC-2). A genuine cancellation (CancelledError) is NOT
-            # swallowed there and propagates to the except blocks below (AC-5).
-            gather_findings: Optional[str] = None
-            if synthesis_enabled and _coach_gather_enabled():
-                # effective_timeout is currently in self.sdk_timeout_seconds;
-                # cap Phase A at a fraction of it, floored, never above it.
-                gather_timeout = min(
-                    effective_timeout,
-                    max(
-                        _COACH_GATHER_BUDGET_MIN_S,
-                        int(effective_timeout * _COACH_GATHER_BUDGET_FRACTION),
-                    ),
-                )
-                gather_findings = await self._invoke_coach_gather(
-                    task_id=task_id,
-                    turn=turn,
-                    requirements=requirements,
-                    player_report=player_report,
-                    evidence_bundle=evidence_bundle,
-                    acceptance_criteria=acceptance_criteria,
-                    gather_timeout=gather_timeout,
-                )
-
             # A gate-driven repair round (20 October 2026): what the round
             # made, changed or deleted beyond the task document, read from git
             # on every repair-round turn whatever audit path the task takes.
@@ -3089,31 +2909,46 @@ class AgentInvoker:
             # both come from this one step.
             self._repair_review = self._repair_round_review(task_id)
 
+            # The build reviewer design of 29 October 2026: the look-up pass
+            # runs on every review. It is given the change itself (git, from
+            # the task's starting commit) and reads the code with read-only
+            # tools, bounded by the shared tool limit; its time is a slice of
+            # this review's. Any failure gives no findings text and the
+            # verdict call still runs (a reviewer finding is never a refusal).
+            from guardkit.orchestrator import build_review
+
+            change = build_review.write_change(
+                task_id, turn, self.worktree_path, getattr(self, "_baseline_commit", None)
+            )
+            sent_back = list(getattr(self, "_review_repair_sent", {}).get(task_id) or ())
+            gather_timeout = min(
+                effective_timeout,
+                max(
+                    _COACH_GATHER_BUDGET_MIN_S,
+                    int(effective_timeout * _COACH_GATHER_BUDGET_FRACTION),
+                ),
+            )
+            gather_findings = await self._invoke_coach_gather(
+                task_id=task_id,
+                turn=turn,
+                requirements=requirements,
+                player_report=player_report,
+                evidence_bundle=evidence_bundle,
+                acceptance_criteria=acceptance_criteria,
+                gather_timeout=gather_timeout,
+                change=change,
+                sent_back=sent_back,
+                document_paths=[str(d.path) for d in documents],
+            )
+
             # Build prompt for Coach with verification context.
             prompt = self._build_coach_prompt(
                 task_id, turn, requirements, player_report,
                 acceptance_criteria=acceptance_criteria,
                 evidence_bundle=evidence_bundle,
                 coach_context=coach_context,
-                synthesis=synthesis_enabled,
                 gather_findings=gather_findings,
-                project_documents=documents,
             )
-
-            # The project's documents, as sent, are recorded beside the turn.
-            if documents:
-                section = self._render_project_documents_section(documents)
-                start = prompt.find(section)
-                self._record_coach_project_documents(
-                    task_id,
-                    turn,
-                    documents,
-                    section_sha256=(
-                        _sha256_text(prompt[start:start + len(section)])
-                        if start != -1
-                        else None
-                    ),
-                )
 
             # TASK-FIX-COACHOUT01 Shape A: extract the structured verdict from
             # Coach's response text and persist coach_turn_N.json from the
@@ -3131,62 +2966,50 @@ class AgentInvoker:
                 task_id, f"coach_turn_{turn}.json", self.worktree_path
             )
             try:
-                # Invoke the Coach. In both paths return_events=True so the typed
-                # HarnessEvent stream comes back for coach_output_parser
-                # (TASK-FIX-COACHOUT01 Shape A) — the verdict is parsed from the
-                # response text and the orchestrator writes coach_turn_N.json
-                # itself; Coach never writes (ADR FB-004, read-only invariant).
-                if synthesis_enabled:
-                    # Load the GBNF verdict grammar; degrade to prompt-only (still
-                    # toolless) if the packaged grammar can't be read so a
-                    # packaging glitch never hard-fails the Coach.
-                    # Contract-aware: resolves GUARDKIT_COACH_CONTRACT > config >
-                    # default and selects the matching grammar file (TASK-CMIR-003).
-                    grammar: Optional[str] = None
-                    try:
-                        from guardkit.orchestrator.coach_grammar import (
-                            load_coach_verdict_grammar,
-                        )
-
-                        grammar = load_coach_verdict_grammar(
-                            contract=None,  # resolve at call site
-                        )
-                    except Exception as exc:  # noqa: BLE001 — degrade, never hard-fail
-                        logger.warning(
-                            "TASK-ARCH-COACHSPLIT: failed to load Coach verdict "
-                            "grammar (%s); running TOOLLESS synthesis WITHOUT a "
-                            "grammar constraint (prompt-only). The verdict schema "
-                            "is then only prompt-enforced, not grammar-guaranteed.",
-                            exc,
-                        )
-
-                    # allowed_tools=[] makes the harness toolless on EVERY
-                    # substrate (the SDK harness reads its tool surface from the
-                    # constructor allowed_tools, which select_harness threads from
-                    # here). synthesis=True dispatches through invoke_synthesis.
-                    result_tuple = await self._invoke_with_role(
-                        prompt=prompt,
-                        agent_type="coach",
-                        allowed_tools=[],
-                        permission_mode="bypassPermissions",
-                        task_id=task_id,
-                        turn=turn,
-                        return_events=True,
-                        synthesis=True,
-                        grammar=grammar,
+                # The verdict call: toolless and grammar-constrained, so the
+                # GBNF grammar can force the verdict's shape (llama.cpp
+                # refuses a grammar with tools). return_events=True so the
+                # typed HarnessEvent stream comes back for
+                # coach_output_parser; the orchestrator writes
+                # coach_turn_N.json itself, the reviewer never writes.
+                # Load the GBNF verdict grammar; degrade to prompt-only (still
+                # toolless) if the packaged grammar can't be read so a
+                # packaging glitch never hard-fails the Coach.
+                # Contract-aware: resolves GUARDKIT_COACH_CONTRACT > config >
+                # default and selects the matching grammar file (TASK-CMIR-003).
+                grammar: Optional[str] = None
+                try:
+                    from guardkit.orchestrator.coach_grammar import (
+                        load_coach_verdict_grammar,
                     )
-                else:
-                    # Legacy tool-using Coach (GUARDKIT_COACH_SYNTHESIS disabled).
-                    # Read-only tools; verdict still parsed from response text.
-                    result_tuple = await self._invoke_with_role(
-                        prompt=prompt,
-                        agent_type="coach",
-                        allowed_tools=["Read", "Bash", "Grep", "Glob"],
-                        permission_mode="bypassPermissions",
-                        task_id=task_id,
-                        turn=turn,
-                        return_events=True,
+
+                    grammar = load_coach_verdict_grammar(
+                        contract=None,  # resolve at call site
                     )
+                except Exception as exc:  # noqa: BLE001 — degrade, never hard-fail
+                    logger.warning(
+                        "TASK-ARCH-COACHSPLIT: failed to load Coach verdict "
+                        "grammar (%s); running TOOLLESS synthesis WITHOUT a "
+                        "grammar constraint (prompt-only). The verdict schema "
+                        "is then only prompt-enforced, not grammar-guaranteed.",
+                        exc,
+                    )
+
+                # allowed_tools=[] makes the harness toolless on EVERY
+                # substrate (the SDK harness reads its tool surface from the
+                # constructor allowed_tools, which select_harness threads from
+                # here). synthesis=True dispatches through invoke_synthesis.
+                result_tuple = await self._invoke_with_role(
+                    prompt=prompt,
+                    agent_type="coach",
+                    allowed_tools=[],
+                    permission_mode="bypassPermissions",
+                    task_id=task_id,
+                    turn=turn,
+                    return_events=True,
+                    synthesis=True,
+                    grammar=grammar,
+                )
                 assert result_tuple is not None, (
                     "_invoke_with_role(return_events=True) must return a tuple "
                     "on success; got None"
@@ -3223,11 +3046,12 @@ class AgentInvoker:
             if not isinstance(decision.get("issues"), list):
                 decision["issues"] = []
 
-            # The reviewer's verdict is advice (Rich, 27 October 2026). Its
-            # findings stay in this record; the turn is sent back only when
-            # the project's own tests or declared checks ran and failed, or a
-            # repair round changed a protected file (the four calls below).
-            decision["reviewer_decision"] = decision.get("decision")
+            # The reviewer's verdict is advice (Rich, 27 October 2026): the
+            # turn is sent back only when the project's own tests or declared
+            # checks ran and failed, or a repair round changed a protected
+            # file (the five calls below), or, once per task, for the
+            # reviewer's located findings (the repair turn after them).
+            reviewer_issues = list(decision["issues"])
             decision["decision"] = "approve"
             self._persist_coach_decision(
                 decision, coach_output_path, tag="reviewer-advice", kind="annotated"
@@ -3275,6 +3099,17 @@ class AgentInvoker:
                 review=self._repair_review,
                 task_id=task_id,
                 turn=turn,
+                coach_output_path=coach_output_path,
+            )
+
+            # The one repair turn for the reviewer's located findings, or
+            # what this review leaves for the merge card.
+            self._apply_review_repair_turn(
+                decision=decision,
+                reviewer_issues=reviewer_issues,
+                task_id=task_id,
+                turn=turn,
+                turn_left=turn_left,
                 coach_output_path=coach_output_path,
             )
 
@@ -3336,46 +3171,29 @@ class AgentInvoker:
         evidence_bundle: Optional["CoachEvidenceBundle"],
         acceptance_criteria: Optional[List[Dict[str, str]]],
         gather_timeout: int,
+        change: Optional["ReviewChange"] = None,
+        sent_back: Sequence[Dict[str, Any]] = (),
+        document_paths: Sequence[str] = (),
     ) -> Optional[str]:
-        """Phase-A of the B-full investigating Coach: tool-using gather.
+        """The review's look-up pass: read-only, against the change and the code.
 
-        TASK-ARCH-COACHBFULL. Runs a tool-bound Coach invocation
-        (``Read``/``Bash``/``Grep``/``Glob`` — read-only, FB-004 preserved)
-        that INVESTIGATES the worktree (reads changed files, runs the focused
-        test, checks the ACs it is unsure about) and emits investigation
-        *findings text*, NOT a fenced JSON verdict. The findings are returned
-        as a string for the caller to thread into the toolless Phase-B
-        synthesis prompt.
+        The build reviewer design of 29 October 2026. It asks for
+        ``["Read", "Search", "Grep", "Glob"]``, so the harness builds its
+        read-only graph: read_file, ls, grep, glob and the code tools (with
+        ``code_references`` when the task's language servers were pinned in
+        this process), no write and no shell, bounded by the shared tool limit
+        (40 tool-using model turns, or a repeated identical call, then the
+        tools are withdrawn and the answer asked for). Each tool result is cut
+        at :data:`_COACH_GATHER_MAX_TOOL_RESULT_CHARS`; the pass has its slice
+        of the review's time.
 
-        **Strict dominance (AC-2).** This method NEVER raises an ordinary
-        exception: a tool-parse error (the run-18 HTTP-500 class can recur on
-        the tool-bound path), an SDK timeout, an ``AgentInvocationError``, or
-        empty findings all return ``None`` so the caller degrades to B-min
-        (synthesis over the deterministic bundle alone). The turn is never
-        failed by a broken gather.
-
-        **Cancellation (AC-5).** ``asyncio.CancelledError`` derives from
-        ``BaseException``, NOT ``Exception``, so it is deliberately NOT caught
-        here: a genuine operator cancellation mid-gather propagates to
-        ``invoke_coach``'s except blocks and aborts the turn rather than
-        silently burning the Phase-B budget. The per-call cancel monitor inside
-        ``_invoke_with_role`` (agent_invoker.py:3220) covers this gather call
-        the same way it covers any other invocation.
-
-        **Budget (AC-5).** ``self.sdk_timeout_seconds`` is set to
-        ``gather_timeout`` for the duration of the gather and restored in
-        ``finally`` so the subsequent Phase-B synthesis runs at the full
-        effective timeout.
-
-        Args:
-            gather_timeout: Per-invocation timeout slice for Phase A (already
-                bounded by the caller to a fraction of the effective Coach
-                timeout).
-
-        Returns:
-            The concatenated findings text, or ``None`` on any failure / empty
-            output (signal to degrade to B-min).
+        Returns the findings text, or ``None`` on any failure or an empty
+        answer: the verdict call then runs without it (a reviewer finding is
+        never a refusal). ``asyncio.CancelledError`` is not caught: a real
+        cancellation stops the review.
         """
+        from guardkit.orchestrator import build_review
+
         prev_timeout = self.sdk_timeout_seconds
         self.sdk_timeout_seconds = gather_timeout
         try:
@@ -3386,28 +3204,19 @@ class AgentInvoker:
                 player_report=player_report,
                 evidence_bundle=evidence_bundle,
                 acceptance_criteria=acceptance_criteria,
+                change=change,
+                sent_back=sent_back,
+                document_paths=document_paths,
             )
-            # Tool-bound, read-only Coach. synthesis=False ⇒ dispatched through
-            # harness.invoke (NOT invoke_synthesis); no grammar. return_events
-            # so we can extract the findings text from the typed stream.
             result_tuple = await self._invoke_with_role(
                 prompt=prompt,
                 agent_type="coach",
-                allowed_tools=["Read", "Bash", "Grep", "Glob"],
+                allowed_tools=list(build_review.LOOKUP_TOOLS),
                 permission_mode="bypassPermissions",
                 task_id=task_id,
                 turn=turn,
                 return_events=True,
                 synthesis=False,
-                # TASK-PERF-COACHSYNTH: bound the tool-using loop so it cannot
-                # overflow the model window (run-22 TP05 F20). recursion_limit
-                # caps tool-cycles; max_tool_result_chars caps single-result
-                # payloads. Both are LangGraph-only (dropped on the SDK path,
-                # which bounds cycles via max_turns). A runaway gather trips
-                # the recursion ceiling → GraphRecursionError → degrade to
-                # B-min (AC-2); the existing wall-clock budget (set above) is
-                # the third layer.
-                recursion_limit=_COACH_GATHER_RECURSION_LIMIT,
                 max_tool_result_chars=_COACH_GATHER_MAX_TOOL_RESULT_CHARS,
             )
             if result_tuple is None:
@@ -3428,20 +3237,20 @@ class AgentInvoker:
                 findings = _collect_assistant_reasoning(harness_events).strip()
             if not findings:
                 logger.info(
-                    "TASK-ARCH-COACHBFULL: Phase-A gather produced no findings "
-                    "for %s turn %s; degrading to B-min synthesis.",
+                    "[%s] Turn %s: the review's look-up pass gave no findings "
+                    "text; the verdict runs without it.",
                     task_id, turn,
                 )
                 return None
             logger.info(
-                "TASK-ARCH-COACHBFULL: Phase-A gather produced %d chars of "
-                "findings for %s turn %s.", len(findings), task_id, turn,
+                "[%s] Turn %s: the review's look-up pass gave %d characters of "
+                "findings.", task_id, turn, len(findings),
             )
             return findings
-        except Exception as exc:  # noqa: BLE001 — strict dominance: never fail the turn
+        except Exception as exc:  # noqa: BLE001 — the review goes on without it
             logger.warning(
-                "TASK-ARCH-COACHBFULL: Phase-A gather failed for %s turn %s "
-                "(%s: %s); degrading to B-min synthesis.",
+                "[%s] Turn %s: the review's look-up pass failed (%s: %s); the "
+                "verdict runs without it.",
                 task_id, turn, type(exc).__name__, exc,
             )
             return None
@@ -3457,83 +3266,34 @@ class AgentInvoker:
         player_report: Dict[str, Any],
         evidence_bundle: Optional["CoachEvidenceBundle"],
         acceptance_criteria: Optional[List[Dict[str, str]]],
+        change: Optional["ReviewChange"] = None,
+        sent_back: Sequence[Dict[str, Any]] = (),
+        document_paths: Sequence[str] = (),
     ) -> str:
-        """Build the Phase-A gather prompt (TASK-ARCH-COACHBFULL).
+        """The look-up pass's prompt (``build_review.build_lookup_prompt``):
+        the task, the change, the project's check, the builder's notes, any
+        findings sent back for repair, the project's document paths, and the
+        five questions."""
+        from guardkit.orchestrator import build_review
 
-        Frames the turn as an INVESTIGATION whose output is findings text — a
-        per-AC compliance checklist (the Block paper's ✅/❌ + notes) — and
-        explicitly NOT a fenced JSON verdict (that is Phase B's job). The
-        deterministic evidence bundle is rendered as
-        the starting dossier so the Coach knows what has already been checked
-        and where to focus its probing (read changed files, run the focused
-        test, confirm an AC it cannot confirm from the dossier alone).
-        """
-        # Reuse the existing renderers for the dossier the Coach starts from.
-        evidence_section = ""
+        check_section = ""
         if evidence_bundle is not None:
-            evidence_section = self._render_evidence_bundle_section(
-                evidence_bundle
+            check_section = self._render_evidence_bundle_section(evidence_bundle).strip()
+        if change is None:
+            change = build_review.ReviewChange(
+                "", None, None, "The change was not given to this review."
             )
-
-        # Per-AC checklist the gather must work through.
-        criteria_section = ""
-        if acceptance_criteria:
-            lines = [
-                "## Acceptance Criteria to Investigate",
-                "",
-                "Work through EACH criterion and report whether the worktree "
-                "actually satisfies it:",
-                "",
-            ]
-            for criterion in acceptance_criteria:
-                lines.append(f"- **{criterion['id']}**: {criterion['text']}")
-            criteria_section = "\n".join(lines) + "\n"
-
-        return f"""You are the Coach agent, performing an INVESTIGATION pass \
-(Phase A of two).
-
-Task ID: {task_id}
-Turn: {turn}
-
-**THIS IS NOT THE VERDICT.** Your job here is to INVESTIGATE and produce
-*findings*, which a second toolless pass will turn into the formal verdict. Do
-NOT emit a fenced ```json decision block in this response — emit prose findings.
-
-You have READ-ONLY tools: Read, Bash, Grep, Glob. On the local harness you may
-also have code_search (ranked code blocks or exact lines, tests included),
-code_outline (the symbols in a file or folder) and code_pattern (code by its
-syntax shape), all over this worktree including uncommitted files. Use them to
-verify the work on disk rather than trusting the Player's report:
-- Read the changed files named in the Player's report.
-- Run the focused test(s) for this task if a test command is available.
-- For any acceptance criterion you cannot confirm from the dossier below,
-  probe the code directly (grep for the required behaviour; check that the
-  implementation is real, not a stub returning a hardcoded default).
-- Treat a documented conflict or departure as unmet unless an authoritative
-  amended criterion changes the target. Do not recommend restoring unsafe
-  behaviour merely to make stale requirement text match.
-
-## Original Requirements
-
-{requirements}
-{criteria_section}## Player's Report
-
-{json.dumps(player_report, indent=2)}
-{evidence_section}
-## What to Produce
-
-A per-criterion compliance checklist — for EACH acceptance criterion, one line:
-
-    <AC-ID>: PASS|FAIL|UNSURE — what you checked and what you found
-
-Then a short "IMMEDIATE ACTIONS NEEDED" list naming any criterion that is
-unmet, stubbed, or unverifiable, with the file/line evidence you found.
-
-Be concrete and cite file paths and line numbers. These findings are advisory
-input to the verdict pass — absent or unverifiable evidence is a FAIL/UNSURE,
-never an assumed pass. End your response with the checklist; do not write a
-JSON verdict.
-"""
+        return build_review.build_lookup_prompt(
+            task_id=task_id,
+            turn=turn,
+            requirements=requirements,
+            acceptance_criteria=acceptance_criteria,
+            change=change,
+            check_section=check_section,
+            player_report=player_report,
+            sent_back=sent_back,
+            document_paths=document_paths,
+        )
 
     def _build_player_prompt(
         self,
@@ -3779,67 +3539,39 @@ Follow the report format specified in your agent definition.
         requirements: str,
         player_report: Dict[str, Any],
         acceptance_criteria: Optional[List[Dict[str, str]]] = None,
-        design_context: Optional["DesignContext"] = None,
         evidence_bundle: Optional["CoachEvidenceBundle"] = None,
         coach_context: Optional[str] = None,
-        synthesis: bool = False,
         gather_findings: Optional[str] = None,
-        project_documents: Optional[Sequence["ProjectDocument"]] = None,
     ) -> str:
-        """Build prompt for Coach agent invocation with promise verification.
+        """The verdict call's prompt (the build reviewer design of 29 October 2026).
 
-        Args:
-            task_id: Task identifier
-            turn: Turn number
-            requirements: Original task requirements
-            player_report: Player's report from current turn
-            acceptance_criteria: Optional list of acceptance criteria with id and text
-            design_context: Optional design context for visual verification
-            evidence_bundle: Optional ``CoachEvidenceBundle`` from
-                ``CoachValidator.gather_evidence`` (TASK-HMIG-008R Part C).
-                When provided, the bundle is JSON-rendered into a
-                ``<evidence_bundle>...</evidence_bundle>`` section.
-            coach_context: Optional memory / coach context string. When
-                provided, surfaced in a ``## Coach Context`` section.
-            synthesis: When ``True`` (TASK-ARCH-COACHSPLIT D-3), render the
-                TOOLLESS synthesis variant: the Coach has NO tools and bases
-                its verdict on the deterministic evidence bundle the
-                orchestrator already gathered (tests, coverage, honesty,
-                plan_audit, bdd, arch_review run independently in
-                ``gather_evidence``) rather than re-investigating with
-                Read/Bash/Grep/Glob. The "Your Responsibilities" section is
-                rewritten accordingly and a toolless-framing banner is added.
-                The Decision Format section is identical — the GBNF grammar
-                enforces the same schema the examples describe.
-            gather_findings: Optional Phase-A investigation findings text
-                (TASK-ARCH-COACHBFULL B-full). When provided, rendered into a
-                ``## Coach Investigation Findings (Phase A)`` section so the
-                toolless synthesis grounds its per-AC verdict on what the
-                tool-using gather pass actually found on disk. ``None`` (the
-                default, and the B-min path) omits the section entirely.
-            project_documents: Optional project instructions and binding
-                documents, rendered in full as a ``## Project documents``
-                section directly after the requirements and acceptance
-                criteria. The synthesis trimmer treats the section as
-                protected. ``None`` or empty omits it, so the prompt is exactly
-                what it was before the section existed.
-
-        Returns:
-            Formatted prompt string for Coach agent
+        Kept: the task and its criteria, the look-up pass's findings, the
+        project's check result (``evidence_bundle``), the builder's concerns,
+        its "remaining" list and git's file lists, and any memory context.
+        In a repair round, the whole-feature check and the round's files.
+        Not given any more: the project's documents in full (the look-up pass
+        reads the part a question needs), the builder's whole report, the
+        "no tools" attribution banner and its paperwork responsibilities, and
+        reply prose the grammar already forces.
         """
+        from guardkit.orchestrator import build_review
+
         # TASK-CMIR-002: contract resolution — must happen before any
-        # contract-aware rendering (guards, criteria, decision format).
+        # contract-aware rendering (criteria, decision format).
         contract = _resolve_coach_contract()
         is_v4 = contract == "v4"
 
-        # Build the evidence bundle section (Part C).
         evidence_section = ""
         if evidence_bundle is not None:
             evidence_section = self._render_evidence_bundle_section(
                 evidence_bundle
             )
+        else:
+            evidence_section = (
+                "\n## Deterministic Evidence Bundle\n\n"
+                "No check result was recorded for this turn.\n"
+            )
 
-        # Coach context section (memory / external context).
         coach_context_section = ""
         if coach_context:
             coach_context_section = f"""
@@ -3848,51 +3580,32 @@ Follow the report format specified in your agent definition.
 {coach_context}
 """
 
-        # TASK-ARCH-COACHBFULL: Phase-A investigation findings section. Rendered
-        # only when the B-full gather ran and produced findings; advisory input
-        # the toolless synthesis grounds its per-AC verdict on. Absent findings
-        # (B-min path) omit the section.
-        gather_findings_section = ""
         if gather_findings and gather_findings.strip():
-            # TASK-PERF-COACHSYNTH (AC-4): bound the findings text injected into
-            # the synthesis prompt — marked, never silently dropped.
-            _bounded_findings = self._truncate_gather_findings(gather_findings.strip())
-            gather_findings_section = f"""
-## Coach Investigation Findings (Phase A)
+            findings_body = self._truncate_gather_findings(gather_findings.strip())
+        else:
+            findings_body = (
+                "The look-up pass gave no findings (it failed, or ran out of time). "
+                "Report no finding you cannot see in the check result above."
+            )
+        findings_section = f"""
+## Look-up findings
 
-A tool-using investigation pass ran BEFORE this verdict and probed the worktree
-directly (read changed files, ran focused tests, checked acceptance criteria).
-Its findings — a per-criterion compliance checklist — are below. Treat them as
-authoritative evidence of what is actually on disk, on equal footing with the
-Deterministic Evidence Bundle. Where a finding marks a criterion FAIL or UNSURE,
-that criterion is NOT satisfied for approval purposes.
+A look-up pass read the change and the code with read-only tools and answered
+five questions. Its findings, one per line with a place in the code:
 
-{_bounded_findings}
+{findings_body}
 """
 
-        # Build acceptance criteria section for verification
         criteria_section = ""
         if acceptance_criteria:
             criteria_lines = ["## Acceptance Criteria to Verify", ""]
-            if is_v4:
-                criteria_lines.append("Verify EACH criterion against the evidence:")
-            else:
-                criteria_lines.append("Verify EACH criterion and create a criteria_verification entry:")
-            criteria_lines.append("")
             for criterion in acceptance_criteria:
                 criteria_lines.append(f"- **{criterion['id']}**: {criterion['text']}")
             criteria_section = "\n".join(criteria_lines) + "\n"
 
-        # Project initialisation design (4 October 2026): the project's own
-        # instructions and binding documents, whole, beside the requirements
-        # they bind — verdict-bearing, so never in the trailing coach_context.
-        project_documents_section = self._render_project_documents_section(
-            project_documents
-        )
         # 18 October 2026: in a whole-feature repair round only, the project's
         # whole-feature check, with what it printed on this turn's code and on
-        # the code that failed before. "" on every other turn, so the prompt
-        # outside a repair round is byte-identical to before.
+        # the code that failed before. "" on every other turn.
         whole_feature_check_section = self._render_whole_feature_check_section(
             evidence_bundle
         )
@@ -3902,273 +3615,101 @@ that criterion is NOT satisfied for approval purposes.
             getattr(self, "_repair_review", None)
         )
 
-        # Build criteria verification example (legacy only — v4 uses findings[])
-        verification_example = ""
-        if acceptance_criteria and not is_v4:
-            example_verifications = []
-            for criterion in acceptance_criteria[:2]:  # Show first 2 as examples
-                example_verifications.append(f'''    {{
-      "criterion_id": "{criterion['id']}",
-      "result": "verified",
-      "notes": "Your reasoning for verification or rejection"
-    }}''')
-            verification_example = f'''
-  "criteria_verification": [
-{",".join(example_verifications)}
-  ],'''
-
-        # Build visual verification section if design context provided
-        visual_verification_section = ""
-        if design_context:
-            visual_verification_section = f"""
-## Visual Verification (Design Mode)
-
-In addition to standard code review:
-1. Render the generated component in a browser
-2. Capture a screenshot
-3. Compare against design reference using SSIM
-4. Check prohibition checklist compliance
-5. Report: visual fidelity score + any constraint violations
-
-**Visual Reference**: {design_context.visual_reference or "Not available"}
-
-Quality Gates:
-- Visual fidelity: >= 95% SSIM match
-- Constraint violations: Zero tolerance
-- Design tokens: 100% applied (exact match)
-"""
-
-        # TASK-ARCH-COACHSPLIT (D-3): the synthesis variant frames the turn
-        # as evidence-grounded verdict synthesis with NO tools, and rewrites
-        # the responsibilities so the model does not try (and fail) to invoke
-        # Read/Bash/Grep/Glob — it has none. The deterministic evidence the
-        # tool-using gather phase would have sought has already been produced
-        # by CoachValidator.gather_evidence and is rendered above.
-        if synthesis:
-            # Only assert that a Deterministic Evidence Bundle was rendered when
-            # one actually exists. invoke_coach gates synthesis on bundle
-            # presence (synthesis ⇒ a bundle was passed), so the with-bundle
-            # banner is the production path; the no-bundle branch keeps this
-            # builder honest if it is ever invoked with synthesis=True and no
-            # bundle directly (so the prompt never claims evidence it lacks).
-            if evidence_bundle is not None:
-                # The bundle mixes execution receipts with report-derived
-                # facts.  Keep their attribution explicit so a generic
-                # independent check cannot be narrated as proof of unrelated
-                # Player-reported counts or coverage.
-                synthesis_banner = """\
-**TOOLLESS SYNTHESIS** — You have NO tools available (no Read, Bash, Grep, or
-Glob). Do not attempt to run tests or read files; you cannot. The Deterministic
-Evidence Bundle above contains execution receipts and report-derived facts;
-read each field according to its recorded receipt, provenance, and status. An
-independent receipt establishes only the command, output, and measurements it
-records. Player-reported test counts and coverage remain Player-reported unless
-an independent receipt records those measurements. A non-required or relaxed
-gate is not a measurement, and an exit-zero generic check does not certify an
-unrelated suite count or coverage percentage. Base your verdict ENTIRELY on
-that evidence, the acceptance criteria and the Player's report.
-
-"""
-            else:
-                _v4_feedback_not_approval = (
-                    "that is a REJECT, not approval"
-                    if is_v4
-                    else "that is FEEDBACK, not approval"
-                )
-                synthesis_banner = f"""\
-**TOOLLESS SYNTHESIS** — You have NO tools available (no Read, Bash, Grep, or
-Glob). Do not attempt to run tests or read files; you cannot. No deterministic
-evidence bundle was provided, so you have ONLY the acceptance criteria and the
-Player's report to reason from. Absent or
-unverifiable evidence is NOT a pass — when you cannot confirm a criterion from
-the information here, {_v4_feedback_not_approval}.
-
-"""
-            _v4_approve_or_feedback = (
-                "Either APPROVE or REJECT with specific findings"
-                if is_v4
-                else "Either APPROVE or provide specific FEEDBACK"
-            )
-            _v4_findings_instruction = (
-                "verify each criterion against the evidence"
-                if is_v4
-                else "create a criteria_verification entry for each criterion"
-            )
-            responsibilities = (
-                "## Your Responsibilities\n\n"
-                "1. Synthesise a verdict from the Deterministic Evidence "
-                "Bundle above — do NOT attempt to investigate (you have no "
-                "tools)\n"
-                "2. Preserve measurement attribution: independent_tests proves "
-                "only its recorded command, output, and measurements; tests and "
-                "coverage_details may contain Player-reported facts and keep "
-                "their recorded provenance; quality-gate required/relaxed state "
-                "is a decision, not a measurement\n"
-                "3. Verify EACH acceptance criterion against the evidence "
-                "systematically\n"
-                "4. A documented conflict or departure is not fulfilment. "
-                "Judge the exact criterion supplied here unless an "
-                "authoritative amended criterion is present; do not recommend "
-                "restoring unsafe behaviour merely to match stale text\n"
-                f"5. {_v4_findings_instruction}\n"
-                "6. " + _v4_approve_or_feedback
-            )
-        else:
-            synthesis_banner = ""
-            _v4_approve_or_feedback = (
-                "Either APPROVE or REJECT with specific findings"
-                if is_v4
-                else "Either APPROVE or provide specific FEEDBACK"
-            )
-            _v4_findings_instruction = (
-                "verify each criterion against the evidence"
-                if is_v4
-                else "create a criteria_verification entry for each criterion"
-            )
-            responsibilities = (
-                "## Your Responsibilities\n\n"
-                "1. Independently verify the Player's claims\n"
-                "2. Run the tests yourself (don't trust Player's report)\n"
-                "3. Verify EACH acceptance criterion systematically\n"
-                "4. A documented conflict or departure is not fulfilment. "
-                "Judge the exact criterion supplied here unless an "
-                "authoritative amended criterion is present; do not recommend "
-                "restoring unsafe behaviour merely to match stale text\n"
-                f"5. {_v4_findings_instruction}\n"
-                "6. " + _v4_approve_or_feedback
-            )
-
-       # TASK-CMIR-002: contract-aware Decision Format block.
-        # Under ``contract=v4`` the normative v4 block text is rendered
-        # VERBATIM (raw JSON, no fence, ``verdict`` + ``findings`` shape).
-        # Under ``contract=coachsplit`` the legacy fenced format is
-        # preserved byte-identically.
+        patterns = ", ".join(f"`{p}`" for p in build_review.FINDING_PATTERNS)
         if is_v4:
-            decision_format_block = (
-                "\n"
-                + _V4_DECISION_FORMAT_BLOCK
-                + "\n"
-            )
+            instructions = f"""
+## Your Responsibilities
+
+1. Turn each look-up finding of the five kinds ({patterns}) into one
+   finding whose locus is `PATTERN path:line: one plain sentence`. Keep its
+   words; add a finding only when the check result above plainly shows it
+   (`NOT_TESTED` when the check ran no test).
+2. A criterion that conflicts with a project document is advice: leave it out.
+3. Either APPROVE (no finding of the five kinds) or REJECT with those findings.
+"""
+        else:
+            instructions = f"""
+## Your Responsibilities
+
+1. Turn each look-up finding of the five kinds ({patterns}) into one issue,
+   with its `pattern` and its `location` (`path:line`). Keep its words; add a
+   finding only when the check result above plainly shows it (`NOT_TESTED`
+   when the check ran no test).
+2. A finding about a criterion that conflicts with a project document is
+   `CRITERION_CONFLICT`, severity "minor": advice.
+3. For each acceptance criterion, a `criteria_verification` entry: "verified"
+   unless a finding says the criterion is not done or not tested.
+4. Decide "approve" when there is no finding of the five kinds; otherwise
+   "feedback".
+"""
+
+        if is_v4:
+            decision_format_block = "\n" + _V4_DECISION_FORMAT_BLOCK + "\n"
         else:
             decision_format_block = f"""
 ## Decision Format
 
-End your response with a fenced JSON block. Do **NOT** use Bash to write a file —
-the orchestrator parses your decision directly from your response text.
-
-The fenced JSON block MUST appear at the end of your response, after all prose
-reasoning, in this exact form:
+End your response with one fenced ```json block, the last thing you write:
 
 ```json
 {{
   "task_id": "{task_id}",
   "turn": {turn},
   "decision": "approve" | "feedback",
-  ...fields as specified below...
-}}
-```
-
-For APPROVAL, the JSON block must contain:
-```json
-{{
-  "task_id": "{task_id}",
-  "turn": {turn},
-  "decision": "approve",
-  "validation_results": {{
-    "requirements_met": ["list", "of", "verified", "requirements"],
-    "tests_run": true,
-    "tests_passed": true,
-    "test_command": "command you ran",
-    "test_output_summary": "summary of test results",
-    "code_quality": "assessment",
-    "edge_cases_covered": ["list", "of", "edge", "cases"]
-  }},{verification_example}
-  "rationale": "Why you approved"
-}}
-```
-
-For FEEDBACK, the JSON block must contain:
-```json
-{{
-  "task_id": "{task_id}",
-  "turn": {turn},
-  "decision": "feedback",
   "issues": [
     {{
-      "type": "missing_requirement" | "test_failure" | "code_quality" | "edge_case",
-      "severity": "critical" | "major" | "minor",
-      "description": "Specific issue with file paths and line numbers",
-      "requirement": "Which requirement is affected",
+      "pattern": "NOT_TESTED",
+      "severity": "major",
+      "location": "src/notes/list.py:42",
+      "description": "One plain sentence: what is wrong and what the task or code says.",
       "suggestion": "How to fix it"
     }}
-  ],{verification_example}
-  "rationale": "Why you're providing feedback"
+  ],
+  "criteria_verification": [
+    {{"criterion_id": "AC-001", "result": "verified" | "rejected", "notes": "why"}}
+  ],
+  "validation_results": {{"tests_passed": true, "test_output_summary": "what the check printed"}},
+  "rationale": "One or two sentences"
 }}
 ```
 
-**IMPORTANT**: For each acceptance criterion, create a criteria_verification with:
-- criterion_id: The ID (e.g., "AC-001") matching the Player's completion_promise
-- result: "verified" if criterion is satisfied, "rejected" if not
-- notes: Your reasoning - what you checked and found
-
-**CRITICAL**: The fenced ```json block MUST be the last thing in your response.
-Do not write any prose after the closing ``` fence. If you emit exploratory JSON
-blocks earlier in your response (e.g. while sketching alternatives), the
-orchestrator takes only the **last** fenced block.
+Use `"issues": []` when there are no findings.
 """
 
-        prompt = f"""You are the Coach agent. Validate the Player's implementation.
+        prompt = f"""You are the Coach agent. Write the verdict for one builder turn from the findings below.
 
 Task ID: {task_id}
 Turn: {turn}
 
-{synthesis_banner}## Original Requirements
+## Original Requirements
 
 {requirements}
-{criteria_section}{project_documents_section}{whole_feature_check_section}{repair_round_section}
+{criteria_section}{whole_feature_check_section}{repair_round_section}
 ## Player's Report
 
-{json.dumps(player_report, indent=2)}
-{evidence_section}{gather_findings_section}{coach_context_section}{visual_verification_section}
-{responsibilities}
-{decision_format_block}
-"""
-        # TASK-SELFFIX-003: enforce the overall synthesis-prompt budget.
-        # Only applies to the synthesis path (toolless Coach verdict).
-        if synthesis:
-            # The whole-feature check section sits right after the project
-            # documents and is protected with them: never trimmed.
-            untrimmed = prompt
+The builder's concerns, what it says remains, and the files git saw it create and change:
+
+{build_review.render_builder_notes(player_report)}
+{evidence_section}{findings_section}{coach_context_section}{instructions}{decision_format_block}"""
+        # TASK-SELFFIX-003: enforce the overall verdict-prompt budget. The
+        # repair-round sections are never trimmed.
+        untrimmed = prompt
+        prompt = self._trim_synthesis_prompt(
+            untrimmed,
+            protected_section=whole_feature_check_section + repair_round_section,
+        )
+        # A repair round's section that did not survive is tried once more
+        # with only the gate's output cut shorter; the file lists are never
+        # cut. invoke_coach refuses the turn if it still did not survive.
+        sections = self._repair_round_sections(getattr(self, "_repair_review", None))
+        if sections and not any(section in prompt for section in sections):
+            shorter = sections[-1]
             prompt = self._trim_synthesis_prompt(
-                untrimmed,
-                protected_section=(
-                    project_documents_section
-                    + whole_feature_check_section
-                    + repair_round_section
-                ),
+                untrimmed.replace(repair_round_section, shorter, 1),
+                protected_section=whole_feature_check_section + shorter,
             )
-            # A repair round's section that did not survive is tried once more
-            # with only the gate's output cut shorter; the file lists are never
-            # cut. invoke_coach refuses the turn if it still did not survive.
-            sections = self._repair_round_sections(getattr(self, "_repair_review", None))
-            if sections and not any(section in prompt for section in sections):
-                shorter = sections[-1]
-                prompt = self._trim_synthesis_prompt(
-                    untrimmed.replace(repair_round_section, shorter, 1),
-                    protected_section=(
-                        project_documents_section
-                        + whole_feature_check_section
-                        + shorter
-                    ),
-                )
 
         return prompt
-
-    # ------------------------------------------------------------------
-    # Project documents in the Coach prompt (project initialisation design,
-    # 4 October 2026). The Player reads the project's binding documents with
-    # its tools; the synthesis Coach has no tools, so it is given their text.
-    # ------------------------------------------------------------------
 
     #: In a repair round the end of the gate's output is cut to this many
     #: characters when the full section does not fit the synthesis budget;
@@ -4388,6 +3929,60 @@ Turn: {turn}
             self.repair_round_inventory = None
             return _unavailable(str(exc) or type(exc).__name__)
 
+    def _apply_review_repair_turn(
+        self,
+        *,
+        decision: Dict[str, Any],
+        reviewer_issues: List[Any],
+        task_id: str,
+        turn: int,
+        turn_left: bool,
+        coach_output_path: "Path",
+    ) -> None:
+        """The one repair turn for the reviewer's located findings, or what
+        this review leaves for the merge card (the build reviewer design of
+        29 October 2026).
+
+        When no ordinary-code rule sent the turn back, the verdict has
+        findings of the five kinds with a ``path:line`` place, the task has a
+        turn left, this task has not had its repair turn, and
+        ``GUARDKIT_REVIEW_REPAIR_TURN`` is not off: the turn goes back to the
+        builder with ALL of those findings as its feedback, and the next
+        review checks them first. Otherwise the review's findings (at most
+        ten, advice included) are recorded as what it leaves
+        (``review_leftovers``), for the feature's build review notes.
+        Nothing is ever refused on a reviewer finding.
+        """
+        from guardkit.orchestrator import build_review
+
+        sent: Dict[str, List[Dict[str, Any]]] = self.__dict__.setdefault(
+            "_review_repair_sent", {}
+        )
+        located = build_review.located_findings(reviewer_issues)
+        if (
+            decision.get("decision") == "approve"
+            and located
+            and turn_left
+            and task_id not in sent
+            and build_review.repair_turn_enabled()
+        ):
+            sent[task_id] = located
+            others = [i for i in decision.get("issues") or [] if i not in reviewer_issues]
+            decision["issues"] = build_review.repair_issues(located) + others
+            decision["decision"] = "feedback"
+            decision[build_review.REPAIR_KEY] = True
+            decision[build_review.LEFTOVERS_KEY] = []
+            logger.info(
+                "[%s] Turn %s: the reviewer found %d located finding(s); the "
+                "builder gets one repair turn for them.",
+                task_id, turn, len(located),
+            )
+        else:
+            decision[build_review.LEFTOVERS_KEY] = build_review.leftovers(reviewer_issues)
+        self._persist_coach_decision(
+            decision, coach_output_path, tag="review-repair-turn", kind="annotated"
+        )
+
     def _enforce_repair_round_protected(
         self,
         *,
@@ -4546,62 +4141,15 @@ Turn: {turn}
         lines.append("")
         return "\n".join(lines)
 
-    @staticmethod
-    def _render_project_documents_section(
-        documents: Optional[Sequence["ProjectDocument"]],
-    ) -> str:
-        """Render the ``## Project documents`` section, or ``""`` for none."""
-        if not documents:
-            return ""
-        lines = [
-            "",
-            "## Project documents",
-            "",
-            "The project declares these documents as binding for its builds: "
-            "its own instructions, then its binding documents. Judge the "
-            "Player's work against them as well as against the requirements "
-            "above. Each is given in full as read from the task worktree; the "
-            "sha256 is of its exact bytes.",
-            "",
-        ]
-        for document in documents:
-            path = str(document.path).replace('"', "&quot;")
-            text = document.text if document.text.endswith("\n") else document.text + "\n"
-            lines.append(
-                f'<project_document path="{path}" sha256="{document.sha256}">\n'
-                f"{text}</project_document>"
-            )
-            lines.append("")
-        return "\n".join(lines)
-
-    def _record_coach_project_documents(
-        self,
-        task_id: str,
-        turn: int,
-        documents: Sequence["ProjectDocument"],
-        *,
-        section_sha256: Optional[str] = None,
-        refused: Optional[str] = None,
-    ) -> None:
-        """Write the turn record (see :func:`write_coach_project_documents_record`)."""
-        write_coach_project_documents_record(
-            self.worktree_path, task_id, turn, documents,
-            section_sha256=section_sha256, refused=refused,
-        )
-
     # ------------------------------------------------------------------
     # TASK-HMIG-008R Part C — Coach prompt rendering helpers.
     # ------------------------------------------------------------------
 
-    # TASK-PERF-COACHSYNTH (AC-4 / Lever C): cap the Phase-A gather findings
-    # text rendered into the Phase-B synthesis prompt. The gather is already
-    # bounded at the source (recursion_limit + per-tool-result truncation),
-    # but the findings the model *produces* can still be large; this is the
-    # final belt so the synthesis prompt size does not grow unbounded with
-    # gather volume (the run-20 latency creep). Truncation is MARKED, never
-    # silent — respecting absence-of-failure-is-not-success.md: a silently
-    # dropped tail would let the synthesis treat a partial checklist as
-    # complete. ~16 k chars ≈ ~4 k tokens of findings.
+    # TASK-PERF-COACHSYNTH (AC-4 / Lever C): cap the look-up findings text
+    # rendered into the verdict prompt. The look-up pass is bounded at the
+    # source (the tool limit and the per-tool-result cut), but the text the
+    # model writes can still be large. Truncation is MARKED, never silent.
+    # ~16 k chars ≈ ~4 k tokens of findings.
     _COACH_GATHER_FINDINGS_LIMIT_CHARS = int(
         os.environ.get("GUARDKIT_COACH_GATHER_FINDINGS_LIMIT_CHARS", "16000")
     )
@@ -4615,10 +4163,8 @@ Turn: {turn}
         elided = len(findings) - limit
         return (
             findings[:limit]
-            + f"\n\n... [Phase-A findings truncated for synthesis-prompt "
-            f"budget: {elided} more chars elided. Any acceptance criterion "
-            f"NOT explicitly marked PASS above is unverified — treat as "
-            f"FAIL/UNSURE, never an assumed pass.] ..."
+            + f"\n\n... [look-up findings cut here: {elided} more characters "
+            f"were not included.] ..."
         )
 
     # TASK-SELFFIX-003: overall synthesis-prompt budget.
@@ -4671,26 +4217,23 @@ Turn: {turn}
         "behavioural_oracle",
         "<evidence_bundle>",
         "## Deterministic Evidence Bundle",
-        "## Project documents",
     )
 
-    # Stands in for the protected project-documents section while the rest of
-    # the prompt is trimmed, so no trimming step can see, search or cut it.
-    _PROTECTED_SECTION_PLACEHOLDER = "\x00[guardkit: project documents]\x00"
+    # Stands in for the protected repair-round sections while the rest of the
+    # prompt is trimmed, so no trimming step can see, search or cut them.
+    _PROTECTED_SECTION_PLACEHOLDER = "\x00[guardkit: protected section]\x00"
 
     @classmethod
     def _trim_synthesis_prompt(cls, prompt: str, protected_section: str = "") -> str:
         """Enforce the synthesis-prompt budget, never touching ``protected_section``.
 
-        ``protected_section`` is the rendered ``## Project documents`` section
-        (project initialisation design, 4 October 2026). While the rest of the
-        prompt is trimmed it is replaced by a short placeholder, with the
-        budget reduced by its length, so no step — including the last-resort
-        tail cut — can cut inside it or mistake text inside a document for a
-        prompt section. It is then put back unchanged. If the placeholder
-        itself does not survive (only possible when the head of the prompt
-        alone overflows), the section is absent and the caller's hash check
-        refuses the turn; nothing is ever sent with a document cut short.
+        ``protected_section`` is a repair round's whole-feature check and file
+        sections. While the rest of the prompt is trimmed it is replaced by a
+        short placeholder, with the budget reduced by its length, so no step,
+        including the last-resort tail cut, can cut inside it. It is then put
+        back unchanged. If the placeholder itself does not survive (only
+        possible when the head of the prompt alone overflows), the section is
+        absent.
         """
         budget = cls._COACH_SYNTHESIS_MAX_CHARS
         if not protected_section or protected_section not in prompt:
@@ -4839,7 +4382,7 @@ Turn: {turn}
                     search_start = value_end
 
         # --- 3. Trim gather_findings if present and oversized ---
-        findings_marker = "## Coach Investigation Findings (Phase A)"
+        findings_marker = "## Look-up findings"
         findings_start = trimmed.find(findings_marker)
         if findings_start != -1:
             rest = trimmed[findings_start + len(findings_marker):]
@@ -5039,8 +4582,8 @@ Turn: {turn}
         A fresh task: the list AutoBuild kept in memory. A resumed task has
         none in memory, so the snapshot file's list (the builder's own server
         can do nothing its shell cannot). ``None`` means no
-        ``code_references``. The reviewer is never given them: factory builds
-        do not run its tool-using pass.
+        ``code_references``. The reviewer's are
+        :meth:`_reviewer_language_servers`.
         """
         if task_id is None:
             return None
@@ -5056,6 +4599,31 @@ Turn: {turn}
 
             snapshot = load_toolchain_snapshot(task_id, self.worktree_path)
             servers = snapshot.language_servers if snapshot is not None else None
+        if not servers:
+            return None
+        return [
+            server.model_dump(mode="json", exclude_none=True)
+            if hasattr(server, "model_dump") else dict(server)
+            for server in servers
+        ]
+
+    def _reviewer_language_servers(
+        self, task_id: Optional[str]
+    ) -> Optional[List[Dict[str, Any]]]:
+        """The ``toolchain.language_servers`` entries for the review's look-up pass.
+
+        The build reviewer design of 29 October 2026: only the list AutoBuild
+        kept in memory before the builder's first turn, never the snapshot
+        file (it sits where the builder's shell can write). A resumed task has
+        no list in memory, so its reviewer gets no ``code_references`` and
+        uses the literal search. ``None`` means no ``code_references``.
+        """
+        if task_id is None:
+            return None
+        pinned: Dict[str, Optional[List[Any]]] = getattr(
+            self, "_pinned_language_servers", {}
+        )
+        servers = pinned.get(task_id)
         if not servers:
             return None
         return [
@@ -5140,15 +4708,15 @@ Turn: {turn}
             recursion_limit: TASK-PERF-COACHSYNTH. Optional hard ceiling on
                 the LangGraph/DeepAgents super-step count for this single
                 invocation. ``None`` preserves the substrate default (25 on
-                LangGraph; ``max_turns`` governs the SDK). The Coach B-full
-                gather passes a small value so its tool-using loop cannot grow
-                unbounded and overflow the model window (run-22 TP05 F20).
-                Dropped on the SDK path (which bounds cycles via ``max_turns``).
+                LangGraph; ``max_turns`` governs the SDK). A specialist may
+                pass one; the review's look-up pass does not (its bound is the
+                shared tool limit, which ends with an answer). Dropped on the
+                SDK path (which bounds cycles via ``max_turns``).
             max_tool_result_chars: TASK-PERF-COACHSYNTH. Optional per-tool-
                 result truncation budget forwarded to
                 ``build_autobuild_backend``. ``None`` leaves tool results
-                uncapped (Player/synthesis behaviour). The Coach gather passes
-                a limit so a single ``read``/``grep``/``execute`` cannot dump
+                uncapped (Player/synthesis behaviour). The review's look-up
+                pass passes a limit so a single ``read``/``grep`` cannot dump
                 an unbounded payload into the running context. LangGraph-only.
             event_role: The role written on the ``llm.call`` event, when it
                 is not the permission role ``agent_type`` (13 October 2026:
@@ -5306,7 +4874,8 @@ Turn: {turn}
                 # TASK-PERF-COACHSYNTH: gather-bound knobs. Both default None
                 # (unbounded / substrate-default) and are popped by
                 # select_harness before the SDK harness sees them; only the
-                # LangGraph branch honours them. The Coach gather sets them.
+                # LangGraph branch honours them. The review's look-up pass
+                # sets the tool-result cut.
                 recursion_limit=recursion_limit,
                 max_tool_result_chars=max_tool_result_chars,
                 model=model,
@@ -5336,11 +4905,17 @@ Turn: {turn}
                 # The task's pinned `launch:` settings and scratch folders for
                 # the shell (LangGraph only). None without a task or a block.
                 launch_declaration=load_launch_snapshot(task_id, self.worktree_path),
-                # 29 October 2026: the builder's code_references settings
-                # (LangGraph only); none for the reviewer or a specialist.
+                # 29 October 2026: the code_references settings (LangGraph
+                # only): the builder's, and the review look-up pass's (the
+                # build reviewer design: in-memory only); none for the
+                # verdict call or a specialist.
                 language_servers=(
                     self._builder_language_servers(task_id)
-                    if agent_type == "player" and shell_role is None else None
+                    if agent_type == "player" and shell_role is None
+                    else self._reviewer_language_servers(task_id)
+                    if agent_type == "coach" and shell_role is None
+                    and allowed_tools and not synthesis
+                    else None
                 ),
                 # 19 October 2026: only when a caller names one (a specialist).
                 **({"shell_role": shell_role} if shell_role is not None else {}),

@@ -91,10 +91,9 @@ class TestContractResolution:
 
 
 LEGACY_DECISION_FORMAT_STRINGS = [
-    "fenced JSON block",
+    "fenced ```json block",
     "criteria_verification",
     '"decision": "approve" | "feedback"',
-    "takes only the **last** fenced block",
 ]
 
 
@@ -108,7 +107,6 @@ class TestV4DecisionFormatBlock:
             turn=1,
             requirements="test reqs",
             player_report={"files_modified": []},
-            synthesis=False,
         )
         assert '"verdict": "approve" | "reject"' in prompt
         assert '"findings": []' in prompt
@@ -123,7 +121,6 @@ class TestV4DecisionFormatBlock:
             turn=1,
             requirements="test reqs",
             player_report={"files_modified": []},
-            synthesis=False,
         )
         assert bad_str not in prompt, f"Legacy string found in v4 prompt: {bad_str!r}"
 
@@ -155,7 +152,6 @@ class TestV4VocabularySubstitutions:
             requirements="test reqs",
             player_report={"files_modified": []},
             evidence_bundle=CoachEvidenceBundle(gathering_status="complete"),
-            synthesis=True,
         )
         assert bad_phrase not in prompt, (
             f"Legacy vocabulary found in v4 prompt: {bad_phrase!r}"
@@ -172,10 +168,11 @@ class TestV4VocabularySubstitutions:
             player_report={"files_modified": []},
             acceptance_criteria=[{"id": "AC-001", "text": "Test criterion"}],
             evidence_bundle=CoachEvidenceBundle(gathering_status="complete"),
-            synthesis=True,
         )
-        assert "Either APPROVE or REJECT with specific findings" in prompt
-        assert "verify each criterion against the evidence" in prompt
+        # The build reviewer design of 29 October 2026: each finding's locus
+        # carries its pattern and place.
+        assert "or REJECT with those findings" in prompt
+        assert "`PATTERN path:line: one plain sentence`" in prompt
         assert "## Acceptance Criteria to Verify" in prompt
 
 
@@ -194,12 +191,11 @@ class TestCoachsplitBackwardCompatibility:
             turn=1,
             requirements="test reqs",
             player_report={"files_modified": []},
-            synthesis=False,
         )
         # Legacy format must be present
         assert '"decision": "approve" | "feedback"' in prompt
         assert "criteria_verification" in prompt
-        assert "fenced JSON block" in prompt
+        assert "fenced ```json block" in prompt
 
     def test_coachsplit_prompt_contains_legacy_vocabulary(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -212,10 +208,11 @@ class TestCoachsplitBackwardCompatibility:
             player_report={"files_modified": []},
             acceptance_criteria=[{"id": "AC-001", "text": "Test criterion"}],
             evidence_bundle=CoachEvidenceBundle(gathering_status="complete"),
-            synthesis=True,
         )
-        assert "Either APPROVE or provide specific FEEDBACK" in prompt
-        assert "create a criteria_verification entry" in prompt
+        # The build reviewer design of 29 October 2026: issues carry their
+        # pattern and place, and every criterion gets an entry.
+        assert '"pattern"' in prompt and '"location"' in prompt
+        assert "a `criteria_verification` entry" in prompt
         assert "## Acceptance Criteria to Verify" in prompt
 
 
@@ -239,7 +236,6 @@ class TestSynthesisBudgetV4Path:
             player_report=large_report,
             acceptance_criteria=[{"id": "AC-001", "text": "Test criterion"}],
             evidence_bundle=CoachEvidenceBundle(gathering_status="complete"),
-            synthesis=True,
         )
         # The prompt should still contain verdict-bearing markers
         # (behavioural_oracle and stub_scan only appear when present in evidence)
@@ -264,7 +260,6 @@ class TestSynthesisBudgetV4Path:
             player_report={"files_modified": []},
             acceptance_criteria=[{"id": "AC-001", "text": "Test criterion"}],
             evidence_bundle=CoachEvidenceBundle(gathering_status="complete"),
-            synthesis=True,
         )
         # Core verdict-bearing sections must survive
         assert "## Original Requirements" in prompt
@@ -290,7 +285,6 @@ class TestV4SpecByteCompare:
             turn=1,
             requirements="test reqs",
             player_report={"files_modified": []},
-            synthesis=False,
         )
         assert spec_text in prompt, (
             "v4 Decision Format block does not match spec verbatim"
@@ -325,7 +319,6 @@ class TestCoachsplitGoldenBaseline:
                 "files_created": [],
                 "tests_written": ["tests/test.py"],
             },
-            synthesis=False,
         )
         assert prompt == baseline, (
             "coachsplit prompt is NOT byte-identical to golden baseline"
