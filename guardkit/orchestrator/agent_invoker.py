@@ -2165,6 +2165,11 @@ class AgentInvoker:
         # invoker builds from git is then marked as shared and carries no
         # evidence for the task (build FEAT-2C42, 8 October 2026).
         self.shared_working_copy: bool = False
+        # 29 October 2026: each fresh task's ``toolchain.language_servers``,
+        # pinned in memory by AutoBuild before the builder's first turn
+        # (``pin_language_servers``); ``None`` when it declares none. A task
+        # missing here was resumed in a new process (``_language_servers_for``).
+        self._pinned_language_servers: Dict[str, Optional[List[Any]]] = {}
         # TASK-AB-XREPOEV01: declared sibling repos whose writes count as task
         # evidence (default empty -> undeclared sibling-repo writes stay
         # invisible, AC-003). Per-repo HEAD baselines are recorded alongside
@@ -4916,6 +4921,48 @@ Turn: {turn}
         """
         self._last_activity_monotonic = time.monotonic()
 
+    def pin_language_servers(
+        self, task_id: str, language_servers: Optional[List[Any]]
+    ) -> None:
+        """Keep a fresh task's pinned ``language_servers`` in memory: they
+        are what the builder's ``code_references`` uses."""
+        if not hasattr(self, "_pinned_language_servers"):
+            self._pinned_language_servers = {}
+        self._pinned_language_servers[task_id] = list(language_servers or []) or None
+
+    def _builder_language_servers(
+        self, task_id: Optional[str]
+    ) -> Optional[List[Dict[str, Any]]]:
+        """The ``toolchain.language_servers`` entries for this task's builder.
+
+        A fresh task: the list AutoBuild kept in memory. A resumed task has
+        none in memory, so the snapshot file's list (the builder's own server
+        can do nothing its shell cannot). ``None`` means no
+        ``code_references``. The reviewer is never given them: factory builds
+        do not run its tool-using pass.
+        """
+        if task_id is None:
+            return None
+        pinned: Dict[str, Optional[List[Any]]] = getattr(
+            self, "_pinned_language_servers", {}
+        )
+        if task_id in pinned:
+            servers = pinned[task_id]
+        else:
+            from guardkit.orchestrator.toolchain_declaration import (
+                load_toolchain_snapshot,
+            )
+
+            snapshot = load_toolchain_snapshot(task_id, self.worktree_path)
+            servers = snapshot.language_servers if snapshot is not None else None
+        if not servers:
+            return None
+        return [
+            server.model_dump(mode="json", exclude_none=True)
+            if hasattr(server, "model_dump") else dict(server)
+            for server in servers
+        ]
+
     async def _invoke_with_role(
         self,
         prompt: str,
@@ -5188,6 +5235,12 @@ Turn: {turn}
                 # The task's pinned `launch:` settings and scratch folders for
                 # the shell (LangGraph only). None without a task or a block.
                 launch_declaration=load_launch_snapshot(task_id, self.worktree_path),
+                # 29 October 2026: the builder's code_references settings
+                # (LangGraph only); none for the reviewer or a specialist.
+                language_servers=(
+                    self._builder_language_servers(task_id)
+                    if agent_type == "player" and shell_role is None else None
+                ),
                 # 19 October 2026: only when a caller names one (a specialist).
                 **({"shell_role": shell_role} if shell_role is not None else {}),
             )
@@ -8967,6 +9020,7 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                     launch_declaration=load_launch_snapshot(
                         task_id, self.worktree_path
                     ),
+                    language_servers=self._builder_language_servers(task_id),
                 )
 
                 # 3 October 2026: keep the scratch folder only if the

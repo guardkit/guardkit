@@ -1969,3 +1969,57 @@ class TestShellRoleReachesTheBackend:
             self._recording_factory(received), Path("/tmp/wt"), None
         )
         assert "shell_role" not in received
+
+
+class TestLanguageServersReachTheHarness:
+    """29 October 2026: the task's pinned ``language_servers`` reach
+    ``LangGraphHarness`` (the invoker passes them for the builder's
+    ``code_references``); an older guardkitfactory that cannot take them
+    still runs, without the tool. The selector itself does not look at the
+    role."""
+
+    _PINNED = [{"command": ["gopls"], "files": ["**/*.go"]}]
+
+    @_requires_guardkitfactory
+    def test_the_real_harness_receives_them(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        monkeypatch.setenv(_TEST_ENV_VAR, "langgraph")
+        harness = select_harness(
+            env_var=_TEST_ENV_VAR, model=MagicMock(), cwd=tmp_path,
+            harness_role="coach", language_servers=self._PINNED,
+        )
+        assert harness.language_servers == self._PINNED
+
+    def test_an_older_factory_runs_without_them(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        monkeypatch.setenv(_TEST_ENV_VAR, "langgraph")
+        captured = _install_fake_guardkitfactory(
+            monkeypatch, lambda worktree, **kwargs: worktree
+        )
+        with caplog.at_level(logging.INFO, logger=selector_module.__name__):
+            select_harness(
+                env_var=_TEST_ENV_VAR, model=MagicMock(), cwd=tmp_path,
+                harness_role="coach", language_servers=self._PINNED,
+            )
+        assert "harness" in captured
+        assert any("cannot take language_servers" in r.getMessage()
+                   for r in caplog.records)
+
+    def test_none_is_not_passed(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        monkeypatch.setenv(_TEST_ENV_VAR, "langgraph")
+        seen: list[dict[str, Any]] = []
+
+        class _Harness:
+            def __init__(self, **kwargs: Any) -> None:
+                seen.append(kwargs)
+
+        _install_fake_guardkitfactory(monkeypatch, lambda worktree, **kwargs: worktree)
+        sys.modules["guardkitfactory.harness"].LangGraphHarness = _Harness  # type: ignore[attr-defined]
+        select_harness(env_var=_TEST_ENV_VAR, model=MagicMock(), cwd=tmp_path,
+                       harness_role="coach", language_servers=None)
+        assert "language_servers" not in seen[0]

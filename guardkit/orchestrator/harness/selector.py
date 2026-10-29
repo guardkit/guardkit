@@ -1120,6 +1120,10 @@ def select_harness(
     # (``launch_declaration.load_launch_snapshot``). LangGraph only: the SDK
     # harness's shell inherits this process's environment and real ``HOME``.
     launch_declaration = harness_kwargs.pop("launch_declaration", None)
+    # 29 October 2026: the task's pinned ``toolchain.language_servers``
+    # entries, from the agent invoker's memory, for the builder's
+    # ``code_references``. LangGraph only.
+    language_servers = harness_kwargs.pop("language_servers", None)
 
     # Role is consumed by this selector so it never leaks into either
     # concrete constructor. LangGraph Player selects the required dcode route;
@@ -1367,6 +1371,17 @@ def select_harness(
                 )
         if player_config is not None:
             langgraph_kwargs["player_config"] = player_config
+        if language_servers is not None:
+            if _factory_accepts_kwarg(LangGraphHarness, "language_servers"):
+                langgraph_kwargs["language_servers"] = language_servers
+            else:
+                logger.info(
+                    "select_harness(langgraph): the installed guardkitfactory "
+                    "cannot take language_servers, so there is no "
+                    "code_references for this %s; it uses the literal code "
+                    "search instead.",
+                    harness_role or "harness",
+                )
         try:
             return LangGraphHarness(**langgraph_kwargs)
         except (TypeError, ValueError) as e:

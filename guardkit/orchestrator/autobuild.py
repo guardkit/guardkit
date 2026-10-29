@@ -1857,17 +1857,30 @@ class AutoBuildOrchestrator:
 
         A no-op (writes nothing) for every repo without a ``toolchain:``
         block, so existing builds stay byte-equivalent. Never raises.
+
+        The pinned ``language_servers`` are also kept in memory for the task,
+        read at this same moment, before any builder turn (29 October 2026).
+        The agent invoker passes them to the builder's ``code_references``, so
+        an edit to the snapshot file, which sits in a folder the builder can
+        write, changes nothing for this run (ai-transition
+        docs/designs/builder-tools-and-instructions-2026-10-29.md).
         """
+        language_servers = None
         try:
             from guardkit.orchestrator.toolchain_declaration import (
+                load_toolchain_snapshot,
                 snapshot_task_toolchain,
             )
 
-            snapshot_task_toolchain(
+            pinned = snapshot_task_toolchain(
                 task_id=task_id,
                 worktree_path=worktree.path,
                 repo_root=self.repo_root,
             )
+            if pinned is not None:
+                declaration = load_toolchain_snapshot(task_id, worktree.path)
+                if declaration is not None:
+                    language_servers = declaration.language_servers
         except Exception as exc:  # pragma: no cover - defensive
             logger.warning(
                 "TS-lane D.1b: toolchain snapshot failed for %s (%s) — the "
@@ -1875,6 +1888,9 @@ class AutoBuildOrchestrator:
                 task_id,
                 exc,
             )
+        invoker = getattr(self, "_agent_invoker", None)
+        if invoker is not None:
+            invoker.pin_language_servers(task_id, language_servers)
 
     @property
     def real_check_failed(self) -> bool:
