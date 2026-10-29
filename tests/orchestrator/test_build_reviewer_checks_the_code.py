@@ -402,3 +402,71 @@ def test_leftovers_reach_the_feature_build_review_notes(
         "description": "criterion 0 has no test",
     }
 
+
+def test_a_v4_criterion_conflict_reaches_the_summary_as_advice(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Codex review R3: under the v4 contract a finding carries only a locus.
+    A CRITERION_CONFLICT written as ``PATTERN path:line: sentence`` is kept,
+    goes to review_leftovers and the build review notes, and never gives a
+    repair turn; a located finding of the five kinds beside it still does."""
+    from guardkit.orchestrator.quality_gates.coach_evidence import CoachEvidenceBundle
+
+    monkeypatch.setenv("GUARDKIT_COACH_CONTRACT", "v4")
+    monkeypatch.delenv(build_review.REPAIR_TURN_ENV, raising=False)
+    conflict = {"locus": "CRITERION_CONFLICT docs/design.md:4: the criterion says null; "
+                         "the contract allows a timestamp"}
+    stub = {"locus": "STUB src/export.py:12: export() returns None and writes no file"}
+    verdicts = {1: [stub, conflict], 2: [conflict]}
+    prompts: List[str] = []
+
+    invoker = AgentInvoker.__new__(AgentInvoker)
+    invoker.worktree_path = tmp_path
+    invoker.sdk_timeout_seconds = 600
+    invoker._calculate_sdk_timeout = MagicMock(return_value=600)  # type: ignore[method-assign]
+
+    async def _iwr(**kwargs: Any) -> tuple:
+        if not kwargs.get("synthesis"):
+            return (None, [AssistantMessageEvent(text="findings"),
+                           ResultMessageEvent(session_id=None)])
+        prompts.append(kwargs["prompt"])
+        body = {"verdict": "reject", "findings": verdicts[kwargs["turn"]]}
+        return (None, [AssistantMessageEvent(text=json.dumps(body)),
+                       ResultMessageEvent(session_id=None)])
+
+    invoker._invoke_with_role = _iwr  # type: ignore[method-assign]
+
+    def review(turn: int) -> Dict[str, Any]:
+        result = asyncio.run(invoker.invoke_coach(
+            task_id=_TASK, turn=turn, requirements="reqs",
+            player_report={"files_modified": []},
+            evidence_bundle=CoachEvidenceBundle(gathering_status="complete"),
+            turn_left=True,
+        ))
+        assert result.success is True
+        return result.report
+
+    first = review(1)
+    # The verdict prompt asks for the conflict instead of discarding it.
+    assert "`CRITERION_CONFLICT path:line: one plain sentence`" in prompts[0]
+    assert "leave it out" not in prompts[0]
+    # Only the stub gets the repair turn.
+    assert first["decision"] == "feedback"
+    assert [(i["pattern"], i["location"]) for i in first["issues"]] == [
+        ("STUB", "src/export.py:12"),
+    ]
+
+    second = review(2)
+    assert second["decision"] == "approve"
+    assert second[build_review.LEFTOVERS_KEY] == [{
+        "pattern": "CRITERION_CONFLICT", "location": "docs/design.md:4",
+        "description": "the criterion says null; the contract allows a timestamp",
+    }]
+
+    path = build_review.write_feature_notes("FEAT-BR", [_TASK], tmp_path)
+    notes = json.loads(path.read_text())["notes"]
+    assert notes == [{
+        "task_id": _TASK, "pattern": "CRITERION_CONFLICT", "location": "docs/design.md:4",
+        "description": "the criterion says null; the contract allows a timestamp",
+    }]
+

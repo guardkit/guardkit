@@ -3624,7 +3624,9 @@ five questions. Its findings, one per line with a place in the code:
    finding whose locus is `PATTERN path:line: one plain sentence`. Keep its
    words; add a finding only when the check result above plainly shows it
    (`NOT_TESTED` when the check ran no test).
-2. A criterion that conflicts with a project document is advice: leave it out.
+2. A criterion that conflicts with a project document is one finding whose
+   locus is `CRITERION_CONFLICT path:line: one plain sentence`: advice for
+   the person approving the build; it does not decide the verdict.
 3. Either APPROVE (no finding of the five kinds) or REJECT with those findings.
 """
         else:
