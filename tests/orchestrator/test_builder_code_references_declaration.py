@@ -33,7 +33,10 @@ from guardkit.orchestrator.harness.adapter import (
     AssistantMessageEvent,
     ResultMessageEvent,
 )
-from guardkit.orchestrator.toolchain_declaration import toolchain_snapshot_paths
+from guardkit.orchestrator.toolchain_declaration import (
+    load_toolchain_snapshot,
+    toolchain_snapshot_paths,
+)
 
 _TASK = "TASK-REFS-001"
 _DECLARED = [
@@ -55,14 +58,14 @@ class _StubHarness:
         return None
 
 
-def _repo(tmp_path: Path) -> tuple:
+def _repo(tmp_path: Path, toolchain: Dict[str, Any] | None = None) -> tuple:
     root = tmp_path / "target-repo"
     worktree = root / ".guardkit" / "worktrees" / _TASK
     worktree.mkdir(parents=True)
+    if toolchain is None:
+        toolchain = {"test": "go test ./...", "language_servers": _DECLARED}
     (root / ".guardkit" / "config.yaml").write_text(
-        yaml.safe_dump({"toolchain": {"test": "go test ./...",
-                                      "language_servers": _DECLARED}}),
-        encoding="utf-8",
+        yaml.safe_dump({"toolchain": toolchain}), encoding="utf-8",
     )
     return root, worktree
 
@@ -175,3 +178,17 @@ async def test_the_task_work_builder_gets_the_pinned_list(tmp_path: Path) -> Non
         await invoker._invoke_task_work_implement(task_id=_TASK)
     assert seen and seen[0]["harness_role"] == "player"
     assert seen[0]["language_servers"] == _DECLARED
+
+
+@pytest.mark.asyncio
+async def test_a_declaration_of_only_language_servers_reaches_the_builder(
+    tmp_path: Path,
+) -> None:
+    """A project that declares servers and no commands still gets the tool, and
+    its test command stays undeclared (Codex implementation review R1)."""
+    root, worktree = _repo(tmp_path, {"language_servers": _DECLARED})
+    invoker = _fresh_task(root, worktree)
+
+    assert (await _harness_kwargs(invoker, "player"))["language_servers"] == _DECLARED
+    pinned = load_toolchain_snapshot(_TASK, worktree)
+    assert pinned is not None and pinned.test is None

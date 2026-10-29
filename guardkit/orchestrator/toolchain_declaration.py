@@ -411,9 +411,13 @@ class ToolchainDeclaration(_ToolchainCommands):
         """True for a ``toolchain: {}`` block that declares nothing at all.
 
         A block that declares ONLY ``components:`` is NOT empty — dropping it
-        would silently un-declare every component task in the repo.
+        would silently un-declare every component task in the repo. Nor is one
+        that declares only ``language_servers:`` (29 October 2026): dropping it
+        would take the builder's references tool away for no reason. With no
+        ``test:`` the declared test command is still None, so test detection
+        runs as before.
         """
-        return super().is_empty and not self.components
+        return super().is_empty and not self.components and not self.language_servers
 
     @property
     def component_names(self) -> List[str]:
