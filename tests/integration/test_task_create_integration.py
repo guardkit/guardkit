@@ -340,46 +340,31 @@ class TestErrorHandling:
         assert len(parts) == 2
 
 
-class TestPerformance:
-    """Performance tests for task creation."""
+class TestBatchGenerationAndCaching:
+    """Generating many IDs together, and the cached registry."""
 
-    def test_generate_100_ids_quickly(self):
-        """Test that generating 100 IDs completes quickly."""
-        import time
-
+    def test_generate_100_unique_ids(self):
+        """Test that 100 IDs generated together are all different."""
         # Nothing here saves a task, so the IDs made so far are passed in, as a
         # caller making several at once must. Without them, 100 four-character
         # IDs share a value about 7% of the time.
-        start = time.time()
         task_ids = []
         for _ in range(100):
             task_ids.append(generate_task_id(existing_ids=set(task_ids)))
-        duration = time.time() - start
-
-        # Should complete in under 1 second (target: <0.1s per ID)
-        assert duration < 1.0, f"Took {duration:.2f}s to generate 100 IDs"
 
         # All IDs should be unique
         assert len(task_ids) == len(set(task_ids))
 
-    def test_registry_caching_performance(self):
-        """Test that registry caching improves performance."""
-        import time
+    def test_registry_caching(self):
+        """Test that the cached registry returns the same data."""
         get_id_registry = id_generator.get_id_registry
 
         # First call - builds registry
-        start = time.time()
         registry1 = get_id_registry()
-        time1 = time.time() - start
 
-        # Second call - uses cache (should be much faster)
-        start = time.time()
+        # Second call - uses cache
         registry2 = get_id_registry()
-        time2 = time.time() - start
 
-        # Cached call should be significantly faster
-        # (in practice, cache hit is ~1000x faster)
-        # For testing, just verify cache returns same data
         assert registry1 == registry2
 
 

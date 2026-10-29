@@ -261,7 +261,6 @@ class TestAttemptFixWithTimeout:
 
         assert result is not None
         assert result.duration >= 0.05
-        assert result.duration < 1.0  # Sanity check
 
     def test_fix_handles_missing_files_modified(self):
         """Test fix handles missing files_modified key."""

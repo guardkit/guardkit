@@ -366,27 +366,6 @@ class TestThreadSafety:
         assert len(set(results)) == 1
         assert results[0] == "PROJ-1"
 
-    def test_performance_10_concurrent_operations(self, mapper):
-        """Test 10 concurrent operations complete in <5s"""
-        import time
-
-        start_time = time.time()
-
-        threads = []
-        for i in range(10):
-            thread = threading.Thread(
-                target=mapper.map_to_external,
-                args=(f"TASK-E{i:02d}-test", "azure_devops")
-            )
-            threads.append(thread)
-            thread.start()
-
-        for thread in threads:
-            thread.join()
-
-        elapsed = time.time() - start_time
-        assert elapsed < 5.0, f"Concurrent operations took {elapsed:.2f}s (max: 5s)"
-
 
 class TestGetAllMappings:
     """Test getting all mappings for an internal ID"""

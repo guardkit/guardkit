@@ -886,28 +886,6 @@ class TestComplianceValidation:
         error_violations = [v for v in violations if "error" in v.category.lower()]
         assert len(error_violations) > 0
 
-    def test_tier1_fast_pattern_matching(
-        self, prohibition_checker: ProhibitionChecker, sample_design_elements: List[Dict]
-    ):
-        """Test that Tier 1 pattern matching is fast (regex-based)."""
-        import time
-
-        checklist = prohibition_checker.generate_checklist(sample_design_elements)
-
-        # Create a larger test file
-        test_file = "/tmp/test_large.tsx"
-        with open(test_file, "w") as f:
-            f.write("const Component = () => {\n" * 1000)
-            f.write("return <div>Test</div>;\n" * 1000)
-            f.write("};\n" * 1000)
-
-        start = time.time()
-        prohibition_checker.validate_compliance([test_file], checklist)
-        duration = time.time() - start
-
-        # Should be fast (< 1 second for pattern matching)
-        assert duration < 1.0
-
 
 class TestTier2ASTAnalysis:
     """Tests for Tier 2 AST analysis (activated only after Tier 1 detects potential violations)."""

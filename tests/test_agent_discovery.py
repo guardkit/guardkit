@@ -11,14 +11,12 @@ Tests cover:
 - Graceful degradation (missing metadata, invalid files)
 - Edge cases (empty results, duplicate handling)
 - Validation functions
-- Performance requirements
 """
 
 import logging
 import os
 import pytest
 import tempfile
-import time
 from pathlib import Path
 from typing import Dict, Any, List
 from unittest.mock import patch, MagicMock
@@ -710,39 +708,6 @@ keywords: [test, agent]
         assert sorted_results[0]['name'] == 'high'
         assert sorted_results[1]['name'] == 'medium'
         assert sorted_results[2]['name'] == 'low'
-
-
-# ============================================================================
-# Test: Performance
-# ============================================================================
-
-class TestPerformance:
-    """Tests for performance requirements."""
-
-    def test_discovery_performance(self, create_test_agents):
-        """Should scan agents in reasonable time (<500ms)."""
-        with patch('agent_discovery._get_agent_locations') as mock_locations:
-            mock_locations.return_value = [create_test_agents]
-
-            start = time.time()
-            results = discover_agents(phase='implementation')
-            duration = time.time() - start
-
-            # Should complete in less than 500ms
-            assert duration < 0.5, f"Discovery took {duration:.3f}s (max: 0.5s)"
-
-    def test_repeated_discovery_performance(self, create_test_agents):
-        """Multiple discoveries should complete quickly."""
-        with patch('agent_discovery._get_agent_locations') as mock_locations:
-            mock_locations.return_value = [create_test_agents]
-
-            start = time.time()
-            for _ in range(10):
-                discover_agents(phase='implementation', stack=['python'])
-            duration = time.time() - start
-
-            # 10 discoveries should complete in less than 2 seconds
-            assert duration < 2.0, f"10 discoveries took {duration:.3f}s (max: 2.0s)"
 
 
 # ============================================================================

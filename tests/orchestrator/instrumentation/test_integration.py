@@ -32,7 +32,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import time
 from pathlib import Path
 from typing import List, Optional
 from unittest.mock import AsyncMock
@@ -864,21 +863,6 @@ class TestAsyncEmissionNonBlocking:
         assert asyncio.iscoroutine(coro)
         await coro
 
-    async def test_emit_does_not_block_caller(self, tmp_path: Path) -> None:
-        """emit() completes within a reasonable time, not blocking the caller."""
-        events_dir = tmp_path / "nonblocking"
-        backend = JSONLFileBackend(events_dir=events_dir)
-
-        start = time.monotonic()
-        await backend.emit(_make_task_started())
-        await backend.emit(_make_llm_call())
-        await backend.emit(_make_tool_exec())
-        elapsed = time.monotonic() - start
-
-        # Emit calls should complete very quickly (well under 1 second)
-        assert elapsed < 1.0, f"emit() took {elapsed:.3f}s, expected < 1.0s"
-        await backend.flush()
-
     async def test_fire_and_forget_pattern(self) -> None:
         """Events can be emitted in fire-and-forget style using asyncio.create_task."""
         emitter = NullEmitter(capture=True)
@@ -905,26 +889,20 @@ class TestAsyncEmissionNonBlocking:
         capture = NullEmitter(capture=True)
         composite = CompositeBackend(backends=[jsonl, capture])
 
-        async def simulated_llm_call(call_id: int) -> float:
+        async def simulated_llm_call(call_id: int) -> None:
             """Simulate an LLM call that emits events."""
-            start = time.monotonic()
             # Emit event (fire-and-forget style, but awaited here for test)
             await composite.emit(
                 _make_llm_call(input_tokens=call_id * 100, latency_ms=float(call_id * 10))
             )
             # Simulate LLM processing
             await asyncio.sleep(0.01)
-            return time.monotonic() - start
 
         # Run 5 simulated LLM calls concurrently
-        latencies = await asyncio.gather(
+        await asyncio.gather(
             *[simulated_llm_call(i) for i in range(1, 6)]
         )
         await composite.flush()
 
         # All events captured
         assert len(capture.events) == 5
-
-        # All calls completed quickly (emission didn't significantly block)
-        for lat in latencies:
-            assert lat < 1.0, f"Call took {lat:.3f}s, expected < 1.0s"

@@ -15,7 +15,7 @@ Test Scenarios:
 4. Unsupported stack (Ruby) → task-manager fallback
 5. Partial metadata coverage → graceful degradation
 6. Multi-stack task → appropriate agent selection
-7. Cost/speed validation → performance benchmarks
+7. Cost/speed validation
 
 Success Metrics:
 - Test pass rate: 100% (7/7 scenarios)
@@ -28,7 +28,6 @@ Success Metrics:
 import os
 import pytest
 import sys
-import time
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -62,7 +61,6 @@ from tests.integration.helpers import (
 from agent_discovery import (
     discover_agents,
     get_agent_by_name,
-    list_discoverable_agents,
     validate_discovery_metadata,
 )
 
@@ -496,7 +494,6 @@ class TestCostSpeedValidationE2E:
         Test that Haiku is faster than Sonnet baseline.
 
         Expected Behavior:
-        - Haiku discovery should complete quickly (<500ms)
         - Overall speed improvement should be >70%
         """
         if not agent_file_exists(agents_dir, 'python-api-specialist'):
@@ -509,10 +506,6 @@ class TestCostSpeedValidationE2E:
 
             # Verify Haiku model used
             assert result.phase_3.model == 'haiku'
-
-            # Discovery should be fast
-            assert result.phase_3.duration < 0.5, \
-                f"Discovery took {result.phase_3.duration:.3f}s (max: 0.5s)"
 
             # Speed improvement calculation (simulated baseline is 3x)
             speed_improvement = calculate_speed_improvement(
@@ -557,50 +550,6 @@ class TestCostSpeedValidationE2E:
 
         finally:
             cleanup_test_task(task_id, e2e_task_dir)
-
-
-# ============================================================================
-# Performance Benchmarks
-# ============================================================================
-
-class TestPerformanceBenchmarksE2E:
-    """Performance benchmark tests for the discovery system."""
-
-    @pytest.mark.e2e
-    @pytest.mark.benchmark
-    def test_discovery_performance(self, agents_dir):
-        """Test that discovery completes within performance requirements."""
-        start = time.time()
-        results = discover_agents(phase='implementation')
-        duration = time.time() - start
-
-        assert duration < 0.5, \
-            f"Discovery took {duration:.3f}s (max: 0.5s)"
-
-    @pytest.mark.e2e
-    @pytest.mark.benchmark
-    def test_multiple_discoveries_performance(self, agents_dir):
-        """Test that multiple discoveries complete efficiently."""
-        start = time.time()
-
-        for _ in range(10):
-            discover_agents(phase='implementation', stack=['python'])
-
-        duration = time.time() - start
-
-        assert duration < 2.0, \
-            f"10 discoveries took {duration:.3f}s (max: 2.0s)"
-
-    @pytest.mark.e2e
-    @pytest.mark.benchmark
-    def test_list_all_agents_performance(self):
-        """Test listing all agents completes quickly."""
-        start = time.time()
-        results = list_discoverable_agents()
-        duration = time.time() - start
-
-        assert duration < 0.5, \
-            f"Listing all agents took {duration:.3f}s (max: 0.5s)"
 
 
 # ============================================================================

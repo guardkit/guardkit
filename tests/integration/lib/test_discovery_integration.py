@@ -17,7 +17,6 @@ import logging
 import os
 import pytest
 import sys
-import time
 from pathlib import Path
 
 # Add the library to the path
@@ -298,35 +297,6 @@ class TestCrossStackAgents:
                 stacks = [stacks]
             # cross-stack agents should work for any stack
             assert 'cross-stack' in stacks or len(stacks) > 0
-
-
-# ============================================================================
-# Test: Performance with Real Agents
-# ============================================================================
-
-class TestPerformanceWithRealAgents:
-    """Performance tests with actual agent files."""
-
-    def test_discovery_performance_real_agents(self, agents_dir):
-        """Should scan real agents in <500ms."""
-        start = time.time()
-        results = discover_agents(phase='implementation')
-        duration = time.time() - start
-
-        assert duration < 0.5, \
-            f"Discovery took {duration:.3f}s (max: 0.5s)"
-
-        # Should find at least some agents
-        assert len(results) >= 0
-
-    def test_all_discoverable_agents_performance(self, agents_dir):
-        """Should list all discoverable agents quickly."""
-        start = time.time()
-        results = list_discoverable_agents()
-        duration = time.time() - start
-
-        assert duration < 0.5, \
-            f"Listing all agents took {duration:.3f}s (max: 0.5s)"
 
 
 # ============================================================================

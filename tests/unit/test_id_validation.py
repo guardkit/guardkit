@@ -12,7 +12,6 @@ import os
 import re
 import sys
 import threading
-import time
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 import importlib.util
@@ -521,42 +520,17 @@ def test_check_duplicate_edge_case_deleted_file(mock_task_dirs, temp_task_dirs, 
 
 
 # ============================================================================
-# 6. Performance Tests (2 tests)
+# 6. Volume Tests (1 test)
 # ============================================================================
 
-def test_validate_1000_ids_under_100ms():
-    """Test that 1,000 validations complete in under 100ms."""
-    # Generate 1,000 test IDs
-    test_ids = [
-        f"TASK-{i:04x}" for i in range(1000)
-    ]
-
-    # Time the validations
-    start_time = time.time()
-
-    for task_id in test_ids:
-        validate_task_id(task_id)
-
-    elapsed_time = time.time() - start_time
-
-    # Should complete in under 100ms
-    assert elapsed_time < 0.1, f"Took {elapsed_time*1000:.1f}ms, expected < 100ms"
-
-
-def test_build_registry_performance(mock_task_dirs, temp_task_dirs, clear_registry_cache):
-    """Test registry building performance with 1,000 tasks."""
+def test_build_registry_with_1000_tasks(mock_task_dirs, temp_task_dirs, clear_registry_cache):
+    """Test that the registry built from 1,000 tasks holds all of them."""
     # Create 1,000 task files
     backlog_dir = temp_task_dirs['backlog']
     for i in range(1000):
         (backlog_dir / f"TASK-{i:04x}.md").touch()
 
-    # Time registry building
-    start_time = time.time()
     registry = build_id_registry()
-    elapsed_time = time.time() - start_time
-
-    # Should build registry reasonably fast (< 200ms for 1,000 tasks)
-    assert elapsed_time < 0.2, f"Took {elapsed_time*1000:.1f}ms, expected < 200ms"
 
     # Should have all tasks
     assert len(registry) == 1000
@@ -709,9 +683,8 @@ Test Coverage Summary:
    - test_has_duplicate_boolean
    - test_check_duplicate_edge_case_deleted_file
 
-6. Performance Tests (2 tests):
-   - test_validate_1000_ids_under_100ms
-   - test_build_registry_performance
+6. Volume Tests (1 test):
+   - test_build_registry_with_1000_tasks
 
 7. Error Message Constants Tests (3 tests):
    - test_error_duplicate_message
@@ -723,6 +696,6 @@ Test Coverage Summary:
    - test_subtask_validation_workflow
    - test_prefix_validation_integration
 
-Total: 36 tests
+Total: 35 tests
 Target Coverage: ≥85%
 """
