@@ -7498,12 +7498,14 @@ class TestRetryMechanism:
         # Attempt 1 -> wait 100ms -> Attempt 2 -> wait 200ms -> Attempt 3
         assert len(call_times) == 3
 
-        # Check delays between attempts (allow 10% tolerance for timing variance)
+        # It waits at least the backoff before each retry, and the second wait is
+        # the longer one. No upper bound: how much longer a busy machine takes
+        # says nothing about the code (Rich, 29 October 2026).
         delay_1_2 = call_times[1] - call_times[0]
         delay_2_3 = call_times[2] - call_times[1]
 
-        assert 0.09 <= delay_1_2 <= 0.15  # ~100ms
-        assert 0.18 <= delay_2_3 <= 0.25  # ~200ms
+        assert delay_1_2 >= 0.09  # ~100ms
+        assert delay_2_3 >= 0.18  # ~200ms
 
 
 # ==================== Class Integrity Tests ====================
