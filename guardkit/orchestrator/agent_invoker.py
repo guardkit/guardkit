@@ -188,6 +188,85 @@ def _normalise_terminal_usage(usage: object) -> Dict[str, Any]:
     return normalised
 
 
+# The 29 October 2026 builder skills change: which of the project's declared
+# skill files and documents the builder opened. At most this many distinct paths
+# per kind are recorded, from at most this many read calls per attempt.
+_DECLARED_READS_LIMIT = 64
+_DECLARED_READ_CALLS_LIMIT = 4096
+_READ_FILE_TOOLS = frozenset({"read_file", "read"})
+
+
+def _read_file_path(name: object, tool_input: object) -> Optional[str]:
+    """The path a read_file (or SDK Read) call asked for, else ``None``."""
+    if not isinstance(name, str) or name.casefold() not in _READ_FILE_TOOLS:
+        return None
+    if not isinstance(tool_input, dict):
+        return None
+    path = tool_input.get("file_path", tool_input.get("path"))
+    return path if isinstance(path, str) and path else None
+
+
+def _declared_reads(worktree: Path, read_paths: Sequence[str]) -> Dict[str, Any]:
+    """Which declared skill files and documents the builder read, with counts.
+
+    Rich asked on 29 October 2026 whether the builder uses the installed
+    skills; this records it for each builder turn. Only paths the project
+    declares are kept: files inside an ``autobuild.player.skills`` folder
+    (``skills``) and the ``autobuild.player.required_documents``
+    (``documents``), each as a repository-relative path (links such as
+    ``.agents/skills`` resolved) with the number of read_file calls. Every
+    other path is ignored and no file content is kept. It only records:
+    nothing here can refuse or change the work, and a failure leaves the
+    record empty with ``"unavailable": true``.
+    """
+    record: Dict[str, Any] = {"skills": {}, "documents": {}, "truncated": False}
+    try:
+        from guardkit.orchestrator.harness.selector import (
+            _load_player_project_inputs,
+        )
+
+        root = Path(os.path.realpath(worktree))
+        inputs = _load_player_project_inputs(Path(worktree))
+        skill_roots = [
+            resolved
+            for resolved in (
+                Path(os.path.realpath(root / value)) for value in inputs["skills"]
+            )
+            if resolved.is_relative_to(root)
+        ]
+        documents = {
+            Path(os.path.realpath(root / value))
+            for value in inputs["required_documents"]
+        }
+        for raw in read_paths:
+            candidate = Path(raw)
+            if not candidate.is_absolute():
+                candidate = root / candidate
+            resolved = Path(os.path.realpath(candidate))
+            if not resolved.is_relative_to(root):
+                continue
+            if resolved in documents:
+                bucket = record["documents"]
+            elif any(resolved.is_relative_to(skill) for skill in skill_roots):
+                bucket = record["skills"]
+            else:
+                continue
+            relative = resolved.relative_to(root).as_posix()
+            if relative not in bucket and len(bucket) >= _DECLARED_READS_LIMIT:
+                record["truncated"] = True
+                continue
+            bucket[relative] = bucket.get(relative, 0) + 1
+    except Exception as exc:  # noqa: BLE001 - a record never stops the work
+        logger.debug("Declared reads not recorded: %s", exc)
+        record = {
+            "skills": {},
+            "documents": {},
+            "truncated": False,
+            "unavailable": True,
+        }
+    return record
+
+
 def _build_task_work_runtime_evidence(
     *,
     harness_name: str,
@@ -203,8 +282,13 @@ def _build_task_work_runtime_evidence(
     sdk_turns_used: Optional[int],
     sdk_max_turns: Optional[int],
     wall_timeout_seconds: int,
+    declared_reads: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """Build bounded, payload-free evidence for one selected attempt."""
+    """Build bounded, payload-free evidence for one selected attempt.
+
+    ``declared_reads`` (see :func:`_declared_reads`) is added as it is when
+    given: declared paths and counts only.
+    """
     use_positions: Dict[str, List[int]] = {}
     result_values: Dict[str, List[bool]] = {}
     missing_use_ids = 0
@@ -264,7 +348,7 @@ def _build_task_work_runtime_evidence(
     else:
         ceiling_hit = None
 
-    return {
+    evidence: Dict[str, Any] = {
         "schema_version": 1,
         "attempt": {
             "selected": selected_attempt,
@@ -317,6 +401,9 @@ def _build_task_work_runtime_evidence(
             },
         },
     }
+    if declared_reads is not None:
+        evidence["declared_reads"] = declared_reads
+    return evidence
 
 # TASK-FIX-RWOP1.3.1: Agent-invocations validation on the producer path.
 # task-work.md Step 6.5 declares validate_agent_invocations as "the ONLY
@@ -8948,6 +9035,7 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
         terminal_usage: object = None
         typed_tool_uses: List[Tuple[str, str]] = []
         typed_tool_results: List[Tuple[str, bool]] = []
+        typed_read_paths: List[str] = []
         attempt_wall_duration_ms = 0
 
         try:
@@ -8964,6 +9052,7 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                 terminal_usage = None
                 typed_tool_uses = []
                 typed_tool_results = []
+                typed_read_paths = []
                 attempt_started_ns = time.monotonic_ns()
 
                 # Construct the harness. select_harness() routes via
@@ -9117,6 +9206,15 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                                             _tool_category,
                                         )
                                     )
+                                    _read_path = _read_file_path(
+                                        event.name, event.input
+                                    )
+                                    if (
+                                        _read_path is not None
+                                        and len(typed_read_paths)
+                                        < _DECLARED_READ_CALLS_LIMIT
+                                    ):
+                                        typed_read_paths.append(_read_path)
                                     # 2026-09-21 repair. Every harness yields
                                     # one typed event per tool call; only the
                                     # hosted one also fills ``event.raw``, and
@@ -9366,6 +9464,7 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                 sdk_turns_used=reported_sdk_turns,
                 sdk_max_turns=reported_sdk_max_turns,
                 wall_timeout_seconds=self.sdk_timeout_seconds,
+                declared_reads=_declared_reads(self.worktree_path, typed_read_paths),
             )
 
             # Write task_work_results.json for Coach validation.
