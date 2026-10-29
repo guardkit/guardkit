@@ -342,7 +342,10 @@ Answer these in order. Each names the finding you report when the answer is no.
 report `NOT_IMPLEMENTED`.
 2. **Is each criterion tested, by a test the project's check runs?** Find the test that exercises \
 it and check the project's check runs that test. When no test does, or the check does not run it \
-(its output above says what ran), report `NOT_TESTED`.
+(its output above says what ran), report `NOT_TESTED`. When the project's check (the declared \
+test command and any script it calls, for example scripts/check.sh) does not reach the folder this \
+task changed, report `NOT_TESTED` at the line of the check file that should reach it, so the builder \
+wires it in.
 3. **Were the callers and tests updated?** For each function, type, field, route or setting the \
 change changes, renames or removes, find what uses it, by its old name too. When a caller or test \
 was not changed to match, report `CALLERS_NOT_UPDATED`.

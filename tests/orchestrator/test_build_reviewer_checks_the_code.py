@@ -470,3 +470,18 @@ def test_a_v4_criterion_conflict_reaches_the_summary_as_advice(
         "description": "the criterion says null; the contract allows a timestamp",
     }]
 
+
+def test_the_lookup_prompt_asks_for_the_check_to_reach_the_changed_folder() -> None:
+    """Question 2: a check that does not reach the folder the task changed is
+    NOT_TESTED at the check file's line, so the builder wires it."""
+    prompt = build_review.build_lookup_prompt(
+        task_id=_TASK, turn=1, requirements="r", acceptance_criteria=None,
+        change=build_review.ReviewChange("", None, "a" * 40), check_section="",
+        player_report={},
+    )
+    assert (
+        "When the project's check (the declared test command and any script it "
+        "calls, for example scripts/check.sh) does not reach the folder this task "
+        "changed, report `NOT_TESTED` at the line of the check file that should "
+        "reach it, so the builder wires it in."
+    ) in " ".join(prompt.split())
