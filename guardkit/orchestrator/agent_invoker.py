@@ -2920,7 +2920,7 @@ class AgentInvoker:
             change = build_review.write_change(
                 task_id, turn, self.worktree_path, getattr(self, "_baseline_commit", None)
             )
-            sent_back = list(getattr(self, "_review_repair_sent", {}).get(task_id) or ())
+            sent_back = list(self._review_repair_sent_for(task_id, turn) or ())
             gather_timeout = min(
                 effective_timeout,
                 max(
@@ -3929,6 +3929,32 @@ The builder's concerns, what it says remains, and the files git saw it create an
             self.repair_round_inventory = None
             return _unavailable(str(exc) or type(exc).__name__)
 
+    def _review_repair_sent_for(
+        self, task_id: str, turn: int
+    ) -> Optional[List[Dict[str, Any]]]:
+        """The findings this task's repair turn was given, or ``None`` when it
+        has not had one (Codex review R2).
+
+        This process's memory first; otherwise the task's own recorded
+        reviews before ``turn``, so a resumed task (a new process) keeps its
+        one repair turn used and its next review still checks those findings
+        first.
+        """
+        from guardkit.orchestrator import build_review
+        from guardkit.orchestrator.paths import TaskArtifactPaths
+
+        sent: Dict[str, List[Dict[str, Any]]] = self.__dict__.setdefault(
+            "_review_repair_sent", {}
+        )
+        if task_id in sent:
+            return sent[task_id]
+        recorded = build_review.repair_findings_sent(
+            TaskArtifactPaths.task_private_dir(task_id, self.worktree_path), turn
+        )
+        if recorded is not None:
+            sent[task_id] = recorded
+        return recorded
+
     def _apply_review_repair_turn(
         self,
         *,
@@ -3963,7 +3989,7 @@ The builder's concerns, what it says remains, and the files git saw it create an
             decision.get("decision") == "approve"
             and located
             and turn_left
-            and task_id not in sent
+            and self._review_repair_sent_for(task_id, turn) is None
             and build_review.repair_turn_enabled()
         ):
             sent[task_id] = located

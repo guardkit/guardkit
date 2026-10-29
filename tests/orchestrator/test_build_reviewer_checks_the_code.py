@@ -318,6 +318,31 @@ def test_a_located_finding_gives_exactly_one_repair_turn(
     assert "more issues" not in text
 
 
+def test_a_resumed_task_keeps_its_one_repair_turn_used(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Codex review R2: after the repair turn, a resume (a new process, so a
+    new invoker with nothing in memory) reads the task's own recorded reviews.
+    Its next review checks the sent-back findings first, and any located
+    findings that remain are advice: the task is approved."""
+    monkeypatch.delenv(build_review.REPAIR_TURN_ENV, raising=False)
+    first, _ = _invoker(tmp_path, {1: _located(2)})
+    assert _review(first, 1)["decision"] == "feedback"
+
+    resumed, calls = _invoker(tmp_path, {2: _located(2)})
+    assert "_review_repair_sent" not in resumed.__dict__
+    report = _review(resumed, 2)
+
+    assert report["decision"] == "approve"
+    assert build_review.REPAIR_KEY not in report
+    assert [n["location"] for n in report[build_review.LEFTOVERS_KEY]] == [
+        "src/a0.py:1", "src/a1.py:2",
+    ]
+    lookup_prompt = calls[0]["prompt"]
+    assert "Findings the builder was sent back to fix" in lookup_prompt
+    assert "- NOT_TESTED src/a1.py:2: criterion 1 has no test" in lookup_prompt
+
+
 @pytest.mark.parametrize(
     "issues",
     [
@@ -376,3 +401,4 @@ def test_leftovers_reach_the_feature_build_review_notes(
         "task_id": _TASK, "pattern": "NOT_TESTED", "location": "src/a0.py:1",
         "description": "criterion 0 has no test",
     }
+

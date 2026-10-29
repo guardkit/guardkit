@@ -470,6 +470,44 @@ def repair_issues(findings: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
 # ---------------------------------------------------------------------------
 
 
+def repair_findings_sent(task_private_dir: Path, before_turn: int) -> Optional[List[Dict[str, Any]]]:
+    """The findings an earlier review of this task sent back for its repair
+    turn, read from the task's own records, or ``None`` when none did.
+
+    Codex review R2 (29 October 2026): the "one repair turn" limit must hold
+    across a resume, so it is read from the reviews this task has recorded
+    (``coach_turn_N.json`` with ``review_repair`` set), not only from the
+    process's memory. Only turns before ``before_turn`` are read: those
+    records are this build's own (each turn writes its own record over any
+    older one of the same number). Never raises.
+    """
+    try:
+        for path in sorted(Path(task_private_dir).glob("coach_turn_*.json")):
+            match = _COACH_TURN_FILE.match(path.name)
+            if match is None or int(match.group(1)) >= before_turn:
+                continue
+            try:
+                record = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            if isinstance(record, dict) and record.get(REPAIR_KEY) is True:
+                issues = record.get("issues")
+                found = []
+                for issue in issues if isinstance(issues, list) else []:
+                    if not (isinstance(issue, dict) and is_located(issue)):
+                        continue
+                    note = _note(issue)
+                    # repair_issues wrote "PATTERN at place: sentence".
+                    note["description"] = note["description"].removeprefix(
+                        f"{note['pattern']} at {note['location']}: "
+                    )
+                    found.append(note)
+                return found
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("No repair record read in %s: %s", task_private_dir, exc)
+    return None
+
+
 def latest_review(task_private_dir: Path) -> Optional[Path]:
     """The task's last ``coach_turn_N.json``, or ``None``. Never raises."""
     best: Optional[Path] = None
@@ -549,6 +587,7 @@ __all__ = [
     "leftovers",
     "located_findings",
     "render_builder_notes",
+    "repair_findings_sent",
     "repair_issues",
     "repair_turn_enabled",
     "write_change",
