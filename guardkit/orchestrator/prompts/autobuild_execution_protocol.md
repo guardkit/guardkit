@@ -433,14 +433,6 @@ def system_plan(description: str) -> None:
     asyncio.run(run_system_plan(description, mode=None))
 ```
 
-### Coach Verification
-
-When reviewing, the Coach MUST:
-1. Identify primary deliverable functions from acceptance criteria
-2. Read the function body (using Read tool)
-3. Check if the body matches any stub pattern
-4. Reject with specific feedback if stubs are found
-
 ---
 
 ## Summary
