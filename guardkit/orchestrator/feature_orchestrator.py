@@ -3745,9 +3745,11 @@ The detailed specifications are in the task markdown file.
         tests/payments.py::test_refund"; exit 1`` would write a base naming a
         test as already failing — and that list is exactly what the Coach and
         the work leg subtract before charging a task with a failure. The
-        repository root is the copy the model cannot reach, it is what
-        ``snapshot_task_toolchain`` already reads, and it is the root every
-        other caller of this same reader passes.
+        repository root is the copy the model cannot reach. (The per-task pin,
+        ``snapshot_task_toolchain``, reads the worktree's committed HEAD
+        instead, because it runs before each task's first turn, when HEAD
+        holds only earlier tasks' finished work; this probe can run over a
+        resumed, already-edited worktree, so it keeps the root.)
 
         THE HONEST LIMIT, because reading from the root closes only half of
         the resume risk. It stops the model choosing the command; it does not

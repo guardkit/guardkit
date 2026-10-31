@@ -57,8 +57,15 @@ file lives INSIDE the target repo, which means it lives inside the worktree
 the builder is editing. Without a snapshot, a Player turn could rewrite
 ``toolchain.test`` to ``true`` and green itself. :func:`snapshot_task_toolchain`
 is pinned at the same pre-turn-1 call site as ``snapshot_task_conformance``,
-reads from the canonical ``repo_root`` tree, and writes OUTSIDE the shared
-worktree. The pinned copy is what executes for the whole build —
+reads the declaration COMMITTED at the worktree's HEAD (the canonical
+``repo_root`` tree only when the worktree is not a git checkout), and writes
+OUTSIDE the shared worktree. Committed, never the working file: at a task's
+first turn HEAD holds only what earlier tasks of the same feature finished and
+the reviewer saw, so a test setup declared by an earlier task reaches the tasks
+after it (a recorded Go feature build, 29 October 2026: its second task
+declared the Go tests, and the four tasks after it never ran them because the
+pin read the main checkout), while an uncommitted edit in the worktree still
+cannot. The pinned copy is what executes for the whole build —
 :func:`load_toolchain_snapshot` is the ONLY reader the verdict path uses. It
 never falls back to the live file: no snapshot means no declaration, and the
 pre-declaration ladder runs unchanged.
@@ -131,12 +138,14 @@ from __future__ import annotations
 import json
 import logging
 import re
+import subprocess
 from pathlib import Path, PurePosixPath
 from typing import (
     Any,
     Dict,
     List,
     Optional,
+    Tuple,
 )
 
 import yaml
@@ -517,6 +526,17 @@ def load_toolchain_declaration(
         except (OSError, UnicodeDecodeError) as exc:
             logger.warning("Failed to read %s: %s", config_path, exc)
             return None
+    return _declaration_from_text(text, config_path, strict=strict)
+
+
+def _declaration_from_text(
+    text: str, config_path: Any, *, strict: bool = False
+) -> Optional[ToolchainDeclaration]:
+    """Parse a ``.guardkit/config.yaml`` text the way the loader does.
+
+    ``config_path`` only names the source in log lines (a path, or
+    ``HEAD:.guardkit/config.yaml`` for a committed copy).
+    """
     try:
         data = yaml.safe_load(text)
     except Exception as exc:  # noqa: BLE001 — a broken config never crashes a build
@@ -632,12 +652,49 @@ def toolchain_snapshot_paths(task_id: str, worktree_path: Path) -> Dict[str, Pat
     return {"dir": base, "file": base / _SNAPSHOT_FILE}
 
 
+def load_committed_toolchain_declaration(
+    worktree_path: Path,
+) -> Tuple[bool, Optional[ToolchainDeclaration]]:
+    """Read the declaration committed at ``worktree_path``'s HEAD.
+
+    Returns ``(True, declaration)`` when the worktree is a git checkout (the
+    declaration is ``None`` when that commit has no config file or no
+    ``toolchain:`` block), and ``(False, None)`` when git cannot answer, so
+    the caller can fall back. Never raises.
+    """
+    try:
+        from guardkit.lib.project_git import run_git
+
+        inside = run_git(
+            ["rev-parse", "--is-inside-work-tree"], cwd=Path(worktree_path), timeout=30
+        )
+        if inside.returncode != 0 or inside.stdout.strip() != "true":
+            return False, None
+        shown = run_git(
+            ["show", f"HEAD:{CONFIG_RELATIVE_PATH.as_posix()}"],
+            cwd=Path(worktree_path), timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        logger.warning("Could not ask git for %s's committed config (%s)", worktree_path, exc)
+        return False, None
+    if shown.returncode != 0:
+        # A checkout whose HEAD has no config file declares nothing.
+        return True, None
+    return True, _declaration_from_text(
+        shown.stdout, f"{worktree_path} HEAD:{CONFIG_RELATIVE_PATH.as_posix()}"
+    )
+
+
 def snapshot_task_toolchain(
     task_id: str,
     worktree_path: Path,
     repo_root: Path,
 ) -> Optional[Path]:
-    """Snapshot the repo's toolchain declaration pre-turn-1.
+    """Snapshot the toolchain declaration pre-turn-1.
+
+    The source is the declaration committed at the worktree's HEAD, so a
+    feature task sees what earlier tasks of the feature declared; the
+    ``repo_root`` tree is read only when the worktree is not a git checkout.
 
     Returns the snapshot file path when a declaration was captured, else
     ``None`` (no declaration, or an error — both mean the build behaves
@@ -661,7 +718,11 @@ def snapshot_task_toolchain(
                     task_id,
                     exc,
                 )
-        declaration = load_toolchain_declaration(Path(repo_root))
+        committed, declaration = load_committed_toolchain_declaration(
+            Path(worktree_path)
+        )
+        if not committed:
+            declaration = load_toolchain_declaration(Path(repo_root))
         if declaration is None:
             # byte-equivalent no-op for every repo that has not opted in
             return None

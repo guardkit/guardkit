@@ -1547,7 +1547,8 @@ class AutoBuildOrchestrator:
                 # repo, which means it lives inside the worktree the builder is
                 # editing: without a snapshot a Player turn could rewrite
                 # ``toolchain.test`` to ``true`` and green itself. Captured here,
-                # pre-turn-1, from the canonical repo tree, into the
+                # pre-turn-1, from the declaration committed at the worktree's
+                # HEAD (what earlier tasks of the feature finished), into the
                 # Player-unreachable private dir — and the pinned copy is what
                 # executes for the whole build.
                 self._snapshot_toolchain_declaration(task_id, worktree)
@@ -1848,9 +1849,11 @@ class AutoBuildOrchestrator:
     ) -> None:
         """TS-lane D.1b: pin the repo's toolchain declaration pre-turn-1.
 
-        Reads ``toolchain:`` from the CANONICAL ``<repo_root>/.guardkit/
-        config.yaml`` and writes it into the task-private dir (outside the
-        shared worktree). ``CoachValidator`` reads only that snapshot, so the
+        Reads ``toolchain:`` from the ``.guardkit/config.yaml`` committed at
+        the worktree's HEAD (the ``<repo_root>`` copy only when the worktree is
+        not a git checkout), so a feature task runs the tests an earlier task
+        of the feature declared, and writes it into the task-private dir
+        (outside the shared worktree). ``CoachValidator`` reads only that snapshot, so the
         model can never edit its own test command mid-build (design §B.4 —
         "if the snapshot is cut from scope, the declaration must be cut with
         it").

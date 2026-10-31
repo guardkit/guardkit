@@ -7,24 +7,28 @@ Three properties are pinned here:
    ladder and look like the tool ignoring the repo.
 2. **The snapshot** (design §B.4, NOT optional) — the declaration lives inside
    the target repo, which means inside the worktree the builder is editing.
-   The snapshot is taken pre-turn-1 from the canonical tree and written
-   OUTSIDE the shared worktree, and it is the ONLY thing the verdict path
-   reads.
+   The snapshot is taken pre-turn-1 from the declaration committed at the
+   worktree's HEAD (the canonical tree when the worktree is not a git
+   checkout) and written OUTSIDE the shared worktree, and it is the ONLY
+   thing the verdict path reads.
 3. **Absence is a no-op** — a repo with no ``toolchain:`` block gets nothing
    written and nothing changed.
 
-Network-free and broker-free by construction: nothing here runs a subprocess.
+Network-free and broker-free by construction: nothing here runs a subprocess
+except the local ``git`` calls of ``TestSnapshotFromTheWorktreeCommit``.
 """
 
 from __future__ import annotations
 
 import json
+import subprocess
 
 import pytest
 import yaml
 
 from guardkit.orchestrator.toolchain_declaration import (
     ToolchainDeclaration,
+    load_committed_toolchain_declaration,
     load_toolchain_declaration,
     load_toolchain_snapshot,
     parse_toolchain_block,
@@ -193,6 +197,78 @@ class TestLoadDeclaration:
 # =========================================================================
 
 
+def _git(cwd, *args):
+    subprocess.run(["git", "-C", str(cwd), *args], check=True, capture_output=True)
+
+
+@pytest.fixture
+def git_worktree(repo):
+    """The repo fixture, with the worktree made a git checkout whose first
+    commit declares nothing (the feature's starting point)."""
+    root, worktree = repo
+    _git(worktree, "init", "-q")
+    _git(worktree, "config", "user.email", "t@example.invalid")
+    _git(worktree, "config", "user.name", "t")
+    _write_config(worktree, None)
+    _git(worktree, "add", "-A")
+    _git(worktree, "commit", "-q", "-m", "start")
+    return root, worktree
+
+
+def _commit_config(worktree, block):
+    _write_config(worktree, block)
+    _git(worktree, "add", "-A")
+    _git(worktree, "commit", "-q", "-m", "declare")
+
+
+class TestSnapshotFromTheWorktreeCommit:
+    """The pin reads what is COMMITTED at the worktree's HEAD, so a feature's
+    later tasks run the tests an earlier task declared (a recorded Go feature
+    build, 29 October 2026), and an uncommitted edit still cannot change it."""
+
+    def test_an_earlier_tasks_declaration_reaches_the_next_task(self, git_worktree):
+        root, worktree = git_worktree
+        _write_config(root, None)  # the main checkout has not seen the feature
+        _commit_config(worktree, {"test": "go test ./..."})  # task 002's turn
+        snapshot_task_toolchain(_TASK_ID, worktree, root)
+        assert load_toolchain_snapshot(_TASK_ID, worktree).test == "go test ./..."
+
+    def test_the_commit_wins_over_the_main_checkout(self, git_worktree):
+        root, worktree = git_worktree
+        _write_config(root, {"test": "npm test"})
+        _commit_config(worktree, {"test": "npm test && npm run e2e"})
+        snapshot_task_toolchain(_TASK_ID, worktree, root)
+        assert load_toolchain_snapshot(_TASK_ID, worktree).test == "npm test && npm run e2e"
+
+    def test_an_uncommitted_edit_is_not_pinned(self, git_worktree):
+        root, worktree = git_worktree
+        _commit_config(worktree, {"test": "go test ./..."})
+        _write_config(worktree, {"test": "true"})  # the Player's version, not committed
+        snapshot_task_toolchain(_TASK_ID, worktree, root)
+        assert load_toolchain_snapshot(_TASK_ID, worktree).test == "go test ./..."
+
+    def test_a_commit_that_declares_nothing_pins_nothing(self, git_worktree):
+        root, worktree = git_worktree
+        _write_config(root, {"test": "npm test"})
+        assert snapshot_task_toolchain(_TASK_ID, worktree, root) is None
+        assert load_toolchain_snapshot(_TASK_ID, worktree) is None
+
+    def test_a_commit_without_the_config_file_pins_nothing(self, repo):
+        root, worktree = repo
+        _git(worktree, "init", "-q")
+        _git(worktree, "config", "user.email", "t@example.invalid")
+        _git(worktree, "config", "user.name", "t")
+        (worktree / "README.md").write_text("x", encoding="utf-8")
+        _git(worktree, "add", "-A")
+        _git(worktree, "commit", "-q", "-m", "start")
+        _write_config(root, {"test": "npm test"})
+        assert snapshot_task_toolchain(_TASK_ID, worktree, root) is None
+
+    def test_committed_reader_reports_a_non_checkout(self, repo):
+        _, worktree = repo
+        assert load_committed_toolchain_declaration(worktree) == (False, None)
+
+
 class TestSnapshot:
     def test_snapshot_writes_outside_the_shared_worktree(self, repo):
         root, worktree = repo
@@ -223,8 +299,9 @@ class TestSnapshot:
         assert load_toolchain_snapshot(_TASK_ID, worktree) is None
 
     def test_snapshot_reads_the_canonical_repo_not_the_worktree(self, repo):
-        """The snapshot's source is the repo_root tree, so a worktree that
-        already differs cannot poison the pin."""
+        """When the worktree is not a git checkout the snapshot's source is
+        the repo_root tree, so a worktree file that differs cannot poison the
+        pin."""
         root, worktree = repo
         _write_config(root, {"test": "npm test"})
         _write_config(worktree, {"test": "true"})  # the Player's version
