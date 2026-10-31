@@ -185,7 +185,12 @@ class TestComponentCwd:
     def test_the_declared_command_runs_in_the_components_directory(self, repo):
         root, worktree = repo
         v = _validator(root, worktree, STUDY_TUTOR_SHAPE, component="app")
-        with patch("subprocess.run") as mock_run:
+        # The runner is replaced, so the real program need not be installed
+        # here: the missing-program look-up is told `flutter` exists.
+        with patch("subprocess.run") as mock_run, patch(
+            "guardkit.orchestrator.quality_gates.coach_validator.missing_program",
+            return_value=None,
+        ):
             mock_run.return_value = MagicMock(returncode=0, stdout="All tests passed", stderr="")
             v.run_independent_tests()
         kwargs = mock_run.call_args.kwargs

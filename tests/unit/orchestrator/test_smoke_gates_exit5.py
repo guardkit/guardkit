@@ -52,8 +52,16 @@ def test_a_declared_expected_exit_of_five_passes(
     assert run_smoke_gate(config, cwd=tmp_path, wave_number=1).passed is True
 
 
-def test_an_old_feature_file_that_sets_the_removed_knob_still_loads() -> None:
+@pytest.mark.parametrize("knob", [True, False])
+def test_the_pinned_knob_still_loads_and_exit_five_fails_either_way(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, knob: bool
+) -> None:
+    # feature_loader.py is a pinned contract file, so SmokeGates keeps its
+    # exit5_is_hard_fail field (31 October 2026); exit 5 no longer passes
+    # whatever it says, because only expected_exit passes.
     config = SmokeGates.model_validate(
-        {"after_wave": 1, "command": "x", "exit5_is_hard_fail": True}
+        {"after_wave": 1, "command": "x", "exit5_is_hard_fail": knob}
     )
-    assert not hasattr(config, "exit5_is_hard_fail")
+    assert config.exit5_is_hard_fail is knob
+    _patch_subprocess_returncode(monkeypatch, 5)
+    assert run_smoke_gate(config, cwd=tmp_path, wave_number=1).passed is False
