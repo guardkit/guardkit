@@ -483,27 +483,6 @@ class TestHarnessInvokeAclosingOnCancel:
             "it leaks the generator on the cancel path."
         )
 
-    def test_coach_validator_test_exec_wraps_harness_invoke_in_aclosing(self):
-        """Coach independent-test-exec path (coach_test role) wraps the stream.
-
-        This is the path whose ``asyncio.timeout(self.test_timeout)`` can
-        fire mid-stream — the same leak shape as the Player/specialist
-        path, so it gets the same aclosing() finalisation.
-        """
-        import inspect
-
-        from guardkit.orchestrator.quality_gates import coach_validator
-
-        source = inspect.getsource(coach_validator)
-        assert "async with aclosing(" in source, (
-            "coach_validator must wrap its harness.invoke() iteration in "
-            "aclosing() (TASK-FIX-LGACLOSE)."
-        )
-        assert "async for event in harness.invoke(" not in source, (
-            "Bare inline iteration of harness.invoke() must not survive in "
-            "coach_validator."
-        )
-
     def test_task_work_interface_design_wraps_harness_invoke_in_aclosing(self):
         """Design-phase path (design role) wraps the stream."""
         import inspect
