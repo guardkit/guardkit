@@ -134,9 +134,10 @@ So the ONE declaration gains per-path sections:
             marker: package.json
             test: "npm test"
 
-* The full check before a merge is ``feature_check`` when declared, otherwise
-  the root ``test`` plus every component's and every pattern part's ``test``,
-  each in its own folder (:func:`full_check_parts`).
+* The full check before a merge is the root ``test`` plus every component's
+  and every pattern part's ``test``, each in its own folder with its own
+  ``test_timeout`` (:func:`full_check_parts`). ``feature_check`` is not part
+  of it: it stays the build's own whole-feature check after the last wave.
 * ``extra="forbid"`` holds at every level, so a typo'd component or part
   field is as loud as a typo'd root field.
 
@@ -924,19 +925,18 @@ def full_check_parts(
 ) -> List[DeclaredPart]:
     """What the project's full check runs, each in its own folder.
 
-    ``feature_check`` when declared (one command at the root). Otherwise the
-    root ``test`` when declared, then every named component, then every
+    The root ``test`` when declared, then every named component, then every
     folder a ``parts:`` pattern matches in ``tree`` (one a component already
     names is not repeated). A component or pattern without ``test`` is
     included with nothing declared, so the check says it could not run.
     Empty when nothing is declared.
+
+    ``feature_check`` is never a substitute for these (1 November 2026 fix
+    pass): a project that declares one, such as a browser journey, still has
+    its root and parts checked here. It is the build's whole-feature check.
     """
     if declaration is None:
         return []
-    if declaration.feature_check:
-        return [
-            DeclaredPart(name="feature check", cwd=".", test=declaration.feature_check)
-        ]
     parts: List[DeclaredPart] = []
     if declaration.test:
         parts.append(DeclaredPart(name=ROOT_PART, cwd=".", test=declaration.test))

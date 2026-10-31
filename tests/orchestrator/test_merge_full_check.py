@@ -1,8 +1,9 @@
 """The merge's full check (after-task check redesign, 31 October 2026).
 
 The merge runs the project's declared full check once on the joined result:
-``feature_check`` when declared, otherwise the root ``test`` plus every
-component's and pattern part's ``test``, each in its own folder. ``verify_ok``
+the root ``test`` plus every component's and pattern part's ``test``, each in
+its own folder within its own ``test_timeout``, whether or not a
+``feature_check`` is declared. ``verify_ok``
 is true only when it ran and passed. There is no known-failure baseline, a
 declared script that exits 127 failed (FEAT-8BB4), and GuardKit never chooses
 a command a project did not declare.
@@ -214,19 +215,72 @@ class TestTheFullCheckRunsEveryPart:
         assert marker.read_text().strip().endswith("app")
         assert "app (in app)" in report.verify_detail
 
-    def test_a_declared_feature_check_is_the_whole_check(self, tmp_path: Path):
-        marker = tmp_path / "ran.txt"
+    def test_a_declared_feature_check_does_not_replace_the_parts(
+        self, tmp_path: Path
+    ):
+        """A notes-style declaration (the shape of notes-private-fixture): a
+        root check, two components and a ``feature_check`` journey. The merge
+        runs the root and both components, each in its folder, and not the
+        journey; dropping the root (the reference check, lint, the Go and
+        TypeScript tests) for the journey was the reviewer's first defect."""
+        ran = tmp_path / "ran.txt"
+        journey = tmp_path / "journey.txt"
         repo = _base_repo(
             tmp_path,
-            {"test": "false", "feature_check": _marker_command(marker)},
+            {
+                "install": "true",
+                "test": _marker_command(ran),
+                "test_timeout": 1800,
+                "feature_check": _marker_command(journey),
+                "feature_check_timeout": 1800,
+                "components": {
+                    "web": {"cwd": "apps/web", "test": _marker_command(ran)},
+                    "api": {"cwd": "apps/api", "test": _marker_command(ran)},
+                },
+            },
         )
+        for folder in ("apps/web", "apps/api"):
+            (repo / folder).mkdir(parents=True)
+            (repo / folder / "keep.txt").write_text("part\n", encoding="utf-8")
+        _git(repo, "add", "-A")
+        _git(repo, "commit", "-q", "-m", "parts")
         _branch_adding(repo, "FEAT-CLEAN", "tests/test_new_green.py", GREEN)
 
         report = execute_merge(repo, "FEAT-CLEAN")
 
-        assert report.verify_status == "passed"
-        assert report.verify_source == "repository toolchain declaration (feature_check)"
-        assert len(marker.read_text().splitlines()) == 1
+        assert report.verify_status == "passed", report.verify_detail
+        assert report.verify_source == "repository toolchain declaration"
+        folders = sorted(Path(line).name for line in ran.read_text().splitlines())
+        assert folders == ["api", "repo", "web"]
+        assert not journey.exists()
+
+    def test_each_part_runs_within_its_own_declared_limit(self, tmp_path: Path):
+        """The root declares 30 seconds and takes two; the component declares
+        one second and takes five. The merge's own limit (one second here)
+        bounds only installs: the root passes, the component times out."""
+        sleep = f'"{sys.executable}" -c "import time; time.sleep({{}})"'
+        repo = _base_repo(
+            tmp_path,
+            {
+                "test": sleep.format(2),
+                "test_timeout": 30,
+                "components": {
+                    "app": {"cwd": "app", "test": sleep.format(5), "test_timeout": 1}
+                },
+            },
+        )
+        (repo / "app").mkdir()
+        (repo / "app" / "keep.txt").write_text("app\n", encoding="utf-8")
+        _git(repo, "add", "-A")
+        _git(repo, "commit", "-q", "-m", "app")
+        _branch_adding(repo, "FEAT-CLEAN", "tests/test_new_green.py", GREEN)
+
+        report = execute_merge(repo, "FEAT-CLEAN", verify_timeout=1)
+
+        assert report.verify_status == "failed"
+        assert "app (in app)" in report.verify_detail
+        assert "timed out after 1s" in report.verify_detail
+        assert "root" not in report.verify_detail
 
 
 class TestTheReceiptSaysWhetherTheTestsRan:

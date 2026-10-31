@@ -19,10 +19,10 @@ Verification semantics (after-task check redesign, 31 October 2026):
 - The command is resolved in one place (``resolve_verify_command``): an
   explicit override, then the feature's smoke command, then the project's
   full check as declared in ``.guardkit/config.yaml``
-  (``toolchain_declaration.full_check_parts``: ``feature_check``, else the
-  root ``test`` plus every component's and pattern part's ``test``, each in
-  its own folder). GuardKit never chooses a command a project did not
-  declare.
+  (``toolchain_declaration.full_check_parts``: the root ``test`` plus every
+  component's and pattern part's ``test``, each in its own folder with its
+  own declared ``test_timeout``). ``feature_check`` is not part of it.
+  GuardKit never chooses a command a project did not declare.
 """
 
 from __future__ import annotations
@@ -65,7 +65,7 @@ DEFAULT_VERIFY_TIMEOUT = 600
 #: The source words when a project declares no check at all.
 NOTHING_DECLARED = (
     "nothing declared: .guardkit/config.yaml declares no `toolchain` test "
-    "command or feature_check"
+    "command"
 )
 
 
@@ -110,12 +110,10 @@ class VerificationResult:
 
 def check_command_texts(declaration: Optional[ToolchainDeclaration]) -> List[str]:
     """The text of every command the full check can run, for the merge's
-    judge-file rule: ``feature_check``, else the root ``test`` and every
-    component's and ``parts:`` entry's ``test``."""
+    judge-file rule: the root ``test`` and every component's and ``parts:``
+    entry's ``test``."""
     if declaration is None:
         return []
-    if declaration.feature_check:
-        return [declaration.feature_check]
     texts = [declaration.test] if declaration.test else []
     texts += [c.test for _, c in sorted((declaration.components or {}).items()) if c.test]
     texts += [entry.test for entry in declaration.parts or () if entry.test]
@@ -180,12 +178,7 @@ def resolve_verify_command_with_declaration(
         for entry in declaration.parts or ()
     ]
     text = pieces[0] if len(pieces) == 1 and parts and parts[0].cwd == "." else " ; ".join(pieces)
-    source = (
-        "repository toolchain declaration (feature_check)"
-        if declaration.feature_check
-        else "repository toolchain declaration"
-    )
-    return text, source, declaration
+    return text, "repository toolchain declaration", declaration
 
 
 def _install_part(
@@ -239,8 +232,9 @@ def run_completion_verification(
 
     With ``declaration`` (the declared full check), every part of
     :func:`toolchain_declaration.full_check_parts`, found in ``repo_root``
-    now, runs its ``test`` once in its own folder, each with the whole
-    ``timeout``. The result is ``failed`` if any part failed, otherwise
+    now, runs its ``test`` once in its own folder, each within its own
+    declared ``test_timeout`` (the root's is the top-level one); ``timeout``
+    then bounds only a part's install. The result is ``failed`` if any part failed, otherwise
     ``unverified`` if any part could not run (nothing declared for it, or it
     could not start), otherwise ``passed``. Without it, ``command`` runs at
     ``repo_root``.
@@ -298,8 +292,11 @@ def run_completion_verification(
                     f"for part {label} {problem}",
                 )))
                 continue
+        part_timeout = (part.toolchain or declaration).test_timeout
         results.append(
-            (label, _run_one(folder, part.test, source, timeout, env, own_process_group))
+            (label, _run_one(
+                folder, part.test, source, part_timeout, env, own_process_group
+            ))
         )
     if len(results) == 1:
         return replace(results[0][1], command=command)
