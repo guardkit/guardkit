@@ -96,17 +96,16 @@ def _succeeding_wave(wave_number: int, task_ids: List[str]) -> WaveExecutionResu
     )
 
 
-def _smoke(passed: bool, *, gate_not_wired: bool = False) -> SmokeGateResult:
+def _smoke(passed: bool) -> SmokeGateResult:
     return SmokeGateResult(
         passed=passed,
-        exit_code=0 if passed else (5 if gate_not_wired else 1),
+        exit_code=0 if passed else 1,
         stdout="",
         stderr="" if passed else "ModuleNotFoundError: No module named 'installer'",
         timed_out=False,
         command="python3 mod.py",
         timeout=5,
         after_wave=1,
-        gate_not_wired=gate_not_wired,
     )
 
 
@@ -114,12 +113,6 @@ def _common_patches(orchestrator):
     """The side-effecting deps every wave-phase test must stub."""
     return (
         patch.object(orchestrator, "_bootstrap_environment"),
-        # The wave-0 baseline probe (b503bd16, 9 July 2026) measures the base
-        # once before wave 1, and with no declared test command it does so
-        # with the feature's smoke command, through the same run_smoke_gate
-        # these tests script. It is report-only and has its own tests; left
-        # running, it would take the first scripted smoke result.
-        patch.object(orchestrator, "_run_baseline_probe"),
         patch(
             "guardkit.orchestrator.feature_orchestrator.FeatureLoader.find_task",
             # The feature's own task with that id, as the real loader returns.
@@ -221,36 +214,6 @@ def test_smoke_retries_exhausted_terminates(tmp_path: Path) -> None:
     assert mock_mark.call_count == 0
 
 
-def test_smoke_gate_not_wired_does_not_retry(tmp_path: Path) -> None:
-    """An exit-5 gate_not_wired failure terminates without a retry."""
-    orchestrator = _make_orchestrator(tmp_path)
-    orchestrator._smoke_gate_max_retries = 3  # retries available, but unused
-    worktree = _make_worktree(tmp_path)
-    smoke = SmokeGates(
-        after_wave=1, command="pytest -m x", expected_exit=0, timeout=5,
-        exit5_is_hard_fail=True,
-    )
-    feature, _ = _make_feature([["TASK-001"], ["TASK-002"]], smoke=smoke)
-
-    with ExitStack() as stack:
-        for _cm in _common_patches(orchestrator):
-            stack.enter_context(_cm)
-        stack.enter_context(patch.object(orchestrator, "_mark_wave_completed"))
-        mock_execute_wave = stack.enter_context(patch.object(
-            orchestrator, "_execute_wave",
-            side_effect=[_succeeding_wave(1, ["TASK-001"])],
-        ))
-        mock_run_smoke = stack.enter_context(patch(
-            "guardkit.orchestrator.feature_orchestrator.run_smoke_gate",
-            side_effect=[_smoke(passed=False, gate_not_wired=True)],
-        ))
-        results = orchestrator._wave_phase(feature, worktree)
-
-    assert mock_execute_wave.call_count == 1   # no retry on gate_not_wired
-    assert mock_run_smoke.call_count == 1
-    assert len(results) == 1
-
-
 def test_smoke_pass_marks_wave_completed(tmp_path: Path) -> None:
     """C1: a wave whose tasks pass AND whose smoke passes is marked completed."""
     orchestrator = _make_orchestrator(tmp_path)
@@ -345,7 +308,6 @@ def test_failing_smoke_stops_feature_build(tmp_path: Path) -> None:
 
     with (
         patch.object(orchestrator, "_bootstrap_environment"),
-        patch.object(orchestrator, "_run_baseline_probe"),  # see _common_patches
         patch.object(orchestrator, "_mark_wave_completed"),
         patch.object(
             orchestrator,

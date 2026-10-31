@@ -38,21 +38,6 @@ from guardkit.orchestrator import process_group
 
 logger = logging.getLogger(__name__)
 
-# pytest exit code for "no tests collected" — distinct from exit 1 (test
-# failed). See https://docs.pytest.org/en/stable/reference/exit-codes.html
-# We treat this as a configuration gap (gate not wired to a real test),
-# not a code regression — see TASK-FIX-SG05 for rationale.
-PYTEST_EXIT_NO_TESTS_COLLECTED = 5
-
-# Hint surfaced when a gate matches zero tests, so post-mortems can
-# immediately distinguish "marker typo" / "missing pytest registration"
-# from a genuine test failure.
-GATE_NOT_WIRED_HINT = (
-    "Smoke gate matched 0 tests — verify that markers are registered in "
-    "pyproject.toml and that at least one test carries the marker expression."
-)
-
-
 @dataclass
 class SmokeGateResult:
     """Outcome of a single smoke-gate invocation.
@@ -60,10 +45,9 @@ class SmokeGateResult:
     Attributes
     ----------
     passed : bool
-        True if the gate did not block feature progress. For exit 0 this
-        means the command succeeded; for exit 5 with
-        ``exit5_is_hard_fail=False`` (default) this also stays True — see
-        ``gate_not_wired`` below.
+        True when the command exited with the declared ``expected_exit``.
+        No other exit code means anything special (31 October 2026: exit 5,
+        pytest's "no tests collected", used to pass).
     exit_code : int
         Actual exit code from the subprocess. ``-1`` indicates a timeout
         (no real exit code was observed).
@@ -80,12 +64,6 @@ class SmokeGateResult:
     after_wave : int
         The wave number after which this gate was invoked. Useful for
         the final summary and tests that assert placement.
-    gate_not_wired : bool
-        True when pytest exit code 5 (no tests collected) was observed —
-        the gate's marker expression matched zero tests. Distinct from a
-        real test failure. By default the feature build continues with a
-        warning; ``SmokeGates.exit5_is_hard_fail=True`` flips ``passed``
-        to False so the build halts. (TASK-FIX-SG05)
     """
 
     passed: bool
@@ -96,7 +74,6 @@ class SmokeGateResult:
     command: str
     timeout: int
     after_wave: int
-    gate_not_wired: bool = False
     #: What the command ran against (repair 7): its execution root's source
     #: before and after, the declared environment inventory and the raw
     #: container events of the interval. Evidence only — never read by the
@@ -289,38 +266,12 @@ def run_smoke_gate(
 
     run_evidence = record.finish()
 
-    # TASK-FIX-SG05: distinguish exit 5 (no tests collected — gate not wired)
-    # from exit 1 (tests ran and failed — genuine regression). Without this
-    # split, a marker typo or unregistered marker silently masquerades as a
-    # feature failure and preserves the worktree under a misleading reason.
     matched_expected = proc.returncode == config.expected_exit
-    gate_not_wired = (
-        proc.returncode == PYTEST_EXIT_NO_TESTS_COLLECTED and not matched_expected
-    )
 
     if matched_expected:
         passed = True
         logger.info(
             "Smoke gate passed after wave %d (exit=%d)", wave_number, proc.returncode
-        )
-    elif gate_not_wired and not config.exit5_is_hard_fail:
-        # Soft-warn path: gate is unwired (config gap), not a regression.
-        # Build continues; orchestrator surfaces a yellow warning.
-        passed = True
-        logger.warning(
-            "Smoke gate unwired after wave %d (exit=5 — no tests collected); "
-            "treating as config gap, not regression. %s",
-            wave_number,
-            GATE_NOT_WIRED_HINT,
-        )
-    elif gate_not_wired and config.exit5_is_hard_fail:
-        # Hard-fail path: feature opted into strict enforcement.
-        passed = False
-        logger.warning(
-            "Smoke gate unwired after wave %d (exit=5 — no tests collected); "
-            "treating as hard failure (exit5_is_hard_fail=True). %s",
-            wave_number,
-            GATE_NOT_WIRED_HINT,
         )
     else:
         passed = False
@@ -349,6 +300,5 @@ def run_smoke_gate(
         command=config.command,
         timeout=config.timeout,
         after_wave=wave_number,
-        gate_not_wired=gate_not_wired,
         run_evidence=run_evidence,
     )

@@ -399,12 +399,11 @@ def _pinned(repo, launch):
 
 
 class TestCoachCommands:
-    def test_declared_and_pytest_envs_carry_the_scratch_folders(
+    def test_the_declared_env_carries_the_scratch_folders(
         self, repo, monkeypatch
     ):
         from guardkit.orchestrator.quality_gates.coach_validator import (
             CoachValidator,
-            _checker_pytest_env,
         )
 
         worktree = _pinned(repo, {"settings": ["BROWSERS_AT"], "scratch": ["TOOL_CACHE"]})
@@ -416,7 +415,7 @@ class TestCoachCommands:
             / "toolchain"
             / "TOOL_CACHE"
         )
-        for env in (validator._declared_command_env(), _checker_pytest_env(validator)):
+        for env in (validator._declared_command_env(),):
             assert env["TOOL_CACHE"] == expected
             assert env["BROWSERS_AT"] == "/opt/browsers"
             # Since 13 October 2026 the Coach's commands get a private HOME
@@ -723,10 +722,8 @@ def _comparable(record: dict) -> dict:
 
 class TestReliabilityRequirements:
     def test_1_no_block_leaves_the_coach_envs_byte_identical(self, repo):
-        from guardkit.orchestrator.quality_gates.command_models import venv_path_first
         from guardkit.orchestrator.quality_gates.coach_validator import (
             CoachValidator,
-            _checker_pytest_env,
         )
 
         root, worktree = repo
@@ -744,15 +741,7 @@ class TestReliabilityRequirements:
         declared_today = project_command_environment(
             worktree, None, additions=validator._fixture_env
         )
-        path_first = venv_path_first(worktree)
-        pytest_today = (
-            project_command_environment(worktree, None, path_first=path_first)
-            if path_first
-            else project_command_environment(worktree, None)
-        )
-        pytest_today.update(validator._fixture_env)
         assert validator._declared_command_env() == declared_today
-        assert _checker_pytest_env(validator) == pytest_today
 
     def test_1_no_block_leaves_the_feature_check_env_byte_identical(self, repo):
         from guardkit.orchestrator.feature_check import run_feature_check_command

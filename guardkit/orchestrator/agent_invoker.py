@@ -8401,26 +8401,15 @@ Implementation must make BDD step definitions pass:
 
 ## Phase 4: Testing
 
-1. **Verify compilation/build** first - ensure no syntax errors:
-   - Python: `python -m py_compile <file>` or import check
-   - TypeScript: `npx tsc --noEmit`
-   - .NET: `dotnet build`
+1. **Build first** if the project declares a `build` or `typecheck`
+   command in `.guardkit/config.yaml` (`toolchain`).
 
-2. **Run the test suite**:
-   - Python: `pytest tests/ -v --tb=short`
-   - TypeScript: `npm test`
-   - .NET: `dotnet test`
+2. **Run the tests of the parts you changed**: each part's declared test
+   command (`toolchain.test`, a component's `test`, or a `parts:` entry's
+   `test`), in that part's folder. After your turn those same commands are
+   run again, independently, and that run decides.
 
-3. **Measure coverage** (if available):
-   - Python: `pytest tests/ -v --cov --cov-report=term`
-   - TypeScript: `npm test -- --coverage`
-
-4. **Coverage Quality Gates**:
-   - Line coverage MUST be >=80%
-   - Branch coverage MUST be >=75%
-   - If below threshold, write additional tests before proceeding
-
-5. **Report results clearly** in your output using these exact formats:
+3. **Report results clearly** in your output using these exact formats:
    - `Phase 3: Implementation` (when you start implementing)
    - `Phase 4: Testing` (when you start testing)
    - `X tests passed` and `Y tests failed` (test counts)
@@ -8447,9 +8436,7 @@ Quality Gate: ALL tests MUST pass (0 failures) before proceeding to Phase 5.
    - Unused imports
    - Missing error handling on external calls
    - Hardcoded secrets or credentials
-2. Run linter if available:
-   - Python: `ruff check .` or `flake8`
-   - TypeScript: `npm run lint`
+2. Run the project's declared `lint` command, if it declares one
 3. Note any issues found
 
 ## Output Format

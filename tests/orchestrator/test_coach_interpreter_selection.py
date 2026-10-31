@@ -350,43 +350,6 @@ class TestCoachValidatorInterpreter:
         assert validator._venv_python is None
         assert validator._pytest_interpreter() == sys.executable
 
-    @patch(
-        "guardkit.orchestrator.quality_gates.coach_validator.subprocess.run"
-    )
-    def test_subprocess_argv_pins_interpreter(
-        self, mock_run: MagicMock, tmp_path: Path
-    ) -> None:
-        """AC-2: subprocess path uses ``[venv_python, -m, pytest, ...]``."""
-        from guardkit.orchestrator.quality_gates.coach_validator import (
-            CoachValidator,
-        )
-
-        fake = self._make_venv(tmp_path)
-        mock_run.return_value = MagicMock(
-            returncode=0, stdout="3 passed in 0.1s", stderr=""
-        )
-
-        validator = CoachValidator(
-            str(tmp_path),
-            test_command="pytest tests/",
-            coach_test_execution="subprocess",
-            venv_python=str(fake),
-        )
-        # TASK-ABFIX-011: this test isolates interpreter-pinning. Disable the
-        # gated per-test --timeout injection so its probe (a subprocess against
-        # the pinned venv) does not consume the mocked subprocess.run and so the
-        # argv stays the bare pinned form. Timeout injection has its own suite
-        # (tests/unit/test_coach_pytest_timeout_injection.py).
-        validator._pytest_timeout_available_cache = False
-        result = validator.run_independent_tests()
-
-        assert result.tests_passed is True
-        mock_run.assert_called_once()
-        argv = mock_run.call_args[0][0]
-        assert argv[0] == str(fake)
-        assert argv[1:3] == ["-m", "pytest"]
-        assert "tests/" in argv
-
     def test_sdk_command_pins_interpreter(self, tmp_path: Path) -> None:
         """AC-3: SDK Bash command is rewritten to pin the interpreter."""
         from guardkit.orchestrator.quality_gates.coach_validator import (

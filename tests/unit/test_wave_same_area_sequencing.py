@@ -985,7 +985,6 @@ def _smoke_result(passed: bool):
         command="npm run smoke",
         timeout=5,
         after_wave=1,
-        gate_not_wired=False,
     )
 
 

@@ -1343,8 +1343,6 @@ class AutoBuildOrchestrator:
             self._evidence_repos = bound_repos
         with checkout_lease(self._existing_worktree.path, self._evidence_repos) as lease:
             self.task_work_scope = lease.admit(task_id, str(getattr(self, 'feature_id', '') or ''))
-            from guardkit.orchestrator.task_work_scope import bootstrap_admitted_checkout
-            bootstrap_admitted_checkout(self.task_work_scope)
             if self._agent_invoker is not None:
                 self._agent_invoker.task_work_scope = self.task_work_scope
                 self._agent_invoker._baseline_commit = self.task_work_scope.baseline_commit
@@ -5993,7 +5991,6 @@ class AutoBuildOrchestrator:
             security_command=getattr(self, "_security_command", None),
             # Whole-feature repair round only; None everywhere else.
             feature_check_repair=self._feature_check_repair,
-            in_autobuild_context=True,  # WS3-S1 Q1 SPLIT (hard-abort)
             # The task's starting commit: the files changed since it decide
             # which parts' tests run (31 October 2026).
             baseline_commit=getattr(

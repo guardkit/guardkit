@@ -424,67 +424,26 @@ class TestRunRepoTestsInterpreterResolution:
 
 
 # ---------------------------------------------------------------------------
-# collection ImportError classification (TASK-FIX-SIBTESTENV01 AC-3)
+# A sibling's exit code is its verdict (31 October 2026: pytest's collection
+# import-error output is no longer read as "never ran")
 # ---------------------------------------------------------------------------
 
 
-class TestCollectionImportErrorAbsent:
-    def test_real_exit2_collection_import_error_is_absent(self, tmp_path):
-        # The FEAT-10AC run-2 shape: exit 2 + collection ImportError output
-        # from a mis-environmented interpreter → ABSENT (ran=False), never
-        # ran-and-failed.
+class TestASiblingsExitCodeIsItsVerdict:
+    def test_exit2_with_an_import_error_is_ran_and_failed(self, tmp_path):
         script = tmp_path / "fail_collect.py"
         script.write_text(
             "import sys\n"
-            "sys.stderr.write(\n"
-            "    'ImportError while importing test module '\n"
-            "    \"'tests/wiring/test_analyzer.py'\\n\"\n"
-            ")\n"
-            "sys.stderr.write(\"ModuleNotFoundError: No module named "
-            "'guardkitfactory'\\n\")\n"
+            "sys.stderr.write(\"ModuleNotFoundError: No module named 'x'\\n\")\n"
             "sys.exit(2)\n"
         )
         repo = ev.EvidenceRepo(
             name="r", root=tmp_path, test_command=f"{_PY} fail_collect.py"
         )
         result = ev.run_repo_tests(repo)
-        assert result.ran is False
-        assert result.passed is False
-        assert result.returncode == 2  # preserved for diagnosis
-        assert "NEVER ran" in result.output_summary
-        assert "UNVERIFIED" in result.output_summary
-        assert "ModuleNotFoundError" in result.output_summary
-
-    def test_ambiguous_exit2_without_marker_stays_ran_and_failed(self, tmp_path):
-        # Bias to failure: exit 2 with no ImportError signature is NOT
-        # reclassified (bdd_runner precedent).
-        script = tmp_path / "fail_plain.py"
-        script.write_text(
-            "import sys\nsys.stderr.write('something broke\\n')\nsys.exit(2)\n"
-        )
-        repo = ev.EvidenceRepo(
-            name="r", root=tmp_path, test_command=f"{_PY} fail_plain.py"
-        )
-        result = ev.run_repo_tests(repo)
         assert result.ran is True
         assert result.passed is False
         assert result.returncode == 2
-
-    def test_veto_when_tests_actually_ran(self):
-        # "N passed/failed" proves the suite executed — a late import error
-        # stays ran-and-failed regardless of the marker.
-        output = (
-            "collected 5 items\n"
-            "ModuleNotFoundError: No module named 'late_dep'\n"
-            "2 failed, 3 passed in 0.4s\n"
-        )
-        assert ev._is_collection_import_error(2, output) is False
-
-    def test_exit_1_never_reclassified(self):
-        # Exit 1 is pytest's ran-and-failed verdict; even with an
-        # ImportError in the output it is a genuine failure.
-        output = "ModuleNotFoundError: No module named 'x'\n"
-        assert ev._is_collection_import_error(1, output) is False
 
 
 # ---------------------------------------------------------------------------

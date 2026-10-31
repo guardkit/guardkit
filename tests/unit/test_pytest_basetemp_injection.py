@@ -6,10 +6,10 @@ Two concurrent autobuild loops raced on pytest's shared per-user
 three turns straight). Every pytest argv the ORCHESTRATOR ITSELF constructs
 must carry a unique ``--basetemp`` under the system temp dir:
 
-1. Coach standard subprocess independent-test run (``coach_validator.py``).
-2. (The isolated parallel-wave copy, removed on 31 October 2026.)
-3. A caller-chosen run label (``CoachValidator(basetemp_context=...)``).
 4. BDD runner subprocess (``bdd_runner._invoke_pytest_bdd``).
+
+(Items 1-3, the Coach's own pytest runs, went on 31 October 2026: the Coach
+runs a project's declared command exactly as declared and adds no flags.)
 
 Operator-authored command strings (smoke gates, non-pytest shell commands)
 must NOT gain the flag, and a pre-existing ``--basetemp`` wins.
@@ -17,7 +17,6 @@ must NOT gain the flag, and a pre-existing ``--basetemp`` wins.
 
 import os
 import subprocess
-import sys
 import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -55,87 +54,6 @@ def _basetemp_value(cmd):
     """Return the value following ``--basetemp`` in an argv list."""
     idx = cmd.index("--basetemp")
     return cmd[idx + 1]
-
-
-# ============================================================================
-# 1. Coach standard subprocess path
-# ============================================================================
-
-
-class TestStandardSubprocessBasetemp:
-    def test_injected_under_system_tmp_with_context(self, tmp_path):
-        v = _make_validator(tmp_path, test_cmd="pytest tests/ -v --tb=short")
-        with patch("subprocess.run", return_value=_proc(0, stdout="3 passed")) as mock_run:
-            v.run_independent_tests()
-        cmd = mock_run.call_args.args[0]
-        assert "--basetemp" in cmd
-        basetemp = _basetemp_value(cmd)
-        assert os.path.dirname(basetemp) == tempfile.gettempdir()
-        assert "TASK-AB-BASETEMP01-coach-independent" in os.path.basename(basetemp)
-        # Original argv contract untouched: pinned interpreter first, args kept.
-        assert cmd[0] == sys.executable and cmd[1] == "-m" and cmd[2] == "pytest"
-        assert "--tb=short" in cmd
-
-    def test_basetemp_cleaned_up_after_run(self, tmp_path):
-        v = _make_validator(tmp_path)
-        with patch("subprocess.run", return_value=_proc(0, stdout="1 passed")) as mock_run:
-            v.run_independent_tests()
-        basetemp = _basetemp_value(mock_run.call_args.args[0])
-        assert not os.path.exists(basetemp)
-
-    def test_preexisting_basetemp_wins(self, tmp_path):
-        """AC-003: an explicit --basetemp in the configured command is not
-        overridden."""
-        v = _make_validator(
-            tmp_path, test_cmd="pytest tests/ --basetemp /custom/tmp"
-        )
-        with patch("subprocess.run", return_value=_proc(0, stdout="1 passed")) as mock_run:
-            v.run_independent_tests()
-        cmd = mock_run.call_args.args[0]
-        assert cmd.count("--basetemp") == 1
-        assert _basetemp_value(cmd) == "/custom/tmp"
-
-    def test_non_pytest_operator_command_untouched(self, tmp_path):
-        """An operator-authored (non-pytest) command runs via shell=True as-is
-        — no --basetemp mutation of operator policy strings."""
-        v = _make_validator(tmp_path, test_cmd="python3 .guardkit/smoke/foo.py")
-        with patch("subprocess.run", return_value=_proc(0, stdout="ok")) as mock_run:
-            v.run_independent_tests()
-        cmd = mock_run.call_args.args[0]
-        assert cmd == "python3 .guardkit/smoke/foo.py"
-        assert "--basetemp" not in cmd
-
-    def test_verdict_semantics_unchanged(self, tmp_path):
-        """AC-004: pure tmp-dir isolation — pass/fail classification intact."""
-        v = _make_validator(tmp_path)
-        with patch("subprocess.run", return_value=_proc(1, stdout="1 failed")):
-            r = v.run_independent_tests()
-        assert r.tests_passed is False
-        assert r.signal_absent is False
-
-
-# ============================================================================
-# 3. Deterministic Phase-4 runner (specialist_invocations.py)
-# ============================================================================
-
-
-class TestPhase4BasetempContext:
-    def test_validator_context_override_reaches_prefix(self, tmp_path):
-        """CoachValidator(basetemp_context='phase4') composes
-        '<task_id>-phase4' for the run's basetemp prefix."""
-        v = _make_validator(tmp_path, basetemp_context="phase4")
-        assert v._basetemp_run_context("coach-independent") == (
-            "TASK-AB-BASETEMP01-phase4"
-        )
-        with patch("subprocess.run", return_value=_proc(0, stdout="1 passed")) as mock_run:
-            v.run_independent_tests()
-        basetemp = _basetemp_value(mock_run.call_args.args[0])
-        assert "TASK-AB-BASETEMP01-phase4" in os.path.basename(basetemp)
-
-    def test_default_context_without_task_id(self, tmp_path):
-        v = CoachValidator(worktree_path=tmp_path)
-        v._coach_test_execution = "subprocess"
-        assert v._basetemp_run_context("coach-independent") == "coach-independent"
 
 
 # ============================================================================

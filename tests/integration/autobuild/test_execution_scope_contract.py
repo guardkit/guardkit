@@ -560,9 +560,6 @@ def test_feature_producer_selects_complete_pinned_inputs_before_setup(
     _, worktree = runner._create_new_worktree(feature, feature.id, "main")
     assert seen == []
     monkeypatch.setattr(runner, "_update_task_started", lambda *args: None)
-    monkeypatch.setattr(
-        runner, "_run_baseline_probe", lambda *args: seen.append("probe")
-    )
 
     def player(self, task, feature, worktree, **kwargs):
         seen.append("player")
@@ -583,7 +580,7 @@ def test_feature_producer_selects_complete_pinned_inputs_before_setup(
         SimpleNamespace(id="TASK-SIBLING"), feature, worktree
     )
     assert task_result.success
-    assert seen == ["bootstrap", "probe", "player"]
+    assert seen == ["bootstrap", "player"]
     selection = _selected[str(identity(worktree.path)[1])]
     assert selection["inputs"][str(sibling)] == sibling_start
     assert selection["provenance"] == "selected starting inputs; not approval"
@@ -842,7 +839,6 @@ def test_bootstrap_runs_once_per_wave_under_contention_before_player(tmp_path):
         (root / "generated.project-lock").write_text(str(len(bootstraps)))
 
     runner._bootstrap_environment = bootstrap
-    runner._run_baseline_probe = lambda *args: events.append("probe")
 
     def player(self, task, feature, worktree, **kwargs):
         invoker = AgentInvoker(worktree_path=root)
@@ -872,7 +868,6 @@ def test_bootstrap_runs_once_per_wave_under_contention_before_player(tmp_path):
             assert all(f.result(10).success for f in futures)
     assert events == [
         "bootstrap",
-        "probe",
         "player",
         "player",
         "bootstrap",

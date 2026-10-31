@@ -499,15 +499,6 @@ def _capture_pytest_path(p: Project, monkeypatch) -> Recorder:
     return recorder
 
 
-def _capture_python_oracle(p: Project, monkeypatch) -> Recorder:
-    oracle = p.repo / "tests" / "oracle_roundtrip.py"
-    oracle.parent.mkdir()
-    oracle.write_text("def test_x():\n    assert True\n", encoding="utf-8")
-    recorder = _record_run(monkeypatch)
-    _validator(p)._produce_python_oracle([oracle])
-    return recorder
-
-
 def _capture_timeout_probe(p: Project, monkeypatch) -> Recorder:
     other = p.out.parent / "tools" / "python"
     other.symlink_to(sys.executable)
@@ -567,7 +558,6 @@ def _capture_bdd_probe_for_sweep(p: Project, monkeypatch) -> Recorder:
 CAPTURED_SITES: List[Tuple[str, Callable[..., Recorder]]] = [
     ("1a making the virtual environment", _capture_venv_creation),
     ("5 checker's pytest-path test", _capture_pytest_path),
-    ("9 behavioural oracle (Python file)", _capture_python_oracle),
     ("13 pytest-timeout probe", _capture_timeout_probe),
     ("25 BDD runs", _capture_bdd_run),
     ("25a pytest-bdd probe via run_bdd_for_task", _capture_bdd_probe_for_task),

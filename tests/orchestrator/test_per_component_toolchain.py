@@ -287,28 +287,6 @@ class TestComponentCwd:
         v.run_independent_tests()
         assert (worktree / "clients" / "web" / "here.txt").exists()
 
-    def test_a_declared_pytest_component_keeps_the_interpreter_pin(self, repo):
-        """A component whose command IS pytest still takes the venv-pinned
-        ``python -m pytest`` branch — with the component's cwd."""
-        root, worktree = repo
-        v = _validator(
-            root,
-            worktree,
-            {
-                "test": "pytest -q",
-                "components": {
-                    "backend": {"cwd": "app", "test": "pytest tests/ -v --tb=short"}
-                },
-            },
-            component="backend",
-        )
-        with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0, stdout="5 passed", stderr="")
-            v.run_independent_tests()
-        argv = mock_run.call_args.args[0]
-        assert argv[1:3] == ["-m", "pytest"]
-        assert mock_run.call_args.kwargs["cwd"] == str(worktree / "app")
-
     def test_a_component_forces_the_deterministic_subprocess_path(self, repo):
         """The SDK path bakes ``cwd=worktree`` into the harness call, so a
         component task must not take it (and says so at WARNING)."""

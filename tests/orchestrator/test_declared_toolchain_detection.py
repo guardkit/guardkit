@@ -213,19 +213,18 @@ class TestPytestDemotion:
         v._detect_test_command()
         assert v._active_stack_profile is None
 
-    def test_declared_pytest_runs_through_the_interpreter_pinned_branch(self, repo):
-        """A declared ``pytest …`` still takes the venv-pinned
-        ``python -m pytest`` path, not the generic shell path."""
+    def test_a_declared_pytest_command_runs_exactly_as_declared(self, repo):
+        """31 October 2026: GuardKit does not rewrite a declared ``pytest …``
+        (no pinned interpreter, no injected flags); it runs through the shell
+        like any other declared command."""
         root, worktree = repo
         (worktree / "pyproject.toml").touch()
         v = _validator_with_declaration(root, worktree, {"test": _TODAYS_PYTEST_DEFAULT})
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0, stdout="5 passed", stderr="")
             result = v.run_independent_tests()
-        argv = mock_run.call_args.args[0]
-        assert isinstance(argv, list)
-        assert argv[1:3] == ["-m", "pytest"]
-        assert mock_run.call_args.kwargs.get("shell") in (None, False)
+        assert mock_run.call_args.args[0] == _TODAYS_PYTEST_DEFAULT
+        assert mock_run.call_args.kwargs.get("shell") is True
         assert result.tests_passed is True
 
 

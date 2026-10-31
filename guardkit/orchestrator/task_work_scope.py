@@ -351,25 +351,6 @@ def approved_head(root):
     return _approved_heads.get(str(git_dir))
 
 
-def bootstrap_admitted_checkout(scope):
-    """Run the existing product-writing bridge bootstrap under task ownership.
-
-    Preserve the admitted baseline; any bridge written is visible in the same
-    inventory/audit/checkpoint as the rest of this task's actual changes.
-    """
-    lease = current_lease()
-    if lease is None or scope is None or scope is not lease.scope:
-        raise ScopeUnavailable("Bootstrap requires the retained admitted task scope")
-    lease.verify(scope)
-    selected = _selected.setdefault(str(lease.repositories[0][2]), {})
-    if selected.get("bridge_bootstrapped"):
-        return
-    from guardkit.templates.conftest_bridge import install_features_conftest_bridge
-
-    install_features_conftest_bridge(Path(scope.repositories[0].root))
-    selected["bridge_bootstrapped"] = True
-
-
 def collect_changes(scope):
     if not isinstance(scope, TaskWorkScope):
         raise ScopeUnavailable(

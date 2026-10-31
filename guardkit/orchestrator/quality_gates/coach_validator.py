@@ -51,9 +51,8 @@ from typing import (
     Tuple,
 )
 
-from guardkit.lib.pytest_argv import isolated_basetemp
 from guardkit.lib.pytest_summary import parse_pytest_summary
-from guardkit.orchestrator.coach_verification import InterpreterResolutionError, _resolve_venv_python
+from guardkit.orchestrator.coach_verification import _resolve_venv_python
 from guardkit.orchestrator import evidence_repos as evidence_repos_lib
 from guardkit.orchestrator.evidence_repos import EvidenceRepo, EvidenceTestResult
 from guardkit.orchestrator.quality_gates.stack_test_execution import (
@@ -241,13 +240,6 @@ def resolve_coach_test_execution(config_value: Optional[str] = None) -> str:
 
 
 
-def _worktree_venv_bin(worktree_path: Path) -> Tuple[str, ...]:
-    """The worktree venv's ``bin`` to put first on PATH, or nothing."""
-    from guardkit.orchestrator.quality_gates.command_models import venv_path_first
-
-    return venv_path_first(worktree_path)
-
-
 def _checker_env(
     validator: "CoachValidator",
     *,
@@ -265,16 +257,6 @@ def _checker_env(
         validator._launch_declaration(main_checkout),
         additions=validator._command_additions(additions, fixtures),
         path_first=path_first,
-    )
-
-
-def _checker_pytest_env(validator: "CoachValidator") -> Dict[str, str]:
-    """The checker's pytest-run environment: the worktree venv's ``bin``
-    first on PATH and this task's test-service URLs."""
-    return _checker_env(
-        validator,
-        path_first=_worktree_venv_bin(validator.worktree_path),
-        fixtures=True,
     )
 
 
@@ -833,8 +815,6 @@ class CoachValidator:
         smoke_expected_exit: int = 0,  # TASK-AB-COACHRUNPARITY01 (arm b)
         security_command: Optional[str] = None,  # the secrets check, when on
         feature_check_repair: Optional[Any] = None,  # whole-feature repair round
-        basetemp_context: Optional[str] = None,  # TASK-AB-BASETEMP01
-        in_autobuild_context: bool = False,  # WS3-S1 Q1 SPLIT (hard-abort)
         toolchain: Optional["ToolchainDeclaration"] = None,  # TS-lane D.1b
         baseline_commit: Optional[str] = None,  # the task's starting commit
     ):
@@ -910,14 +890,6 @@ class CoachValidator:
             worktree venv); results reach the evidence bundle and a
             ran-and-failed (or declared-but-unrunnable) suite blocks the turn.
             Default None -> no sibling-repo test execution.
-        basetemp_context : Optional[str]
-            Attribution label for the per-run pytest ``--basetemp`` isolation
-            (TASK-AB-BASETEMP01). When set (e.g. ``"phase4"`` from the
-            deterministic Phase-4 runner in ``specialist_invocations.py``),
-            it overrides the per-path defaults (``"coach-independent"`` for
-            the standard subprocess run, ``"coach-isolated"`` for the
-            parallel-wave snapshot run) so a leaked tmp dir names the caller.
-            The label is combined with ``task_id`` in the directory prefix.
         toolchain : Optional[ToolchainDeclaration]
             The repo's declared toolchain block (TS-lane D.1b). ``None``
             (default) loads the PRE-TURN-1 SNAPSHOT for ``task_id`` — never
@@ -1011,30 +983,15 @@ class CoachValidator:
         # non-Python projects). Reuses the helper already battle-tested for
         # CoachVerifier (TASK-FIX-7A05) so the two Coach verification surfaces
         # resolve interpreters identically.
-        # WS3-S1 Q1 SPLIT (Rich 2026-07-09): inside an autobuild run a Python
-        # project that resolves no worktree venv is a HARD-ABORT — a wrong
-        # interpreter poisons every downstream Coach verdict (the DD4F-shaped
-        # soft-fail). Interactive CLI callers keep the default (False =
-        # warn-and-fallback). The distinction is an EXPLICIT flag, not a
-        # heuristic. See coach_verification._resolve_venv_python.
-        self._in_autobuild_context = in_autobuild_context
+        # The interpreter is used only by the opt-in SDK test path and the
+        # declared behavioural oracle's records. A worktree without one is
+        # never a reason the check cannot run: the declared command runs as
+        # declared (31 October 2026; it used to stop a project whose root held
+        # a Python marker file but no venv, whatever it declared).
         self._configured_venv_python: Optional[str] = venv_python
-        # Step 2 (26 October 2026, GKT-120): a Python worktree with no
-        # interpreter is no longer a hard abort. The independent test run
-        # reports "could not run" with the remediation as its sentence, which
-        # reaches the reviewer as advice; nothing runs under the wrong
-        # interpreter.
-        self._interpreter_problem: Optional[str] = None
-        try:
-            self._venv_python: Optional[Path] = _resolve_venv_python(
-                self.worktree_path,
-                venv_python,
-                in_autobuild_context=in_autobuild_context,
-            )
-        except InterpreterResolutionError as exc:
-            self._interpreter_problem = str(exc)
-            self._venv_python = None
-            logger.warning("Advice, not a stop: %s", exc)
+        self._venv_python: Optional[Path] = _resolve_venv_python(
+            self.worktree_path, venv_python, in_autobuild_context=False
+        )
         if venv_python and (
             self._venv_python is None
             or str(self._venv_python) != str(Path(venv_python))
@@ -1088,9 +1045,6 @@ class CoachValidator:
         # code (single-task waves only) and records it with the attempt that
         # started the round. None on every other turn -> nothing runs.
         self.feature_check_repair: Optional[Any] = feature_check_repair
-        # TASK-AB-BASETEMP01: caller-supplied attribution label for the per-run
-        # pytest --basetemp; None -> per-path defaults (see _basetemp_context).
-        self._basetemp_context: Optional[str] = basetemp_context
         self.wave_size = max(1, int(wave_size))
         # TASK-AB-NPDET01: the non-Python stack test-execution profile resolved
         # by ``_detect_test_command`` for THIS run (None when no stack row
@@ -1747,19 +1701,13 @@ class CoachValidator:
     ) -> Optional[Dict[str, Any]]:
         """Run the declared behavioural check and return its result.
 
-        Discovery by artefact presence: a file matching
-        ``tests/acceptance/*_roundtrip.py`` under the worktree root is run
-        with pytest. Otherwise the task's ``behavioural_oracle.command``, when
-        declared, is run through the shell in the worktree root. The exit code
-        is the verdict; a timeout counts as ran-and-failed; a command that
-        could not start, or no check at all, returns ``None``.
+        The task's ``behavioural_oracle.command``, when declared, is run
+        through the shell in the worktree root. The exit code is the verdict;
+        a timeout counts as ran-and-failed; a command that could not start,
+        or no check at all, returns ``None``. (A file named
+        ``tests/acceptance/*_roundtrip.py`` used to be run with pytest ahead
+        of the declaration; that guess is gone, 31 October 2026.)
         """
-        oracle_files = sorted(
-            self.worktree_path.glob("tests/acceptance/*_roundtrip.py")
-        )
-        if oracle_files:
-            return self._produce_python_oracle(oracle_files)
-
         command = self._extract_command(task)
         if not command:
             return None
@@ -1834,26 +1782,6 @@ class CoachValidator:
             return None
         command = declaration.get("command")
         return command if isinstance(command, str) and command else None
-
-    def _produce_python_oracle(
-        self,
-        oracle_files: List[Path],
-    ) -> Optional[Dict[str, Any]]:
-        """Run the Python roundtrip oracle and return its result."""
-        oracle_path = oracle_files[0]
-        logger.info(
-            "gather_evidence: discovered behavioural-oracle artefact at %s",
-            oracle_path,
-        )
-        oracle_rel = str(oracle_path.relative_to(self.worktree_path))
-        timeout_seconds = float(
-            os.environ.get("GUARDKIT_ORACLE_TIMEOUT", "300")
-        )
-        interpreter = self._pytest_interpreter()
-        cmd = [interpreter, "-m", "pytest", str(oracle_path)]
-        return self._execute_oracle(
-            cmd, oracle_rel, timeout_seconds, self._venv_bin_first(), "python",
-        )
 
     def _run_shell_command(
         self,
@@ -2774,28 +2702,9 @@ class CoachValidator:
     # never become the harness-wide false-fail an *unconditional* ``--timeout``
     # would be (returncode-4 ``unrecognized arguments`` on any project lacking the
     # plugin — the already-reverted FEAT-FMDR-003 regression, replayed
-    # harness-wide). Defence-in-depth: a mis-fired injection (plugin vanished
-    # between probe and run) degrades to ``signal_absent=True`` via
-    # ``_is_pytest_timeout_usage_error``, which ABFIX-010 carries as ``None``
-    # (fed back), never a counted Player failure. Fail toward feedback.
-
-    @staticmethod
-    def _is_pytest_timeout_usage_error(returncode: int, combined_output: str) -> bool:
-        """True iff a pytest run failed because ``--timeout`` was unrecognised.
-
-        pytest exits ``4`` (usage error) with ``unrecognized arguments:
-        --timeout`` when the plugin is absent. That means our gated injection
-        mis-fired — the oracle produced NO verdict on the Player's code, so it is
-        an ABSENT signal, not a Player test failure (constraint 3,
-        ``.claude/rules/absence-of-failure-is-not-success.md``). The match is
-        deliberately narrow so it can never mask a genuine exit-1 failure, which
-        reports a test summary and never ``unrecognized arguments``.
-        """
-        return (
-            returncode == 4
-            and "unrecognized arguments" in combined_output
-            and "--timeout" in combined_output
-        )
+    # harness-wide). Since 31 October 2026 only the opt-in SDK test path
+    # injects it (``_pin_pytest_command``); a declared command run by the
+    # subprocess path is never rewritten.
 
     def _pytest_timeout_injection_enabled(self) -> bool:
         """Master gate for per-test ``--timeout`` injection (all three must hold).
@@ -2921,27 +2830,14 @@ class CoachValidator:
             self._pytest_timeout_method(),
         ]
 
-    def _basetemp_run_context(self, default_label: str) -> str:
-        """Attribution label for the per-run pytest ``--basetemp`` dir.
-
-        TASK-AB-BASETEMP01: composes ``<task_id>-<label>`` so a leaked dir
-        under system tmp is attributable to its task and call site. A
-        caller-supplied ``basetemp_context`` (e.g. ``"phase4"`` from the
-        deterministic Phase-4 runner) overrides the per-path default.
-        """
-        label = self._basetemp_context or default_label
-        if self.task_id:
-            return f"{self.task_id}-{label}"
-        return label
-
     # ---- what the check ran against (repair 7, 2026-10-12) ---------------
     #
     # Every command this validator runs for its independent check is
     # recorded by ``run_evidence``: the real execution root (the worktree),
-    # its source just before and just after, the declared environment inventory, and the raw container events
-    # of the interval. Recording NEVER changes a verdict: the command itself
-    # is run exactly as before by ``subprocess.run``, and every capture error
-    # is written into the record, never raised.
+    # its source just before and just after, the declared environment
+    # inventory, and the raw container events of the interval. Recording
+    # NEVER changes a verdict, and every capture error is written into the
+    # record, never raised.
 
     _run_evidence_log: Optional[List[Dict[str, Any]]] = None
     _run_evidence_turn: Optional[int] = None
@@ -2958,13 +2854,6 @@ class CoachValidator:
         unchanged. This adds the run records it produced to the result's
         ``run_evidence`` and touches nothing else.
         """
-        problem = getattr(self, "_interpreter_problem", None)
-        if problem:
-            return IndependentTestResult.could_not_run(
-                test_command="the project's test command",
-                detail=problem,
-                duration_seconds=0.0,
-            )
         self._run_evidence_log = []
         self._run_evidence_turn = turn
         try:
@@ -3234,61 +3123,20 @@ class CoachValidator:
             start_time = time.time()
 
             try:
-                # For Python/pytest commands, use sys.executable to eliminate PATH ambiguity.
-                # This ensures the same interpreter as the orchestrator process is used,
-                # avoiding discrepancies when the shell resolves `python3` via PATH.
-                if test_cmd.startswith("pytest"):
-                    parts = test_cmd.split()
-                    # TASK-FIX-COACHPYENV: pin pytest to the bootstrap venv
-                    # interpreter, never sys.executable / PATH pytest.
-                    # TASK-ABFIX-011: append a gated per-test --timeout (no-op
-                    # unless Python stack + pytest-timeout resolvable).
-                    # TASK-AB-BASETEMP01: inject a unique --basetemp under the
-                    # system temp dir so concurrent loops on one host cannot
-                    # race pytest's shared /tmp/pytest-of-<user> default (a
-                    # pre-existing --basetemp in the command wins; the dir is
-                    # best-effort removed after the run).
-                    with isolated_basetemp(
-                        self._basetemp_run_context("coach-independent"),
-                        parts[1:],
-                    ) as basetemp_argv:
-                        cmd = (
-                            [self._pytest_interpreter(), "-m", "pytest"]
-                            + parts[1:]
-                            + self._pytest_timeout_argv()
-                            + basetemp_argv
-                        )
-                        result = self._run_recorded(
-                            cmd,
-                            evidence=(EVIDENCE_WORKTREE, self.worktree_path, None),
-                            cwd=str(self._component_run_cwd(self.worktree_path)),
-                            capture_output=True,
-                            text=True,
-                            timeout=self.test_timeout,
-                            env=_checker_pytest_env(self),
-                        )
-                else:
-                    # TS-lane D.1b (design §B.5): the declared / non-pytest
-                    # command runs with the WORKTREE as cwd and an EXPLICIT
-                    # environment. See ``_declared_command_env``.
-                    #
-                    # Per-component seam: when the task selected a component,
-                    # the cwd is the component's declared directory instead —
-                    # ``flutter test`` needs the package root, and ``cd app &&
-                    # …`` inside the command string is invisible to the
-                    # snapshot reader and to anyone auditing the receipt.
-                    # ``_component_run_cwd`` returns the worktree UNCHANGED
-                    # when no component is active.
-                    result = self._run_recorded(
-                        test_cmd,
-                        evidence=(EVIDENCE_WORKTREE, self.worktree_path, None),
-                        shell=True,
-                        cwd=str(self._component_run_cwd(self.worktree_path)),
-                        capture_output=True,
-                        text=True,
-                        timeout=self.test_timeout,
-                        env=_checker_declared_env(self),
-                    )
+                # The declared command runs exactly as declared, through the
+                # shell, in the part's folder, with an explicit environment
+                # (design §B.5). GuardKit does not rewrite it: no pinned
+                # interpreter, no injected flags (31 October 2026).
+                result = self._run_recorded(
+                    test_cmd,
+                    evidence=(EVIDENCE_WORKTREE, self.worktree_path, None),
+                    shell=True,
+                    cwd=str(self._component_run_cwd(self.worktree_path)),
+                    capture_output=True,
+                    text=True,
+                    timeout=self.test_timeout,
+                    env=_checker_declared_env(self),
+                )
 
                 duration = time.time() - start_time
                 tests_passed = result.returncode == 0
@@ -3623,33 +3471,6 @@ class CoachValidator:
             return work[m.end():], m.group(1)
 
         return cleaned, None
-
-    @staticmethod
-    def _is_test_file_path(path: str) -> bool:
-        """Heuristic: does ``path`` look like a test-file path?
-
-        Recognises the test-file conventions enumerated in AC-006:
-        - Python: ``test_*.py`` (pytest) and ``*_test.py``
-        - Go: ``*_test.go``
-        - C#/.NET: ``Tests/*.cs`` (path component "Tests")
-        - JS/TS: ``*.test.ts`` / ``*.test.js`` / ``*.spec.ts`` / ``*.spec.js``
-        """
-        name = Path(path).name
-        if name.startswith("test_") and name.endswith(".py"):
-            return True
-        if name.endswith("_test.py"):
-            return True
-        if name.endswith("_test.go"):
-            return True
-        if name.endswith(".test.ts") or name.endswith(".test.js"):
-            return True
-        if name.endswith(".spec.ts") or name.endswith(".spec.js"):
-            return True
-        # .NET Tests/*.cs
-        parts = Path(path).parts
-        if any(p == "Tests" for p in parts) and name.endswith(".cs"):
-            return True
-        return False
 
     # ========================================================================
     # Helper Methods

@@ -150,7 +150,7 @@ def test_a_python_run_keeps_the_verdict_and_lists_what_it_made(worktree):
 
 
 @pytest.mark.parametrize(
-    "route", ["pytest in the worktree", "through the SDK"]
+    "route", ["the declared command in the worktree", "through the SDK"]
 )
 def test_every_route_returns_the_object_the_check_made_with_its_record(worktree, monkeypatch, route):
     """The pytest-argv routes and the SDK route hand back the very result the
@@ -188,8 +188,7 @@ def test_every_route_returns_the_object_the_check_made_with_its_record(worktree,
         monkeypatch.setattr(
             IndependentTestResult, "from_run", classmethod(_recording_from_run)
         )
-        v = _validator(worktree, "pytest -q -p no:cacheprovider test_red.py")
-        monkeypatch.setattr(v, "_pytest_interpreter", lambda: sys.executable)
+        v = _validator(worktree, f'"{sys.executable}" -m pytest -q -p no:cacheprovider test_red.py')
 
     result = v.run_independent_tests()
 
@@ -197,7 +196,7 @@ def test_every_route_returns_the_object_the_check_made_with_its_record(worktree,
     runs = result.run_evidence["runs"]
     assert len(runs) == 1
     expected_kind = {
-        "pytest in the worktree": EVIDENCE_WORKTREE,
+        "the declared command in the worktree": EVIDENCE_WORKTREE,
         "through the SDK": EVIDENCE_SDK,
     }[route]
     assert runs[0]["command_kind"] == expected_kind
@@ -205,7 +204,7 @@ def test_every_route_returns_the_object_the_check_made_with_its_record(worktree,
         assert result.tests_passed is False
         assert result.exit_code == 1
         assert result.failure_receipt()["exit_code"] == 1
-        assert isinstance(runs[0]["command"], list)  # the pytest argv itself
+        assert runs[0]["command"] == v.test_command  # run exactly as declared
 
 
 # ---------------------------------------------------------------------------
@@ -233,26 +232,6 @@ def test_a_declared_oracle_command_carries_its_run_record(worktree, monkeypatch,
     json.dumps(result)
     # The oracle's record goes on the oracle's receipt, not the suite's runs.
     assert not v._run_evidence_log
-
-
-def test_a_python_oracle_carries_its_run_record(worktree):
-    import sys
-    import textwrap
-
-    oracle = worktree / "tests" / "acceptance" / "x_roundtrip.py"
-    oracle.parent.mkdir(parents=True)
-    oracle.write_text(textwrap.dedent("""
-        def test_roundtrip():
-            assert True
-    """))
-    v = CoachValidator(worktree_path=worktree, task_id="TASK-R7-001")
-    v._pytest_interpreter = lambda: sys.executable  # type: ignore[method-assign]
-
-    result = v._produce_behavioural_oracle(task={"id": "TASK-R7-001"})
-
-    assert result["oracle_path"] == "tests/acceptance/x_roundtrip.py"
-    assert result["run_evidence"]["command_kind"] == "behavioural oracle"
-    assert isinstance(result["run_evidence"]["command"], list)
 
 
 def test_the_oracle_record_stays_out_of_the_prompt(worktree):

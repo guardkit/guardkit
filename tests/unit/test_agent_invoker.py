@@ -8028,16 +8028,6 @@ class TestBuildInlineImplementProtocol:
         assert "TDD Mode" not in protocol
         assert "BDD Mode" not in protocol
 
-    def test_protocol_includes_coverage_thresholds(self, worktree_path):
-        """Protocol must specify coverage quality gates."""
-        invoker = AgentInvoker(worktree_path=worktree_path)
-        protocol = invoker._build_inline_implement_protocol("TASK-001")
-
-        assert "80%" in protocol  # Line coverage threshold
-        assert "75%" in protocol  # Branch coverage threshold
-        assert "Coverage Quality Gates" in protocol
-
-
 class TestInvokeTaskWorkImplementInlineProtocol:
     """Tests verifying _invoke_task_work_implement uses inline protocol.
 

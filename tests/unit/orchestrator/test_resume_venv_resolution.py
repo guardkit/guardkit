@@ -249,21 +249,6 @@ class TestInterpreterResolutionSplitPosture:
         # Default construction (interactive) still succeeds.
         assert CoachVerifier(tmp_path)._venv_python is None
 
-    def test_coach_validator_autobuild_context_reports_could_not_run(
-        self, tmp_path: Path
-    ) -> None:
-        """Step 2 (26 October 2026, GKT-120): advice, not a hard abort. The
-        Coach's own test run says the project's tests could not be run, with
-        the remediation, and nothing runs under the wrong interpreter."""
-        (tmp_path / "pyproject.toml").write_text("[project]\nname = 'x'\n")
-        validator = CoachValidator(str(tmp_path), in_autobuild_context=True)
-        result = validator.run_independent_tests()
-        assert result.check_could_not_run is True
-        assert "re-run environment bootstrap" in result.check_could_not_run_detail
-        # Default (interactive) construction still succeeds.
-        CoachValidator(str(tmp_path))
-
-
 # ---------------------------------------------------------------------------
 # AC-002 — hash-match skip path threads a usable venv_python
 # ---------------------------------------------------------------------------

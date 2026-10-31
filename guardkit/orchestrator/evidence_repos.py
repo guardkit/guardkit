@@ -499,48 +499,6 @@ def qualified_paths_for_changes(
 # Independent per-repo tests (AC-002)
 # ============================================================================
 
-# Pytest exit codes that indicate the run died before/inside collection
-# (2 = interrupted, 3 = internal error, 4 = usage/collection error). Exit 1
-# is a genuine ran-and-failed verdict and is NEVER reclassified
-# (TASK-FIX-SIBTESTENV01 AC-3).
-_COLLECTION_ERROR_EXITS: Tuple[int, ...] = (2, 3, 4)
-
-# Import-failure signatures pytest emits when a test module cannot even be
-# imported during collection -- the fingerprint of a mis-resolved
-# interpreter (the FEAT-10AC run-2 shape), not of failing tests.
-_COLLECTION_IMPORT_ERROR_MARKERS: Tuple[str, ...] = (
-    "ImportError while importing test module",
-    "ModuleNotFoundError: No module named",
-    "ImportError: cannot import name",
-)
-
-# Veto: if ANY tests actually ran ("3 passed", "1 failed"), the suite
-# executed and a late import error must stay ran-and-failed -- bias to
-# failure on ambiguity (the bdd_runner precedent).
-_TESTS_ACTUALLY_RAN_RE = re.compile(r"\b\d+ (?:passed|failed)\b")
-
-
-def _is_collection_import_error(returncode: Optional[int], output: str) -> bool:
-    """True when a test run died at collection with an import error (AC-3).
-
-    Classification rules (TASK-FIX-SIBTESTENV01):
-
-    1. Exit code must be in :data:`_COLLECTION_ERROR_EXITS`. Exit 1 (tests
-       ran and failed) is never reclassified.
-    2. VETO: when :data:`_TESTS_ACTUALLY_RAN_RE` matches the output, tests
-       executed -- the result stays ran-and-failed regardless of any
-       import-error text.
-    3. At least one :data:`_COLLECTION_IMPORT_ERROR_MARKERS` signature must
-       be present. An ambiguous exit-2 with no marker stays ran-and-failed
-       (bias to failure, per ``absence-of-failure-is-not-success``).
-    """
-    if returncode not in _COLLECTION_ERROR_EXITS:
-        return False
-    if _TESTS_ACTUALLY_RAN_RE.search(output):
-        return False
-    return any(marker in output for marker in _COLLECTION_IMPORT_ERROR_MARKERS)
-
-
 def _resolve_repo_interpreter(repo: EvidenceRepo) -> Optional[str]:
     """Resolve the Python interpreter a sibling repo's tests pin to.
 
@@ -667,22 +625,6 @@ def run_repo_tests(
         )
 
     combined = (proc.stdout or "") + (proc.stderr or "")
-    if _is_collection_import_error(proc.returncode, combined):
-        return EvidenceTestResult(
-            repo_name=repo.name,
-            command=repo.test_command,
-            ran=False,
-            passed=False,
-            returncode=proc.returncode,
-            output_summary=(
-                f"Evidence-repo test collection failed with an import error "
-                f"(exit {proc.returncode}) -- the suite NEVER ran, so "
-                f"sibling-repo work is UNVERIFIED (absent signal, not a test "
-                f"failure; TASK-FIX-SIBTESTENV01 AC-3). Likely an environment "
-                f"/ interpreter mismatch, not a deliverable defect.\n"
-                + _truncate(combined)
-            ),
-        )
     return EvidenceTestResult(
         repo_name=repo.name,
         command=repo.test_command,

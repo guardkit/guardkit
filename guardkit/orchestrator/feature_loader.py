@@ -306,11 +306,11 @@ class SmokeGates(BaseModel):
         Exit code that signals success. Default: 0.
     timeout : int
         Seconds before the subprocess is killed. Default: 120.
-    exit5_is_hard_fail : bool
-        Treat pytest exit code 5 (no tests collected) as a hard failure.
-        Default ``False`` — exit 5 is treated as a soft "gate not wired"
-        warning and the feature build continues. Set to ``True`` for strict
-        gate enforcement (TASK-FIX-SG05).
+
+    Only ``expected_exit`` passes; no other exit code means anything special
+    (31 October 2026: ``exit5_is_hard_fail`` and the exit-5 "gate not wired"
+    pass went; an old feature file that still sets it is read as before,
+    since unknown keys are ignored).
     """
 
     # The cull (27 October 2026, GKT-034): unknown keys are ignored and the
@@ -322,7 +322,6 @@ class SmokeGates(BaseModel):
     command: str = Field(min_length=1)
     expected_exit: int = 0
     timeout: int = 120
-    exit5_is_hard_fail: bool = False
 
 
 class BehaviouralOracle(BaseModel):

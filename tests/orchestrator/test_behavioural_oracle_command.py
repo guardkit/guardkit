@@ -210,61 +210,7 @@ class TestCommandTimeout:
 
 
 # ============================================================================
-# AC-004: precedence — roundtrip.py exists → command is NOT used
-# ============================================================================
-
-
-class TestPrecedence:
-    """AC-004: When a *_roundtrip.py artefact exists, the file path runs
-    and the command does NOT (existing file-glob tests stay green)."""
-
-    def test_roundtrip_py_takes_precedence_over_command(self, tmp_path: Path) -> None:
-        """When roundtrip.py exists, the command is ignored even if declared."""
-        worktree_path = tmp_path / "worktree-precedence"
-        oracle_dir = worktree_path / "tests" / "acceptance"
-        oracle_dir.mkdir(parents=True)
-        oracle_path = oracle_dir / "x_roundtrip.py"
-        oracle_path.write_text(
-            textwrap.dedent("""
-                def test_roundtrip():
-                    assert True
-            """)
-        )
-        validator = _make_validator(worktree_path)
-        task = _task_with_command(command="false")
-        result = validator._produce_behavioural_oracle(task=task)
-        assert result is not None
-        assert result["status"] == "ran"
-        assert result["passed"] is True
-        # Should use the Python oracle, NOT the command
-        assert "oracle_path" in result
-        assert result["oracle_path"] == "tests/acceptance/x_roundtrip.py"
-        # Command should NOT appear in the result
-        assert "command" not in result
-
-    def test_failing_roundtrip_py_still_takes_precedence(self, tmp_path: Path) -> None:
-        """Failing roundtrip.py still takes precedence (command not used)."""
-        worktree_path = tmp_path / "worktree-precedence-fail"
-        oracle_dir = worktree_path / "tests" / "acceptance"
-        oracle_dir.mkdir(parents=True)
-        oracle_path = oracle_dir / "fail_roundtrip.py"
-        oracle_path.write_text(
-            textwrap.dedent("""
-                def test_roundtrip():
-                    assert False, "oracle failure"
-            """)
-        )
-        validator = _make_validator(worktree_path)
-        task = _task_with_command(command="true")
-        result = validator._produce_behavioural_oracle(task=task)
-        assert result is not None
-        assert result["passed"] is False
-        assert "oracle_path" in result
-        assert "command" not in result
-
-
-# ============================================================================
-# AC-006: no oracle, no command → absent
+# Absent
 # ============================================================================
 
 
@@ -379,30 +325,3 @@ class TestGatherEvidenceIntegration:
         assert bundle.behavioural_oracle["status"] == "ran"
         assert bundle.behavioural_oracle["passed"] is True
         assert "command" in bundle.behavioural_oracle
-
-    def test_gather_evidence_roundtrip_takes_precedence(self, tmp_path: Path) -> None:
-        """gather_evidence runs roundtrip.py, ignores command."""
-        worktree_path = tmp_path / "worktree-e2e-precedence"
-        task_id = "TASK-SELFFIX-002-E2E-PRC"
-        self._write_task_work_results(
-            worktree_path,
-            task_id,
-            self._base_payload(
-                task_id,
-                ["src/app.py", "tests/acceptance/x_roundtrip.py"],
-                ["src/app.py"],
-            ),
-        )
-        oracle_dir = worktree_path / "tests" / "acceptance"
-        oracle_dir.mkdir(parents=True, exist_ok=True)
-        oracle_path = oracle_dir / "x_roundtrip.py"
-        oracle_path.write_text("def test_x():\n    assert True\n")
-        validator = _make_validator(worktree_path)
-        task = _task_with_command(command="false")
-        bundle = validator.gather_evidence(
-            task_id=task_id, turn=1, task=task,
-        )
-        assert bundle.behavioural_oracle is not None
-        assert bundle.behavioural_oracle["passed"] is True
-        assert "oracle_path" in bundle.behavioural_oracle
-        assert "command" not in bundle.behavioural_oracle
