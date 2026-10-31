@@ -84,6 +84,7 @@ __all__ = [
     "finish_project_environment",
     "main_checkout_environment",
     "minimal_environment_note",
+    "missing_program",
     "project_command_environment",
     "withheld_settings",
 ]
@@ -379,3 +380,55 @@ def minimal_environment_note(env: Optional[Mapping[str, str]]) -> str:
         + " If the command needs one, add its name to `launch.settings` in "
         "`.guardkit/config.yaml`."
     )
+
+
+#: Words the shell itself understands: never looked up as a program.
+_SHELL_WORDS = frozenset(
+    "! { } ( ) [ [[ . : alias bg break builtin cd command continue declare "
+    "eval exec exit export false fg for function getopts hash if jobs let "
+    "local printf pwd read readonly return set shift source test time "
+    "times trap true type typeset ulimit umask unalias unset until wait "
+    "while case echo".split()
+)
+
+
+def missing_program(
+    command: str, folder: Path, env: Mapping[str, str]
+) -> Optional[str]:
+    """Why ``command``'s own program cannot be found, or ``None``.
+
+    The first word of the declared command, after any leading ``NAME=value``
+    settings, is looked up the way the shell would: a word with a ``/`` in
+    the part's ``folder``, a bare name on ``env``'s ``PATH``. A word the
+    shell understands itself (``cd``, ``export``, ``(``) is never looked up,
+    and text that cannot be split into words is left to the shell
+    (1 November 2026). A missing program here means the check could not run;
+    a program missing inside a script that did start is the script failing.
+    """
+    import re
+    import shlex
+    import shutil
+
+    try:
+        words = shlex.split(command, posix=True)
+    except ValueError:
+        return None
+    while words and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", words[0], re.S):
+        words.pop(0)
+    if not words:
+        return None
+    program = words[0]
+    if program in _SHELL_WORDS or any(c in program for c in "$`;&|<>*?(){}"):
+        return None
+    if "/" in program:
+        target = Path(program)
+        if not target.is_absolute():
+            target = Path(folder) / target
+        if not target.is_file():
+            return f"its program `{program}` does not exist in {folder}"
+        if not os.access(target, os.X_OK):
+            return f"its program `{program}` in {folder} is not executable"
+        return None
+    if shutil.which(program, path=env.get("PATH", "")) is None:
+        return f"its program `{program}` is not on the command's PATH"
+    return None

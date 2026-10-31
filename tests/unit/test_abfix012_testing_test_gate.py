@@ -200,22 +200,6 @@ def _subprocess_validator(tmp_path: Path) -> CoachValidator:
 
 
 class TestSubstrateRoutesToSignalAbsent:
-    def test_rc127_command_not_found_is_absent(self, tmp_path: Path) -> None:
-        v = _subprocess_validator(tmp_path)
-        with patch("subprocess.run", return_value=_proc(127, stderr="psql: command not found")):
-            r = v.run_independent_tests()
-        assert r.tests_passed is False
-        assert r.signal_absent is True  # absent → feedback, never a code block
-
-    def test_pytest_wrapped_command_not_found_is_absent(self, tmp_path: Path) -> None:
-        # pytest exits 1 but a test shelled out to a missing tool — the captured
-        # "command not found" string makes it an absent signal.
-        v = _subprocess_validator(tmp_path)
-        out = "FAILED tests/test_x.py::test_db\nbash: psql: command not found\n1 failed"
-        with patch("subprocess.run", return_value=_proc(1, stdout=out)):
-            r = v.run_independent_tests()
-        assert r.signal_absent is True
-
     def test_genuine_code_failure_is_NOT_absent(self, tmp_path: Path) -> None:
         # The load-bearing regression: a real code failure (no substrate string)
         # must stay a ran-and-failed signal so it reaches the code-failure guard.

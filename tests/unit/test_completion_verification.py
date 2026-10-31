@@ -166,11 +166,14 @@ class TestDeclaredToolchainTestCommand:
 class TestDeclaredCommandClassification:
     """Driven for real: the declared command actually runs."""
 
-    def test_a_declared_command_whose_program_is_missing_failed(
+    def test_a_declared_command_whose_program_is_missing_could_not_run(
         self, tmp_path
     ):
-        """Exit 127 from a declared command is a failure, whatever program it
-        names: the shell ran it (FEAT-8BB4, 31 October 2026)."""
+        """The declared command's own program does not exist, so it never
+        started: unverified, the same rule as the after-task check (1
+        November 2026; it was read as a failure from its exit 127). A
+        program missing inside a script that started still fails
+        (tests/orchestrator/test_missing_program.py, FEAT-8BB4)."""
         _python_repo(tmp_path, with_venv=False)
         _declare_toolchain_test(
             tmp_path, '"/nowhere/there-is-no-python" -m pytest -q tests/'
@@ -181,8 +184,9 @@ class TestDeclaredCommandClassification:
             tmp_path, command, source, declaration=declaration, timeout=60
         )
 
-        assert result.status == "failed"
-        assert result.detail.startswith("verification command failed (exit 127)")
+        assert result.status == "unverified"
+        assert result.detail.startswith("verification command could not start")
+        assert "/nowhere/there-is-no-python" in result.detail
         assert result.source == "repository toolchain declaration"
 
     def test_a_declared_non_pytest_command_is_read_by_the_exit_code_rule(

@@ -15,12 +15,24 @@ import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from guardkit.orchestrator.quality_gates.coach_validator import CoachValidator
 from guardkit.orchestrator.quality_gates.stack_test_execution import (
     STACK_TEST_PROFILES,
 )
 
 _TASK_ID = "TASK-FOO-001"
+
+
+@pytest.fixture(autouse=True)
+def _programs_are_found(monkeypatch):
+    """The run itself is mocked, so the lookup of the command's program is
+    too (dotnet and go need not be installed where the suite runs)."""
+    monkeypatch.setattr(
+        "guardkit.orchestrator.quality_gates.coach_validator.missing_program",
+        lambda *_args: None,
+    )
 
 
 def _profile(stack):

@@ -68,6 +68,7 @@ from guardkit.orchestrator.launch_declaration import (
 )
 from guardkit.orchestrator.project_command_env import (
     minimal_environment_note,
+    missing_program,
     project_command_environment,
 )
 from guardkit.orchestrator.toolchain_declaration import (
@@ -3129,6 +3130,27 @@ class CoachValidator:
             start_time = time.time()
 
             try:
+                run_cwd = self._component_run_cwd(self.worktree_path)
+                # The declared command's own program must exist, in the
+                # part's folder or on its PATH; if not, the check could not
+                # run (1 November 2026). A program missing inside a script
+                # that started is the script failing, sent to the builder.
+                missing = missing_program(
+                    test_cmd, run_cwd, _checker_declared_env(self)
+                )
+                if missing is not None:
+                    where = (
+                        f"part {self._component} (in {self._component_toolchain.cwd})"
+                        if self._component_toolchain is not None
+                        else "the root part"
+                    )
+                    detail = f"`{test_cmd}` for {where} could not start: {missing}"
+                    logger.error("The check could not run: %s", detail)
+                    return IndependentTestResult.could_not_run(
+                        test_command=test_cmd,
+                        detail=detail,
+                        duration_seconds=0.0,
+                    )
                 # The declared command runs exactly as declared, through the
                 # shell, in the part's folder, with an explicit environment
                 # (design §B.5). GuardKit does not rewrite it: no pinned
@@ -3137,7 +3159,7 @@ class CoachValidator:
                     test_cmd,
                     evidence=(EVIDENCE_WORKTREE, self.worktree_path, None),
                     shell=True,
-                    cwd=str(self._component_run_cwd(self.worktree_path)),
+                    cwd=str(run_cwd),
                     capture_output=True,
                     text=True,
                     timeout=self.test_timeout,
@@ -3180,21 +3202,10 @@ class CoachValidator:
                             result.returncode,
                             test_cmd,
                         )
-                elif not tests_passed:
-                    # A missing program (exit 126 or 127, or the shell's own
-                    # "command not found") means the command could not run.
-                    # No other reading of the output is applied: a declared
-                    # command that ran and exited non-zero failed (31 October
-                    # 2026, no framework-shaped readings).
-                    combined = (result.stdout or "") + (result.stderr or "")
-                    if self._is_host_substrate_gap(result.returncode, combined):
-                        signal_absent = True
-                        logger.warning(
-                            "Independent test command could not run "
-                            "(returncode=%s) — not a test failure. cmd=%s",
-                            result.returncode,
-                            test_cmd,
-                        )
+                # Otherwise the exit code is the verdict: 126 and 127 included,
+                # since the command's own program was found above, so a missing
+                # program is one inside the script that ran (FEAT-8BB4's
+                # "eslint: not found"), which fails (1 November 2026).
 
                 logger.info(
                     f"Independent tests "

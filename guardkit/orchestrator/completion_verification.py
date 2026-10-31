@@ -13,8 +13,10 @@ Verification semantics (after-task check redesign, 31 October 2026):
 - The verdict is each command's own exit code: 0 is ``passed`` and any other
   exit, 126 and 127 included, is ``failed`` (a declared script that ran and
   hit a missing program inside it failed; FEAT-8BB4). Only a check that never
-  ran is ``unverified``: nothing is declared, or the command could not be
-  started at all. ``unverified`` is not a pass.
+  ran is ``unverified``: nothing is declared, the command's own program does
+  not exist (``project_command_env.missing_program``, looked up before the
+  run, the same rule as the after-task check), or it could not be started at
+  all. ``unverified`` is not a pass.
 - A timeout is ``failed`` (ran-and-hung is a real defect), never absent.
 - The command is resolved in one place (``resolve_verify_command``): an
   explicit override, then the feature's smoke command, then the project's
@@ -36,6 +38,7 @@ from typing import Dict, List, Optional, Tuple
 from guardkit.orchestrator.launch_declaration import load_launch_declaration
 from guardkit.orchestrator.project_command_env import (
     minimal_environment_note,
+    missing_program,
     project_command_environment,
 )
 
@@ -373,6 +376,16 @@ def _run_one(
             cwd=cwd,
             returncode=None,
             detail=f"verification command could not start: {exc}",
+            source=source,
+        )
+    missing = missing_program(command, repo_root, run_env)
+    if missing is not None:
+        return VerificationResult(
+            status="unverified",
+            command=command,
+            cwd=cwd,
+            returncode=None,
+            detail=f"verification command could not start: {missing}",
             source=source,
         )
     if own_process_group:
