@@ -366,19 +366,18 @@ class TestLoadPlayerReport:
 
 
 class TestCaptureState:
-    """Tests for capture_state method."""
+    """Tests for capture_state method. It reports what git shows and runs no
+    tests (1 November 2026: the hard-coded pytest run was removed, with the
+    tests of what it reported)."""
 
     @patch("guardkit.orchestrator.state_tracker.detect_git_changes")
-    @patch("guardkit.orchestrator.state_tracker.detect_test_results")
     def test_no_state_detected(
         self,
-        mock_test_results: MagicMock,
         mock_git_changes: MagicMock,
         tmp_path: Path,
     ):
         """Test when no state is detected."""
         mock_git_changes.return_value = None
-        mock_test_results.return_value = None
 
         tracker = MultiLayeredStateTracker(
             task_id="TASK-001",
@@ -389,10 +388,8 @@ class TestCaptureState:
         assert result is None
 
     @patch("guardkit.orchestrator.state_tracker.detect_git_changes")
-    @patch("guardkit.orchestrator.state_tracker.detect_test_results")
     def test_git_only_detection(
         self,
-        mock_test_results: MagicMock,
         mock_git_changes: MagicMock,
         tmp_path: Path,
     ):
@@ -403,7 +400,6 @@ class TestCaptureState:
             insertions=50,
             deletions=10,
         )
-        mock_test_results.return_value = None
 
         tracker = MultiLayeredStateTracker(
             task_id="TASK-001",
@@ -417,68 +413,8 @@ class TestCaptureState:
         assert "src/new.py" in result.files_created
 
     @patch("guardkit.orchestrator.state_tracker.detect_git_changes")
-    @patch("guardkit.orchestrator.state_tracker.detect_test_results")
-    def test_test_only_detection(
-        self,
-        mock_test_results: MagicMock,
-        mock_git_changes: MagicMock,
-        tmp_path: Path,
-    ):
-        """Test state capture with only test results."""
-        mock_git_changes.return_value = None
-        mock_test_results.return_value = TestResultsSummary(
-            tests_run=True,
-            tests_passed=True,
-            test_count=10,
-            passed_count=10,
-        )
-
-        tracker = MultiLayeredStateTracker(
-            task_id="TASK-001",
-            worktree_path=tmp_path,
-        )
-        result = tracker.capture_state(turn=1)
-
-        assert result is not None
-        assert result.detection_method == "test_only"
-        assert result.tests_passed is True
-        assert result.test_count == 10
-
-    @patch("guardkit.orchestrator.state_tracker.detect_git_changes")
-    @patch("guardkit.orchestrator.state_tracker.detect_test_results")
-    def test_git_and_test_detection(
-        self,
-        mock_test_results: MagicMock,
-        mock_git_changes: MagicMock,
-        tmp_path: Path,
-    ):
-        """Test state capture with both git and test results."""
-        mock_git_changes.return_value = GitChangesSummary(
-            files_modified=["src/main.py"],
-            insertions=50,
-        )
-        mock_test_results.return_value = TestResultsSummary(
-            tests_run=True,
-            tests_passed=True,
-            test_count=5,
-        )
-
-        tracker = MultiLayeredStateTracker(
-            task_id="TASK-001",
-            worktree_path=tmp_path,
-        )
-        result = tracker.capture_state(turn=1)
-
-        assert result is not None
-        assert result.detection_method == "git_test_detection"
-        assert result.tests_passed is True
-        assert "src/main.py" in result.files_modified
-
-    @patch("guardkit.orchestrator.state_tracker.detect_git_changes")
-    @patch("guardkit.orchestrator.state_tracker.detect_test_results")
     def test_unbound_player_report_does_not_override_scoped_detection(
         self,
-        mock_test_results: MagicMock,
         mock_git_changes: MagicMock,
         tmp_path: Path,
     ):
@@ -501,31 +437,24 @@ class TestCaptureState:
         }
         report_path.write_text(json.dumps(report_data))
 
-        # Set up mocks for git/test detection
+        # Set up the git detection (no tests are run, 1 November 2026)
         mock_git_changes.return_value = GitChangesSummary(
             files_modified=["git_file.py"],
-        )
-        mock_test_results.return_value = TestResultsSummary(
-            tests_run=True,
-            tests_passed=True,
-            test_count=5,
         )
 
         result = tracker.capture_state(turn=1)
 
         assert result is not None
-        assert result.detection_method == "git_test_detection"
+        assert result.detection_method == "git_only"
         assert result.files_modified == ["git_file.py"]
         assert result.files_created == []
         assert result.player_report_loaded is False
         assert result.player_report is None
-        assert result.test_count == 5
+        assert result.test_results is None
 
     @patch("guardkit.orchestrator.state_tracker.detect_git_changes")
-    @patch("guardkit.orchestrator.state_tracker.detect_test_results")
     def test_test_file_identification(
         self,
-        mock_test_results: MagicMock,
         mock_git_changes: MagicMock,
         tmp_path: Path,
     ):
@@ -534,7 +463,6 @@ class TestCaptureState:
             files_modified=["src/main.py", "tests/test_main.py"],
             files_added=["tests/test_new.py"],
         )
-        mock_test_results.return_value = None
 
         tracker = MultiLayeredStateTracker(
             task_id="TASK-001",
@@ -616,10 +544,8 @@ class TestStateTrackerIntegration:
     """Integration tests for MultiLayeredStateTracker."""
 
     @patch("guardkit.orchestrator.state_tracker.detect_git_changes")
-    @patch("guardkit.orchestrator.state_tracker.detect_test_results")
     def test_full_workflow_with_save(
         self,
-        mock_test_results: MagicMock,
         mock_git_changes: MagicMock,
         tmp_path: Path,
     ):
@@ -629,12 +555,6 @@ class TestStateTrackerIntegration:
             files_added=["src/oauth.py", "tests/test_oauth.py"],
             insertions=100,
             deletions=10,
-        )
-        mock_test_results.return_value = TestResultsSummary(
-            tests_run=True,
-            tests_passed=True,
-            test_count=8,
-            passed_count=8,
         )
 
         tracker = MultiLayeredStateTracker(
@@ -656,13 +576,11 @@ class TestStateTrackerIntegration:
         # Verify saved content is valid JSON
         saved_data = json.loads(saved_path.read_text())
         assert saved_data["turn_number"] == 1
-        assert saved_data["detection_method"] == "git_test_detection"
+        assert saved_data["detection_method"] == "git_only"
 
     @patch("guardkit.orchestrator.state_tracker.detect_git_changes")
-    @patch("guardkit.orchestrator.state_tracker.detect_test_results")
     def test_unbound_player_report_is_diagnostic_beside_verification(
         self,
-        mock_test_results: MagicMock,
         mock_git_changes: MagicMock,
         tmp_path: Path,
     ):
@@ -685,32 +603,23 @@ class TestStateTrackerIntegration:
         }
         report_path.write_text(json.dumps(report_data))
 
-        # But independent test verification says tests failed
+        # Git shows the change; no tests are run (1 November 2026)
         mock_git_changes.return_value = GitChangesSummary(
             files_modified=["src/main.py"],
-        )
-        mock_test_results.return_value = TestResultsSummary(
-            tests_run=True,
-            tests_passed=False,  # Independent verification: tests failed
-            test_count=5,
-            passed_count=3,
-            failed_count=2,
         )
 
         state = tracker.capture_state(turn=1)
 
-        assert state.detection_method == "git_test_detection"
+        assert state.detection_method == "git_only"
         assert state.files_modified == ["src/main.py"]
         assert state.player_report_loaded is False
         assert state.player_report is None
-        assert state.tests_passed is False  # Independent verification wins
-        assert state.test_count == 5
+        assert state.tests_passed is False  # the report's claim is not taken
+        assert state.test_results is None
 
     @patch("guardkit.orchestrator.state_tracker.detect_git_changes")
-    @patch("guardkit.orchestrator.state_tracker.detect_test_results")
     def test_tests_not_run_does_not_trust_unbound_report_fallback(
         self,
-        mock_test_results: MagicMock,
         mock_git_changes: MagicMock,
         tmp_path: Path,
     ):
@@ -732,99 +641,12 @@ class TestStateTrackerIntegration:
         }
         report_path.write_text(json.dumps(report_data))
 
-        # Test detection returns no tests run
+        # Git shows nothing and no tests are run (1 November 2026)
         mock_git_changes.return_value = None
-        mock_test_results.return_value = TestResultsSummary(
-            tests_run=False,  # Tests didn't run
-            tests_passed=False,
-            test_count=0,
-        )
 
         state = tracker.capture_state(turn=1)
 
-        assert state.detection_method == "git_test_detection"
-        assert state.tests_passed is False
-        assert state.test_count == 0
-        assert state.player_report_loaded is False
-
-    @patch("guardkit.orchestrator.state_tracker.detect_git_changes")
-    @patch("guardkit.orchestrator.state_tracker.detect_test_results")
-    def test_coach_verifier_results_preferred_when_tests_run(
-        self,
-        mock_test_results: MagicMock,
-        mock_git_changes: MagicMock,
-        tmp_path: Path,
-    ):
-        """Test that CoachVerifier results are preferred over player report when tests run."""
-        # Create Player report with test data
-        tracker = MultiLayeredStateTracker(
-            task_id="TASK-001",
-            worktree_path=tmp_path,
-        )
-        report_dir = tmp_path / ".guardkit" / "autobuild" / "TASK-001"
-        report_dir.mkdir(parents=True)
-        report_path = report_dir / "player_turn_1.json"
-        report_data = {
-            "task_id": "TASK-001",
-            "turn": 1,
-            "files_modified": ["src/main.py"],
-            "tests_passed": True,
-            "test_count": 66,
-        }
-        report_path.write_text(json.dumps(report_data))
-
-        # CoachVerifier succeeds with its own results
-        mock_git_changes.return_value = None
-        mock_test_results.return_value = TestResultsSummary(
-            tests_run=True,
-            tests_passed=True,
-            test_count=42,
-            passed_count=42,
-        )
-
-        state = tracker.capture_state(turn=1)
-
-        # CoachVerifier results preferred over player report
-        assert state.tests_passed is True  # From CoachVerifier
-        assert state.test_count == 42  # From CoachVerifier (not 66 from player report)
-
-    @patch("guardkit.orchestrator.state_tracker.detect_git_changes")
-    @patch("guardkit.orchestrator.state_tracker.detect_test_results")
-    def test_player_report_fallback_no_test_count_key(
-        self,
-        mock_test_results: MagicMock,
-        mock_git_changes: MagicMock,
-        tmp_path: Path,
-    ):
-        """Test fallback to 0 when player report has no test_count key."""
-        tracker = MultiLayeredStateTracker(
-            task_id="TASK-001",
-            worktree_path=tmp_path,
-        )
-        report_dir = tmp_path / ".guardkit" / "autobuild" / "TASK-001"
-        report_dir.mkdir(parents=True)
-        report_path = report_dir / "player_turn_1.json"
-        report_data = {
-            "task_id": "TASK-001",
-            "turn": 1,
-            "files_modified": ["src/main.py"],
-            # No test_count or tests_passed keys
-        }
-        report_path.write_text(json.dumps(report_data))
-
-        mock_git_changes.return_value = None
-        mock_test_results.return_value = TestResultsSummary(
-            tests_run=False,
-            tests_passed=False,
-            test_count=0,
-        )
-
-        state = tracker.capture_state(turn=1)
-
-        # Falls back to defaults when player report lacks keys
-        assert state.tests_passed is False  # Default from .get()
-        assert state.test_count == 0  # Default from .get()
-
+        assert state is None  # the old report's claims recover nothing
 
 # ============================================================================
 # 10. Player Report Loaded Flag Tests (NEW - TASK-DMRF-002)
@@ -955,10 +777,8 @@ class TestPlayerReportLoadedIntegration:
     """Integration tests for player_report_loaded flag with state capture."""
 
     @patch("guardkit.orchestrator.state_tracker.detect_git_changes")
-    @patch("guardkit.orchestrator.state_tracker.detect_test_results")
     def test_unbound_empty_player_report_does_not_create_state(
         self,
-        mock_test_results: MagicMock,
         mock_git_changes: MagicMock,
         tmp_path: Path,
     ):
@@ -983,7 +803,6 @@ class TestPlayerReportLoadedIntegration:
 
         # Mock git/test detection to return None
         mock_git_changes.return_value = None
-        mock_test_results.return_value = None
 
         state = tracker.capture_state(turn=1)
 
@@ -991,10 +810,8 @@ class TestPlayerReportLoadedIntegration:
         assert report_path.exists(), "the diagnostic file is preserved"
 
     @patch("guardkit.orchestrator.state_tracker.detect_git_changes")
-    @patch("guardkit.orchestrator.state_tracker.detect_test_results")
     def test_unbound_empty_player_report_does_not_claim_work(
         self,
-        mock_test_results: MagicMock,
         mock_git_changes: MagicMock,
         tmp_path: Path,
     ):
@@ -1018,7 +835,6 @@ class TestPlayerReportLoadedIntegration:
 
         # Mock git/test detection to return None
         mock_git_changes.return_value = None
-        mock_test_results.return_value = None
 
         state = tracker.capture_state(turn=1)
 
@@ -1026,10 +842,8 @@ class TestPlayerReportLoadedIntegration:
         assert report_path.exists(), "the diagnostic file is preserved"
 
     @patch("guardkit.orchestrator.state_tracker.detect_git_changes")
-    @patch("guardkit.orchestrator.state_tracker.detect_test_results")
     def test_capture_state_sets_player_report_loaded_false_without_report(
         self,
-        mock_test_results: MagicMock,
         mock_git_changes: MagicMock,
         tmp_path: Path,
     ):
@@ -1037,7 +851,6 @@ class TestPlayerReportLoadedIntegration:
         mock_git_changes.return_value = GitChangesSummary(
             files_modified=["a.py"],
         )
-        mock_test_results.return_value = None
 
         tracker = MultiLayeredStateTracker(
             task_id="TASK-001",
@@ -1050,10 +863,8 @@ class TestPlayerReportLoadedIntegration:
         assert state.player_report_loaded is False
 
     @patch("guardkit.orchestrator.state_tracker.detect_git_changes")
-    @patch("guardkit.orchestrator.state_tracker.detect_test_results")
     def test_unbound_player_report_does_not_create_serializable_state(
         self,
-        mock_test_results: MagicMock,
         mock_git_changes: MagicMock,
         tmp_path: Path,
     ):
@@ -1074,7 +885,6 @@ class TestPlayerReportLoadedIntegration:
         report_path.write_text(json.dumps(report_data))
 
         mock_git_changes.return_value = None
-        mock_test_results.return_value = None
 
         state = tracker.capture_state(turn=1)
         assert state is None

@@ -126,7 +126,6 @@ from guardkit.models.task_types import TaskType, TASK_TYPE_ALIASES, get_profile 
 # Import state detection for partial work recovery
 from guardkit.orchestrator.state_detection import (
     detect_git_changes,
-    detect_test_results,
     GitChangesSummary,
 )
 from guardkit.orchestrator.state_tracker import (
@@ -3783,27 +3782,8 @@ class AutoBuildOrchestrator:
         self.recovery_count += 1
 
         try:
-            # Load task to extract test_scope if available
-            from guardkit.tasks.task_loader import TaskLoader
-
-            test_paths = None
-
-            # Prefer player report test files when available
-            if player_report and player_report.get("tests_written"):
-                test_paths = player_report["tests_written"]
-                logger.debug(f"Using player report test paths: {test_paths}")
-
-            if test_paths is None:
-                try:
-                    task_data = TaskLoader.load_task(task_id, repo_root=self.repo_root)
-                    test_scope = task_data.get("frontmatter", {}).get("test_scope")
-                    if test_scope:
-                        test_paths = [test_scope]
-                        logger.debug(f"Using task-specific test scope: {test_scope}")
-                except Exception as e:
-                    logger.debug(f"Could not load task for test_scope extraction: {e}")
-                    # Continue with full-worktree run (backward compatible)
-
+            # What git shows the turn left. No tests are run here (1 November
+            # 2026: this ran a hard-coded pytest); the after-task check decides.
             # Use MultiLayeredStateTracker for cascade detection
             state_tracker = MultiLayeredStateTracker(
                 task_id=task_id,
@@ -3811,7 +3791,7 @@ class AutoBuildOrchestrator:
                 task_work_scope=getattr(self, "task_work_scope", None),
             )
 
-            work_state = state_tracker.capture_state(turn=turn, test_paths=test_paths)
+            work_state = state_tracker.capture_state(turn=turn)
 
             if not work_state or not work_state.has_work:
                 logger.info(f"No work detected in {worktree.path}")
@@ -3820,9 +3800,8 @@ class AutoBuildOrchestrator:
             # Log recovery details
             logger.info(
                 f"State recovery succeeded via {work_state.detection_method}: "
-                f"{work_state.total_files_changed} files, "
-                f"{work_state.test_count} tests "
-                f"({'passing' if work_state.tests_passed else 'failing'})"
+                f"{work_state.total_files_changed} files (no tests run; the "
+                f"after-task check decides)"
             )
 
             # Save detected state for audit trail

@@ -8,12 +8,12 @@ Architecture:
     StateTracker ABC defines the interface (fixes DIP violation)
     MultiLayeredStateTracker implements cascade detection:
         1. Player JSON report (highest fidelity, if available)
-        2. Test execution results (verifies implementation quality)
-        3. Git changes (detects file-level work)
+        2. Git changes (detects file-level work)
+    No tests are run (1 November 2026); the after-task check decides.
 
 Design Patterns:
     - Strategy Pattern: StateTracker ABC enables interchangeable strategies
-    - Chain of Responsibility: Cascade detection (Player → Tests → Git)
+    - Chain of Responsibility: Cascade detection (Player → Git)
     - Dataclass Pattern: Lightweight state containers (GuardKit standard)
 
 Example:
@@ -29,7 +29,6 @@ Example:
     >>> if state:
     ...     print(f"Detection method: {state.detection_method}")
     ...     print(f"Files modified: {len(state.files_modified)}")
-    ...     print(f"Tests passed: {state.tests_passed}")
 """
 
 import json
@@ -44,7 +43,6 @@ from guardkit.orchestrator.state_detection import (
     GitChangesSummary,
     TestResultsSummary,
     detect_git_changes,
-    detect_test_results,
 )
 from guardkit.orchestrator.synthetic_report import is_failure_placeholder
 
@@ -176,14 +174,11 @@ class StateTracker(ABC):
     """
 
     @abstractmethod
-    def capture_state(self, turn: int, test_paths: list[str] | None = None) -> Optional[WorkState]:
+    def capture_state(self, turn: int) -> Optional[WorkState]:
         """Capture current work state via available detection methods.
 
         Args:
             turn: Turn number (1-indexed)
-            test_paths: Optional list of test file/directory paths to scope
-                the test run. When provided, pytest runs only against these
-                paths instead of the entire worktree.
 
         Returns:
             WorkState if any work detected, None otherwise
@@ -199,8 +194,8 @@ class MultiLayeredStateTracker(StateTracker):
 
     Detection Cascade (priority order):
         1. Player JSON report - Highest fidelity, complete context
-        2. CoachVerifier test results - Verifies implementation quality
-        3. Git changes - Detects file-level work (fallback)
+        2. Git changes - Detects file-level work (fallback)
+    No tests are run (1 November 2026).
 
     Attributes:
         task_id: Task identifier
@@ -239,48 +234,31 @@ class MultiLayeredStateTracker(StateTracker):
         self.worktree_path = Path(worktree_path)
         self.autobuild_dir = self.worktree_path / ".guardkit" / "autobuild" / task_id
 
-    def capture_state(self, turn: int, test_paths: list[str] | None = None) -> Optional[WorkState]:
-        """Capture work state using cascade detection.
+    def capture_state(self, turn: int) -> Optional[WorkState]:
+        """Capture work state from what git shows the turn left.
 
-        Detection order:
-        1. Try loading Player JSON report (highest fidelity)
-        2. Always capture git state (independent verification)
-        3. Always run tests (independent verification)
-        4. Synthesize WorkState from available sources
+        No tests are run (1 November 2026: this ran a hard-coded pytest
+        through CoachVerifier, whatever the project declared). The recovered
+        state carries no test result; the after-task check of the parts the
+        task changed decides.
 
         Args:
             turn: Turn number (1-indexed)
-            test_paths: Optional list of test file/directory paths to scope
-                the test run. When provided, pytest runs only against these
-                paths instead of the entire worktree.
 
         Returns:
             WorkState if any work detected, None otherwise
         """
         logger.info(f"Capturing state for {self.task_id} turn {turn}")
 
-        # Layer 1: Try Player report (highest fidelity)
         # A path on disk is not a current-turn producer binding. Recover
         # scoped observations only; preserve old reports as diagnostic files.
         player_report = None
-
-        # Layer 2: Git detection (always run for verification)
         git_changes = detect_git_changes(self.worktree_path, self.task_work_scope)
-
-        # Layer 3: Test detection (always run for verification)
-        test_results = detect_test_results(
-            self.worktree_path,
-            task_id=self.task_id,
-            turn=turn,
-            test_paths=test_paths,
-        )
-
-        # Synthesize WorkState from available sources
         return self._synthesize_state(
             turn=turn,
             player_report=player_report,
             git_changes=git_changes,
-            test_results=test_results,
+            test_results=None,
         )
 
     def _load_player_report(self, turn: int) -> Optional[Dict[str, Any]]:

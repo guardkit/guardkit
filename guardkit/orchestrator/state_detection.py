@@ -5,7 +5,8 @@ performed in a worktree even when Player JSON reports are missing.
 
 Detection Layers:
     1. Git-based detection - Detect uncommitted changes via git status/diff
-    2. Test-based detection - Verify implementation quality via CoachVerifier
+    (The test run through CoachVerifier's hard-coded pytest was removed on
+    1 November 2026; ``TestResultsSummary`` stays as the record's shape.)
 
 Architecture:
     - Uses subprocess with 5-second timeouts for git commands (per arch review)
@@ -254,109 +255,8 @@ def _parse_diff_stats(diff_output: str) -> tuple[int, int]:
     return insertions, deletions
 
 
-def detect_test_results(
-    worktree_path: Path,
-    task_id: str = "",
-    turn: int = 0,
-    test_paths: list[str] | None = None,
-) -> Optional[TestResultsSummary]:
-    """Detect test results by running tests in the worktree.
-
-    Uses the CoachVerifier infrastructure to run tests and capture results.
-    This provides independent verification of implementation quality.
-
-    Args:
-        worktree_path: Path to the git worktree directory
-        task_id: Optional task identifier for logging
-        turn: Optional turn number for logging
-        test_paths: Optional list of test file/directory paths to scope
-            the test run. When provided, pytest runs only against these
-            paths instead of the entire worktree.
-
-    Returns:
-        TestResultsSummary if tests could be run, None on error
-
-    Example:
-        >>> results = detect_test_results(
-        ...     Path(".guardkit/worktrees/TASK-001"),
-        ...     task_id="TASK-001",
-        ...     turn=2,
-        ... )
-        >>> if results and results.tests_run:
-        ...     print(f"Tests {'passed' if results.tests_passed else 'failed'}")
-        ...     print(f"{results.passed_count}/{results.test_count} passing")
-    """
-    worktree_path = Path(worktree_path)
-
-    if not worktree_path.exists():
-        logger.warning(f"Worktree path does not exist: {worktree_path}")
-        return None
-
-    try:
-        # Import CoachVerifier for test execution
-        from guardkit.orchestrator.coach_verification import CoachVerifier
-
-        # Create verifier and run tests
-        # Use extended timeout (300s) for state recovery contexts where
-        # parallel tasks sharing a worktree can cause slower execution
-        verifier = CoachVerifier(worktree_path)
-        test_result = verifier._run_tests(test_paths=test_paths, timeout=300)
-
-        # Parse results
-        passed_count = test_result.test_count if test_result.passed else 0
-        failed_count = 0 if test_result.passed else max(1, test_result.test_count)
-
-        # Truncate output for summary
-        output_summary = test_result.output[:500] if test_result.output else ""
-
-        summary = TestResultsSummary(
-            tests_run=test_result.test_count > 0,
-            tests_passed=test_result.passed,
-            test_count=test_result.test_count,
-            passed_count=passed_count,
-            failed_count=failed_count,
-            output_summary=output_summary,
-            timestamp=datetime.now().isoformat(),
-            error=None,
-        )
-
-        logger.info(
-            f"Test detection ({task_id} turn {turn}): "
-            f"{summary.test_count} tests, "
-            f"{'passed' if summary.tests_passed else 'failed'}"
-        )
-
-        return summary
-
-    except ImportError as e:
-        logger.warning(f"Could not import CoachVerifier: {e}")
-        return TestResultsSummary(
-            tests_run=False,
-            tests_passed=False,
-            test_count=0,
-            passed_count=0,
-            failed_count=0,
-            output_summary="",
-            timestamp=datetime.now().isoformat(),
-            error=f"Import error: {e}",
-        )
-    except Exception as e:
-        logger.warning(f"Test detection failed: {e}")
-        return TestResultsSummary(
-            tests_run=False,
-            tests_passed=False,
-            test_count=0,
-            passed_count=0,
-            failed_count=0,
-            output_summary="",
-            timestamp=datetime.now().isoformat(),
-            error=str(e),
-        )
-
-
 __all__ = [
     "GitChangesSummary",
     "TestResultsSummary",
     "detect_git_changes",
-    "detect_test_results",
 ]

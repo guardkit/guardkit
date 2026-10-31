@@ -8,7 +8,11 @@ FEAT-ABL-005 run 4: ``guardkit autobuild feature --resume`` skipped bootstrap
 collected 0 tests → 8 turns of absent signals that looked like quality
 rejections.
 
-Pins the fix hop by hop:
+Pins the fix hop by hop. (1 November 2026: the Coach's own venv resolution,
+``_resolve_venv_python``, and its hard-abort were removed with the opt-in SDK
+test path and state recovery's pytest run; the declared command runs as
+declared. Their tests went with them. The bootstrap's own venv probe and
+skip path stay until the bootstrap's Python inference is decided.)
 
 1. ``probe_worktree_venv`` / ``_resolve_venv_python`` probe BOTH layouts,
    current (``.venv``) first, legacy (``.guardkit/venv``) second (AC-001).
@@ -35,11 +39,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from guardkit.orchestrator.coach_verification import (
-    CoachVerifier,
-    InterpreterResolutionError,
-    _resolve_venv_python,
-)
 from guardkit.orchestrator.environment_bootstrap import (
     DetectedManifest,
     EnvironmentBootstrapper,
@@ -114,140 +113,6 @@ class TestProbeWorktreeVenv:
     def test_neither_layout_returns_none(self, tmp_path: Path) -> None:
         assert probe_worktree_venv(tmp_path) is None
 
-
-class TestResolveVenvPythonProbeOrder:
-    def test_dot_venv_wins_when_both_exist(self, tmp_path: Path) -> None:
-        current = _make_venv(tmp_path, "current")
-        _make_venv(tmp_path, "legacy")
-        assert _resolve_venv_python(tmp_path, None) == current
-
-    def test_legacy_guardkit_venv_still_resolves(self, tmp_path: Path) -> None:
-        legacy = _make_venv(tmp_path, "legacy")
-        assert _resolve_venv_python(tmp_path, None) == legacy
-
-    def test_resume_shaped_call_resolves_dot_venv(self, tmp_path: Path) -> None:
-        """explicit=None (the --resume shape) with .venv on disk resolves it."""
-        current = _make_venv(tmp_path, "current")
-        assert _resolve_venv_python(tmp_path, None) == current
-
-    def test_fresh_run_explicit_path_unchanged(self, tmp_path: Path) -> None:
-        """An existing explicit interpreter wins over any filesystem probe."""
-        _make_venv(tmp_path, "current")
-        explicit = tmp_path / "elsewhere" / "python"
-        explicit.parent.mkdir(parents=True)
-        explicit.touch()
-        assert _resolve_venv_python(tmp_path, str(explicit)) == explicit
-
-    def test_stale_explicit_falls_through_to_probe(self, tmp_path: Path) -> None:
-        current = _make_venv(tmp_path, "current")
-        assert (
-            _resolve_venv_python(tmp_path, str(tmp_path / "gone" / "python"))
-            == current
-        )
-
-    def test_neither_python_project_warns_once(
-        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
-    ) -> None:
-        """AC-003: Python project + no venv → None + exactly ONE WARNING
-        naming the probed locations and the fallback interpreter."""
-        (tmp_path / "pyproject.toml").write_text("[project]\nname = 'x'\n")
-        with caplog.at_level(logging.WARNING):
-            assert _resolve_venv_python(tmp_path, None) is None
-        warnings = [
-            r
-            for r in caplog.records
-            if r.levelno == logging.WARNING
-            and "TASK-AB-RESUMEVENV01" in r.getMessage()
-        ]
-        assert len(warnings) == 1
-        message = warnings[0].getMessage()
-        assert str(tmp_path / ".venv" / "bin" / "python") in message
-        assert str(tmp_path / ".guardkit" / "venv" / "bin" / "python") in message
-        assert sys.executable in message
-
-    def test_neither_non_python_project_is_silent(
-        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
-    ) -> None:
-        """Non-Python worktree keeps the pre-existing silent-None contract."""
-        with caplog.at_level(logging.WARNING):
-            assert _resolve_venv_python(tmp_path, None) is None
-        assert not [
-            r
-            for r in caplog.records
-            if r.levelno == logging.WARNING
-            and "TASK-AB-RESUMEVENV01" in r.getMessage()
-        ]
-
-
-# ---------------------------------------------------------------------------
-# WS3-S1 — Q1 SPLIT posture: hard-abort inside autobuild, warn+fallback
-# interactive. Decided by Rich 2026-07-09 (WS3 §7). The interactive path is
-# already covered above via the default ``in_autobuild_context=False``; these
-# pin the autobuild-context branch and the explicit (not heuristic) split.
-# ---------------------------------------------------------------------------
-
-
-class TestInterpreterResolutionSplitPosture:
-    def test_autobuild_context_python_project_hard_aborts(
-        self, tmp_path: Path
-    ) -> None:
-        """Python project + no venv + autobuild context → HARD-ABORT."""
-        (tmp_path / "pyproject.toml").write_text("[project]\nname = 'x'\n")
-        with pytest.raises(InterpreterResolutionError) as exc_info:
-            _resolve_venv_python(tmp_path, None, in_autobuild_context=True)
-        message = str(exc_info.value)
-        # GATE: the message names the remediation.
-        assert "HARD-ABORT" in message
-        assert "re-run environment bootstrap" in message
-        assert str(tmp_path / ".venv" / "bin" / "python") in message
-
-    def test_interactive_default_still_warns_and_falls_back(
-        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
-    ) -> None:
-        """The DEFAULT (interactive) path is unchanged: WARNING + None,
-        never a raise. The split is an explicit flag, not a heuristic."""
-        (tmp_path / "pyproject.toml").write_text("[project]\nname = 'x'\n")
-        with caplog.at_level(logging.WARNING):
-            # No in_autobuild_context → warn-and-fallback preserved.
-            assert _resolve_venv_python(tmp_path, None) is None
-            assert (
-                _resolve_venv_python(
-                    tmp_path, None, in_autobuild_context=False
-                )
-                is None
-            )
-
-    def test_autobuild_context_non_python_project_is_silent_none(
-        self, tmp_path: Path
-    ) -> None:
-        """Non-Python worktree never hard-aborts even inside autobuild —
-        there is no project venv to miss."""
-        assert (
-            _resolve_venv_python(tmp_path, None, in_autobuild_context=True)
-            is None
-        )
-
-    def test_autobuild_context_resolves_when_venv_exists(
-        self, tmp_path: Path
-    ) -> None:
-        """A healthy autobuild worktree (venv present) resolves normally and
-        never raises — the hard-abort fires ONLY on the genuinely-broken env."""
-        current = _make_venv(tmp_path, "current")
-        (tmp_path / "pyproject.toml").write_text("[project]\nname = 'x'\n")
-        assert (
-            _resolve_venv_python(tmp_path, None, in_autobuild_context=True)
-            == current
-        )
-
-    def test_coach_verifier_autobuild_context_propagates_raise(
-        self, tmp_path: Path
-    ) -> None:
-        """CoachVerifier(in_autobuild_context=True) hard-aborts in __init__."""
-        (tmp_path / "pyproject.toml").write_text("[project]\nname = 'x'\n")
-        with pytest.raises(InterpreterResolutionError):
-            CoachVerifier(tmp_path, in_autobuild_context=True)
-        # Default construction (interactive) still succeeds.
-        assert CoachVerifier(tmp_path)._venv_python is None
 
 # ---------------------------------------------------------------------------
 # AC-002 — hash-match skip path threads a usable venv_python

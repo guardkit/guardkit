@@ -500,15 +500,6 @@ def _capture_pytest_path(p: Project, monkeypatch) -> Recorder:
     return recorder
 
 
-def _capture_honesty_verifier(p: Project, monkeypatch) -> Recorder:
-    from guardkit.orchestrator.coach_verification import CoachVerifier
-
-    recorder = _record_run(monkeypatch)
-    CoachVerifier(p.repo, venv_python=sys.executable)._run_tests()
-    return recorder
-
-
-
 def _capture_bdd_run(p: Project, monkeypatch) -> Recorder:
     from guardkit.orchestrator.quality_gates import bdd_runner
 
@@ -552,7 +543,6 @@ CAPTURED_SITES: List[Tuple[str, Callable[..., Recorder]]] = [
     ("25 BDD runs", _capture_bdd_run),
     ("25a pytest-bdd probe via run_bdd_for_task", _capture_bdd_probe_for_task),
     ("25a pytest-bdd probe via run_bdd_authoring_sweep", _capture_bdd_probe_for_sweep),
-    ("27 honesty verifier's pytest runs", _capture_honesty_verifier),
 ]
 
 

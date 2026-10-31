@@ -237,11 +237,7 @@ class TestPlaceholderIsNotThePlayersReport:
 
         from guardkit.orchestrator.task_work_scope import current_lease
         tracker = MultiLayeredStateTracker(task_id=TASK_A, worktree_path=worktree, task_work_scope=current_lease().scope)
-        with patch(
-            "guardkit.orchestrator.state_tracker.detect_test_results",
-            return_value=None,
-        ):
-            state = tracker.capture_state(turn=1)
+        state = tracker.capture_state(turn=1)
 
         assert state is not None
         assert state.detection_method != "player_report"
@@ -260,11 +256,7 @@ class TestPlaceholderIsNotThePlayersReport:
 
         from guardkit.orchestrator.task_work_scope import current_lease
         tracker = MultiLayeredStateTracker(task_id=TASK_A, worktree_path=worktree, task_work_scope=current_lease().scope)
-        with patch(
-            "guardkit.orchestrator.state_tracker.detect_test_results",
-            return_value=None,
-        ):
-            state = tracker.capture_state(turn=1)
+        state = tracker.capture_state(turn=1)
 
         assert state.detection_method == "git_only"
         assert state.player_report_loaded is False
@@ -354,19 +346,15 @@ class TestSharedWorkingCopyIsNotEvidence:
         (worktree / "docs" / "widgets.md").write_text("# Widgets\n\nRemove.\n")
         _write_player_report(worktree, TASK_B, 1, _placeholder(TASK_B, 1, 2160))
         orch = _orchestrator(worktree, wave_size=2, shares_working_copy=True)
-        with patch(
-            "guardkit.orchestrator.state_tracker.detect_test_results",
-            return_value=None,
-        ):
-            recovered = orch._attempt_state_recovery(
-                task_id=TASK_B, turn=1, worktree=_FakeWorktree(worktree),
-                original_error=(
-                    "SDK timeout after 2160s: Agent invocation exceeded 2160s timeout"
-                ),
-                acceptance_criteria=CRITERIA, task_type="documentation",
-                player_report={"timed_out": True, "timeout_seconds": 2160,
-                               "elapsed_seconds": 2161},
-            )
+        recovered = orch._attempt_state_recovery(
+            task_id=TASK_B, turn=1, worktree=_FakeWorktree(worktree),
+            original_error=(
+                "SDK timeout after 2160s: Agent invocation exceeded 2160s timeout"
+            ),
+            acceptance_criteria=CRITERIA, task_type="documentation",
+            player_report={"timed_out": True, "timeout_seconds": 2160,
+                           "elapsed_seconds": 2161},
+        )
 
         assert recovered is not None
         report = recovered.report

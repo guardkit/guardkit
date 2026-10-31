@@ -18,7 +18,6 @@ from guardkit.orchestrator.state_detection import (
     GitChangesSummary,
     TestResultsSummary,
     detect_git_changes,
-    detect_test_results,
     _parse_git_status,
     _parse_diff_stats,
     _get_diff_stats,
@@ -331,113 +330,6 @@ class TestDetectGitChanges:
 
 
 # ============================================================================
-# 6. detect_test_results Tests
-# ============================================================================
-
-
-class TestDetectTestResults:
-    """Tests for detect_test_results function."""
-
-    def test_nonexistent_path(self, tmp_path: Path):
-        """Test with non-existent worktree path."""
-        result = detect_test_results(tmp_path / "nonexistent")
-        assert result is None
-
-    @patch("guardkit.orchestrator.coach_verification.CoachVerifier")
-    def test_passing_tests_detected(self, mock_verifier_class: MagicMock, tmp_path: Path):
-        """Test detecting passing tests."""
-        mock_verifier = MagicMock()
-        mock_verifier._run_tests.return_value = MagicMock(
-            passed=True,
-            test_count=10,
-            output="10 passed in 0.5s",
-        )
-        mock_verifier_class.return_value = mock_verifier
-
-        result = detect_test_results(tmp_path, task_id="TASK-001", turn=1)
-
-        assert result is not None
-        assert result.tests_run is True
-        assert result.tests_passed is True
-        assert result.test_count == 10
-        assert result.passed_count == 10
-
-    @patch("guardkit.orchestrator.coach_verification.CoachVerifier")
-    def test_failing_tests_detected(self, mock_verifier_class: MagicMock, tmp_path: Path):
-        """Test detecting failing tests."""
-        mock_verifier = MagicMock()
-        mock_verifier._run_tests.return_value = MagicMock(
-            passed=False,
-            test_count=10,
-            output="7 passed, 3 failed",
-        )
-        mock_verifier_class.return_value = mock_verifier
-
-        result = detect_test_results(tmp_path, task_id="TASK-001", turn=1)
-
-        assert result is not None
-        assert result.tests_run is True
-        assert result.tests_passed is False
-        assert result.test_count == 10
-
-    @patch("guardkit.orchestrator.coach_verification.CoachVerifier")
-    def test_no_tests_found(self, mock_verifier_class: MagicMock, tmp_path: Path):
-        """Test when no tests are found."""
-        mock_verifier = MagicMock()
-        mock_verifier._run_tests.return_value = MagicMock(
-            passed=True,
-            test_count=0,
-            output="no tests ran",
-        )
-        mock_verifier_class.return_value = mock_verifier
-
-        result = detect_test_results(tmp_path, task_id="TASK-001", turn=1)
-
-        assert result is not None
-        assert result.tests_run is False
-        assert result.test_count == 0
-
-    @patch("guardkit.orchestrator.coach_verification.CoachVerifier")
-    def test_test_execution_error(self, mock_verifier_class: MagicMock, tmp_path: Path):
-        """Test handling test execution error."""
-        mock_verifier = MagicMock()
-        mock_verifier._run_tests.side_effect = Exception("pytest failed")
-        mock_verifier_class.return_value = mock_verifier
-
-        result = detect_test_results(tmp_path, task_id="TASK-001", turn=1)
-
-        assert result is not None
-        assert result.tests_run is False
-        assert result.error == "pytest failed"
-
-    @patch("guardkit.orchestrator.coach_verification.CoachVerifier")
-    def test_state_recovery_uses_extended_timeout(self, mock_verifier_class: MagicMock, tmp_path: Path):
-        """Test that detect_test_results passes timeout=300 for state recovery."""
-        mock_verifier = MagicMock()
-        mock_verifier._run_tests.return_value = MagicMock(
-            passed=True,
-            test_count=5,
-            output="5 passed in 1.2s",
-        )
-        mock_verifier_class.return_value = mock_verifier
-
-        detect_test_results(tmp_path, task_id="TASK-001", turn=1)
-
-        mock_verifier._run_tests.assert_called_once_with(test_paths=None, timeout=300)
-
-    def test_coach_verifier_import_error(self, tmp_path: Path):
-        """Test handling import error for CoachVerifier."""
-        # Simulate import error by making the module raise an error
-        with patch.dict("sys.modules", {"guardkit.orchestrator.coach_verification": None}):
-            result = detect_test_results(tmp_path, task_id="TASK-001", turn=1)
-
-            assert result is not None
-            assert result.tests_run is False
-            assert result.error is not None
-            # Import will fail since module is set to None
-
-
-# ============================================================================
 # 7. Integration Tests
 # ============================================================================
 
@@ -445,21 +337,9 @@ class TestDetectTestResults:
 class TestStateDetectionIntegration:
     """Integration tests for state detection."""
 
-    @patch("guardkit.orchestrator.coach_verification.CoachVerifier")
-    def test_full_detection_workflow(
-        self,
-        mock_verifier_class: MagicMock,
-        tmp_path: Path,
-    ):
-        """Test complete detection workflow with git and tests."""
-        # Setup test mock
-        mock_verifier = MagicMock()
-        mock_verifier._run_tests.return_value = MagicMock(
-            passed=True,
-            test_count=5,
-            output="5 passed in 0.3s",
-        )
-        mock_verifier_class.return_value = mock_verifier
+    def test_full_detection_workflow(self, tmp_path: Path):
+        """Detection reports what git shows; no tests are run (1 November
+        2026: the pytest run through CoachVerifier was removed)."""
 
         with _admitted_repo(tmp_path) as (root, scope):
             (root / "src" / "main.py").write_text("value = 2\n")
@@ -470,9 +350,3 @@ class TestStateDetectionIntegration:
         assert git_changes.has_changes is True
         assert len(git_changes.files_modified) == 1
         assert len(git_changes.files_added) == 1
-
-        # Run test detection
-        test_results = detect_test_results(root)
-        assert test_results is not None
-        assert test_results.tests_passed is True
-        assert test_results.test_count == 5
