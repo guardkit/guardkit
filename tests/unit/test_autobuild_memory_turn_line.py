@@ -225,9 +225,10 @@ def test_a_build_with_no_memory_name_says_unavailable(tmp_path, memory, caplog):
 
 # ---------------------------------------------------------------- searched
 #
-# With no project declaration, a turn makes seven reads: the history check,
-# feature specs, task outcomes, architecture, failure patterns, domain
-# knowledge and turn history. Patterns and the three retired builder/reviewer
+# With no project declaration, a turn makes eight reads: the history check,
+# feature specs, task outcomes, architecture documents, decision records
+# (searched apart since 31 October 2026), failure patterns, domain knowledge
+# and turn history. Patterns and the three retired builder/reviewer
 # groups return without searching, so they count as neither.
 
 
@@ -243,11 +244,11 @@ def test_a_failed_search_then_the_same_call_again_searches_again(tmp_path, memor
         first_searches = len(memory.searches)
         builder_turn(orchestrator, 1)  # the same call, well inside five minutes
 
-    line = f"[Memory] builder {TASK} turn 1: searched: 0 completed, 7 failed; 0 above the line (0.50), 0 delivered."
+    line = f"[Memory] builder {TASK} turn 1: searched: 0 completed, 8 failed; 0 above the line (0.50), 0 delivered."
     assert memory_lines(caplog) == [("WARNING", line), ("WARNING", line)]
     # No cache: the second call searched the store again.
-    assert first_searches == 7
-    assert len(memory.searches) == 14
+    assert first_searches == 8
+    assert len(memory.searches) == 16
     assert invoker.invoke_player.await_count == 2
 
 
@@ -264,9 +265,9 @@ def test_partial_failure(tmp_path, memory, caplog):
 
     assert lines[0] == (
         "WARNING",
-        f"[Memory] builder {TASK} turn 1: searched: 6 completed, 1 failed; 0 above the line (0.50), 0 delivered.",
+        f"[Memory] builder {TASK} turn 1: searched: 7 completed, 1 failed; 0 above the line (0.50), 0 delivered.",
     )
-    assert lines[1][0] == "WARNING" and lines[1][1].startswith(f"[Memory] reviewer {TASK} turn 1: searched: 6 completed, 1 failed")
+    assert lines[1][0] == "WARNING" and lines[1][1].startswith(f"[Memory] reviewer {TASK} turn 1: searched: 7 completed, 1 failed")
     assert len(lines) == 4
 
 
@@ -279,7 +280,7 @@ def test_a_successful_empty_search(tmp_path, memory, caplog):
     # falls back to one more memory search, and the line counts it.
     assert lines == [
         ("INFO", f"[Memory] {role} {TASK} turn {turn}: searched: {reads} completed, 0 failed; 0 above the line (0.50), 0 delivered.")
-        for turn, reads in ((1, 7), (2, 8))
+        for turn, reads in ((1, 8), (2, 9))
         for role in ("builder", "reviewer")
     ]
 
@@ -305,7 +306,7 @@ def test_each_line_counts_exactly_the_store_calls_of_its_own_call(tmp_path, memo
             calls.append(len(memory.searches) - before)
 
     lines = memory_lines(caplog)
-    assert calls == [7, 7, 8, 8]
+    assert calls == [8, 8, 9, 9]
     assert [_reported_reads(text) for _, text in lines] == calls
 
 
@@ -324,8 +325,8 @@ def test_a_failure_only_in_the_previous_turn_lookup_is_reported(tmp_path, memory
 
     _, lines = two_turns_both_roles(orchestrator, tmp_path, caplog)
 
-    ok = "searched: 7 completed, 0 failed; 0 above the line (0.50), 0 delivered."
-    broken = "searched: 7 completed, 1 failed; 0 above the line (0.50), 0 delivered."
+    ok = "searched: 8 completed, 0 failed; 0 above the line (0.50), 0 delivered."
+    broken = "searched: 8 completed, 1 failed; 0 above the line (0.50), 0 delivered."
     assert lines == [
         ("INFO", f"[Memory] builder {TASK} turn 1: {ok}"),
         ("INFO", f"[Memory] reviewer {TASK} turn 1: {ok}"),
@@ -345,7 +346,7 @@ def test_everything_below_the_line(tmp_path, memory, caplog):
 
     assert lines[0] == (
         "INFO",
-        f"[Memory] builder {TASK} turn 1: searched: 7 completed, 0 failed; 0 above the line (0.50), 0 delivered.",
+        f"[Memory] builder {TASK} turn 1: searched: 8 completed, 0 failed; 0 above the line (0.50), 0 delivered.",
     )
     assert all(level == "INFO" for level, _ in lines)
 
@@ -358,8 +359,9 @@ def test_above_the_line_and_delivered(tmp_path, memory, caplog):
 
     level, text = lines[0]
     assert level == "INFO"
-    # Six searched categories each kept the one record.
-    assert text == f"[Memory] builder {TASK} turn 1: searched: 7 completed, 0 failed; 6 above the line (0.50), 6 delivered."
+    # Seven searches each kept the one record (architecture is two searches
+    # since 31 October 2026); the record both of those returned is given once.
+    assert text == f"[Memory] builder {TASK} turn 1: searched: 8 completed, 0 failed; 7 above the line (0.50), 6 delivered."
 
 
 def test_above_the_line_but_nothing_delivered_is_a_warning(tmp_path, memory, caplog):
@@ -371,7 +373,7 @@ def test_above_the_line_but_nothing_delivered_is_a_warning(tmp_path, memory, cap
 
     assert lines[0] == (
         "WARNING",
-        f"[Memory] builder {TASK} turn 1: searched: 7 completed, 0 failed; 6 above the line (0.50), 0 delivered.",
+        f"[Memory] builder {TASK} turn 1: searched: 8 completed, 0 failed; 7 above the line (0.50), 0 delivered.",
     )
     assert all(level == "WARNING" for level, _ in lines)
     assert len(lines) == 4

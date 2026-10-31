@@ -199,6 +199,8 @@ class TestSpecificMappings:
         mapping = resolve("project_decisions")
         assert mapping.payload_type == "adr"
         assert mapping.disposition == "migrate"
+        # The tag decision records carry (31 October 2026).
+        assert mapping.domain_tags == ["architecture", "project"]
 
     def test_architecture_decisions_mapping(self):
         """architecture_decisions (system) → adr."""

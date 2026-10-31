@@ -340,11 +340,11 @@ def _outcome_as_paragraph(item: Dict[str, Any]) -> Dict[str, Any]:
 #: text as the builder sees it, not its JSON serialisation.
 RENDERED_RECORD_KEY = "rendered_from"
 
-_ADR_TEXT_FIELDS = (
-    ("decision", "Decision"),
-    ("context", "Context"),
-    ("consequences", "Consequences"),
-)
+#: The decisions-only relevance cut-off. 31 October 2026, measured on 43
+#: recorded tasks that cite 67 decisions: the decisions they cite score in the
+#: band around 0.5 (median 0.50 for those the 0.5 cut-off dropped, 0.63 for
+#: those it kept), so 0.45 lets them through without flooding the share.
+DECISION_THRESHOLD = 0.45
 
 
 def _record_as_text(item: Dict[str, Any]) -> Dict[str, Any]:
@@ -356,10 +356,18 @@ def _record_as_text(item: Dict[str, Any]) -> Dict[str, Any]:
     consequences reached the builder as escaped JSON inside JSON, and the
     escaping counted against the small architecture share, so fewer records
     fitted. Following :func:`_outcome_as_paragraph`, an ``adr`` record becomes
-    a heading (its title or identifier, with its status) and its decision,
-    context, consequences and alternatives as labelled lines; a ``document``
-    record becomes its identifier and its ``content`` body. The result is
-    ``{"content", "uuid", "score", "rendered_from"}``: ``_format_item``
+    a heading (its identifier, title and status), its decision, and where the
+    full record lives; a ``document`` record becomes its identifier and its
+    ``content`` body.
+
+    31 October 2026: a decision record used to carry its context,
+    consequences and alternatives too, 426 to 3,540 tokens as rendered, so
+    usually only the smallest one fitted the architecture share (about 521
+    tokens). The decision itself is what a builder must follow; its source
+    file is named so the agent can open the rest. On 43 recorded tasks this
+    took the cited decisions delivered from 30 to 39 of 67, in fewer tokens.
+
+    The result is ``{"content", "uuid", "score", "rendered_from"}``: ``_format_item``
     prints the text as it is, and ``_estimate_tokens`` charges the rendered
     text itself, never its JSON form (which escapes line breaks and
     non-ASCII characters and counts the key and score). Anything that cannot
@@ -401,18 +409,16 @@ def _record_as_text(item: Dict[str, Any]) -> Dict[str, Any]:
         if text("decision") is None:
             return item
         status = text("status")
-        lines.append(
-            f"Decision record: {heading or 'untitled'}"
-            + (f" ({status})" if status else "")
-        )
-        lines.extend(
-            f"{label}: {text(name)}" for name, label in _ADR_TEXT_FIELDS if text(name)
-        )
-        alternatives = record.get("alternatives")
-        if isinstance(alternatives, list):
-            chosen = [a.strip() for a in alternatives if isinstance(a, str) and a.strip()]
-            if chosen:
-                lines.append("Alternatives considered: " + "; ".join(chosen))
+        identifier = text("identifier")
+        title = text("title")
+        if title:
+            head = f"Decision record {identifier}: {title}" if identifier else f"Decision record: {title}"
+        else:
+            head = f"Decision record {identifier}" if identifier else "Decision record: untitled"
+        lines.append(head + (f" ({status})" if status else ""))
+        lines.append(f"Decision: {text('decision')}")
+        if text("source_ref"):
+            lines.append(f"Full record: {text('source_ref')}")
     elif kind == "document":
         body = text("content")
         if body is None:
@@ -517,10 +523,13 @@ class JobContextRetriever:
     # architecture documents and its decision records (ADRs). /system-arch,
     # /system-plan and ``guardkit memory seed`` save each ADR as an ``adr``
     # record tagged ``architecture``; ``project_architecture`` alone asks for
-    # ``document`` records only, so no decision record was ever found. With
-    # fleet memory this scope reads both ``document`` and ``adr`` records
-    # tagged ``architecture`` (or ``project``, the decision group's own tag).
+    # ``document`` records only, so no decision record was ever found.
+    #
+    # 31 October 2026: the two are searched separately (see
+    # ``_query_architecture``). In one search the documents took nearly half
+    # the results and the share, and only about 1.4 decisions a task arrived.
     ARCHITECTURE_GROUP_IDS = ("project_architecture", "project_decisions")
+    DECISION_GROUP_ID = "project_decisions"
 
     # AutoBuild category priority (appended after standard categories)
     AUTOBUILD_CATEGORY_PRIORITY = [
@@ -1303,6 +1312,19 @@ class JobContextRetriever:
         Returns:
             Tuple of (filtered_results, tokens_used)
         """
+        if (
+            category == "architecture_context"
+            and self.DECISION_GROUP_ID in group_ids
+            and len(group_ids) > 1
+        ):
+            return await self._query_architecture(
+                query=query,
+                group_ids=group_ids,
+                budget_allocation=budget_allocation,
+                threshold=threshold,
+                metrics_collector=metrics_collector,
+                candidate_pool=candidate_pool,
+            )
         try:
             # Only Fleet's contextual task-outcome path opts into substantive
             # records. Generic history consumers retain metadata-only availability.
@@ -1367,6 +1389,81 @@ class JobContextRetriever:
                 "[Memory] Category '%s' query failed: %s", category, e
             )
             return [], 0
+
+    async def _query_architecture(
+        self,
+        query: str,
+        group_ids: List[str],
+        budget_allocation: int,
+        threshold: float,
+        metrics_collector: Optional[MetricsCollector] = None,
+        candidate_pool: Optional[List[Dict[str, Any]]] = None,
+    ) -> tuple[List[Dict[str, Any]], int]:
+        """The architecture category: documents and decision records apart.
+
+        31 October 2026, measured on 43 recorded tasks that cite 67 decisions:
+        searched together, documents took nearly half the results and the
+        share, the 0.5 cut-off fell inside the band the cited decisions score
+        in, and the builder received 30 of the 67. Searched apart, decisions
+        come first from their own search, with the :data:`DECISION_THRESHOLD`
+        cut-off; documents keep the category's threshold and fill what the
+        decisions left of the share, so the category spends no more than
+        before. AutoBuild's spare-capacity pass can still add more of either
+        from the candidates fetched here.
+
+        Returns:
+            Tuple of (decisions then documents, tokens_used)
+        """
+        decisions: List[Dict[str, Any]] = []
+        try:
+            results = await self.graphiti.search(
+                query, group_ids=[self.DECISION_GROUP_ID]
+            )
+        except Exception as e:
+            self.failed_reads += 1
+            logger.warning("[Memory] Decision records query failed: %s", e)
+            results = []
+        for item in (_record_as_text(hit) for hit in results or []):
+            # The group's read also matches architecture documents; those come
+            # from the documents search below.
+            if not isinstance(item, dict) or item.get(RENDERED_RECORD_KEY) == "document":
+                continue
+            if metrics_collector is not None:
+                metrics_collector.add_result(item, category="architecture_context")
+            # The decisions-only cut-off applies to decision records; anything
+            # the store could not type keeps the category's threshold.
+            is_decision = item.get(RENDERED_RECORD_KEY) == "adr"
+            cut_off = min(threshold, DECISION_THRESHOLD) if is_decision else threshold
+            if item.get("score", 1.0) >= cut_off:
+                decisions.append(item)
+        if candidate_pool is not None:
+            candidate_pool.extend(decisions)
+        kept, decision_tokens = self._trim_to_budget(decisions, budget_allocation)
+
+        # Documents fill what the decisions left of the same share, so the
+        # category never spends more than it was given.
+        documents, _ = await self._query_category(
+            query=query,
+            group_ids=[g for g in group_ids if g != self.DECISION_GROUP_ID],
+            budget_allocation=budget_allocation,
+            threshold=threshold,
+            metrics_collector=metrics_collector,
+            category="architecture_context",
+            candidate_pool=candidate_pool,
+        )
+        seen = {d.get("uuid") for d in kept if d.get("uuid")}
+        documents = [
+            d
+            for d in documents
+            if d.get(RENDERED_RECORD_KEY) != "adr" and d.get("uuid") not in seen
+        ]
+        if decision_tokens:
+            documents, document_tokens = self._trim_to_budget(
+                documents, max(0, budget_allocation - decision_tokens)
+            )
+        else:
+            document_tokens = sum(self._estimate_tokens(d) for d in documents)
+        return kept + documents, decision_tokens + document_tokens
 
     async def _query_turn_states(
         self,

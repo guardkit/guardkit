@@ -23,7 +23,7 @@ Usage:
 |----------|--------------|-------------|-------------|----------------------|------|
 | **Project Groups (9)** |
 | task_outcomes | build_outcome | [task] | migrate | task_id | Primary home for task completion data |
-| project_decisions | adr | [project] | migrate | decision_id | Project-level ADRs |
+| project_decisions | adr | [architecture, project] | migrate | decision_id | Project-level ADRs |
 | adrs | adr | [decision] | migrate | decision_id | ADRService.create_adr runtime group_id |
 | project_architecture | document | [architecture] | migrate | doc_path | System architecture docs |
 | project_overview | document | [overview] | migrate | doc_path | High-level project context |
@@ -98,9 +98,12 @@ GROUP_ID_MAP: dict[str, GroupMapping] = {
         domain_tags=["task"],
         disposition="migrate",
     ),
+    # 31 October 2026: ``guardkit memory seed``, /system-arch and /system-plan tag
+    # every decision record ``architecture`` (DDRs also ``design``); with
+    # ``project`` alone a read of this group found none of them.
     "project_decisions": GroupMapping(
         payload_type="adr",
-        domain_tags=["project"],
+        domain_tags=["architecture", "project"],
         disposition="migrate",
     ),
     # ADRService.create_adr writes the literal group_id "adrs" (adr_service.py). Without

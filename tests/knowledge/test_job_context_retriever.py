@@ -518,7 +518,10 @@ class TestContextCategoryQueries:
 
     @pytest.mark.asyncio
     async def test_architecture_query_includes_decision_records(self):
-        """Both retrieval paths ask for architecture documents AND decision records."""
+        """Both retrieval paths ask for architecture documents AND decision records.
+
+        Since 31 October 2026 the two are separate searches (documents took
+        most of one shared search)."""
         from guardkit.knowledge.job_context_retriever import JobContextRetriever
         from guardkit.knowledge.task_analyzer import TaskPhase
 
@@ -537,7 +540,9 @@ class TestContextCategoryQueries:
             group_ids_used = [
                 c[1].get("group_ids", []) for c in mock_graphiti.search.call_args_list
             ]
-            assert ["project_architecture", "project_decisions"] in group_ids_used, method
+            assert ["project_architecture"] in group_ids_used, method
+            assert ["project_decisions"] in group_ids_used, method
+            assert ["project_architecture", "project_decisions"] not in group_ids_used, method
 
     @pytest.mark.asyncio
     async def test_decision_record_lands_in_architecture_context(self):
@@ -2861,8 +2866,9 @@ class TestAutoBuildSpareCapacityReuse:
             for item in getattr(result, category)
         )
         assert result.budget_used <= result.budget_total
-        # Analyzer plus the same ten category searches; reuse adds no read.
-        assert len(memory.calls) == 11
+        # Analyzer plus the same ten category searches, the architecture one
+        # as two (documents and decisions); reuse adds no read.
+        assert len(memory.calls) == 12
         assert result.quality_metrics.items_above_threshold == 2
         assert retriever.failed_reads == 1
 
@@ -2938,7 +2944,8 @@ class TestAutoBuildSpareCapacityReuse:
 
         assert result.similar_outcomes == [outcome]
         assert result.architecture_context == []
-        assert len(memory.calls) == 7  # analyzer plus six standard categories
+        # Analyzer plus six standard categories, architecture searched as two.
+        assert len(memory.calls) == 8
 
     @pytest.mark.asyncio
     async def test_early_termination_reuses_only_queried_pools(self):
@@ -2984,7 +2991,8 @@ class TestAutoBuildSpareCapacityReuse:
         assert ("role_constraints",) not in queried
         assert ("implementation_modes",) not in queried
         assert result.budget_used <= result.budget_total
-        assert len(memory.calls) == 6  # analyzer plus five categories
+        # Analyzer plus five categories, architecture searched as two.
+        assert len(memory.calls) == 7
 
     @pytest.mark.asyncio
     async def test_near_capacity_caps_first_autobuild_category(self):

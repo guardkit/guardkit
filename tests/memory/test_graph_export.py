@@ -70,15 +70,15 @@ def test_migrate_group_builds_typed_document_with_prose_and_tags():
 
     body = json.loads(ep.body)
     assert body["content"] == "A decision."
-    # project_decisions maps to domain_tags ["project"] (fleet_memory_mapping).
-    assert body["domain_tags"] == ["project"]
+    # project_decisions maps to domain_tags ["architecture", "project"] (fleet_memory_mapping).
+    assert body["domain_tags"] == ["architecture", "project"]
 
     # Validates against the REAL DocumentPayload (would be DLQ poison otherwise).
     model = fm_registry.get_model_for_type("document")
     inst = model(**body)
     assert inst.natural_key == "document:guardkit:uuid_abc"
     assert inst.content == "A decision."
-    assert inst.domain_tags == ["project"]
+    assert inst.domain_tags == ["architecture", "project"]
 
 
 def test_retire_group_is_skipped():

@@ -113,14 +113,14 @@ async def test_a_decision_record_reaches_the_builder_as_plain_text():
 
     assert len(items) == 1
     text = items[0]["content"]
-    assert text.splitlines()[0] == "Decision record: One shared workspace (accepted)"
-    assert f"Decision: {DECISION}" in text
-    assert f"Context: {CONTEXT}" in text
-    assert f"Consequences: {CONSEQUENCES}" in text
-    assert (
-        "Alternatives considered: Separate installs per package; One flat package"
-        in text
-    )
+    assert text.splitlines() == [
+        "Decision record ADR_DEMO_001: One shared workspace (accepted)",
+        f"Decision: {DECISION}",
+        "Full record: docs/architecture/decisions/ADR-DEMO-001.md",
+    ]
+    # Compact (31 October 2026): context, consequences and alternatives stay in
+    # the source file the record names.
+    assert CONTEXT not in text and CONSEQUENCES not in text
     assert items[0]["uuid"] == "adr:demo:ADR_DEMO_001"
 
     prompt = _architecture_prompt(items)
@@ -158,14 +158,16 @@ async def test_more_records_fit_the_share_as_text():
 def test_a_record_without_a_typed_key_is_recognised_by_its_fields():
     adr = _record_as_text(_hit(_stored(_adr_payload()), "0b8e-random"))
     doc = _record_as_text(_hit(_stored(_document_payload()), "0b8e-random"))
-    assert adr["content"].startswith("Decision record: One shared workspace")
+    assert adr["content"].startswith("Decision record ADR_DEMO_001: One shared workspace")
     assert doc["content"].endswith(BODY)
 
 
 def test_missing_optional_fields_are_left_out():
-    payload = _adr_payload(title=None, context=None, consequences=None, alternatives=None)
+    payload = _adr_payload(
+        title=None, context=None, consequences=None, alternatives=None, source_ref=None
+    )
     text = _record_as_text(_hit(_stored(payload), "adr:demo:x"))["content"]
-    assert text == f"Decision record: ADR_DEMO_001 (accepted)\nDecision: {DECISION}"
+    assert text == f"Decision record ADR_DEMO_001 (accepted)\nDecision: {DECISION}"
 
 
 @pytest.mark.parametrize(
@@ -215,7 +217,8 @@ def test_the_real_writer_shape_when_fleet_memory_is_installed():
     )
     fact = json.dumps(payload.model_dump(), sort_keys=True, separators=(",", ":"))
     text = _record_as_text(_hit(fact, payload.natural_key))["content"]
-    assert f"Decision: {DECISION}" in text and f"Context: {CONTEXT}" in text
+    assert f"Decision: {DECISION}" in text and "Full record: docs/adr.md" in text
+    assert CONTEXT not in text
     assert "{" not in text
 
 
@@ -277,3 +280,99 @@ def test_other_items_keep_the_json_charge():
         1, len(json.dumps(plain, default=str)) // JobContextRetriever.CHARS_PER_TOKEN
     )
 
+
+
+# ---------------------------------------------------------------------------
+# Decisions searched apart, with their own cut-off (31 October 2026)
+# ---------------------------------------------------------------------------
+# Measured on 43 recorded tasks that cite 67 decisions: one shared search gave
+# the builder 30 of them; documents took most of the results, and the 0.5 cut-off
+# fell where the cited decisions score.
+
+
+def _by_group(decisions, documents):
+    """A memory whose decision group and document group answer differently."""
+
+    async def search(query, group_ids=None, **kwargs):
+        if group_ids == ["project_decisions"]:
+            return decisions
+        if group_ids == ["project_architecture"]:
+            return documents
+        return []
+
+    client = MagicMock()
+    client.search = AsyncMock(side_effect=search)
+    return JobContextRetriever(client, cache_ttl=0)
+
+
+async def _architecture_apart(decisions, documents, budget=2000, threshold=0.5):
+    retriever = _by_group(decisions, documents)
+    items, tokens = await retriever._query_category(
+        "query",
+        list(JobContextRetriever.ARCHITECTURE_GROUP_IDS),
+        budget,
+        threshold,
+        category="architecture_context",
+    )
+    return retriever, items, tokens
+
+
+def test_the_decision_group_reads_the_tag_decision_records_carry():
+    from guardkit.knowledge.fleet_memory_mapping import resolve
+
+    # guardkit memory seed, /system-arch and /system-plan tag them ``architecture``.
+    assert "architecture" in resolve("project_decisions").domain_tags
+
+
+@pytest.mark.asyncio
+async def test_decisions_come_first_and_documents_keep_their_place():
+    adr = _hit(_stored(_adr_payload()), "adr:demo:ADR_DEMO_001", score=0.6)
+    doc = _hit(_stored(_document_payload()), "document:demo:overview", score=0.9)
+    retriever, items, tokens = await _architecture_apart([adr, doc], [doc])
+
+    assert [i["uuid"] for i in items] == ["adr:demo:ADR_DEMO_001", "document:demo:overview"]
+    assert tokens == sum(retriever._estimate_tokens(i) for i in items)
+    searched = [c.kwargs.get("group_ids") for c in retriever.graphiti.search.call_args_list]
+    assert searched == [["project_decisions"], ["project_architecture"]]
+
+
+@pytest.mark.asyncio
+async def test_the_decisions_only_cut_off_is_045():
+    near = _hit(_stored(_adr_payload()), "adr:demo:near", score=0.47)
+    below = _hit(_stored(_adr_payload()), "adr:demo:below", score=0.44)
+    doc = _hit(_stored(_document_payload()), "document:demo:overview", score=0.47)
+    _, items, _ = await _architecture_apart([near, below], [doc], threshold=0.5)
+
+    # A decision at 0.47 reaches the builder; a document at 0.47 still does not.
+    assert [i["uuid"] for i in items] == ["adr:demo:near"]
+
+
+@pytest.mark.asyncio
+async def test_untyped_records_keep_the_category_threshold():
+    untyped = {"fact": "plain prose from another backend", "uuid": "x", "score": 0.47}
+    _, items, _ = await _architecture_apart([untyped], [], threshold=0.5)
+    assert items == []
+
+
+@pytest.mark.asyncio
+async def test_decisions_and_documents_share_one_allocation():
+    adr = _hit(_stored(_adr_payload()), "adr:demo:ADR_DEMO_001", score=0.9)
+    doc = _hit(_stored(_document_payload()), "document:demo:overview", score=0.9)
+    retriever, _, _ = await _architecture_apart([adr], [doc])
+    decision_tokens = retriever._estimate_tokens(_record_as_text(adr))
+
+    # Room for the decision only: the document waits for spare capacity.
+    _, items, tokens = await _architecture_apart([adr], [doc], budget=decision_tokens)
+    assert [i["uuid"] for i in items] == ["adr:demo:ADR_DEMO_001"]
+    assert tokens == decision_tokens
+
+
+@pytest.mark.asyncio
+async def test_other_categories_search_as_before():
+    retriever = _by_group([], [])
+    await retriever._query_category(
+        "query", ["patterns"], 500, 0.5, category="relevant_patterns"
+    )
+    assert [c.kwargs.get("group_ids") for c in retriever.graphiti.search.call_args_list] == [
+        ["patterns"]
+    ]
