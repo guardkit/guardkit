@@ -11,6 +11,7 @@ loop widen its boundary to declared sibling repos:
 
 from __future__ import annotations
 
+import os
 import shlex
 import subprocess
 import sys
@@ -253,31 +254,49 @@ class TestRepoGitEvidence:
 # ---------------------------------------------------------------------------
 
 
+def _run_sibling(repo: "ev.EvidenceRepo", tmp_path: Path):
+    """Run one sibling repository's tests the way the reviewer's check does:
+    through the validator's shared declared-command path (31 October 2026;
+    ``evidence_repos.run_repo_tests`` was removed with its own launch)."""
+    from guardkit.orchestrator.quality_gates.coach_validator import CoachValidator
+
+    worktree = tmp_path / "worktree"
+    worktree.mkdir(exist_ok=True)
+    return CoachValidator(str(worktree), evidence_repos=[repo])._run_sibling_tests(repo)
+
+
 class TestRunRepoTests:
+    # The sibling's run now returns the same result as the task's own parts
+    # (31 October 2026), so these read ``check_could_not_run`` /
+    # ``tests_passed`` / ``exit_code`` where they read ``ran`` / ``passed`` /
+    # ``returncode``; what each case expects is unchanged.
+
     def test_no_command_is_absent_not_pass(self, tmp_path):
         repo = ev.EvidenceRepo(name="r", root=tmp_path)
-        result = ev.run_repo_tests(repo)
-        assert result.ran is False
-        assert result.passed is False  # absent signal != pass
-        assert "UNVERIFIED" in result.output_summary
+        result = _run_sibling(repo, tmp_path)
+        assert result.check_could_not_run is True
+        assert result.tests_passed is False  # absent signal != pass
+        # Was "UNVERIFIED": the sentence now says what is missing, in the
+        # words the task's own parts use.
+        assert "nothing declared" in result.test_output_summary
 
     def test_passing_command(self, tmp_path):
         repo = ev.EvidenceRepo(
             name="r", root=tmp_path, test_command=f"{_PY} -c 'import sys; sys.exit(0)'"
         )
-        result = ev.run_repo_tests(repo)
-        assert result.ran is True
-        assert result.passed is True
-        assert result.returncode == 0
+        result = _run_sibling(repo, tmp_path)
+        assert result.check_could_not_run is False
+        assert result.tests_passed is True
+        assert result.exit_code == 0
 
     def test_failing_command(self, tmp_path):
         repo = ev.EvidenceRepo(
             name="r", root=tmp_path, test_command=f"{_PY} -c 'import sys; sys.exit(1)'"
         )
-        result = ev.run_repo_tests(repo)
-        assert result.ran is True
-        assert result.passed is False
-        assert result.returncode == 1
+        result = _run_sibling(repo, tmp_path)
+        assert result.check_could_not_run is False
+        assert result.tests_passed is False
+        assert result.exit_code == 1
 
     def test_command_runs_in_repo_root(self, tmp_path):
         marker = tmp_path / "marker.txt"
@@ -285,49 +304,58 @@ class TestRunRepoTests:
         repo = ev.EvidenceRepo(
             name="r", root=tmp_path, test_command="test -f marker.txt"
         )
-        result = ev.run_repo_tests(repo)
-        assert result.passed is True
+        result = _run_sibling(repo, tmp_path)
+        assert result.tests_passed is True
 
-    def test_pytest_command_pinned_to_resolved_interpreter(self, tmp_path):
-        # TASK-FIX-SIBTESTENV01: when a per-repo interpreter resolved and the
-        # command is bare pytest, argv is pinned to THAT interpreter (the
-        # sibling's own environment, never the guardkit worktree venv).
-        argv, shell = ev._build_repo_test_argv(
-            "pytest -q tests/", "/sibling/.venv/bin/python"
+    def test_a_compound_command_runs_through_the_shell(self, tmp_path):
+        # Replaces test_pytest_command_pinned_to_resolved_interpreter and
+        # test_non_pytest_command_runs_via_shell (31 October 2026): the
+        # command is no longer split into an argument list and rewritten,
+        # so shell syntax means what it says.
+        repo = ev.EvidenceRepo(
+            name="r", root=tmp_path,
+            test_command="true && echo compound > compound.txt",
         )
-        assert shell is False
-        assert argv == ["/sibling/.venv/bin/python", "-m", "pytest", "-q", "tests/"]
+        result = _run_sibling(repo, tmp_path)
+        assert result.tests_passed is True
+        assert (tmp_path / "compound.txt").read_text().strip() == "compound"
 
-    def test_non_pytest_command_runs_via_shell(self, tmp_path):
-        # A non-bare-head command runs verbatim via shell even when a
-        # per-repo interpreter resolved (TASK-FIX-SIBTESTENV01).
-        argv, shell = ev._build_repo_test_argv("make test", "/sibling/.venv/bin/python")
-        assert shell is True
-        assert argv == "make test"
+    def test_a_missing_program_is_could_not_run(self, tmp_path):
+        # The same missing-program look-up as the task's own parts.
+        repo = ev.EvidenceRepo(
+            name="r", root=tmp_path, test_command="no-such-program-7f3a --run"
+        )
+        result = _run_sibling(repo, tmp_path)
+        assert result.check_could_not_run is True
+        assert "no-such-program-7f3a" in result.check_could_not_run_detail
+        assert "sibling repository r" in result.check_could_not_run_detail
 
-    def test_result_to_dict_shape(self, tmp_path):
-        repo = ev.EvidenceRepo(name="r", root=tmp_path, test_command="true")
-        d = ev.run_repo_tests(repo).to_dict()
-        assert set(d) == {
-            "repo_name",
-            "command",
-            "ran",
-            "passed",
-            "returncode",
-            "output_summary",
-        }
+    def test_the_short_private_tmpdir_is_given(self, tmp_path):
+        # The same environment rules as the task's own parts: a TMPDIR of the
+        # short private gk-<hex> form under the short root (a socket path
+        # must fit).
+        repo = ev.EvidenceRepo(
+            name="r", root=tmp_path, test_command='echo "$TMPDIR" > tmpdir.txt'
+        )
+        result = _run_sibling(repo, tmp_path)
+        assert result.tests_passed is True
+        from guardkit.orchestrator import project_command_env
+
+        tmpdir = Path((tmp_path / "tmpdir.txt").read_text().strip())
+        assert tmpdir.parent == Path(project_command_env.SHORT_TMP_ROOT), tmpdir
+        assert tmpdir.name.startswith("gk-"), tmpdir
 
 
 # ---------------------------------------------------------------------------
-# per-repo interpreter resolution (TASK-FIX-SIBTESTENV01)
+# No interpreter is looked for or put first (31 October 2026)
 # ---------------------------------------------------------------------------
 
 
 def _make_fake_interpreter(path: Path, marker_line: str = "pinned") -> Path:
-    """Create an executable shell script standing in for a Python interpreter.
+    """Create an executable shell script standing in for a program.
 
     When executed with ``cwd=repo.root`` it writes ``ran_by.txt`` naming
-    itself, so tests can assert WHICH interpreter actually ran.
+    itself, so tests can assert WHICH program actually ran.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(f'#!/bin/sh\necho "{marker_line} $0" > ran_by.txt\nexit 0\n')
@@ -335,92 +363,60 @@ def _make_fake_interpreter(path: Path, marker_line: str = "pinned") -> Path:
     return path
 
 
-class TestResolveRepoInterpreter:
-    def test_explicit_absolute_interpreter_wins(self, tmp_path):
-        interp = tmp_path / "custom" / "python"
-        _make_fake_interpreter(interp)
-        repo = ev.EvidenceRepo(name="r", root=tmp_path, interpreter=str(interp))
-        assert ev._resolve_repo_interpreter(repo) == str(interp)
+class TestNoInterpreterIsLookedFor:
+    # TestResolveRepoInterpreter and TestRunRepoTestsInterpreterResolution
+    # kept the implicit choice of a sibling's ``.venv`` and the rewriting of
+    # ``python`` and ``pytest`` commands. Both were removed on 31 October 2026
+    # (no hidden Python defaults): a declared command means what it says,
+    # whatever folders the sibling holds. These replace them.
 
-    def test_explicit_relative_resolves_against_repo_root(self, tmp_path):
-        interp = tmp_path / "tools" / "python"
-        _make_fake_interpreter(interp)
-        repo = ev.EvidenceRepo(name="r", root=tmp_path, interpreter="tools/python")
-        assert ev._resolve_repo_interpreter(repo) == str(interp)
-
-    def test_explicit_precedes_probed_sibling_venv(self, tmp_path):
-        # REC-2: a stale sibling .venv must not silently override an operator
-        # declaration — explicit beats discovery.
-        venv_interp = _make_fake_interpreter(tmp_path / ".venv" / "bin" / "python")
-        explicit = _make_fake_interpreter(tmp_path / "custom" / "python")
-        repo = ev.EvidenceRepo(name="r", root=tmp_path, interpreter=str(explicit))
-        resolved = ev._resolve_repo_interpreter(repo)
-        assert resolved == str(explicit)
-        assert resolved != str(venv_interp)
-
-    def test_missing_explicit_warns_and_falls_through_to_probe(
-        self, tmp_path, caplog
+    def test_a_sibling_venv_is_not_put_in_front_of_a_bare_command(
+        self, tmp_path, monkeypatch
     ):
-        venv_interp = _make_fake_interpreter(tmp_path / ".venv" / "bin" / "python")
-        repo = ev.EvidenceRepo(
-            name="r", root=tmp_path, interpreter="/does/not/exist/python"
-        )
-        with caplog.at_level("WARNING"):
-            resolved = ev._resolve_repo_interpreter(repo)
-        assert resolved == str(venv_interp)
-        assert any(
-            "does not exist" in rec.message for rec in caplog.records
-        ), "missing explicit interpreter must warn loudly before falling through"
-
-    def test_probes_sibling_venv_when_no_explicit(self, tmp_path):
-        venv_interp = _make_fake_interpreter(tmp_path / ".venv" / "bin" / "python")
-        repo = ev.EvidenceRepo(name="r", root=tmp_path)
-        assert ev._resolve_repo_interpreter(repo) == str(venv_interp)
-
-    def test_returns_none_when_nothing_resolves(self, tmp_path):
-        repo = ev.EvidenceRepo(name="r", root=tmp_path)
-        assert ev._resolve_repo_interpreter(repo) is None
-
-
-class TestRunRepoTestsInterpreterResolution:
-    def test_bare_python_command_runs_under_sibling_venv(self, tmp_path):
-        # AC-1 shape: bare `python`-headed command pins to repo.root/.venv.
-        _make_fake_interpreter(tmp_path / ".venv" / "bin" / "python")
-        repo = ev.EvidenceRepo(
-            name="r", root=tmp_path, test_command="python -m pytest -q"
-        )
-        result = ev.run_repo_tests(repo)
-        assert result.ran is True
-        assert result.passed is True
-        ran_by = (tmp_path / "ran_by.txt").read_text()
-        assert str(tmp_path / ".venv" / "bin" / "python") in ran_by
-
-    def test_no_sibling_venv_runs_verbatim_via_shell(self, tmp_path, monkeypatch):
-        # AC-2: with no sibling venv the command runs verbatim via shell —
-        # NEVER pinned to any caller-side interpreter.
-        captured = {}
-
-        def fake_run(argv, **kwargs):
-            captured["argv"] = argv
-            captured["shell"] = kwargs.get("shell")
-            return subprocess.CompletedProcess(argv, 0, stdout="ok", stderr="")
-
-        monkeypatch.setattr(ev.subprocess, "run", fake_run)
+        # Was test_probes_sibling_venv_when_no_explicit and
+        # test_bare_python_command_runs_under_sibling_venv: the sibling's
+        # .venv was found and the bare command ran under it.
+        _make_fake_interpreter(tmp_path / ".venv" / "bin" / "pytest", "venv")
+        _make_fake_interpreter(tmp_path / ".venv" / "bin" / "python", "venv")
+        bin_dir = tmp_path / "on-path"
+        _make_fake_interpreter(bin_dir / "pytest", "path")
+        monkeypatch.setenv("PATH", f"{bin_dir}:{os.environ.get('PATH', '')}")
         repo = ev.EvidenceRepo(name="r", root=tmp_path, test_command="pytest -q")
-        result = ev.run_repo_tests(repo)
-        assert result.passed is True
-        assert captured["shell"] is True
-        assert captured["argv"] == "pytest -q"
+        result = _run_sibling(repo, tmp_path)
+        assert result.tests_passed is True
+        ran_by = (tmp_path / "ran_by.txt").read_text()
+        assert ran_by.startswith("path "), ran_by
+        assert ".venv" not in ran_by
 
-    def test_worktree_venv_structurally_unreachable(self):
-        # AC-2 (structural): the caller can no longer thread its own venv —
-        # the parameter is GONE, so the FEAT-10AC mis-pin cannot recur.
-        import inspect
-
-        assert "venv_python" not in inspect.signature(ev.run_repo_tests).parameters
-        assert (
-            "venv_python" not in inspect.signature(ev.run_all_repo_tests).parameters
+    def test_an_interpreter_the_command_names_is_the_one_that_runs(self, tmp_path):
+        # Choosing an interpreter is the declaration's job: named in the
+        # command, it runs, exactly as declared.
+        _make_fake_interpreter(tmp_path / ".venv" / "bin" / "python", "venv")
+        repo = ev.EvidenceRepo(
+            name="r", root=tmp_path, test_command=".venv/bin/python -m pytest -q"
         )
+        result = _run_sibling(repo, tmp_path)
+        assert result.tests_passed is True
+        assert (tmp_path / "ran_by.txt").read_text().startswith("venv ")
+
+    def test_a_declared_interpreter_field_is_reported_not_applied(self, tmp_path):
+        # Was test_explicit_*: an ``interpreter:`` field rewrote the command.
+        # It is no longer applied, and a repo that still declares one is told
+        # so instead of running under an interpreter it did not ask for.
+        interp = _make_fake_interpreter(tmp_path / "custom" / "python")
+        repo = ev.EvidenceRepo(
+            name="r", root=tmp_path, test_command="python -m pytest -q",
+            interpreter=str(interp),
+        )
+        result = _run_sibling(repo, tmp_path)
+        assert result.check_could_not_run is True
+        assert "interpreter" in result.check_could_not_run_detail
+        assert not (tmp_path / "ran_by.txt").exists()
+
+    def test_the_interpreter_helpers_are_gone(self):
+        assert not hasattr(ev, "_resolve_repo_interpreter")
+        assert not hasattr(ev, "_build_repo_test_argv")
+        assert not hasattr(ev, "probe_worktree_venv")
 
 
 # ---------------------------------------------------------------------------
@@ -440,10 +436,10 @@ class TestASiblingsExitCodeIsItsVerdict:
         repo = ev.EvidenceRepo(
             name="r", root=tmp_path, test_command=f"{_PY} fail_collect.py"
         )
-        result = ev.run_repo_tests(repo)
-        assert result.ran is True
-        assert result.passed is False
-        assert result.returncode == 2
+        result = _run_sibling(repo, tmp_path)
+        assert result.check_could_not_run is False
+        assert result.tests_passed is False
+        assert result.exit_code == 2
 
 
 # ---------------------------------------------------------------------------

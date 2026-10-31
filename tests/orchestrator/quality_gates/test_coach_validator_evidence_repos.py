@@ -58,10 +58,12 @@ class TestRunEvidenceRepoTests:
         assert results[0].ran is True
         assert results[0].passed is False
 
-    def test_sibling_interpreter_wins_over_worktree_venv(self, tmp_path):
-        """TASK-FIX-SIBTESTENV01: sibling tests pin to the sibling's OWN
-        interpreter — never to the worktree venv the validator was
-        constructed with (the FEAT-10AC run-2 mis-pin)."""
+    def test_the_sibling_runs_the_interpreter_its_command_names(self, tmp_path):
+        """A sibling's tests never run under the worktree's venv. Since 31
+        October 2026 nothing is put first either: the sibling's own ``.venv``
+        is no longer found and swapped in for a bare ``pytest`` (that test
+        kept the implicit choice, removed as a hidden Python default), so the
+        declaration names the interpreter and that one runs."""
 
         def _fake_interpreter(path):
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -83,7 +85,7 @@ class TestRunEvidenceRepoTests:
         repo = EvidenceRepo(
             name="guardkitfactory",
             root=sibling,
-            test_command="pytest -q",
+            test_command=".venv/bin/python -m pytest -q",
         )
         validator = CoachValidator(
             str(worktree),
@@ -94,8 +96,9 @@ class TestRunEvidenceRepoTests:
         assert results[0].passed is True
 
         ran_by = (sibling / "ran_by.txt").read_text()
-        assert str(sibling_python) in ran_by
+        assert ran_by.strip() == ".venv/bin/python"
         assert str(worktree_python) not in ran_by
+        assert sibling_python.exists()
 
 
 class TestEvidenceBundleLandingField:

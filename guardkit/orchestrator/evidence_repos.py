@@ -50,11 +50,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-# Stdlib-only module; no import cycle back into evidence consumers
-# (TASK-FIX-SIBTESTENV01 reuses the single source of truth for on-disk
-# venv layouts rather than re-inventing the probe).
-from guardkit.orchestrator.environment_bootstrap import probe_worktree_venv
-from guardkit.orchestrator import process_group
 from guardkit.lib.project_git import run_git
 
 logger = logging.getLogger(__name__)
@@ -92,10 +87,11 @@ class EvidenceRepo:
             to verify sibling-repo work (AC-002). ``None`` means "no
             independent test for this repo" -- which is absent signal, NOT a
             pass (see :class:`EvidenceTestResult`).
-        interpreter: Optional explicit Python interpreter path the
-            ``test_command`` is pinned to (TASK-FIX-SIBTESTENV01). Relative
-            paths resolve against ``root``. Takes precedence over the
-            sibling's probed ``.venv`` -- see :func:`_resolve_repo_interpreter`.
+        interpreter: An ``interpreter:`` field the declaration carries. No
+            longer applied (31 October 2026): the ``test_command`` runs
+            exactly as declared, so a repo names its interpreter there. Kept
+            so a declaration that still carries one is reported as not run,
+            never silently run under another interpreter.
     """
 
     name: str
@@ -499,175 +495,6 @@ def qualified_paths_for_changes(
 # Independent per-repo tests (AC-002)
 # ============================================================================
 
-def _resolve_repo_interpreter(repo: EvidenceRepo) -> Optional[str]:
-    """Resolve the Python interpreter a sibling repo's tests pin to.
-
-    Per-repo resolution (TASK-FIX-SIBTESTENV01): the sibling repo has its
-    OWN dependency set, so its tests must never be pinned to the guardkit
-    worktree venv (the FEAT-10AC run-2 mis-environmented oracle). Precedence:
-
-    1. Explicit ``interpreter:`` field on the declaration. Relative paths
-       resolve against ``repo.root``; a declared-but-missing path logs a
-       loud WARNING and falls through (fail-open). Explicit precedes probed
-       because a stale sibling ``.venv`` must not silently override an
-       operator declaration (arch-review REC-2) -- mirrors the
-       ``_resolve_venv_python`` precedent (explicit beats discovery).
-    2. The sibling's own venv via :func:`probe_worktree_venv` on
-       ``repo.root`` (covers ``.venv/bin/python`` and the legacy
-       ``.guardkit/venv/bin/python`` layout).
-    3. None -- the command runs verbatim via the shell in ``repo.root``.
-    """
-    if repo.interpreter:
-        candidate = Path(repo.interpreter)
-        if not candidate.is_absolute():
-            candidate = repo.root / candidate
-        if candidate.exists():
-            logger.info(
-                "evidence_repos: %s tests pin to declared interpreter %s",
-                repo.name,
-                candidate,
-            )
-            return str(candidate)
-        logger.warning(
-            "evidence_repos: declared interpreter %r for %s does not exist "
-            "(resolved to %s) -- falling through to the sibling venv probe.",
-            repo.interpreter,
-            repo.name,
-            candidate,
-        )
-
-    probed = probe_worktree_venv(repo.root)
-    if probed is not None:
-        logger.info(
-            "evidence_repos: %s tests pin to sibling venv interpreter %s",
-            repo.name,
-            probed,
-        )
-        return str(probed)
-
-    logger.info(
-        "evidence_repos: no interpreter resolved for %s -- test_command "
-        "runs verbatim via shell in %s",
-        repo.name,
-        repo.root,
-    )
-    return None
-
-
-def run_repo_tests(
-    repo: EvidenceRepo,
-    timeout: int = 600,
-) -> EvidenceTestResult:
-    """Run the declared per-repo ``test_command`` independently in ``repo.root``.
-
-    This is the Coach's trust-but-verify pass for sibling-repo work (AC-002).
-    The result is meant to be folded into the evidence bundle.
-
-    Interpreter pinning is PER-REPO (TASK-FIX-SIBTESTENV01): when the command
-    starts with a bare ``pytest``/``python`` token, it is rewritten to run
-    under the interpreter :func:`_resolve_repo_interpreter` resolves for THIS
-    repo (explicit ``interpreter:`` field, else the sibling's own venv).
-    The guardkit worktree venv is structurally unreachable here -- pinning a
-    sibling suite to the caller's venv is the FEAT-10AC run-2 defect. When no
-    interpreter resolves, the command runs verbatim via the shell.
-
-    Absent signal, not pass: a repo with no ``test_command`` returns
-    ``ran=False, passed=False``. The caller decides how to surface that (it is
-    feedback / unverified, never a silent approval). A run that died at
-    collection with an import error is likewise ABSENT (``ran=False``) -- the
-    suite never executed, so there is no test verdict (AC-3; the
-    ``absence-of-failure`` family).
-    """
-    if not repo.test_command:
-        return EvidenceTestResult(
-            repo_name=repo.name,
-            command=None,
-            ran=False,
-            passed=False,
-            output_summary="No test_command declared for this evidence repo "
-            "(sibling-repo tests UNVERIFIED).",
-        )
-
-    interpreter = _resolve_repo_interpreter(repo)
-    argv, shell = _build_repo_test_argv(repo.test_command, interpreter)
-    try:
-        # Built from nothing (13 October 2026), with the sibling repo's own
-        # ``launch:`` block: its tests never see the factory's credentials.
-        from guardkit.orchestrator.project_command_env import (
-            main_checkout_environment,
-        )
-
-        env = main_checkout_environment(Path(repo.root))
-        proc = process_group.run_project_command(
-            argv,
-            cwd=str(repo.root),
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            shell=shell,
-            env=env,
-        )
-    except subprocess.TimeoutExpired:
-        return EvidenceTestResult(
-            repo_name=repo.name,
-            command=repo.test_command,
-            ran=False,
-            passed=False,
-            output_summary=f"Evidence-repo tests timed out after {timeout}s in {repo.root}.",
-        )
-    except Exception as exc:  # noqa: BLE001 -- failure to run is absent signal
-        return EvidenceTestResult(
-            repo_name=repo.name,
-            command=repo.test_command,
-            ran=False,
-            passed=False,
-            output_summary=f"Evidence-repo tests could not run in {repo.root}: {exc}",
-        )
-
-    combined = (proc.stdout or "") + (proc.stderr or "")
-    return EvidenceTestResult(
-        repo_name=repo.name,
-        command=repo.test_command,
-        ran=True,
-        passed=proc.returncode == 0,
-        returncode=proc.returncode,
-        output_summary=_truncate(combined),
-    )
-
-
-def _build_repo_test_argv(
-    test_command: str, interpreter: Optional[str]
-) -> Tuple[Any, bool]:
-    """Return ``(argv, shell)`` for running a repo test command.
-
-    When the command is a bare ``pytest ...`` / ``python ...`` invocation and
-    a per-repo interpreter resolved, run it as a pinned argv list (no shell).
-    Otherwise run the command string through the shell verbatim.
-    """
-    tokens = test_command.split()
-    if interpreter and tokens:
-        head = tokens[0]
-        if head == "pytest":
-            return [str(interpreter), "-m", "pytest", *tokens[1:]], False
-        if head in ("python", "python3"):
-            return [str(interpreter), *tokens[1:]], False
-    return test_command, True
-
-
-def run_all_repo_tests(
-    repos: Optional[List[EvidenceRepo]],
-    timeout: int = 600,
-) -> List[EvidenceTestResult]:
-    """Run independent tests for every declared repo that has a command.
-
-    Each repo resolves its own interpreter (TASK-FIX-SIBTESTENV01) -- there
-    is deliberately no caller-supplied interpreter parameter here.
-    """
-    if not repos:
-        return []
-    return [run_repo_tests(repo, timeout=timeout) for repo in repos]
-
-
 def evidence_repo_tests_blocking_reason(
     results: List[EvidenceTestResult],
 ) -> Optional[str]:
@@ -714,7 +541,5 @@ __all__ = [
     "detect_repo_changes",
     "detect_all_repo_changes",
     "qualified_paths_for_changes",
-    "run_repo_tests",
-    "run_all_repo_tests",
     "evidence_repo_tests_blocking_reason",
 ]

@@ -58,6 +58,7 @@ from guardkit.orchestrator.launch_declaration import (
     main_checkout_root,
 )
 from guardkit.orchestrator.project_command_env import (
+    main_checkout_environment,
     minimal_environment_note,
     missing_program,
     project_command_environment,
@@ -1776,26 +1777,35 @@ class CoachValidator:
     def run_evidence_repo_tests(self) -> List[EvidenceTestResult]:
         """Run independent tests in every declared sibling repo (AC-002).
 
-        Trust-but-verify for sibling-repo deliverables: each declared repo's
-        ``test_command`` runs in that repo's root under that repo's OWN
-        interpreter (explicit ``interpreter:`` field, else the sibling's
-        ``.venv``, else verbatim via shell — resolved per-repo by
-        ``evidence_repos._resolve_repo_interpreter``). The guardkit worktree
-        venv (``self._venv_python``) is deliberately NOT threaded here: it
-        cannot import the sibling's dependency set, so pinning sibling tests
-        to it produced a guaranteed-broken mis-environmented oracle
-        (TASK-FIX-SIBTESTENV01, the FEAT-10AC run-2 false-red). Returns one
-        :class:`EvidenceTestResult` per declared repo (empty list when no
-        sibling repos are declared). The orchestrator attaches these to the
-        evidence bundle and blocks the turn on a failed/unrunnable suite via
-        :func:`evidence_repos.evidence_repo_tests_blocking_reason`.
+        Each declared repo's ``test_command`` runs exactly as declared, in
+        that repo's root, through :meth:`_run_declared_command`: the same
+        path, environment rules, missing-program look-up and shell as the
+        task's own parts (31 October 2026). Nothing is looked for or put
+        first: no sibling ``.venv`` is probed and no ``python`` or ``pytest``
+        command is rewritten. A repo that needs a particular interpreter
+        names it in its ``test_command``; an ``interpreter:`` field is no
+        longer applied, and a repo that declares one is reported as not run,
+        saying so. Returns one :class:`EvidenceTestResult` per declared repo
+        (empty list when no sibling repos are declared).
         """
         if not self._evidence_repos:
             return []
-        results = evidence_repos_lib.run_all_repo_tests(
-            self._evidence_repos,
-            timeout=self.test_timeout,
-        )
+        results: List[EvidenceTestResult] = []
+        for repo in self._evidence_repos:
+            run = self._run_sibling_tests(repo)
+            ran = not run.signal_absent
+            results.append(
+                EvidenceTestResult(
+                    repo_name=repo.name,
+                    command=repo.test_command,
+                    ran=ran,
+                    passed=ran and run.tests_passed,
+                    returncode=run.exit_code,
+                    output_summary=evidence_repos_lib._truncate(
+                        run.raw_output or run.test_output_summary or ""
+                    ),
+                )
+            )
         for r in results:
             logger.info(
                 "Evidence-repo tests for %s: ran=%s passed=%s rc=%s",
@@ -1806,14 +1816,31 @@ class CoachValidator:
             )
         return results
 
-    def _held_back_note(self) -> str:
-        """Which settings a project command's environment held back, by name
-        only (``project_command_env.minimal_environment_note``); empty when
-        the environment cannot be built, which the failure already says."""
-        try:
-            return minimal_environment_note(_checker_declared_env(self))
-        except OSError:
-            return ""
+    def _run_sibling_tests(self, repo: EvidenceRepo) -> IndependentTestResult:
+        """One declared sibling repository's tests, through the same path as
+        the task's own parts (:meth:`_run_declared_command`)."""
+        if repo.interpreter:
+            detail = (
+                f"sibling repository {repo.name} declares `interpreter: "
+                f"{repo.interpreter}`, which GuardKit no longer applies "
+                "(31 October 2026): the declared `test_command` runs exactly "
+                "as written, so name the interpreter in it"
+            )
+            return IndependentTestResult.could_not_run(
+                test_command=repo.test_command or "<nothing declared>",
+                detail=detail,
+                duration_seconds=0.0,
+            )
+        if not repo.test_command:
+            return IndependentTestResult.could_not_run(
+                test_command="<nothing declared>",
+                detail=(
+                    f"nothing declared: sibling repository {repo.name} "
+                    "declares no `test_command`"
+                ),
+                duration_seconds=0.0,
+            )
+        return self._run_declared_command(repo.test_command, sibling=repo)
 
     def _project_env(
         self,
@@ -2057,35 +2084,90 @@ class CoachValidator:
                 )
 
         try:
-            logger.info(f"Running independent tests via subprocess: {test_cmd}")
-            start_time = time.time()
+            return self._run_declared_command(test_cmd)
+        finally:
+            if infra_started:
+                self._stop_infrastructure_containers(requires_infra)
 
-            try:
-                run_cwd = self._component_run_cwd(self.worktree_path)
-                # The declared command's own program must exist, in the
-                # part's folder or on its PATH; if not, the check could not
-                # run (31 October 2026). A program missing inside a script
-                # that started is the script failing, sent to the builder.
-                missing = missing_program(
-                    test_cmd, run_cwd, _checker_declared_env(self)
+    def _test_env_for(
+        self, sibling: Optional[EvidenceRepo] = None
+    ) -> Dict[str, str]:
+        """The environment a declared test command runs with: the task's
+        pinned ``launch:`` block with the test-service URLs, or a sibling
+        repository's own checkout's block. Raises as the helper does."""
+        if sibling is None:
+            return _checker_declared_env(self)
+        return main_checkout_environment(Path(sibling.root))
+
+    def _held_back_note(self, sibling: Optional[EvidenceRepo] = None) -> str:
+        """Which settings a project command's environment held back, by name
+        only (``project_command_env.minimal_environment_note``); empty when
+        the environment cannot be built, which the failure already says."""
+        try:
+            return minimal_environment_note(self._test_env_for(sibling))
+        except OSError:
+            return ""
+
+    def _run_declared_command(
+        self,
+        test_cmd: str,
+        sibling: Optional[EvidenceRepo] = None,
+    ) -> IndependentTestResult:
+        """Run one declared test command exactly as declared, and read its
+        result (31 October 2026).
+
+        The one path for the task's own repository (the active part, see
+        ``_use_part``) and for a declared sibling repository (``sibling``):
+        the command runs through the shell, unchanged, in the part's folder
+        or the sibling's root, with an environment built from nothing
+        (``project_command_env``: the declared ``launch:`` block, a private
+        HOME and the short private TMPDIR), within ``self.test_timeout``.
+        GuardKit does not rewrite it: no interpreter is looked for or put
+        first, and no framework's idea of "a test ran" is applied.
+
+        * its own program cannot be found, or it cannot start: the check
+          could not run (not the builder's to fix);
+        * it starts and does not finish within its limit: a failure sent to
+          the builder;
+        * otherwise its exit code is the verdict.
+
+        The task's own repository uses its pinned ``launch:`` block and its
+        run is recorded (``_run_recorded``); a sibling repository uses its own
+        checkout's ``launch:`` block and is not recorded, because the record's
+        declared inventory belongs to the task's repository.
+        """
+        if sibling is None:
+            where = (
+                f"part {self._component} (in {self._component_toolchain.cwd})"
+                if self._component_toolchain is not None
+                else "the root part"
+            )
+        else:
+            where = f"sibling repository {sibling.name} (in {sibling.root})"
+        logger.info("Running the declared tests of %s: %s", where, test_cmd)
+        start_time = time.time()
+        try:
+            run_cwd = (
+                self._component_run_cwd(self.worktree_path)
+                if sibling is None
+                else Path(sibling.root)
+            )
+            # The declared command's own program must exist, in the folder
+            # or on its PATH; if not, the check could not run. A program
+            # missing inside a script that started is the script failing,
+            # sent to the builder.
+            missing = missing_program(
+                test_cmd, run_cwd, self._test_env_for(sibling)
+            )
+            if missing is not None:
+                detail = f"`{test_cmd}` for {where} could not start: {missing}"
+                logger.error("The check could not run: %s", detail)
+                return IndependentTestResult.could_not_run(
+                    test_command=test_cmd,
+                    detail=detail,
+                    duration_seconds=0.0,
                 )
-                if missing is not None:
-                    where = (
-                        f"part {self._component} (in {self._component_toolchain.cwd})"
-                        if self._component_toolchain is not None
-                        else "the root part"
-                    )
-                    detail = f"`{test_cmd}` for {where} could not start: {missing}"
-                    logger.error("The check could not run: %s", detail)
-                    return IndependentTestResult.could_not_run(
-                        test_command=test_cmd,
-                        detail=detail,
-                        duration_seconds=0.0,
-                    )
-                # The declared command runs exactly as declared, through the
-                # shell, in the part's folder, with an explicit environment
-                # (design §B.5). GuardKit does not rewrite it: no pinned
-                # interpreter, no injected flags (31 October 2026).
+            if sibling is None:
                 result = self._run_recorded(
                     test_cmd,
                     evidence=(EVIDENCE_WORKTREE, self.worktree_path, None),
@@ -2096,80 +2178,78 @@ class CoachValidator:
                     timeout=self.test_timeout,
                     env=_checker_declared_env(self),
                 )
-
-                duration = time.time() - start_time
-                tests_passed = result.returncode == 0
-
-                # Summarize output (truncate if too long)
-                output = result.stdout or result.stderr or "No output"
-                summary = self._summarize_test_output(output)
-                if not tests_passed:
-                    # Names only, never values: which settings the factory
-                    # held back from this command (13 October 2026).
-                    summary = f"{summary}\n{self._held_back_note()}"
-
-                # The exit code is the verdict, 126 and 127 included: the
-                # command's own program was found above, so a missing program
-                # is one inside the script that ran (FEAT-8BB4's "eslint: not
-                # found"), which fails. No framework's idea of "a test ran" is
-                # applied (31 October 2026).
-                logger.info(
-                    f"Independent tests {'passed' if tests_passed else 'failed'} "
-                    f"in {duration:.1f}s"
+            else:
+                result = process_group.run_project_command(
+                    test_cmd,
+                    shell=True,
+                    cwd=str(run_cwd),
+                    capture_output=True,
+                    text=True,
+                    timeout=self.test_timeout,
+                    env=main_checkout_environment(run_cwd),
                 )
+        except subprocess.TimeoutExpired:
+            # A run that started and did not finish within its declared
+            # limit is usually the code's doing (a hang, an endless loop,
+            # tests too slow for the limit), so it is a failure the builder
+            # is sent, not a check that could not run (31 October 2026: a
+            # recorded TypeScript build's builder fixed exactly this on its
+            # next turn, 27 October).
+            duration = time.time() - start_time
+            message = (
+                f"The tests of {where} timed out: `{test_cmd}` did not "
+                f"finish within its {self.test_timeout}-second limit "
+                "(test_timeout). A run that does not finish is usually a "
+                "hang, an endless loop or tests too slow for the limit; "
+                "make the tests finish within it."
+            )
+            logger.error(message)
+            return IndependentTestResult(
+                tests_passed=False,
+                test_command=test_cmd,
+                test_output_summary=message,
+                duration_seconds=duration,
+                raw_output=message,
+            )
+        except Exception as e:  # noqa: BLE001 — nothing was measured
+            # The command did not start (its folder escapes the worktree,
+            # its environment could not be built, the process could not be
+            # made): nothing was measured, so the check could not run.
+            duration = time.time() - start_time
+            logger.error(f"Test execution failed: {e}")
+            return IndependentTestResult.could_not_run(
+                test_command=test_cmd,
+                detail=f"`{test_cmd}` for {where} could not start: {type(e).__name__}: {e}",
+                duration_seconds=duration,
+            )
 
-                return IndependentTestResult.from_run(
-                        tests_passed=tests_passed,
-                        test_command=test_cmd,
-                        test_output_summary=summary,
-                        duration_seconds=duration,
-                        output=(result.stdout or "") + (result.stderr or ""),
-                        exit_code=result.returncode,
-                    )
+        duration = time.time() - start_time
+        tests_passed = result.returncode == 0
 
-            except subprocess.TimeoutExpired:
-                # A run that started and did not finish within its declared
-                # limit is usually the code's doing (a hang, an endless loop,
-                # tests too slow for the limit), so it is a failure the builder
-                # is sent, not a check that could not run (31 October 2026: a
-                # recorded TypeScript build's builder fixed exactly this on its
-                # next turn, 27 October).
-                duration = time.time() - start_time
-                where = (
-                    f"part {self._component} (in {self._component_toolchain.cwd})"
-                    if self._component_toolchain is not None
-                    else "the root part"
-                )
-                message = (
-                    f"The tests of {where} timed out: `{test_cmd}` did not "
-                    f"finish within its {self.test_timeout}-second limit "
-                    "(test_timeout). A run that does not finish is usually a "
-                    "hang, an endless loop or tests too slow for the limit; "
-                    "make the tests finish within it."
-                )
-                logger.error(message)
-                return IndependentTestResult(
-                    tests_passed=False,
-                    test_command=test_cmd,
-                    test_output_summary=message,
-                    duration_seconds=duration,
-                    raw_output=message,
-                )
-            except Exception as e:
-                # The command did not start (its folder escapes the worktree,
-                # its environment could not be built, the process could not be
-                # made): nothing was measured, so the check could not run.
-                duration = time.time() - start_time
-                logger.error(f"Test execution failed: {e}")
-                return IndependentTestResult.could_not_run(
-                    test_command=test_cmd,
-                    detail=f"`{test_cmd}` could not start: {type(e).__name__}: {e}",
-                    duration_seconds=duration,
-                )
+        # Summarize output (truncate if too long)
+        output = result.stdout or result.stderr or "No output"
+        summary = self._summarize_test_output(output)
+        if not tests_passed:
+            # Names only, never values: which settings the factory held back
+            # from this command (13 October 2026).
+            summary = f"{summary}\n{self._held_back_note(sibling)}"
 
-        finally:
-            if infra_started:
-                self._stop_infrastructure_containers(requires_infra)
+        # The exit code is the verdict, 126 and 127 included: the command's
+        # own program was found above, so a missing program is one inside the
+        # script that ran (FEAT-8BB4's "eslint: not found"), which fails.
+        logger.info(
+            f"Independent tests {'passed' if tests_passed else 'failed'} "
+            f"in {duration:.1f}s"
+        )
+
+        return IndependentTestResult.from_run(
+            tests_passed=tests_passed,
+            test_command=test_cmd,
+            test_output_summary=summary,
+            duration_seconds=duration,
+            output=(result.stdout or "") + (result.stderr or ""),
+            exit_code=result.returncode,
+        )
 
     def _is_docker_available(self) -> bool:
         """Check if Docker daemon is reachable.

@@ -365,9 +365,12 @@ def _run_inventory(p: Project) -> Dict[str, str]:
 
 
 def _run_evidence_repo(p: Project) -> Dict[str, str]:
-    from guardkit.orchestrator.evidence_repos import EvidenceRepo, run_repo_tests
+    # The sibling's tests run through the checker's shared declared-command
+    # path since 31 October 2026 (evidence_repos.run_repo_tests is gone).
+    from guardkit.orchestrator.evidence_repos import EvidenceRepo
 
-    run_repo_tests(EvidenceRepo(name="sibling", root=p.repo, test_command=p.sh("evidence-repo")))
+    repo = EvidenceRepo(name="sibling", root=p.repo, test_command=p.sh("evidence-repo"))
+    _validator(p, evidence_repos=[repo])._run_sibling_tests(repo)
     return p.read("evidence-repo")
 
 
