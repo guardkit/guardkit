@@ -85,12 +85,12 @@ class SmokeGateResult:
     could_not_start: bool = False
 
 
-def _held_back_note(cwd: Path, declaration: object, path_first: tuple) -> str:
+def _held_back_note(cwd: Path, declaration: object) -> str:
     """Which settings the smoke command's environment held back, by name
     only; empty when it cannot be built, which the failure already says."""
     try:
         return minimal_environment_note(
-            project_command_environment(cwd, declaration, path_first=path_first)
+            project_command_environment(cwd, declaration)
         )
     except OSError:
         return ""
@@ -138,7 +138,6 @@ def run_smoke_gate(
     config: SmokeGates,
     cwd: Path,
     wave_number: int,
-    venv_python: Optional[str] = None,
     evidence: Optional[EvidenceRequest] = None,
 ) -> SmokeGateResult:
     """Execute a smoke gate and return a structured result.
@@ -158,18 +157,13 @@ def run_smoke_gate(
     wave_number : int
         1-indexed wave number that just completed. Recorded in the result
         for the final summary.
-    venv_python : Optional[str]
-        Path to the bootstrap venv interpreter (e.g.
-        ``<worktree>/.guardkit/venv/bin/python``). When provided, that
-        directory is put in front of PATH so a bare ``python`` in the smoke
-        command resolves to the venv interpreter rather than failing on
-        Ubuntu 24+ where only ``python3`` exists in system PATH
-        (TASK-FIX-A7B1).
 
     The environment is built from nothing (``project_command_env``,
     13 October 2026), with the main checkout's ``launch:`` block, never this
-    process's own with the factory's credentials. When it cannot be built
-    the gate fails with the plain reason and the command does not run.
+    process's own with the factory's credentials. The command runs as
+    declared: no interpreter is put first on PATH (1 November 2026). When the
+    environment cannot be built the gate fails with the plain reason and the
+    command does not run.
     evidence : Optional[EvidenceRequest]
         What the caller knows for the run record (repair 7): the kind of
         command, who is observing, and the project's declared environment
@@ -191,16 +185,9 @@ def run_smoke_gate(
         config.expected_exit,
     )
 
-    path_first = (str(Path(venv_python).parent),) if venv_python else ()
-    if path_first:
-        logger.debug(
-            "Smoke gate PATH-prepended with bootstrap venv: %s", path_first[0]
-        )
     try:
         declaration = load_launch_declaration(main_checkout_root(Path(cwd)))
-        env = project_command_environment(
-            Path(cwd), declaration, path_first=path_first
-        )
+        env = project_command_environment(Path(cwd), declaration)
     except OSError as exc:
         reason = f"the smoke command could not start: {exc}"
         logger.warning("Smoke gate after wave %d: %s", wave_number, reason)
@@ -288,7 +275,7 @@ def run_smoke_gate(
             config.expected_exit,
             (proc.stderr or "(empty)").rstrip(),
             (proc.stdout or "(empty)").rstrip(),
-            _held_back_note(Path(cwd), declaration, path_first),
+            _held_back_note(Path(cwd), declaration),
         )
 
     return SmokeGateResult(

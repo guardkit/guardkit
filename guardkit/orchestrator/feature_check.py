@@ -865,16 +865,15 @@ def _check_environment(
     cwd: Path,
     declaration: Any,
     env_extra: Optional[Dict[str, str]],
-    venv_python: Optional[str],
 ) -> Dict[str, str]:
     """The check command's environment, built from nothing: the four
-    ``GUARDKIT_*`` values it is promised are the factory's additions, and the
-    bootstrap venv (when known) goes first on PATH."""
+    ``GUARDKIT_*`` values it is promised are the factory's additions. No
+    interpreter is put first on PATH; the command runs as declared (1
+    November 2026)."""
     return project_command_environment(
         Path(cwd),
         declaration,
         additions=dict(env_extra or {}),
-        path_first=(str(Path(venv_python).parent),) if venv_python else (),
     )
 
 
@@ -882,12 +881,11 @@ def _held_back_note(
     cwd: Path,
     declaration: Any,
     env_extra: Optional[Dict[str, str]],
-    venv_python: Optional[str],
 ) -> str:
     """Which settings the check's environment held back, by name only."""
     try:
         return minimal_environment_note(
-            _check_environment(cwd, declaration, env_extra, venv_python)
+            _check_environment(cwd, declaration, env_extra)
         )
     except OSError:
         return ""
@@ -899,7 +897,6 @@ def run_feature_check_command(
     cwd: Path,
     timeout: int,
     env_extra: Optional[Dict[str, str]] = None,
-    venv_python: Optional[str] = None,
     evidence: Optional[EvidenceRequest] = None,
     launch_root: Optional[Path] = None,
 ) -> Dict[str, Any]:
@@ -909,8 +906,7 @@ def run_feature_check_command(
     wrote a command line, not an argv. The environment is built from nothing
     (``project_command_env``, 13 October 2026), never the daemon's own with
     its credentials: the four ``GUARDKIT_*`` names the check is promised are
-    the factory's additions, plus (when known) the bootstrap venv on PATH so a
-    bare ``python`` means the project's python.
+    the factory's additions; no interpreter is put first on PATH.
 
     The result also carries ``run_evidence`` (repair 7): what the command ran
     against, recorded around the run and never read for the outcome.
@@ -930,7 +926,7 @@ def run_feature_check_command(
             else None
         )
         declared = declaration.settings if declaration is not None else ()
-        env = _check_environment(cwd, declaration, env_extra, venv_python)
+        env = _check_environment(cwd, declaration, env_extra)
         launch_fault: Optional[OSError] = None
     except OSError as exc:
         launch_fault = exc
@@ -1008,7 +1004,7 @@ def run_feature_check_command(
         # Names only, never values: what the factory held back, for the
         # failure detail of a command that did not pass.
         "environment_note": (
-            _held_back_note(cwd, declaration, env_extra, venv_python)
+            _held_back_note(cwd, declaration, env_extra)
             if proc.returncode != 0
             else ""
         ),

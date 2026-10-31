@@ -2234,7 +2234,6 @@ The detailed specifications are in the task markdown file.
             cwd=Path(worktree.path),
             timeout=declaration.timeout,
             env_extra=env_extra,
-            venv_python=self._bootstrap_venv_python,
             evidence=request_from_repo(
                 "whole-feature check", self.repo_root,
                 feature=str(feature.id), attempt=attempt_number,
@@ -2636,8 +2635,7 @@ The detailed specifications are in the task markdown file.
                 feature.smoke_gates,
                 cwd=Path(worktree.path),
                 wave_number=wave_number,
-                venv_python=self._bootstrap_venv_python,
-                evidence=request_from_repo(
+                    evidence=request_from_repo(
                     "smoke command", self.repo_root,
                     feature=str(feature.id), wave=wave_number,
                 ),
