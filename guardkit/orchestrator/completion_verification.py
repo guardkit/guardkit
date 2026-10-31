@@ -265,6 +265,20 @@ def run_completion_verification(
             status="unverified", command=command, cwd=cwd, returncode=None,
             detail=f"UNVERIFIED: {NOTHING_DECLARED}", source=source,
         )
+    if env is None:
+        # Built once for the repository and given to every part: a part's
+        # folder is not a git checkout of its own, so it has no scratch
+        # folder to build one from (1 November 2026).
+        try:
+            env = project_command_environment(
+                Path(repo_root), load_launch_declaration(Path(repo_root))
+            )
+        except OSError as exc:
+            return VerificationResult(
+                status="unverified", command=command, cwd=cwd, returncode=None,
+                detail=f"verification command could not start: {exc}",
+                source=source,
+            )
     results: List[Tuple[str, VerificationResult]] = []
     for part in parts:
         label = part.name if part.cwd == "." else f"{part.name} (in {part.cwd})"

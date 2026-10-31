@@ -27,6 +27,7 @@ from guardkit.orchestrator.completion_verification import (
     resolve_verify_command,
     run_completion_verification,
 )
+from guardkit.orchestrator.project_command_env import remove_short_tmpdir
 from guardkit.orchestrator.merge_executor import (
     OUTCOME_MERGED,
     OUTCOME_REFUSED,
@@ -420,3 +421,31 @@ def test_a_declared_command_exiting_126_or_127_is_failed(
         tmp_path, f"exit {returncode}", "repository toolchain declaration"
     )
     assert result.status == "failed"
+
+
+@pytest.mark.real_project_scratch
+def test_the_full_check_by_hand_runs_each_part_in_its_folder(tmp_path: Path):
+    """``guardkit autobuild complete --verify`` builds the environment itself
+    (the merge hands one in). A part's folder is not a git checkout of its
+    own, so the environment is built once for the repository and given to
+    every part (1 November 2026: each part's command could not start)."""
+    marker = tmp_path / "ran.txt"
+    repo = _base_repo(
+        tmp_path,
+        {
+            "test": _marker_command(marker),
+            "components": {"app": {"cwd": "app", "test": _marker_command(marker)}},
+        },
+    )
+    (repo / "app").mkdir()
+    command, source, declaration = resolve_verify_command(repo)
+
+    try:
+        result = run_completion_verification(
+            repo, command, source, declaration=declaration, timeout=60
+        )
+    finally:
+        remove_short_tmpdir(repo)
+
+    assert result.status == "passed", result.detail
+    assert [Path(p).name for p in marker.read_text().splitlines()] == ["repo", "app"]
