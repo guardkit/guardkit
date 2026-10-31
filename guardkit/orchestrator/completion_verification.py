@@ -17,6 +17,11 @@ Verification semantics (after-task check redesign, 31 October 2026):
   not exist (``project_command_env.missing_program``, looked up before the
   run, the same rule as the after-task check), or it could not be started at
   all. ``unverified`` is not a pass.
+- A part of the declared full check whose own declaration says no tests ran
+  (``absent_substrings``, or no match for ``ran_marker_regex`` on exit 0;
+  ``toolchain_declaration.declared_no_tests_ran``) is ``failed``, as in the
+  after-task check (31 October 2026). A declaration that requires a marker
+  and names none is ``unverified``.
 - A timeout is ``failed`` (ran-and-hung is a real defect), never absent.
 - The command is resolved in one place (``resolve_verify_command``): an
   explicit override, then the feature's smoke command, then the project's
@@ -33,7 +38,7 @@ import logging
 import subprocess
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Union
 
 from guardkit.orchestrator.launch_declaration import load_launch_declaration
 from guardkit.orchestrator.project_command_env import (
@@ -43,9 +48,12 @@ from guardkit.orchestrator.project_command_env import (
 )
 
 from guardkit.orchestrator.toolchain_declaration import (
+    ComponentToolchain,
     ToolchainDeclaration,
+    declared_no_tests_ran,
     full_check_parts,
     load_toolchain_declaration,
+    ran_marker_problem,
     resolve_component_cwd,
 )
 from guardkit.orchestrator import process_group
@@ -259,7 +267,9 @@ def run_completion_verification(
     :func:`toolchain_declaration.full_check_parts`, found in ``repo_root``
     now, runs its ``test`` once in its own folder, each within its own
     declared ``test_timeout`` (the root's is the top-level one); ``timeout``
-    then bounds only a part's install. The result is ``failed`` if any part failed, otherwise
+    then bounds only a part's install. A part whose own declaration says no
+    tests ran failed (:func:`_said_nothing_ran`). The result is ``failed`` if
+    any part failed, otherwise
     ``unverified`` if any part could not run (nothing declared for it, or it
     could not start), otherwise ``passed``. Without it, ``command`` runs at
     ``repo_root``.
@@ -331,10 +341,24 @@ def run_completion_verification(
                     f"for part {label} {problem}",
                 )))
                 continue
-        part_timeout = (part.toolchain or declaration).test_timeout
+        commands = part.toolchain if part.toolchain is not None else declaration
+        problem = ran_marker_problem(commands)
+        if problem is not None:
+            results.append((label, VerificationResult(
+                status="unverified", command=part.test, cwd=part.cwd,
+                returncode=None, source=source,
+                detail=f"the declaration of part {label} {problem}",
+            )))
+            continue
+        part_timeout = commands.test_timeout
         results.append(
-            (label, _run_one(
-                folder, part.test, source, part_timeout, env, own_process_group
+            (label, _said_nothing_ran(
+                _run_one(
+                    folder, part.test, source, part_timeout, env,
+                    own_process_group,
+                ),
+                commands,
+                part.name,
             ))
         )
     if len(results) == 1:
@@ -361,6 +385,30 @@ def run_completion_verification(
         output_tail=full[-2000:],
         source=source,
         full_output=full,
+    )
+
+
+def _said_nothing_ran(
+    result: VerificationResult,
+    commands: Union[ToolchainDeclaration, ComponentToolchain],
+    name: str,
+) -> VerificationResult:
+    """``result``, ``failed`` when the part's own declaration says no tests
+    ran (31 October 2026): "no tests ran in part <name> (<command>): <why>".
+
+    Applied only to a run that finished (a timeout or a run that never
+    started keeps its own words). The program ran, and the project says no
+    test did, so it is a failure to repair, not a check that could not run.
+    """
+    if result.returncode is None or result.status not in ("passed", "failed"):
+        return result
+    why = declared_no_tests_ran(commands, result.returncode, result.full_output)
+    if why is None:
+        return result
+    return replace(
+        result,
+        status="failed",
+        detail=f"no tests ran in part {name} ({result.command}): {why}",
     )
 
 

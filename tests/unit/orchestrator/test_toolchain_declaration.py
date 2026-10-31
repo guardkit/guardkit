@@ -28,10 +28,12 @@ import yaml
 
 from guardkit.orchestrator.toolchain_declaration import (
     ToolchainDeclaration,
+    declared_no_tests_ran,
     load_committed_toolchain_declaration,
     load_toolchain_declaration,
     load_toolchain_snapshot,
     parse_toolchain_block,
+    ran_marker_problem,
     snapshot_task_toolchain,
     toolchain_snapshot_paths,
 )
@@ -89,6 +91,9 @@ class TestParseGoodDeclaration:
         assert block.lint == "npm run lint"
         assert block.build == "npm run build"
         assert block.requires_ran_marker is True
+        # A required marker with no regex names nothing that could match: the
+        # check reports that it could not run (31 October 2026).
+        assert ran_marker_problem(block) is not None
         assert block.runtime is not None and block.runtime.node == "v24.15.0"
 
     def test_test_only_block_keeps_todays_timeouts(self):
@@ -433,3 +438,54 @@ class TestLanguageServers:
     def test_a_malformed_server_is_loud(self, bad):
         with pytest.raises(ValueError):
             parse_toolchain_block({"test": "pytest", "language_servers": [bad]})
+
+
+# =========================================================================
+# The project's own "no tests ran" fields are honoured (31 October 2026)
+# =========================================================================
+
+
+class TestDeclaredNoTestsRan:
+    def test_nothing_declared_never_says_nothing_ran(self):
+        block = parse_toolchain_block({"test": "t"})
+        assert declared_no_tests_ran(block, 0, "") is None
+        assert declared_no_tests_ran(block, 0, "[no test files]") is None
+        assert declared_no_tests_ran(None, 0, "") is None
+        assert ran_marker_problem(block) is None
+
+    def test_an_absence_text_matches_in_any_case_on_any_exit(self):
+        block = parse_toolchain_block(
+            {"test": "t", "absent_substrings": ["", "No Tests Found"]}
+        )
+        for code in (0, 1):
+            assert declared_no_tests_ran(block, code, "no tests found\n") == (
+                'the output contains "No Tests Found"'
+            )
+        assert declared_no_tests_ran(block, 0, "3 passed") is None
+
+    def test_a_marker_applies_on_exit_zero_only(self):
+        block = parse_toolchain_block(
+            {"test": "t", "requires_ran_marker": True, "ran_marker_regex": "[1-9] passed"}
+        )
+        assert declared_no_tests_ran(block, 0, "0 passed") == (
+            "no line matched [1-9] passed"
+        )
+        assert declared_no_tests_ran(block, 0, "2 passed") is None
+        assert declared_no_tests_ran(block, 1, "0 passed") is None
+
+    def test_a_declared_marker_applies_unless_turned_off(self):
+        declared = parse_toolchain_block({"test": "t", "ran_marker_regex": "ran"})
+        assert declared_no_tests_ran(declared, 0, "nothing") == "no line matched ran"
+        off = parse_toolchain_block(
+            {"test": "t", "ran_marker_regex": "ran", "requires_ran_marker": False}
+        )
+        assert declared_no_tests_ran(off, 0, "nothing") is None
+
+    def test_a_required_marker_with_no_regex_is_a_declaration_problem(self):
+        block = parse_toolchain_block({"test": "t", "requires_ran_marker": True})
+        assert "no `ran_marker_regex`" in ran_marker_problem(block)
+        component = parse_toolchain_block(
+            {"components": {"app": {"cwd": "app", "test": "t",
+                                    "requires_ran_marker": True}}}
+        ).component("app")
+        assert ran_marker_problem(component) is not None

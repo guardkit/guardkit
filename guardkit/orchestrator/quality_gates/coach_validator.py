@@ -67,7 +67,9 @@ from guardkit.orchestrator.toolchain_declaration import (
     ComponentToolchain,
     DeclaredPart,
     ToolchainDeclaration,
+    declared_no_tests_ran,
     parts_for_files,
+    ran_marker_problem,
     resolve_component_cwd,
 )
 from guardkit.orchestrator.quality_gates.coach_evidence import (
@@ -251,6 +253,12 @@ class IndependentTestResult:
     # 2026). ``None`` when there was none to read (the agent-shell path, a
     # timeout, a skipped run). Read only by ``failure_receipt`` below.
     exit_code: Optional[int] = None
+    # Set when the part's own declaration says no tests ran (31 October
+    # 2026: ``absent_substrings``, or no match for ``ran_marker_regex`` on
+    # exit 0): "no tests ran in part <name> (<command>): <why>". The run is
+    # then a failure (``tests_passed`` is ``False``) even on exit 0, and this
+    # sentence leads the builder's feedback (``failure_receipt``).
+    no_tests_ran: Optional[str] = None
 
     # WHAT THE CHECK RAN AGAINST (repair 7, 2026-10-12): one record per
     # command run for this check, in order. Each names the real execution root, its
@@ -279,12 +287,15 @@ class IndependentTestResult:
             first_failing_lines,
         )
 
+        lines = first_failing_lines(self.raw_output or self.test_output_summary)
+        if self.no_tests_ran:
+            # The project's declaration says nothing ran: that sentence comes
+            # first, as the output alone may show no failure at all.
+            lines = [self.no_tests_ran] + lines
         return {
             "command": self.test_command,
             "exit_code": self.exit_code,
-            "failing_lines": first_failing_lines(
-                self.raw_output or self.test_output_summary
-            ),
+            "failing_lines": lines,
         }
 
     # ------------------------------------------------------------------
@@ -316,6 +327,7 @@ class IndependentTestResult:
         resolved_interpreter: Optional[str] = None,
         signal_absent: bool = False,
         exit_code: Optional[int] = None,
+        no_tests_ran: Optional[str] = None,
     ) -> "IndependentTestResult":
         """A run that produced ``output``. Derives the advisory skip count
         from ``output`` so it can never be silently omitted."""
@@ -329,6 +341,7 @@ class IndependentTestResult:
             tests_skipped=parse_pytest_summary(output).skipped,
             resolved_interpreter=resolved_interpreter,
             exit_code=exit_code,
+            no_tests_ran=no_tests_ran,
         )
 
     @classmethod
@@ -496,6 +509,7 @@ def combine_part_results(
                 if isinstance(part, SiblingPart)
                 else {}
             ),
+            **({"no_tests_ran": result.no_tests_ran} if result.no_tests_ran else {}),
         }
         for part, result in runs
     ]
@@ -527,6 +541,10 @@ def combine_part_results(
                 ),
                 exit_code=failed[0][1].exit_code,
                 resolved_interpreter=failed[0][1].resolved_interpreter,
+                no_tests_ran="; ".join(
+                    r.no_tests_ran for _, r in failed if r.no_tests_ran
+                )
+                or None,
             )
     elif not_run:
         detail = "The check could not run: " + "; ".join(
@@ -2182,12 +2200,18 @@ class CoachValidator:
         (``project_command_env``: the declared ``launch:`` block, a private
         HOME and the short private TMPDIR), within ``self.test_timeout``.
         GuardKit does not rewrite it: no interpreter is looked for or put
-        first, and no framework's idea of "a test ran" is applied.
+        first, and GuardKit applies no framework's idea of "a test ran" of
+        its own. The active part's own declaration is applied (31 October
+        2026): ``absent_substrings`` and ``ran_marker_regex``, see
+        :func:`toolchain_declaration.declared_no_tests_ran`.
 
-        * its own program cannot be found, or it cannot start: the check
-          could not run (not the builder's to fix);
+        * its own program cannot be found, or it cannot start, or its
+          declaration requires a marker it does not name: the check could
+          not run (not the builder's to fix);
         * it starts and does not finish within its limit: a failure sent to
           the builder;
+        * its declaration says no tests ran: a failure sent to the builder,
+          "no tests ran in part <name> (<command>): <why>";
         * otherwise its exit code is the verdict.
 
         The task's own repository uses its pinned ``launch:`` block and its
@@ -2203,6 +2227,26 @@ class CoachValidator:
             )
         else:
             where = f"sibling repository {sibling.name} (in {sibling.root})"
+        # The part's own "no tests ran" declaration, when the command is the
+        # part's declared one (a caller-supplied command is not, and a
+        # sibling repository declares none).
+        markers = None
+        if sibling is None and not self.test_command:
+            markers = (
+                self._component_toolchain
+                if self._component_toolchain is not None
+                else self._toolchain
+            )
+        part_name = (self._component or "root") if sibling is None else where
+        problem = ran_marker_problem(markers)
+        if problem is not None:
+            detail = f"the declaration of part {part_name} {problem}"
+            logger.error("The check could not run: %s", detail)
+            return IndependentTestResult.could_not_run(
+                test_command=test_cmd,
+                detail=detail,
+                duration_seconds=0.0,
+            )
         logger.info("Running the declared tests of %s: %s", where, test_cmd)
         start_time = time.time()
         try:
@@ -2283,11 +2327,21 @@ class CoachValidator:
             )
 
         duration = time.time() - start_time
-        tests_passed = result.returncode == 0
+        combined = (result.stdout or "") + (result.stderr or "")
+        why_none_ran = declared_no_tests_ran(markers, result.returncode, combined)
+        no_tests_ran = (
+            f"no tests ran in part {part_name} ({test_cmd}): {why_none_ran}"
+            if why_none_ran is not None
+            else None
+        )
+        tests_passed = result.returncode == 0 and no_tests_ran is None
 
         # Summarize output (truncate if too long)
         output = result.stdout or result.stderr or "No output"
         summary = self._summarize_test_output(output)
+        if no_tests_ran is not None:
+            logger.error("The project's declaration says %s", no_tests_ran)
+            summary = f"{no_tests_ran[0].upper()}{no_tests_ran[1:]}.\n{summary}"
         if not tests_passed:
             # Names only, never values: which settings the factory held back
             # from this command (13 October 2026).
@@ -2306,8 +2360,9 @@ class CoachValidator:
             test_command=test_cmd,
             test_output_summary=summary,
             duration_seconds=duration,
-            output=(result.stdout or "") + (result.stderr or ""),
+            output=combined,
             exit_code=result.returncode,
+            no_tests_ran=no_tests_ran,
         )
 
     def _is_docker_available(self) -> bool:

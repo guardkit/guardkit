@@ -481,3 +481,216 @@ class TestTheCheckOnAWorktree:
         )
         assert result.tests_passed is True
         assert [Path(p).name for p in marker.read_text().splitlines()] == ["app"]
+
+
+# ---------------------------------------------------------------------------
+# What the project declares "no tests ran" looks like (31 October 2026)
+# ---------------------------------------------------------------------------
+
+#: The shipped react-go-monorepo template's ``api`` marker, as declared.
+GO_RAN_MARKER = r"(?ms)\A(?!.*^ok\s+\S+\s+\(cached\))(?=.*^\s*--- PASS: \S+)"
+GO_NO_TEST_FILES = "?   \texample.com/probe/notests\t[no test files]\n"
+GO_NO_TESTS_TO_RUN = (
+    "testing: warning: no tests to run\n"
+    "PASS\n"
+    "ok  \texample.com/probe/mixed\t1.009s [no tests to run]\n"
+)
+GO_PASSED = (
+    "=== RUN   TestPasses\n"
+    "--- PASS: TestPasses (0.00s)\n"
+    "PASS\n"
+    "ok  \texample.com/probe/mixed\t1.013s\n"
+)
+
+
+def _printer(text: str, exit_code: int = 0) -> str:
+    """A declared command that prints ``text`` and exits ``exit_code``."""
+    script = f"import sys; sys.stdout.write({text!r}); sys.exit({exit_code})"
+    return f'"{sys.executable}" -c {json.dumps(script)}'
+
+
+def _api(test: str, **markers) -> dict:
+    return {"components": {"app": {"cwd": "app", "test": test, **markers}}}
+
+
+class TestDeclaredNoTestsRan:
+    """The project's own ``absent_substrings`` and ``ran_marker_regex`` are
+    honoured: a clean exit with no test run is a failure sent back to the
+    builder, never a pass and never "the check could not run"."""
+
+    @pytest.mark.parametrize("output", [GO_NO_TEST_FILES, GO_NO_TESTS_TO_RUN])
+    def test_a_clean_exit_with_no_marker_is_a_failure_to_send_back(
+        self, repo: Path, output: str
+    ):
+        command = _printer(output)
+        validator = _validator(
+            repo,
+            _api(command, requires_ran_marker=True, ran_marker_regex=GO_RAN_MARKER),
+        )
+        _write(repo, "app/lib/new.go", "package app\n")
+
+        result = validator.run_changed_parts()
+
+        assert result.tests_passed is False
+        assert result.signal_absent is False
+        assert result.check_could_not_run is False
+        assert result.exit_code == 0
+        expected = (
+            f"no tests ran in part app ({command}): no line matched {GO_RAN_MARKER}"
+        )
+        assert result.no_tests_ran == expected
+        assert expected[1:] in result.test_output_summary
+        receipt = result.failure_receipt()
+        assert receipt is not None and receipt["failing_lines"][0] == expected
+        assert [(r["part"], r["outcome"]) for r in result.parts] == [("app", "failed")]
+        assert result.parts[0]["no_tests_ran"] == expected
+        assert required_suite_override(
+            task_type="feature", independent_tests=result, failure_class=None
+        ) is not None
+        bundle = CoachEvidenceBundle(independent_tests=result)
+        orch = AutoBuildOrchestrator.__new__(AutoBuildOrchestrator)
+        assert orch._check_could_not_run_stop(bundle, "TASK-PARTS-001", 1, 0.0) is None
+
+    def test_a_real_passing_run_matches_and_passes(self, repo: Path):
+        validator = _validator(
+            repo,
+            _api(
+                _printer(GO_PASSED),
+                requires_ran_marker=True,
+                ran_marker_regex=GO_RAN_MARKER,
+            ),
+        )
+        _write(repo, "app/lib/new.go", "package app\n")
+
+        result = validator.run_changed_parts()
+
+        assert result.tests_passed is True, result.test_output_summary
+        assert result.no_tests_ran is None
+
+    def test_a_declared_absence_text_is_a_failure_on_the_root(self, repo: Path):
+        command = _printer("No tests found, exiting with code 0\n")
+        validator = _validator(
+            repo, {"test": command, "absent_substrings": ["no tests found"]}
+        )
+        _write(repo, "backend/main.py", "print(2)\n")
+
+        result = validator.run_changed_parts()
+
+        assert result.tests_passed is False and result.signal_absent is False
+        assert result.no_tests_ran == (
+            f'no tests ran in part root ({command}): the output contains '
+            '"no tests found"'
+        )
+
+    def test_a_pattern_part_uses_its_own_declaration(
+        self, repo: Path, tmp_path: Path
+    ):
+        _write(repo, "apps/web/package.json", "{}")
+        validator = _validator(
+            repo,
+            {
+                "test": _printer("root ran\n"),
+                "parts": [{
+                    "under": "apps",
+                    "marker": "package.json",
+                    "test": _printer("Test Files  1 skipped (1)\n"),
+                    "ran_marker_regex": r"Tests\b[^\n]*?[1-9][0-9]* passed",
+                }],
+            },
+        )
+        _write(repo, "apps/web/src/a.ts", "export {}\n")
+        _write(repo, "backend/main.py", "print(2)\n")
+
+        result = validator.run_changed_parts()
+
+        assert result.tests_passed is False
+        outcomes = {r["part"]: r["outcome"] for r in result.parts}
+        assert outcomes == {"root": "passed", "apps/web": "failed"}
+        assert result.no_tests_ran.startswith("no tests ran in part apps/web (")
+
+    def test_a_failing_run_stays_a_failure_with_its_own_output(self, repo: Path):
+        validator = _validator(
+            repo,
+            _api(
+                _printer("--- FAIL: TestFails (0.00s)\nFAIL\n", 1),
+                requires_ran_marker=True,
+                ran_marker_regex=GO_RAN_MARKER,
+            ),
+        )
+        _write(repo, "app/lib/new.go", "package app\n")
+
+        result = validator.run_changed_parts()
+
+        assert result.tests_passed is False and result.exit_code == 1
+        assert result.no_tests_ran is None
+
+    def test_marker_turned_off_leaves_the_exit_code_to_decide(self, repo: Path):
+        validator = _validator(
+            repo,
+            _api(
+                _printer(GO_NO_TEST_FILES),
+                requires_ran_marker=False,
+                ran_marker_regex=GO_RAN_MARKER,
+            ),
+        )
+        _write(repo, "app/lib/new.go", "package app\n")
+
+        assert validator.run_changed_parts().tests_passed is True
+
+    def test_nothing_declared_leaves_the_exit_code_to_decide(self, repo: Path):
+        validator = _validator(repo, _api(_printer(GO_NO_TEST_FILES)))
+        _write(repo, "app/lib/new.go", "package app\n")
+
+        assert validator.run_changed_parts().tests_passed is True
+
+    def test_a_marker_required_but_not_named_could_not_run(
+        self, repo: Path, tmp_path: Path
+    ):
+        marker = tmp_path / "ran.txt"
+        validator = _validator(
+            repo, _api(_recorder(marker), requires_ran_marker=True)
+        )
+        _write(repo, "app/lib/new.go", "package app\n")
+
+        result = validator.run_changed_parts()
+
+        assert result.check_could_not_run is True
+        assert "part app" in result.check_could_not_run_detail
+        assert "no `ran_marker_regex`" in result.check_could_not_run_detail
+        assert not marker.exists(), "the command must not run"
+
+    def test_a_caller_supplied_command_is_not_judged_by_the_declaration(
+        self, repo: Path
+    ):
+        validator = CoachValidator(
+            str(repo),
+            task_id="TASK-PARTS-001",
+            test_command=_printer(GO_NO_TEST_FILES),
+            toolchain=parse_toolchain_block(
+                {"test": "x", "requires_ran_marker": True,
+                 "ran_marker_regex": GO_RAN_MARKER}
+            ),
+            baseline_commit=_git(repo, "rev-parse", "HEAD"),
+        )
+
+        assert validator.run_changed_parts().tests_passed is True
+
+    def test_two_parts_that_ran_nothing_are_both_named(self):
+        first = IndependentTestResult(
+            tests_passed=False, test_command="a", test_output_summary="s",
+            duration_seconds=0.0, raw_output="out a", exit_code=0,
+            no_tests_ran="no tests ran in part a (a): no line matched x",
+        )
+        second = IndependentTestResult(
+            tests_passed=False, test_command="b", test_output_summary="s",
+            duration_seconds=0.0, raw_output="out b", exit_code=0,
+            no_tests_ran="no tests ran in part b (b): no line matched y",
+        )
+        result = combine_part_results(
+            [(DeclaredPart(name="a", cwd="a", test="a"), first),
+             (DeclaredPart(name="b", cwd="b", test="b"), second)]
+        )
+        assert result.tests_passed is False
+        assert "part a (a)" in result.no_tests_ran
+        assert "part b (b)" in result.no_tests_ran
+        assert result.failure_receipt()["failing_lines"][0] == result.no_tests_ran

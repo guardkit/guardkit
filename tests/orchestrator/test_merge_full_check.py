@@ -449,3 +449,97 @@ def test_the_full_check_by_hand_runs_each_part_in_its_folder(tmp_path: Path):
 
     assert result.status == "passed", result.detail
     assert [Path(p).name for p in marker.read_text().splitlines()] == ["repo", "app"]
+
+
+# ---------------------------------------------------------------------------
+# What the project declares "no tests ran" looks like (31 October 2026)
+# ---------------------------------------------------------------------------
+
+#: The shipped react-go-monorepo template's ``api`` marker, as declared.
+GO_RAN_MARKER = r"(?ms)\A(?!.*^ok\s+\S+\s+\(cached\))(?=.*^\s*--- PASS: \S+)"
+GO_NO_TEST_FILES = "?   \texample.com/probe/notests\t[no test files]\n"
+GO_PASSED = (
+    "=== RUN   TestPasses\n--- PASS: TestPasses (0.00s)\nPASS\n"
+    "ok  \texample.com/probe/mixed\t1.013s\n"
+)
+
+
+def _printer(text: str, exit_code: int = 0) -> str:
+    script = f"import sys; sys.stdout.write({text!r}); sys.exit({exit_code})"
+    return f'"{sys.executable}" -c {json.dumps(script)}'
+
+
+def _repo_with_api(tmp_path: Path, api: dict) -> Path:
+    repo = _base_repo(
+        tmp_path,
+        {"test": declared_command(), "components": {"api": {"cwd": "api", **api}}},
+    )
+    (repo / "api").mkdir()
+    (repo / "api" / "go.mod").write_text("module example.com/api\n", encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "api")
+    _branch_adding(repo, "FEAT-API", "tests/test_new_green.py", GREEN)
+    return repo
+
+
+class TestDeclaredNoTestsRan:
+    def test_a_component_that_ran_no_tests_fails_the_merge(self, tmp_path: Path):
+        command = _printer(GO_NO_TEST_FILES)
+        repo = _repo_with_api(
+            tmp_path,
+            {"test": command, "requires_ran_marker": True,
+             "ran_marker_regex": GO_RAN_MARKER},
+        )
+
+        report = execute_merge(repo, "FEAT-API")
+
+        assert report.verify_status == "failed", report.verify_detail
+        assert report.verify_ok is False
+        assert (
+            f"no tests ran in part api ({command}): "
+            f"no line matched {GO_RAN_MARKER}"
+        ) in report.verify_detail
+
+    def test_a_component_whose_tests_ran_passes(self, tmp_path: Path):
+        repo = _repo_with_api(
+            tmp_path,
+            {"test": _printer(GO_PASSED), "requires_ran_marker": True,
+             "ran_marker_regex": GO_RAN_MARKER},
+        )
+
+        report = execute_merge(repo, "FEAT-API")
+
+        assert report.verify_status == "passed", report.verify_detail
+
+    def test_a_declared_absence_text_on_the_root_fails(self, tmp_path: Path):
+        command = _printer("No tests found, exiting with code 0\n")
+        repo = _base_repo(
+            tmp_path, {"test": command, "absent_substrings": ["No tests found"]}
+        )
+        _branch_adding(repo, "FEAT-ROOT", "tests/test_new_green.py", GREEN)
+
+        report = execute_merge(repo, "FEAT-ROOT")
+
+        assert report.verify_status == "failed", report.verify_detail
+        assert 'the output contains "No tests found"' in report.verify_detail
+
+    def test_nothing_declared_leaves_the_exit_code_to_decide(self, tmp_path: Path):
+        repo = _repo_with_api(tmp_path, {"test": _printer(GO_NO_TEST_FILES)})
+
+        report = execute_merge(repo, "FEAT-API")
+
+        assert report.verify_status == "passed", report.verify_detail
+
+    def test_a_marker_required_but_not_named_is_unverified(self, tmp_path: Path):
+        marker = tmp_path / "ran.txt"
+        repo = _repo_with_api(
+            tmp_path,
+            {"test": _marker_command(marker), "requires_ran_marker": True},
+        )
+
+        report = execute_merge(repo, "FEAT-API")
+
+        assert report.verify_status == "unverified", report.verify_detail
+        assert report.verify_ok is False
+        assert "no `ran_marker_regex`" in report.verify_detail
+        assert not marker.exists(), "the command must not run"

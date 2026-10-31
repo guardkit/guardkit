@@ -41,14 +41,26 @@ verdict-bearing path. We do not invent a second enforcement mechanism.
 
 Two laws (design §B.4)
 ----------------------
-**LAW — exit code is the verdict.** A declared command passes iff
-``returncode == 0``. Parsing a command's stdout is advisory only; it may
-enrich a checkpoint or a summary, it may never decide anything. (Until 1
-November 2026 a per-framework "a test ran" rule could turn a 0 into "no
-test signal"; it was removed with the stack rows it used. The
-``absent_substrings``, ``ran_marker_regex`` and ``requires_ran_marker``
-fields are still accepted, so a project that declares them keeps its
-toolchain, and are not used.)
+**LAW — exit code is the verdict, unless the project says no tests ran.**
+A declared command passes iff ``returncode == 0`` and the part's own
+declaration does not say that nothing ran. GuardKit holds no framework
+knowledge of its own (the per-framework "a test ran" rules were removed on
+31 October 2026), but a project may declare, for its root, a component or a
+``parts:`` entry, what "no tests ran" looks like in its own output
+(:func:`declared_no_tests_ran`, honoured since 31 October 2026):
+
+* ``absent_substrings``: if the output contains any of them (any case),
+  nothing ran;
+* ``ran_marker_regex``: if the command exits 0 and nothing in its output
+  matches, nothing ran. It applies unless ``requires_ran_marker: false``
+  turns it off; ``requires_ran_marker: true`` with no regex is a declaration
+  that cannot be met, and the check could not run
+  (:func:`ran_marker_problem`).
+
+A part whose declaration says nothing ran FAILED: the program ran, and the
+project says no test did. Each part uses only its own declaration; the root's
+fields are not inherited by components. Fields not declared leave the exit
+code alone to decide.
 
 **LAW — the declaration is snapshotted before the model's first turn.** This
 file lives INSIDE the target repo, which means it lives inside the worktree
@@ -288,10 +300,10 @@ class _ToolchainCommands(BaseModel):
     test_timeout: int = Field(default=_DEFAULT_TIMEOUT, ge=1, le=_MAX_TIMEOUT)
     install_timeout: int = Field(default=_DEFAULT_TIMEOUT, ge=1, le=_MAX_TIMEOUT)
 
-    # ---- accepted and not used (31 October 2026) -------------------------
-    # They overlaid the removed per-framework "a test ran" rule. Kept in the
-    # schema because ``extra="forbid"`` would otherwise drop the whole
-    # toolchain of a project that still declares them.
+    # ---- what "no tests ran" looks like in this part's output ------------
+    # The project's own data, honoured by both the after-task check and the
+    # merge's full check (31 October 2026; see the module docstring and
+    # :func:`declared_no_tests_ran`). GuardKit adds no framework knowledge.
     absent_substrings: Optional[List[str]] = None
     ran_marker_regex: Optional[str] = None
     requires_ran_marker: Optional[bool] = None
@@ -314,7 +326,7 @@ class _ToolchainCommands(BaseModel):
 
     @property
     def has_classifier_overlay(self) -> bool:
-        """True when the declaration overrides any stack-row absence field."""
+        """True when the declaration declares any "no tests ran" field."""
         return (
             self.absent_substrings is not None
             or self.ran_marker_regex is not None
@@ -948,6 +960,64 @@ def full_check_parts(
     return parts
 
 
+def ran_marker_problem(commands: Optional[_ToolchainCommands]) -> Optional[str]:
+    """Why a part's declared "a test ran" marker can never be met, or ``None``.
+
+    ``requires_ran_marker: true`` with no ``ran_marker_regex`` names no text
+    that could show a test ran (31 October 2026). That is a fault in the
+    declaration, not in the work, so the callers report that the check could
+    not run rather than run the command and call every run empty.
+    """
+    if commands is None:
+        return None
+    if commands.requires_ran_marker and commands.ran_marker_regex is None:
+        return (
+            "declares `requires_ran_marker: true` but no `ran_marker_regex`, "
+            "so nothing in its output could show that a test ran"
+        )
+    return None
+
+
+def declared_no_tests_ran(
+    commands: Optional[_ToolchainCommands],
+    returncode: Optional[int],
+    output: Optional[str],
+) -> Optional[str]:
+    """Why the part's own declaration says no tests ran, or ``None``.
+
+    ``commands`` is the part's declaration (the top level for the root
+    component, the component's or ``parts:`` entry's otherwise); ``output``
+    is the run's standard output and error together. Only what the project
+    declared is applied (31 October 2026); with none of the fields declared
+    this is always ``None`` and the exit code alone decides.
+
+    * ``absent_substrings``: the first one the output contains, compared
+      without regard to case, on any exit code;
+    * ``ran_marker_regex``: on exit 0, when ``re.search`` finds no match in
+      the output, unless ``requires_ran_marker`` is ``false``.
+
+    The returned text says which: ``the output contains "<text>"`` or
+    ``no line matched <regex>``.
+    """
+    if commands is None:
+        return None
+    text = output or ""
+    lowered = text.lower()
+    for absent in commands.absent_substrings or ():
+        if absent and absent.lower() in lowered:
+            return f'the output contains "{absent}"'
+    regex = commands.ran_marker_regex
+    marker_applies = (
+        commands.requires_ran_marker
+        if commands.requires_ran_marker is not None
+        else regex is not None
+    )
+    if regex is not None and marker_applies and returncode == 0:
+        if re.search(regex, text) is None:
+            return f"no line matched {regex}"
+    return None
+
+
 def resolve_component_cwd(base: Path, cwd: str) -> Path:
     """Resolve a component's ``cwd`` under ``base``, refusing any escape.
 
@@ -991,4 +1061,6 @@ __all__ = [
     "PartFolders",
     "parts_for_files",
     "full_check_parts",
+    "declared_no_tests_ran",
+    "ran_marker_problem",
 ]
