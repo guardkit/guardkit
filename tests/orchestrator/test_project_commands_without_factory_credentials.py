@@ -220,8 +220,9 @@ def test_the_helper_builds_from_nothing(project: Project) -> None:
     assert env["CI"] == "true"
     _assert_no_sentinel(env, "the helper")
     scratch = project.repo / ".git" / BUILDER_SCRATCH_DIRNAME
-    for name in ("HOME", "TMPDIR"):
-        assert Path(env[name]).resolve().is_relative_to(scratch.resolve()), name
+    assert Path(env["HOME"]).resolve().is_relative_to(scratch.resolve())
+    # TMPDIR is the worktree's own short private folder (1 November 2026).
+    assert env["TMPDIR"] == str(pce.short_tmpdir_path(scratch.resolve()))
 
 
 @pytest.mark.real_project_scratch
@@ -795,7 +796,9 @@ def test_a_credentialed_proxy_in_guardkits_own_environment_does_not_break_import
         f"""\
         import guardkit.orchestrator.quality_gates.coach_validator
         import guardkit.orchestrator.feature_orchestrator
+        import guardkit.orchestrator.project_command_env as pce
         from guardkit.orchestrator.completion_verification import run_completion_verification
+        pce.SHORT_TMP_ROOT = {pce.SHORT_TMP_ROOT!r}  # the suite's own, not /tmp
         result = run_completion_verification(__import__("pathlib").Path({str(project.repo)!r}), "true", "declared")
         print(result.status, "|", result.detail)
         """

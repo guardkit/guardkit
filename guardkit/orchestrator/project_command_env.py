@@ -12,10 +12,13 @@ command runs with is not a copy of GuardKit's with things removed; it is built
 from an empty dictionary, in five steps, each working on the one before:
 
 1. **The base:** ``PATH`` from GuardKit's own environment with ``path_first``
-   in front; ``HOME`` and ``TMPDIR`` set to private folders
-   ``<scratch>/toolchain/HOME`` and ``<scratch>/toolchain/TMPDIR`` in the work
-   folder's scratch folder (``paths.prepare_builder_scratch_dir``, outside
-   the project); ``LANG``, ``LC_ALL`` and ``LC_*`` when set; ``HTTP_PROXY``,
+   in front; ``HOME`` set to the private folder ``<scratch>/toolchain/HOME``
+   in the work folder's scratch folder (``paths.prepare_builder_scratch_dir``,
+   outside the project); ``TMPDIR`` set to a short private folder
+   ``/tmp/gk-<8 hex>``, one per work folder (:func:`short_tmpdir_path`, 1
+   November 2026: a tool that opens a Unix socket there, such as ``dotnet
+   test``'s named pipe, needs the whole socket path under 103 bytes, and the
+   scratch folder's path is too long for that); ``LANG``, ``LC_ALL`` and ``LC_*`` when set; ``HTTP_PROXY``,
    ``HTTPS_PROXY``, ``NO_PROXY`` and ``ALL_PROXY`` in upper and lower case
    when set; the declared ``launch.settings`` names when set; the
    declared ``launch.scratch`` folders; and ``CI=true`` unless a declared
@@ -60,6 +63,7 @@ from __future__ import annotations
 
 import logging
 import os
+import stat
 from pathlib import Path
 from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 
@@ -86,6 +90,8 @@ __all__ = [
     "minimal_environment_note",
     "missing_program",
     "project_command_environment",
+    "remove_short_tmpdir",
+    "short_tmpdir_path",
     "withheld_settings",
 ]
 
@@ -134,6 +140,71 @@ def _scratch_folder(work_folder: Path) -> Optional[Path]:
     from guardkit.orchestrator.paths import prepare_builder_scratch_dir
 
     return prepare_builder_scratch_dir(work_folder)
+
+
+#: Where the short per-work-folder ``TMPDIR`` folders live. Fixed and short
+#: on purpose: ``TMPDIR`` + "/" + a 32-character socket name must stay within
+#: .NET's 103-byte limit wherever the repository lives.
+SHORT_TMP_ROOT = "/tmp"
+
+
+def short_tmpdir_path(scratch: Path) -> Path:
+    """The short private ``TMPDIR`` for the work folder whose scratch folder
+    is ``scratch``: ``/tmp/gk-<first 8 hex of the scratch path's SHA-256>``.
+
+    One per worktree (each has its own scratch folder) and the same on every
+    call, so it is found again to be removed (:func:`remove_short_tmpdir`).
+    """
+    import hashlib
+
+    digest = hashlib.sha256(str(Path(scratch)).encode("utf-8", "surrogateescape"))
+    return Path(SHORT_TMP_ROOT) / f"gk-{digest.hexdigest()[:8]}"
+
+
+def _short_private_tmpdir(directory: Path) -> Path:
+    """Create ``directory`` (mode 0700) or reuse it, only when it is a real
+    folder this user owns; then make it 0700. It sits in a folder every user
+    can write to, so a name someone else made first (or a symbolic link) is
+    refused, never followed."""
+    try:
+        try:
+            directory.mkdir(mode=0o700)
+        except FileExistsError:
+            pass
+        info = directory.lstat()
+        if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid():
+            raise LaunchEnvironmentError(
+                f"the private temporary folder {directory} is not a folder "
+                f"this user owns, so the project's commands were not run"
+            )
+        if stat.S_IMODE(info.st_mode) != 0o700:
+            directory.chmod(0o700)
+    except LaunchEnvironmentError:
+        raise
+    except OSError as exc:
+        raise LaunchEnvironmentError(
+            f"the private temporary folder could not be created at {directory}: {exc}"
+        ) from exc
+    return directory
+
+
+def remove_short_tmpdir(work_folder: Path) -> None:
+    """Remove the work folder's short ``TMPDIR`` folder, as ``git worktree
+    remove`` removes its scratch folder. Never raises."""
+    import shutil
+
+    from guardkit.orchestrator.paths import builder_scratch_dir
+
+    try:
+        scratch = builder_scratch_dir(Path(work_folder))
+        if scratch is None:
+            return
+        target = short_tmpdir_path(Path(os.path.realpath(scratch)))
+        info = target.lstat()
+    except OSError:
+        return
+    if stat.S_ISDIR(info.st_mode) and info.st_uid == os.getuid():
+        shutil.rmtree(target, ignore_errors=True)
 
 
 def finish_project_environment(
@@ -249,7 +320,7 @@ def project_command_environment(
         )
     base = _private_directory(scratch / SCRATCH_SUBDIR)
     env["HOME"] = str(_private_directory(base / "HOME"))
-    env["TMPDIR"] = str(_private_directory(base / "TMPDIR"))
+    env["TMPDIR"] = str(_short_private_tmpdir(short_tmpdir_path(scratch)))
     # An explicit base dict: the declared settings are copied when set, the
     # scratch names are pointed at folders, and nothing else of this
     # process's environment is added (the copy-everything branch is only

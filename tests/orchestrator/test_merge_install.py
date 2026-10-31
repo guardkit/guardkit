@@ -758,10 +758,16 @@ class TestNoFactoryCredentials:
             for value in SENTINELS.values():
                 assert value not in text, (name, value)
             env = standin.env_file(name)
-            for reserved in ("HOME", "TMPDIR"):
-                assert Path(os.path.realpath(env[reserved])).is_relative_to(
-                    scratch
-                ), (name, reserved, env[reserved])
+            assert Path(os.path.realpath(env["HOME"])).is_relative_to(
+                scratch
+            ), (name, env["HOME"])
+            # TMPDIR is the short private folder of this worktree (1 November
+            # 2026), never the factory's own.
+            from guardkit.orchestrator.project_command_env import short_tmpdir_path
+
+            assert env["TMPDIR"] == str(
+                short_tmpdir_path(Path(os.path.realpath(scratch)))
+            ), (name, env["TMPDIR"])
             assert env.get("STANDIN_SETTING") == "declared-and-set"
 
     def test_a_failing_install_receipt_carries_no_credential(

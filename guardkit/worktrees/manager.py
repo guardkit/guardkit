@@ -545,6 +545,12 @@ class WorktreeManager:
                 exc_info=True
             )
 
+        # The project commands' short private TMPDIR lives outside the
+        # worktree's git directory, so it goes here, with it (1 November 2026).
+        from guardkit.orchestrator.project_command_env import remove_short_tmpdir
+
+        remove_short_tmpdir(worktree.path)
+
         # Remove worktree directory
         try:
             remove_args = ["worktree", "remove", str(worktree.path)]

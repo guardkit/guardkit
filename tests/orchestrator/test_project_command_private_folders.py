@@ -20,7 +20,11 @@ from guardkit.orchestrator.launch_declaration import (
     apply_launch_environment,
 )
 from guardkit.orchestrator.paths import prepare_builder_scratch_dir
-from guardkit.orchestrator.project_command_env import project_command_environment
+from guardkit.orchestrator.project_command_env import (
+    project_command_environment,
+    remove_short_tmpdir,
+    short_tmpdir_path,
+)
 
 
 def _checkout(tmp_path: Path) -> Path:
@@ -43,19 +47,88 @@ def _mode(path: Path) -> int:
 def test_existing_open_home_and_tmpdir_are_made_owner_only(tmp_path: Path) -> None:
     worktree = _checkout(tmp_path)
     toolchain = _toolchain(worktree)
-    for name in ("HOME", "TMPDIR"):
-        (toolchain / name).mkdir(parents=True, exist_ok=True)
-        (toolchain / name / "kept").write_text("kept\n")
-        (toolchain / name).chmod(0o777)
+    tmpdir = short_tmpdir_path(toolchain.parent)
+    for folder in (toolchain / "HOME", tmpdir):
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / "kept").write_text("kept\n")
+        folder.chmod(0o777)
     toolchain.chmod(0o777)
 
     env = project_command_environment(worktree, None)
 
     assert env["HOME"] == str(toolchain / "HOME")
-    assert env["TMPDIR"] == str(toolchain / "TMPDIR")
-    for folder in (toolchain, toolchain / "HOME", toolchain / "TMPDIR"):
+    assert env["TMPDIR"] == str(tmpdir)
+    for folder in (toolchain, toolchain / "HOME", tmpdir):
         assert _mode(folder) == 0o700, folder
     assert (toolchain / "HOME" / "kept").read_text() == "kept\n"
+    assert (tmpdir / "kept").read_text() == "kept\n"
+
+
+# The short TMPDIR (1 November 2026). The project's commands had TMPDIR at
+# <repo>/.git/worktrees/<FEAT>/guardkit-scratch/toolchain/TMPDIR; `dotnet
+# test` (Microsoft.Testing.Platform) opens a named pipe there with a name of
+# about 32 characters, and .NET refuses a socket path over 103 bytes, so every
+# test project of a .NET copy aborted ("Zero tests ran", exit 134).
+
+DOTNET_SOCKET_LIMIT = 103
+PIPE_NAME = "0123456789abcdef0123456789abcdef"  # 32 characters
+
+
+@pytest.mark.real_project_scratch
+def test_a_socket_in_the_tmpdir_fits_with_a_deep_repo_and_a_long_feature(
+    tmp_path: Path,
+) -> None:
+    deep = tmp_path / ("very-long-folder-name-" * 4) / "Projects" / "appmilla_github"
+    deep.mkdir(parents=True)
+    repo = deep / "career-assistant-dotnet"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q", "-b", "main", str(repo)], check=True)
+    for args in (
+        ["config", "user.email", "t@t.t"],
+        ["config", "user.name", "t"],
+        ["commit", "-q", "--allow-empty", "-m", "start"],
+    ):
+        subprocess.run(["git", "-C", str(repo), *args], check=True)
+    worktree = repo / ".guardkit" / "worktrees" / "FEAT-ASSESSMENT-AND-SHORTLIST-0A1B2C3D"
+    subprocess.run(
+        ["git", "-C", str(repo), "worktree", "add", "-q", "--detach", str(worktree)],
+        check=True,
+    )
+    try:
+        env = project_command_environment(worktree, None)
+        socket = f"{env['TMPDIR']}/{PIPE_NAME}"
+        assert len(socket.encode()) <= DOTNET_SOCKET_LIMIT, socket
+        assert env["TMPDIR"].startswith("/tmp/gk-")
+        assert _mode(Path(env["TMPDIR"])) == 0o700
+        old_place = prepare_builder_scratch_dir(worktree) / "toolchain" / "TMPDIR"
+        assert len(f"{old_place}/{PIPE_NAME}".encode()) > DOTNET_SOCKET_LIMIT
+    finally:
+        remove_short_tmpdir(worktree)
+    assert not Path(env["TMPDIR"]).exists()
+
+
+def test_each_worktree_has_its_own_tmpdir(tmp_path: Path) -> None:
+    (tmp_path / "a").mkdir()
+    (tmp_path / "b").mkdir()
+    first = _checkout(tmp_path / "a")
+    one = project_command_environment(first, None)["TMPDIR"]
+    two = project_command_environment(_checkout(tmp_path / "b"), None)["TMPDIR"]
+    assert one != two
+    assert project_command_environment(first, None)["TMPDIR"] == one
+
+
+def test_a_tmpdir_name_taken_by_a_link_is_refused(tmp_path: Path) -> None:
+    from guardkit.orchestrator.launch_declaration import LaunchEnvironmentError
+
+    worktree = _checkout(tmp_path)
+    target = short_tmpdir_path(_toolchain(worktree).parent)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.symlink_to(elsewhere)
+
+    with pytest.raises(LaunchEnvironmentError):
+        project_command_environment(worktree, None)
 
 
 def test_new_folders_are_owner_only(tmp_path: Path) -> None:

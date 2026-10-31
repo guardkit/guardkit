@@ -740,6 +740,15 @@ def project_scratch_for_plain_folders(monkeypatch, request, tmp_path_factory):
         return holder[key]
 
     monkeypatch.setattr(project_command_env, "_scratch_folder", _scratch)
+    # The short per-worktree TMPDIR folders go under pytest's own base folder
+    # (which pytest clears), not the real /tmp, so a run of the suite does not
+    # leave one /tmp/gk-* folder per test. A test of the real place is marked
+    # ``real_project_scratch``.
+    monkeypatch.setattr(
+        project_command_env,
+        "SHORT_TMP_ROOT",
+        str(tmp_path_factory.getbasetemp()),
+    )
 
 
 # ---------------------------------------------------------------------------
