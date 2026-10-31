@@ -363,7 +363,7 @@ def _docs(root: Path) -> tuple[ProjectDocument, ...]:
 
 def _bundle(**extra: Any) -> CoachEvidenceBundle:
     """A complete bundle whose changed parts' tests ran and passed (one with
-    no test result stops the turn, 1 November 2026)."""
+    no test result stops the turn, 31 October 2026)."""
     extra.setdefault(
         "independent_tests",
         IndependentTestResult(

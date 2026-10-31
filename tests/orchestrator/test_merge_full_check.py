@@ -428,7 +428,7 @@ def test_the_full_check_by_hand_runs_each_part_in_its_folder(tmp_path: Path):
     """``guardkit autobuild complete --verify`` builds the environment itself
     (the merge hands one in). A part's folder is not a git checkout of its
     own, so the environment is built once for the repository and given to
-    every part (1 November 2026: each part's command could not start)."""
+    every part (31 October 2026: each part's command could not start)."""
     marker = tmp_path / "ran.txt"
     repo = _base_repo(
         tmp_path,

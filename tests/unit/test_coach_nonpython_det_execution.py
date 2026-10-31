@@ -53,7 +53,7 @@ def _detect_validator(tmp_path: Path, wave_size: int = 1) -> CoachValidator:
 
 
 class TestTheExitCodeIsTheVerdict:
-    """1 November 2026: the per-framework "a test ran" rule for Node, Go and
+    """31 October 2026: the per-framework "a test ran" rule for Node, Go and
     .NET is gone. Output that rule used to read as "no test signal" (a
     missing npm script, a Go module with no tests, .NET's "No test is
     available", a Vitest run with nothing to run) is now judged by the

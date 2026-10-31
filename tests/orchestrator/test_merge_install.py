@@ -1221,7 +1221,7 @@ class TestNothingOutlivesATimeout:
             'echo $! > "@MARKERS@/background.pid"\n'
             "sleep 37\n"
         )
-        # The check's own declared limit bounds it (1 November 2026).
+        # The check's own declared limit bounds it (31 October 2026).
         standin.init(
             config=config_text(
                 install=None, launch=None, extra_toolchain="  test_timeout: 2\n"

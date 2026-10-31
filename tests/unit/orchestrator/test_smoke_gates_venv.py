@@ -2,7 +2,7 @@
 
 TASK-FIX-A7B1 and TASK-SGER-002 put the bootstrap venv's interpreter first on
 PATH so a bare ``python`` in a smoke command meant the project's venv. That
-hidden Python default was removed on 1 November 2026 (Rich: "I don't want any
+hidden Python default was removed on 31 October 2026 (Rich: "I don't want any
 more hidden surprises"), with its tests; a project whose smoke command needs
 an interpreter names it.
 """

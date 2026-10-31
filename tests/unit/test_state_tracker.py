@@ -367,7 +367,7 @@ class TestLoadPlayerReport:
 
 class TestCaptureState:
     """Tests for capture_state method. It reports what git shows and runs no
-    tests (1 November 2026: the hard-coded pytest run was removed, with the
+    tests (31 October 2026: the hard-coded pytest run was removed, with the
     tests of what it reported)."""
 
     @patch("guardkit.orchestrator.state_tracker.detect_git_changes")
@@ -437,7 +437,7 @@ class TestCaptureState:
         }
         report_path.write_text(json.dumps(report_data))
 
-        # Set up the git detection (no tests are run, 1 November 2026)
+        # Set up the git detection (no tests are run, 31 October 2026)
         mock_git_changes.return_value = GitChangesSummary(
             files_modified=["git_file.py"],
         )
@@ -603,7 +603,7 @@ class TestStateTrackerIntegration:
         }
         report_path.write_text(json.dumps(report_data))
 
-        # Git shows the change; no tests are run (1 November 2026)
+        # Git shows the change; no tests are run (31 October 2026)
         mock_git_changes.return_value = GitChangesSummary(
             files_modified=["src/main.py"],
         )
@@ -641,7 +641,7 @@ class TestStateTrackerIntegration:
         }
         report_path.write_text(json.dumps(report_data))
 
-        # Git shows nothing and no tests are run (1 November 2026)
+        # Git shows nothing and no tests are run (31 October 2026)
         mock_git_changes.return_value = None
 
         state = tracker.capture_state(turn=1)

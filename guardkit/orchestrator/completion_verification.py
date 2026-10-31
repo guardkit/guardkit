@@ -268,7 +268,7 @@ def run_completion_verification(
     if env is None:
         # Built once for the repository and given to every part: a part's
         # folder is not a git checkout of its own, so it has no scratch
-        # folder to build one from (1 November 2026).
+        # folder to build one from (31 October 2026).
         try:
             env = project_command_environment(
                 Path(repo_root), load_launch_declaration(Path(repo_root))

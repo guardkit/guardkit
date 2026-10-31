@@ -546,10 +546,18 @@ class WorktreeManager:
             )
 
         # The project commands' short private TMPDIR lives outside the
-        # worktree's git directory, so it goes here, with it (1 November 2026).
+        # worktree's git directory, so it goes here, with it (31 October 2026).
         from guardkit.orchestrator.project_command_env import remove_short_tmpdir
 
         remove_short_tmpdir(worktree.path)
+        # guardkitfactory's builder and checker shells keep their own short TMPDIRs
+        # beside it; a guardkitfactory without that helper has none to remove.
+        try:
+            from guardkitfactory.harness.backend_config import remove_shell_tmpdirs
+        except ImportError:
+            remove_shell_tmpdirs = None
+        if remove_shell_tmpdirs is not None:
+            remove_shell_tmpdirs(worktree.path)
 
         # Remove worktree directory
         try:

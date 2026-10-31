@@ -473,7 +473,7 @@ def missing_program(
     the part's ``folder``, a bare name on ``env``'s ``PATH``. A word the
     shell understands itself (``cd``, ``export``, ``(``) is never looked up,
     and text that cannot be split into words is left to the shell
-    (1 November 2026). A missing program here means the check could not run;
+    (31 October 2026). A missing program here means the check could not run;
     a program missing inside a script that did start is the script failing.
     """
     import re

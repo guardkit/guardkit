@@ -1,6 +1,6 @@
 """A declared command whose own program does not exist could not run; a
 program missing inside a script that started is the script failing
-(1 November 2026). The same rule in the after-task check and at merge.
+(31 October 2026). The same rule in the after-task check and at merge.
 
 FEAT-8BB4 (29 October 2026): ``bash scripts/check.sh`` started and hit
 "eslint: not found" inside, exit 127. That is a failure to repair. A

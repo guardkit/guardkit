@@ -153,12 +153,12 @@ class TestGatherEvidenceNeverRaises:
         assert bundle.gathering_status == "partial_exception"
         assert "runner exploded" in (bundle.gathering_error or "")
         # Recorded as "the check could not run", so the task stops instead
-        # of being approved untested (1 November 2026; it was None).
+        # of being approved untested (31 October 2026; it was None).
         assert bundle.independent_tests.check_could_not_run is True
         assert "runner exploded" in bundle.independent_tests.check_could_not_run_detail
 
     def test_operator_handoff_runs_the_check_like_any_task(self, tmp_path: Path) -> None:
-        """Operator-handoff tasks no longer skip the check (1 November 2026):
+        """Operator-handoff tasks no longer skip the check (31 October 2026):
         here nothing is declared, so it says the check could not run."""
         _init_git_worktree(tmp_path)
         bundle = _gather(

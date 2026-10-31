@@ -416,7 +416,7 @@ def _folder_fingerprint(folder: Path) -> str:
     subfolders): each name with its content as it is on disk, or its link
     target for a symbolic link.
 
-    Only tracked files count (1 November 2026), so what a build or a test
+    Only tracked files count (31 October 2026), so what a build or a test
     run writes there (a ``tsconfig.tsbuildinfo``, a coverage or JUnit file)
     never makes the part's install due again. Empty when git cannot list the
     folder.
@@ -645,7 +645,7 @@ class CoachValidator:
 
     # TASK-ABFIX-012: shell words for a missing host tool (psql, docker, npm).
     # They only shape the words the builder is sent (``_classify_test_failure``
-    # labels such a failure "infrastructure"); since 1 November 2026 they never
+    # labels such a failure "infrastructure"); since 31 October 2026 they never
     # turn a failed run into "no test signal": a declared command whose own
     # program is missing could not run (``missing_program``), and a tool
     # missing inside a running script is a failure. The bare ": not found" /
@@ -923,7 +923,7 @@ class CoachValidator:
         profile_name = getattr(profile, "name", None) or task_type.value
 
         # Every task type, an operator hand-over included, has the parts it
-        # changed tested (1 November 2026): a task that changed no part has
+        # changed tested (31 October 2026): a task that changed no part has
         # nothing to run, and one that did cannot be approved untested.
         task_work_results = self.read_quality_gate_results(task_id)
         if "error" in task_work_results:
@@ -951,7 +951,7 @@ class CoachValidator:
                 "gather_evidence: the changed parts' tests raised: %s", exc,
             )
             # Nothing was measured, so the task is not approved: the check
-            # could not run (1 November 2026; it used to be recorded as no
+            # could not run (31 October 2026; it used to be recorded as no
             # result at all, and nothing stopped on that).
             test_result = IndependentTestResult.could_not_run(
                 test_command="<the changed parts' tests>",
@@ -1343,7 +1343,7 @@ class CoachValidator:
         try:
             # Built from nothing (13 October 2026), with the main checkout's
             # ``launch:`` block as the smoke gate reads it. The command runs as
-            # declared: no interpreter put first on PATH (1 November 2026).
+            # declared: no interpreter put first on PATH (31 October 2026).
             env = _checker_env(self, main_checkout=True)
             proc = process_group.run_project_command(
                 command,
@@ -2064,7 +2064,7 @@ class CoachValidator:
                 run_cwd = self._component_run_cwd(self.worktree_path)
                 # The declared command's own program must exist, in the
                 # part's folder or on its PATH; if not, the check could not
-                # run (1 November 2026). A program missing inside a script
+                # run (31 October 2026). A program missing inside a script
                 # that started is the script failing, sent to the builder.
                 missing = missing_program(
                     test_cmd, run_cwd, _checker_declared_env(self)
@@ -2112,7 +2112,7 @@ class CoachValidator:
                 # command's own program was found above, so a missing program
                 # is one inside the script that ran (FEAT-8BB4's "eslint: not
                 # found"), which fails. No framework's idea of "a test ran" is
-                # applied (1 November 2026).
+                # applied (31 October 2026).
                 logger.info(
                     f"Independent tests {'passed' if tests_passed else 'failed'} "
                     f"in {duration:.1f}s"

@@ -141,7 +141,7 @@ def orchestrator(
 
 def _empty_bundle() -> CoachEvidenceBundle:
     """A complete bundle whose changed parts' tests ran and passed. A bundle
-    with no test result at all now stops the turn (1 November 2026)."""
+    with no test result at all now stops the turn (31 October 2026)."""
     return CoachEvidenceBundle(
         gathering_status="complete",
         task_type="feature",
@@ -299,7 +299,7 @@ class TestPrimaryFlowGatheringError:
             result = _invoke_coach(orchestrator, mock_worktree)
 
         # It used to run the reviewer without the bundle and approve the
-        # task untested (1 November 2026).
+        # task untested (31 October 2026).
         assert mock_agent_invoker.invoke_coach.call_count == 0
         assert result.success is False
         assert result.error.startswith("The check could not run")

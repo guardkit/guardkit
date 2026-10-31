@@ -151,7 +151,7 @@ def test_the_check_returns_the_object_it_made_with_its_record(worktree, monkeypa
     """The declared command's route hands back the very result the check
     produced (not a copy), with the run record attached; a failing pytest
     run keeps its exit status beside the record. (The SDK route was removed
-    on 1 November 2026.)"""
+    on 31 October 2026.)"""
     import sys
 
     from guardkit.orchestrator.quality_gates.coach_validator import IndependentTestResult

@@ -117,7 +117,7 @@ class TestThePartInstall:
     def test_build_and_test_outputs_do_not_reinstall(
         self, repo: Path, tmp_path: Path
     ):
-        """Only files git tracks count (1 November 2026): what a build or a
+        """Only files git tracks count (31 October 2026): what a build or a
         test run leaves in the part's folder (a tsbuildinfo, a JUnit or
         coverage file) does not make the install due again."""
         marker = tmp_path / "ran.txt"

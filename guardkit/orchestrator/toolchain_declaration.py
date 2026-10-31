@@ -288,7 +288,7 @@ class _ToolchainCommands(BaseModel):
     test_timeout: int = Field(default=_DEFAULT_TIMEOUT, ge=1, le=_MAX_TIMEOUT)
     install_timeout: int = Field(default=_DEFAULT_TIMEOUT, ge=1, le=_MAX_TIMEOUT)
 
-    # ---- accepted and not used (1 November 2026) -------------------------
+    # ---- accepted and not used (31 October 2026) -------------------------
     # They overlaid the removed per-framework "a test ran" rule. Kept in the
     # schema because ``extra="forbid"`` would otherwise drop the whole
     # toolchain of a project that still declares them.
@@ -932,7 +932,7 @@ def full_check_parts(
     included with nothing declared, so the check says it could not run.
     Empty when nothing is declared.
 
-    ``feature_check`` is never a substitute for these (1 November 2026 fix
+    ``feature_check`` is never a substitute for these (31 October 2026 fix
     pass): a project that declares one, such as a browser journey, still has
     its root and parts checked here. It is the build's whole-feature check.
     """

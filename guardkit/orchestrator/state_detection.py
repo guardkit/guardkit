@@ -6,7 +6,7 @@ performed in a worktree even when Player JSON reports are missing.
 Detection Layers:
     1. Git-based detection - Detect uncommitted changes via git status/diff
     (The test run through CoachVerifier's hard-coded pytest was removed on
-    1 November 2026; ``TestResultsSummary`` stays as the record's shape.)
+    31 October 2026; ``TestResultsSummary`` stays as the record's shape.)
 
 Architecture:
     - Uses subprocess with 5-second timeouts for git commands (per arch review)

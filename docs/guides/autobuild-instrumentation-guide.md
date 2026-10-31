@@ -1043,7 +1043,7 @@ Hint: set `bootstrap_failure_mode: warn` in .guardkit/config.yaml (or pass `--bo
 
 ## Coach Independent Test Execution
 
-The Coach runs the declared test command of each part the task changed, through the shell, in the part's folder, exactly as declared (1 November 2026). The opt-in SDK test path (`coach.test_execution: sdk`, `GUARDKIT_COACH_TEST_EXECUTION`) and the pytest interpreter pinning and per-test timeout injection it carried were removed; the setting is no longer read.
+The Coach runs the declared test command of each part the task changed, through the shell, in the part's folder, exactly as declared (31 October 2026). The opt-in SDK test path (`coach.test_execution: sdk`, `GUARDKIT_COACH_TEST_EXECUTION`) and the pytest interpreter pinning and per-test timeout injection it carried were removed; the setting is no longer read.
 
 ---
 

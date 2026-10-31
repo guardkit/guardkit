@@ -8,7 +8,7 @@ FEAT-ABL-005 run 4: ``guardkit autobuild feature --resume`` skipped bootstrap
 collected 0 tests → 8 turns of absent signals that looked like quality
 rejections.
 
-Pins the fix hop by hop. (1 November 2026: the Coach's own venv resolution,
+Pins the fix hop by hop. (31 October 2026: the Coach's own venv resolution,
 ``_resolve_venv_python``, and its hard-abort were removed with the opt-in SDK
 test path and state recovery's pytest run; the declared command runs as
 declared. Their tests went with them. The bootstrap's own venv probe and

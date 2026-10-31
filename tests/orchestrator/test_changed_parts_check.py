@@ -418,7 +418,7 @@ class TestTheCheckOnAWorktree:
     ):
         """An operator hand-over used to skip the check entirely, so a part
         it changed went untested. Its changed parts are tested like any
-        other task's (1 November 2026)."""
+        other task's (31 October 2026)."""
         marker = tmp_path / "ran.txt"
         validator = _validator(
             repo, {"components": {"app": {"cwd": "app", "test": _recorder(marker)}}}

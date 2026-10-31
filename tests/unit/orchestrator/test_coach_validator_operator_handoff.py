@@ -1,7 +1,7 @@
 """CoachValidator awareness of the OPERATOR_HANDOFF task_type (TASK-FPTC-004).
 
 A task with ``task_type: operator_handoff`` has its changed parts tested
-like every other task type (1 November 2026: it used to skip the check, so a
+like every other task type (31 October 2026: it used to skip the check, so a
 part it changed went untested).
 
 Coverage Target: >=85%
@@ -29,7 +29,7 @@ def validator(tmp_path: Path) -> CoachValidator:
 
 
 class TestOperatorHandoffIsTestedLikeAnyTask:
-    """An operator hand-over no longer skips the check (1 November 2026).
+    """An operator hand-over no longer skips the check (31 October 2026).
 
     In a feature build the orchestrator defers these tasks without running
     the builder (TASK-FPTC-003), so they change nothing and have nothing to

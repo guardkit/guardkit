@@ -9,7 +9,7 @@ Architecture:
     MultiLayeredStateTracker implements cascade detection:
         1. Player JSON report (highest fidelity, if available)
         2. Git changes (detects file-level work)
-    No tests are run (1 November 2026); the after-task check decides.
+    No tests are run (31 October 2026); the after-task check decides.
 
 Design Patterns:
     - Strategy Pattern: StateTracker ABC enables interchangeable strategies
@@ -195,7 +195,7 @@ class MultiLayeredStateTracker(StateTracker):
     Detection Cascade (priority order):
         1. Player JSON report - Highest fidelity, complete context
         2. Git changes - Detects file-level work (fallback)
-    No tests are run (1 November 2026).
+    No tests are run (31 October 2026).
 
     Attributes:
         task_id: Task identifier
@@ -237,7 +237,7 @@ class MultiLayeredStateTracker(StateTracker):
     def capture_state(self, turn: int) -> Optional[WorkState]:
         """Capture work state from what git shows the turn left.
 
-        No tests are run (1 November 2026: this ran a hard-coded pytest
+        No tests are run (31 October 2026: this ran a hard-coded pytest
         through CoachVerifier, whatever the project declared). The recovered
         state carries no test result; the after-task check of the parts the
         task changed decides.

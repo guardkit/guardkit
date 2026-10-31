@@ -64,7 +64,7 @@ def test_existing_open_home_and_tmpdir_are_made_owner_only(tmp_path: Path) -> No
     assert (tmpdir / "kept").read_text() == "kept\n"
 
 
-# The short TMPDIR (1 November 2026). The project's commands had TMPDIR at
+# The short TMPDIR (31 October 2026). The project's commands had TMPDIR at
 # <repo>/.git/worktrees/<FEAT>/guardkit-scratch/toolchain/TMPDIR; `dotnet
 # test` (Microsoft.Testing.Platform) opens a named pipe there with a name of
 # about 32 characters, and .NET refuses a socket path over 103 bytes, so every

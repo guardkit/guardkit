@@ -60,7 +60,7 @@ autobuild = [
     # `pip install ".[autobuild]"` fail or reach the wrong package. Each is taken
     # from its GitHub repository at an exact commit; move the commit to update.
     # uv still uses the sibling checkouts in [tool.uv.sources] for local work.
-    "guardkitfactory @ git+https://github.com/guardkit/guardkitfactory.git@cd00e2d520e2e2517cc333dffcfd634c0b3c42f1",
+    "guardkitfactory @ git+https://github.com/guardkit/guardkitfactory.git@2333a5f57dc404d0df0982f59f7c7b7a377648d3",
 ]
 # FalkorDB Python client. Used by `guardkit memory migrate-graph`
 # (guardkit/memory/graph_export.py reads Episodic nodes directly). Formerly
@@ -129,7 +129,7 @@ visual = [
 ]
 all = [
     "claude-agent-sdk>=0.2.121,<0.3",
-    "guardkitfactory @ git+https://github.com/guardkit/guardkitfactory.git@cd00e2d520e2e2517cc333dffcfd634c0b3c42f1",
+    "guardkitfactory @ git+https://github.com/guardkit/guardkitfactory.git@2333a5f57dc404d0df0982f59f7c7b7a377648d3",
     "nats-core @ git+https://github.com/guardkit/nats-core.git@ef4d8fd704ceb7ad10f9a9563bd3fed722e106de",
     "fleet-memory @ git+https://github.com/guardkit/fleet-memory.git@e8ccf1283ff6ddab4882d6a63a3e7fe9b5980a1f",
     "falkordb>=1.6,<2",

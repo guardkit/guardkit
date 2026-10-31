@@ -221,7 +221,7 @@ def test_the_helper_builds_from_nothing(project: Project) -> None:
     _assert_no_sentinel(env, "the helper")
     scratch = project.repo / ".git" / BUILDER_SCRATCH_DIRNAME
     assert Path(env["HOME"]).resolve().is_relative_to(scratch.resolve())
-    # TMPDIR is the worktree's own short private folder (1 November 2026).
+    # TMPDIR is the worktree's own short private folder (31 October 2026).
     assert env["TMPDIR"] == str(pce.short_tmpdir_path(scratch.resolve()))
 
 

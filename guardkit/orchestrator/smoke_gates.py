@@ -161,7 +161,7 @@ def run_smoke_gate(
     The environment is built from nothing (``project_command_env``,
     13 October 2026), with the main checkout's ``launch:`` block, never this
     process's own with the factory's credentials. The command runs as
-    declared: no interpreter is put first on PATH (1 November 2026). When the
+    declared: no interpreter is put first on PATH (31 October 2026). When the
     environment cannot be built the gate fails with the plain reason and the
     command does not run.
     evidence : Optional[EvidenceRequest]
