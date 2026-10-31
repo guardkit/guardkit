@@ -6077,8 +6077,8 @@ class AutoBuildOrchestrator:
                 task_id, turn, _evidence_exc,
             )
 
-        # The check could not run (a part's command would not start, timed
-        # out, gave no test signal or is not declared). Nothing was measured
+        # The check could not run (a part's command would not start, gave no
+        # test signal, is not declared, or its install failed). Nothing was measured
         # and it is not the builder's to fix, so the task is not approved and
         # no builder turn is spent on it: the turn ends as a Coach failure,
         # which stops the task with this sentence (31 October 2026).

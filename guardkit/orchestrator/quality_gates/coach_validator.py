@@ -578,7 +578,8 @@ def combine_part_results(
     ``runs`` pairs each part (a ``DeclaredPart``) with its run. A part that
     ran and failed wins: the result is a failure, so the task goes back to
     the builder with that part's output. Otherwise a part that could not run
-    (would not start, timed out, gave no test signal, declared nothing) makes
+    (would not start, gave no test signal, declared nothing, its install
+    failed) makes
     the result "the check could not run", naming the part and its command:
     nothing was measured, and it is not the builder's to fix. Only when every
     part ran and passed is the result a pass. ``parts`` records each part's
@@ -3210,20 +3211,33 @@ class CoachValidator:
                     )
 
             except subprocess.TimeoutExpired:
+                # A run that started and did not finish within its declared
+                # limit is usually the code's doing (a hang, an endless loop,
+                # tests too slow for the limit), so it is a failure the builder
+                # is sent, not a check that could not run (31 October 2026;
+                # TASK-C2C7-002 was fixed by its builder on the next turn).
                 duration = time.time() - start_time
-                logger.error(f"Test execution timed out after {self.test_timeout}s")
-                # TASK-FIX-COACHTESTTO: timeout — oracle did not complete.
-                return IndependentTestResult.absent(
-                        test_command=test_cmd,
-                        test_output_summary=(
-                            f"Test execution timed out after "
-                            f"{self.test_timeout}s"
-                        ),
-                        duration_seconds=duration,
-                        resolved_interpreter=self._resolved_interpreter_for(
-                            test_cmd
-                        ),
-                    )
+                where = (
+                    f"part {self._component} (in {self._component_toolchain.cwd})"
+                    if self._component_toolchain is not None
+                    else "the root part"
+                )
+                message = (
+                    f"The tests of {where} timed out: `{test_cmd}` did not "
+                    f"finish within its {self.test_timeout}-second limit "
+                    "(test_timeout). A run that does not finish is usually a "
+                    "hang, an endless loop or tests too slow for the limit; "
+                    "make the tests finish within it."
+                )
+                logger.error(message)
+                return IndependentTestResult(
+                    tests_passed=False,
+                    test_command=test_cmd,
+                    test_output_summary=message,
+                    duration_seconds=duration,
+                    raw_output=message,
+                    resolved_interpreter=self._resolved_interpreter_for(test_cmd),
+                )
             except Exception as e:
                 duration = time.time() - start_time
                 logger.error(f"Test execution failed: {e}")

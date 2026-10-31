@@ -161,9 +161,11 @@ class TestAbsentSignalMarking:
         )
         assert result.signal_absent is False
 
-    def test_subprocess_timeout_marks_absent(
+    def test_subprocess_timeout_is_a_failure_sent_back(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        """31 October 2026: a run that started and did not finish within its
+        limit is a failure for the builder (TASK-C2C7-002), not an absence."""
         monkeypatch.setenv("GUARDKIT_HARNESS", "langgraph")  # force subprocess
         validator = CoachValidator(
             str(tmp_path),
@@ -176,9 +178,11 @@ class TestAbsentSignalMarking:
         with patch(f"{_CV_MOD}.subprocess.run", side_effect=timeout_exc):
             result = validator.run_independent_tests()
 
-        assert result.signal_absent is True
+        assert result.signal_absent is False
         assert result.tests_passed is False
         assert "timed out" in result.test_output_summary.lower()
+        assert "5-second limit" in result.test_output_summary
+        assert result.failure_receipt() is not None
 
     def test_subprocess_generic_error_marks_absent(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

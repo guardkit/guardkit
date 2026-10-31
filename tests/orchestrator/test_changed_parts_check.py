@@ -174,17 +174,17 @@ def _failed(name: str) -> IndependentTestResult:
     )
 
 
-def _timed_out(name: str) -> IndependentTestResult:
+def _no_signal(name: str) -> IndependentTestResult:
     return IndependentTestResult.absent(
-        test_command=f"test-{name}", test_output_summary="timed out after 300s",
-        duration_seconds=300.0,
+        test_command=f"test-{name}", test_output_summary="no test ran",
+        duration_seconds=1.0,
     )
 
 
 class TestCombiningParts:
     def test_a_failure_wins_over_a_part_that_could_not_run(self):
         result = combine_part_results(
-            [(_part("a"), _timed_out("a")), (_part("b"), _failed("b"))]
+            [(_part("a"), _no_signal("a")), (_part("b"), _failed("b"))]
         )
         assert result.tests_passed is False
         assert result.signal_absent is False
@@ -194,13 +194,13 @@ class TestCombiningParts:
 
     def test_could_not_run_wins_over_a_pass_and_names_part_and_command(self):
         result = combine_part_results(
-            [(_part("a"), _passed("a")), (_part("b"), _timed_out("b"))]
+            [(_part("a"), _passed("a")), (_part("b"), _no_signal("b"))]
         )
         assert result.tests_passed is False
         assert result.check_could_not_run is True
         assert result.check_could_not_run_detail.startswith("The check could not run")
         assert "part b (`test-b` in b)" in result.check_could_not_run_detail
-        assert "timed out after 300s" in result.check_could_not_run_detail
+        assert "no test ran" in result.check_could_not_run_detail
 
     def test_passes_only_when_every_part_ran_and_passed(self):
         result = combine_part_results(
@@ -351,6 +351,37 @@ class TestTheCheckOnAWorktree:
         stop = orch._check_could_not_run_stop(bundle, "TASK-PARTS-001", 1, 0.0)
         assert stop is not None and stop.success is False
         assert stop.error.startswith("The check could not run")
+
+    def test_a_part_that_times_out_failed_and_goes_back_to_the_builder(
+        self, repo: Path, tmp_path: Path
+    ):
+        """TASK-C2C7-002 (27 October 2026): the tests started and did not
+        finish within their limit; the builder made them finish on the next
+        turn. A timeout is a failure sent back, naming the part, the command
+        and the limit; it does not stop the task."""
+        validator = _validator(
+            repo,
+            {"components": {"app": {
+                "cwd": "app", "test": "sleep 5", "test_timeout": 1,
+            }}},
+        )
+        _write(repo, "app/lib/new.dart", "void main() {}\n")
+
+        result = validator.run_changed_parts()
+
+        assert result.tests_passed is False
+        assert result.signal_absent is False
+        assert result.check_could_not_run is False
+        assert "part app (in app)" in result.test_output_summary
+        assert "`sleep 5`" in result.test_output_summary
+        assert "1-second limit" in result.test_output_summary
+        assert result.failure_receipt() is not None
+        assert required_suite_override(
+            task_type="feature", independent_tests=result, failure_class=None
+        ) is not None
+        bundle = CoachEvidenceBundle(independent_tests=result)
+        orch = AutoBuildOrchestrator.__new__(AutoBuildOrchestrator)
+        assert orch._check_could_not_run_stop(bundle, "TASK-PARTS-001", 1, 0.0) is None
 
     def test_a_component_with_no_test_could_not_run(self, repo: Path):
         validator = _validator(

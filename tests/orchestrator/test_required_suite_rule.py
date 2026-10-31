@@ -309,21 +309,21 @@ class TestPrimaryTaskWorkPhase4SkippedForBudget:
 
 class TestPrimaryPositiveControls:
     def test_signal_absent_is_not_sent_back_it_stops(self, tmp_path: Path) -> None:
-        """A run that said nothing (here a timeout) is not a red suite, so
+        """A run that said nothing (no test signal) is not a red suite, so
         nothing goes back to the builder; it is not a pass either, so the task
         stops with the reason (31 October 2026)."""
         wt = _git_worktree(tmp_path)
         _write_results(wt, mode="direct")
         absent = IndependentTestResult.absent(
             test_command="bash qa/run-suite.sh",
-            test_output_summary="timed out after 300s",
-            duration_seconds=300.0,
+            test_output_summary="the run printed no test result",
+            duration_seconds=3.0,
         )
 
         result = _run_primary(wt, task_type="declarative", independent=absent)
 
         assert result.success is False
-        assert "timed out after 300s" in result.error
+        assert "the run printed no test result" in result.error
         assert not _blocked_by_rule(result.report)
 
     def test_check_could_not_run_stops_the_task_without_a_builder_turn(
