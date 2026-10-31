@@ -143,10 +143,16 @@ def test_specialists_get_their_own_home_and_tmpdir(shells: dict) -> None:
         for name in ("HOME", "TMPDIR"):
             assert specialist[name] != builder[name], (name, specialist, builder)
             assert specialist[name] != checker[name], (name, specialist, checker)
-            # Outside the project: in the checkout's own git folder.
-            assert Path(specialist[name]).is_relative_to(worktree.resolve() / ".git")
+        # HOME is outside the project, in the checkout's own git folder.
+        assert Path(specialist["HOME"]).is_relative_to(worktree.resolve() / ".git")
+        # TMPDIR is a short private folder outside the worktree (guardkitfactory
+        # 2333a5f, 31 October 2026), so a 32-character socket name fits in 103 bytes.
+        assert not Path(specialist["TMPDIR"]).is_relative_to(worktree.resolve())
+        assert len(specialist["TMPDIR"]) + 1 + 32 <= 103
     assert Path(tester["HOME"]).name == "specialist-SHELL-HOME"
-    assert Path(tester["TMPDIR"]).name == "specialist-SHELL-TMPDIR"
+    remover = getattr(backend_config, "remove_shell_tmpdirs", None)
+    if remover is not None:
+        remover(worktree)
     assert builder["HOME"] != checker["HOME"]
 
 
