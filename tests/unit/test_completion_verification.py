@@ -5,11 +5,12 @@ Pins AC-006:
 (a) ``--verify`` triggers the post-completion test run;
 (b) verify-failure → exit 4 + explicit failure text;
 (c) no ``--verify`` → no test run, unchanged behaviour;
-(d) a run that cannot start (no runner / zero tests) is UNVERIFIED, never a
-    pass (absence-of-failure-is-not-success).
-Plus: command resolution precedence (override > smoke command > stack
-default), timeout = ran-and-failed, and display derives from the result
-object.
+(d) nothing declared, or a command that cannot start, is UNVERIFIED, never
+    a pass; GuardKit chooses no command a project did not declare (31 October
+    2026).
+Plus: command resolution precedence (override > smoke command > the declared
+full check), exit codes read plainly (126/127 are failures), timeout =
+ran-and-failed, and display derives from the result object.
 """
 
 from __future__ import annotations
@@ -45,7 +46,7 @@ class TestResolveVerifyCommand:
         assert "override" in source
         assert profile is None
 
-    def test_smoke_command_beats_stack_default(self, tmp_path):
+    def test_smoke_command_is_used_when_given(self, tmp_path):
         (tmp_path / "pyproject.toml").write_text("[project]\nname='x'\n")
         (tmp_path / "tests").mkdir()
         command, source, _ = resolve_verify_command(
@@ -54,29 +55,21 @@ class TestResolveVerifyCommand:
         assert command == "pytest tests/smoke -q"
         assert "smoke_gates" in source
 
-    def test_python_stack_default_uses_project_venv(self, tmp_path):
-        (tmp_path / "pyproject.toml").write_text("[project]\nname='x'\n")
-        (tmp_path / "tests").mkdir()
-        venv_python = tmp_path / ".venv" / "bin" / "python"
-        venv_python.parent.mkdir(parents=True)
-        venv_python.touch()
-        command, source, _ = resolve_verify_command(tmp_path)
-        # AC-003: the project's own interpreter, not guardkit's.
-        assert str(venv_python) in command
-        assert "-m pytest tests/" in command
-        assert "venv" in source
-
-    def test_non_python_stack_uses_registry_profile(self, tmp_path):
-        (tmp_path / "go.mod").write_text("module example.com/x\n")
-        command, source, profile = resolve_verify_command(tmp_path)
-        assert command == "go test ./..."
-        assert profile is not None and profile.stack == "go"
-
-    def test_no_runner_detected_returns_none(self, tmp_path):
-        command, source, profile = resolve_verify_command(tmp_path)
+    @pytest.mark.parametrize(
+        "markers", [("pyproject.toml", "tests/"), ("go.mod",), ("package.json",), ()]
+    )
+    def test_nothing_declared_chooses_no_command(self, tmp_path, markers):
+        """No implicit pytest (or any stack default) for an undeclared
+        project, whatever marker files it has (31 October 2026)."""
+        for marker in markers:
+            if marker.endswith("/"):
+                (tmp_path / marker).mkdir()
+            else:
+                (tmp_path / marker).write_text("x\n")
+        command, source, declaration = resolve_verify_command(tmp_path)
         assert command is None
-        assert "no test runner" in source
-        assert profile is None
+        assert source.startswith("nothing declared")
+        assert declaration is None
 
 
 # ============================================================================
@@ -106,17 +99,17 @@ def _python_repo(repo_root: Path, with_venv: bool = True) -> None:
 
 
 class TestDeclaredToolchainTestCommand:
-    def test_the_declaration_beats_the_venv_default(self, tmp_path):
+    def test_the_declaration_is_the_command(self, tmp_path):
         _python_repo(tmp_path)
         _declare_toolchain_test(tmp_path, "uv run --frozen pytest -q")
 
-        command, source, profile = resolve_verify_command(tmp_path)
+        command, source, declaration = resolve_verify_command(tmp_path)
 
         assert command == "uv run --frozen pytest -q"
         assert source == "repository toolchain declaration"
-        assert profile is None
+        assert declaration is not None and declaration.test == command
 
-    def test_the_declaration_beats_a_non_python_stack_default(self, tmp_path):
+    def test_a_go_declaration_is_the_command(self, tmp_path):
         (tmp_path / "go.mod").write_text("module example.com/x\n")
         _declare_toolchain_test(tmp_path, "go test ./... -count=1")
 
@@ -149,62 +142,47 @@ class TestDeclaredToolchainTestCommand:
         assert command == "make check"
         assert "override" in source
 
-    def test_no_declaration_falls_through_to_the_venv_default(self, tmp_path):
+    @pytest.mark.parametrize(
+        "config",
+        [
+            "autobuild:\n  coach:\n    contract: v4\n",
+            "toolchain:\n  tests: 'a typo for test'\n",
+            "toolchain:\n  install: 'uv sync'\n",
+        ],
+    )
+    def test_no_usable_test_declaration_is_nothing_declared(self, tmp_path, config):
+        """No toolchain, a malformed one, or one without a test: no command
+        is guessed, and resolution never crashes."""
         _python_repo(tmp_path)
         (tmp_path / ".guardkit").mkdir()
-        (tmp_path / ".guardkit" / "config.yaml").write_text(
-            "autobuild:\n  coach:\n    contract: v4\n", encoding="utf-8"
-        )
+        (tmp_path / ".guardkit" / "config.yaml").write_text(config, encoding="utf-8")
 
         command, source, _ = resolve_verify_command(tmp_path)
 
-        assert "-m pytest tests/" in command
-        assert "venv" in source
-
-    def test_a_malformed_declaration_falls_through_rather_than_crashing(
-        self, tmp_path
-    ):
-        _python_repo(tmp_path)
-        (tmp_path / ".guardkit").mkdir()
-        (tmp_path / ".guardkit" / "config.yaml").write_text(
-            "toolchain:\n  tests: 'a typo for test'\n", encoding="utf-8"
-        )
-
-        command, source, _ = resolve_verify_command(tmp_path)
-
-        assert "venv" in source
-        assert command is not None
-
-    def test_an_empty_declared_command_is_no_declaration(self, tmp_path):
-        _python_repo(tmp_path)
-        (tmp_path / ".guardkit").mkdir()
-        (tmp_path / ".guardkit" / "config.yaml").write_text(
-            "toolchain:\n  install: 'uv sync'\n", encoding="utf-8"
-        )
-
-        command, source, _ = resolve_verify_command(tmp_path)
-
-        assert "venv" in source
+        assert command is None
+        assert source.startswith("nothing declared")
 
 
 class TestDeclaredCommandClassification:
     """Driven for real: the declared command actually runs."""
 
-    def test_a_declared_pytest_command_is_read_by_the_pytest_rules(
+    def test_a_declared_command_whose_program_is_missing_failed(
         self, tmp_path
     ):
+        """Exit 127 from a declared command is a failure, whatever program it
+        names: the shell ran it (FEAT-8BB4, 31 October 2026)."""
         _python_repo(tmp_path, with_venv=False)
         _declare_toolchain_test(
             tmp_path, '"/nowhere/there-is-no-python" -m pytest -q tests/'
         )
-        command, source, profile = resolve_verify_command(tmp_path)
+        command, source, declaration = resolve_verify_command(tmp_path)
 
         result = run_completion_verification(
-            tmp_path, command, source, stack_profile=profile, timeout=60
+            tmp_path, command, source, declaration=declaration, timeout=60
         )
 
-        assert result.status == "unverified"
-        assert result.detail == "test runner could not start"
+        assert result.status == "failed"
+        assert result.detail.startswith("verification command failed (exit 127)")
         assert result.source == "repository toolchain declaration"
 
     def test_a_declared_non_pytest_command_is_read_by_the_exit_code_rule(
@@ -212,10 +190,10 @@ class TestDeclaredCommandClassification:
     ):
         _python_repo(tmp_path, with_venv=False)
         _declare_toolchain_test(tmp_path, "true")
-        command, source, profile = resolve_verify_command(tmp_path)
+        command, source, declaration = resolve_verify_command(tmp_path)
 
         result = run_completion_verification(
-            tmp_path, command, source, stack_profile=profile, timeout=60
+            tmp_path, command, source, declaration=declaration, timeout=60
         )
 
         assert result.status == "passed"
@@ -224,10 +202,10 @@ class TestDeclaredCommandClassification:
     def test_a_declared_non_pytest_command_that_fails_is_failed(self, tmp_path):
         _python_repo(tmp_path, with_venv=False)
         _declare_toolchain_test(tmp_path, "false")
-        command, source, profile = resolve_verify_command(tmp_path)
+        command, source, declaration = resolve_verify_command(tmp_path)
 
         result = run_completion_verification(
-            tmp_path, command, source, stack_profile=profile, timeout=60
+            tmp_path, command, source, declaration=declaration, timeout=60
         )
 
         assert result.status == "failed"
@@ -244,14 +222,14 @@ class TestDeclaredCommandClassification:
             tmp_path,
             f'"{_sys.executable}" -m pytest -q -p no:cacheprovider tests/',
         )
-        command, source, profile = resolve_verify_command(tmp_path)
+        command, source, declaration = resolve_verify_command(tmp_path)
 
         result = run_completion_verification(
-            tmp_path, command, source, stack_profile=profile, timeout=300
+            tmp_path, command, source, declaration=declaration, timeout=300
         )
 
         assert result.status == "passed"
-        assert "1 passed" in result.detail
+        assert "1 passed" in result.full_output
 
 
 class TestVerificationResultCarriesItsSource:
@@ -281,47 +259,41 @@ class TestRunCompletionVerification:
         assert result.status == "unverified"
         assert result.returncode is None
 
-    def test_pytest_pass_quotes_the_passed_count(self, tmp_path):
-        with patch("subprocess.run", return_value=_completed(0, "34 passed in 0.18s")):
-            result = run_completion_verification(
-                tmp_path, "pytest tests/", "python stack default"
-            )
-        assert result.status == "passed"
-        assert "34 passed" in result.detail
 
     def test_pytest_clean_exit_is_a_pass_on_its_exit_code(self, tmp_path):
         """Since the cull (27 October 2026) the exit code is the verdict: a
         clean exit is a pass whether or not the output says how many ran."""
         with patch("subprocess.run", return_value=_completed(0, "warning only")):
             result = run_completion_verification(
-                tmp_path, "pytest tests/", "python stack default"
+                tmp_path, "pytest tests/", "repository toolchain declaration"
             )
         assert result.status == "passed"
 
-    def test_pytest_exit_5_zero_collected_is_unverified(self, tmp_path):
+    def test_exit_5_is_a_failure_whatever_the_command(self, tmp_path):
+        """pytest's own exit codes are not read for any command."""
         with patch("subprocess.run", return_value=_completed(5, "no tests ran")):
             result = run_completion_verification(
-                tmp_path, "pytest tests/", "python stack default"
+                tmp_path, "pytest tests/", "repository toolchain declaration"
             )
-        assert result.status == "unverified"
+        assert result.status == "failed"
 
     def test_pytest_failure_is_failed(self, tmp_path):
         with patch(
             "subprocess.run", return_value=_completed(1, "1 failed, 33 passed")
         ):
             result = run_completion_verification(
-                tmp_path, "pytest tests/", "python stack default"
+                tmp_path, "pytest tests/", "repository toolchain declaration"
             )
         assert result.status == "failed"
 
-    def test_command_not_found_is_unverified(self, tmp_path):
+    def test_command_not_found_is_failed(self, tmp_path):
         with patch(
             "subprocess.run", return_value=_completed(127, "", "sh: pytest: not found")
         ):
             result = run_completion_verification(
-                tmp_path, "pytest tests/", "python stack default"
+                tmp_path, "pytest tests/", "repository toolchain declaration"
             )
-        assert result.status == "unverified"
+        assert result.status == "failed"
 
     def test_timeout_is_ran_and_failed(self, tmp_path):
         with patch(
@@ -329,7 +301,7 @@ class TestRunCompletionVerification:
             side_effect=subprocess.TimeoutExpired(cmd="pytest", timeout=600),
         ):
             result = run_completion_verification(
-                tmp_path, "pytest tests/", "python stack default"
+                tmp_path, "pytest tests/", "repository toolchain declaration"
             )
         # Runtime-parity L3 precedent: a suite that hangs is a real defect.
         assert result.status == "failed"
@@ -338,22 +310,7 @@ class TestRunCompletionVerification:
     def test_oserror_is_unverified(self, tmp_path):
         with patch("subprocess.run", side_effect=OSError("no shell")):
             result = run_completion_verification(
-                tmp_path, "pytest tests/", "python stack default"
-            )
-        assert result.status == "unverified"
-
-    def test_stack_profile_absent_signal_is_unverified(self, tmp_path):
-        from guardkit.orchestrator.quality_gates.stack_test_execution import (
-            STACK_TEST_PROFILES,
-        )
-
-        dotnet = next(p for p in STACK_TEST_PROFILES if p.stack == "dotnet")
-        with patch(
-            "subprocess.run",
-            return_value=_completed(1, "No test is available in the project"),
-        ):
-            result = run_completion_verification(
-                tmp_path, "dotnet test", "dotnet stack default", stack_profile=dotnet
+                tmp_path, "pytest tests/", "repository toolchain declaration"
             )
         assert result.status == "unverified"
 
@@ -414,7 +371,7 @@ class TestCompleteCliVerifyFlag:
                 patch.object(
                     cli_mod,
                     "_resolve_completion_verification",
-                    return_value=("pytest tests/", "python stack default", None),
+                    return_value=("pytest tests/", "repository toolchain declaration", None),
                 )
             )
             stack.enter_context(

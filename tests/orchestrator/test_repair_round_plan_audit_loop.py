@@ -323,6 +323,11 @@ def run_round(
     worktree = SimpleNamespace(
         task_id=FEATURE_ID, path=repo, branch_name=BRANCH, base_branch="main"
     )
+    # The pre-turn-1 pin ``orchestrate`` makes before the loop: the task's
+    # changed parts' tests run the declared ``bash scripts/check.sh``.
+    from guardkit.orchestrator.toolchain_declaration import snapshot_task_toolchain
+
+    snapshot_task_toolchain(TASK_ID, repo, repo)
     with patch(
         "guardkit.orchestrator.coach_output_parser.extract_and_write",
         side_effect=_model_answers(model_verdict or APPROVE),

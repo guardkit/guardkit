@@ -7728,30 +7728,6 @@ class TestToolUseBlockIntegrationWithWriter:
         assert written["files_created"] == []
         assert written["files_modified"] == []
 
-    def test_detect_tests_from_results_finds_tracked_test_files(self, agent_invoker):
-        """_detect_tests_from_results finds test files from ToolUseBlock tracking."""
-        # Create the test file on disk so exists() check passes
-        test_file_path = agent_invoker.worktree_path / "tests" / "test_system_plan.py"
-        test_file_path.parent.mkdir(parents=True, exist_ok=True)
-        test_file_path.write_text("def test_example(): pass")
-
-        # Simulate results with populated files_created
-        task_work_results = {
-            "files_created": [
-                "src/planning/system_plan.py",
-                "tests/test_system_plan.py",
-            ],
-            "files_modified": ["guardkit/cli/main.py"],
-        }
-
-        from guardkit.orchestrator.quality_gates.coach_validator import CoachValidator
-
-        validator = CoachValidator(worktree_path=agent_invoker.worktree_path)
-        cmd = validator._detect_tests_from_results(task_work_results)
-
-        assert cmd is not None
-        assert "tests/test_system_plan.py" in cmd
-
 
 # ==================== TASK-ASF-008: Dynamic SDK Timeout Tests ====================
 

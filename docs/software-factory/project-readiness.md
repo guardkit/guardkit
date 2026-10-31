@@ -29,7 +29,7 @@ The names and command are examples. Every declared file must exist as an ordinar
 
 The implementation and refusal messages are in [repository registration](https://github.com/guardkit/forge/blob/bec134d36a247008a3c64503c865d67268651a88/src/forge/cli/register_repo.py). For richer toolchain declarations, use the project's supported GuardKit configuration rather than assuming this minimal illustration describes every language or build system.
 
-The `toolchain.test` command is verdict-bearing by default. Merely listing `lint`,
+GuardKit runs only declared commands; a project of several parts declares each one (`components:` or `parts:` patterns, see [AutoBuild verification](../deep-dives/autobuild-architecture.md#what-the-executable-evidence-proves)). The `toolchain.test` command is verdict-bearing by default. Merely listing `lint`,
 `typecheck` or `build` does not enforce those commands as gates; bind them through
 the supported conformance checks. See [AutoBuild verification](../deep-dives/autobuild-architecture.md#what-the-executable-evidence-proves).
 

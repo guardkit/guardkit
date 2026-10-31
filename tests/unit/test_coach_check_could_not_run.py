@@ -464,6 +464,10 @@ class TestTheRule:
         monkeypatch.setattr(
             validator, "run_independent_tests", lambda **kwargs: _could_not_run()
         )
+        # The task changed a file in the root part, so the root's run counts.
+        monkeypatch.setattr(
+            validator, "_changed_files", lambda _results: (["app.py"], "a test")
+        )
 
         with caplog.at_level("WARNING"):
             bundle = validator.gather_evidence(_TASK_ID, 1, _task())

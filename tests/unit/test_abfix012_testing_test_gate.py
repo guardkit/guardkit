@@ -371,14 +371,15 @@ class TestCodeFailureGuard:
         )
         assert out["decision"] == "feedback"
 
-    def test_noop_for_task_type_not_requiring_tests(self, tmp_path: Path) -> None:
-        """A type whose profile does not require tests is skipped, as today."""
+    def test_no_exemption_for_a_task_type(self, tmp_path: Path) -> None:
+        """31 October 2026: the tests that run are the changed parts', so a
+        scaffolding task whose part ran and failed is sent back too."""
         decision = {"decision": "approve", "issues": [], "rationale": "lgtm"}
         out = _guard(
             decision, task_type="scaffolding", tests_passed=False, signal_absent=False,
             failure_class="code", tmp_path=tmp_path,
         )
-        assert out["decision"] == "approve"
+        assert out["decision"] == "feedback"
 
     def test_collection_error_words_are_neutral(self, tmp_path: Path) -> None:
         """A suite that cannot collect may be this task's own doing: the builder

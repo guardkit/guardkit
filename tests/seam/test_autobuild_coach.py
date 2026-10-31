@@ -389,7 +389,19 @@ class TestRealCoachValidatorIntegration:
         invoker.invoke_coach = fake_invoke_coach
         orchestrator._agent_invoker = invoker
 
-        with patch("subprocess.run") as mock_run:
+        # The project declares its test command (an undeclared project's
+        # check could not run, which stops the task before the reviewer).
+        from guardkit.orchestrator.toolchain_declaration import ToolchainDeclaration
+
+        real_init = CoachValidator.__init__
+
+        def declared_init(self, *args, **kwargs):
+            kwargs.setdefault("toolchain", ToolchainDeclaration(test="make test"))
+            real_init(self, *args, **kwargs)
+
+        with patch("subprocess.run") as mock_run, patch.object(
+            CoachValidator, "__init__", declared_init
+        ):
             mock_run.side_effect = _canned_except_git(
                 MagicMock(returncode=0, stdout="ok", stderr="")
             )

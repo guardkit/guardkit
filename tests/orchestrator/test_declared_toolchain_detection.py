@@ -14,11 +14,10 @@ Four things are pinned here, in the order the design argues them:
    BYTE-IDENTICAL to today's, resolved through the same interpreter-pinned
    branch, with no stack profile attached. pytest is now one declaration
    among many, and we have proved it by demoting it.
-3. **The loud absence** — the deleted unconditional pytest default is
-   replaced by an instrument fault (ABSENT / UNKNOWN), never a silent guess
-   and never a pass.
-4. **Back-compat is the prime invariant** — a repo with NO declaration
-   resolves the identical command it did before, at every rung.
+3. **Nothing declared means nothing is guessed** (31 October 2026) — with no
+   declaration the check could not run and says so; GuardKit runs no
+   marker-guessed or pytest command.
+4. **The snapshot law** — only the pinned declaration is read.
 
 Network-free and broker-free: every subprocess is patched.
 """
@@ -77,14 +76,14 @@ class TestDeclaredWinsOverDetection:
         root, worktree = repo
         (worktree / "package.json").touch()  # would detect "npm test"
         v = _validator_with_declaration(root, worktree, {"test": "npx vitest run"})
-        assert v._detect_test_command(_TASK_ID) == "npx vitest run"
+        assert v._detect_test_command() == "npx vitest run"
 
-    def test_control_no_declaration_still_detects_the_stack_row(self, repo):
-        """Back-compat: the same worktree with NO declaration is unchanged."""
+    def test_control_no_declaration_guesses_nothing_from_the_stack_row(self, repo):
+        """31 October 2026: a marker file is not a declaration."""
         root, worktree = repo
         (worktree / "package.json").touch()
         v = CoachValidator(str(worktree), task_id=_TASK_ID)
-        assert v._detect_test_command(_TASK_ID) == "npm test"
+        assert v._detect_test_command() is None
 
     def test_declaration_overlays_the_matched_stack_row(self, repo):
         """The row is DATA; the declaration overlays it. The node row's
@@ -92,7 +91,7 @@ class TestDeclaredWinsOverDetection:
         root, worktree = repo
         (worktree / "package.json").touch()
         v = _validator_with_declaration(root, worktree, {"test": "npx vitest run"})
-        v._detect_test_command(_TASK_ID)
+        v._detect_test_command()
         profile = v._active_stack_profile
         assert profile is not None
         assert profile.stack == "node"
@@ -111,7 +110,7 @@ class TestDeclaredWinsOverDetection:
                 "requires_ran_marker": False,
             },
         )
-        v._detect_test_command(_TASK_ID)
+        v._detect_test_command()
         profile = v._active_stack_profile
         assert profile.absent_substrings == ("no test files found",)
         assert profile.success_requires_ran_marker is False
@@ -130,14 +129,14 @@ class TestDeclaredWinsOverDetection:
             root, worktree, {"test": "npx vitest run"}, wave_size=4
         )
         assert v.is_parallel is True
-        assert v._detect_test_command(_TASK_ID) == "npx vitest run"
+        assert v._detect_test_command() == "npx vitest run"
 
     def test_control_parallel_wave_without_a_declaration_still_defers(self, repo):
         """The ``not self.is_parallel`` guard stays for the GUESS path."""
         root, worktree = repo
         (worktree / "package.json").touch()
         v = CoachValidator(str(worktree), task_id=_TASK_ID, wave_size=4)
-        assert v._detect_test_command(_TASK_ID) is None
+        assert v._detect_test_command() is None
 
     def test_declaration_preempts_task_specific_python_tests(self, repo):
         """RICH'S RULING, 2026-09-09: the leg runs what the repository
@@ -159,26 +158,23 @@ class TestDeclaredWinsOverDetection:
         tests_dir.mkdir()
         (tests_dir / "test_task_ts_042_thing.py").touch()
         v = _validator_with_declaration(root, worktree, {"test": "npx vitest run"})
-        assert v._detect_test_command(_TASK_ID) == "npx vitest run"
+        assert v._detect_test_command() == "npx vitest run"
         assert v.test_command_source() == "repository toolchain declaration"
 
-    def test_control_no_declaration_still_runs_the_task_specific_tests(self, repo):
-        """The other half of the same law: with NOTHING declared, the
-        task-specific ladder is exactly what it always was."""
+    def test_control_no_declaration_runs_no_task_specific_pytest(self, repo):
+        """31 October 2026: the task-specific pytest ladder is gone."""
         root, worktree = repo
         tests_dir = worktree / "tests"
         tests_dir.mkdir()
         (tests_dir / "test_task_ts_042_thing.py").touch()
         v = CoachValidator(str(worktree), task_id=_TASK_ID)
-        cmd = v._detect_test_command(_TASK_ID)
-        assert cmd.startswith("pytest ")
-        assert "test_task_ts_042_thing.py" in cmd
+        assert v._detect_test_command() is None
 
     def test_no_task_id_tail_also_honours_the_declaration(self, repo):
         root, worktree = repo
         (worktree / "pyproject.toml").touch()
         v = _validator_with_declaration(root, worktree, {"test": "npx vitest run"})
-        assert v._detect_test_command(None) == "npx vitest run"
+        assert v._detect_test_command() == "npx vitest run"
 
 
 # =========================================================================
@@ -201,9 +197,10 @@ class TestPytestDemotion:
         (control_wt / "pyproject.toml").touch()
         control = CoachValidator(str(control_wt))
 
-        chosen = declared._detect_test_command(None)
-        assert chosen == control._detect_test_command(None)
+        chosen = declared._detect_test_command()
         assert chosen == _TODAYS_PYTEST_DEFAULT
+        # The same repository without the declaration gets no command.
+        assert control._detect_test_command() is None
 
     def test_declared_pytest_acquires_no_stack_profile(self, repo):
         """No marker row matched and no classifier field was declared, so the
@@ -213,7 +210,7 @@ class TestPytestDemotion:
         root, worktree = repo
         (worktree / "pyproject.toml").touch()
         v = _validator_with_declaration(root, worktree, {"test": _TODAYS_PYTEST_DEFAULT})
-        v._detect_test_command(None)
+        v._detect_test_command()
         assert v._active_stack_profile is None
 
     def test_declared_pytest_runs_through_the_interpreter_pinned_branch(self, repo):
@@ -240,19 +237,15 @@ class TestPytestDemotion:
 class TestLoudAbsence:
     def test_unrecognisable_repo_resolves_no_command(self, tmp_path):
         v = CoachValidator(str(tmp_path))
-        assert v._detect_test_command(None) is None
+        assert v._detect_test_command() is None
 
     def test_the_message_names_the_declaration_and_every_empty_rung(self, tmp_path, caplog):
         v = CoachValidator(str(tmp_path))
         with caplog.at_level("ERROR"):
-            v._detect_test_command(None)
+            v._detect_test_command()
         msg = v._detection_absence
-        assert "INSTRUMENT FAULT" in msg
-        assert "toolchain" in msg  # the fix is named first
-        assert "pyproject.toml" in msg
-        assert "package.json" in msg
-        assert ".csproj" in msg
-        assert "npm test" in msg  # an actionable example
+        assert msg.startswith("nothing declared")
+        assert "toolchain" in msg  # the fix is named
         # and it was LOUD, not a shrug at WARNING
         assert any(r.levelname == "ERROR" for r in caplog.records)
 
@@ -262,34 +255,23 @@ class TestLoudAbsence:
             result = v.run_independent_tests()
         mock_run.assert_not_called()  # no guessed command was executed
         assert result.signal_absent is True
+        assert result.check_could_not_run is True
         assert result.tests_passed is False
-        assert "INSTRUMENT FAULT" in result.test_output_summary
+        assert "nothing declared" in result.test_output_summary
 
     def test_a_declaration_cures_the_absence_in_a_markerless_repo(self, repo):
         """The whole point: a repo the ladder cannot recognise is now
         buildable by declaring one line."""
         root, worktree = repo
         v = _validator_with_declaration(root, worktree, {"test": "make check"})
-        assert v._detect_test_command(None) == "make check"
+        assert v._detect_test_command() == "make check"
         assert v._detection_absence is None
 
     def test_a_block_declaring_no_test_command_says_so(self, repo):
         root, worktree = repo
         v = _validator_with_declaration(root, worktree, {"install": "npm ci"})
-        v._detect_test_command(None)
-        assert "declares no `test:` command" in v._detection_absence
-
-    def test_task_specific_miss_is_still_a_skip_not_an_instrument_fault(self, repo):
-        """Back-compat: the narrower shared-worktree case is untouched."""
-        root, worktree = repo
-        (worktree / "pyproject.toml").touch()
-        v = CoachValidator(str(worktree), task_id=_TASK_ID)
-        assert v._detect_test_command(_TASK_ID) is None
-        assert v._detection_absence is None
-        result = v.run_independent_tests()
-        assert result.signal_absent is False
-        assert "skipping independent verification" in result.test_output_summary
-
+        v._detect_test_command()
+        assert "declares no `test:`" in v._detection_absence
 
 # =========================================================================
 # 4. Timeout + environment resolution (design §B.5)
@@ -340,7 +322,7 @@ class TestDeclaredExecution:
         v = CoachValidator(
             str(tmp_path), toolchain=ToolchainDeclaration(test="go test ./...")
         )
-        assert v._detect_test_command(None) == "go test ./..."
+        assert v._detect_test_command() == "go test ./..."
 
     def test_no_snapshot_means_the_live_config_is_ignored(self, repo):
         """THE §B.4 LAW at the executor: a config the Player wrote into the
@@ -349,4 +331,4 @@ class TestDeclaredExecution:
         (worktree / "pyproject.toml").touch()
         _write_config(worktree, {"test": "true"})  # a Player self-green attempt
         v = CoachValidator(str(worktree), task_id=_TASK_ID)
-        assert v._detect_test_command(None) == _TODAYS_PYTEST_DEFAULT
+        assert v._detect_test_command() is None

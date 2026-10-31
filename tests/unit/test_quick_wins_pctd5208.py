@@ -3,7 +3,8 @@ Unit tests for TASK-PCTD-5208 quick wins:
   R1 - Enhanced _summarize_test_output() with error context
   R2 - (normalized feedback text for stall detection: deleted with the
        stall detectors, 27 October 2026)
-  R3 - Fixed duplicate path deduplication in test detection
+  R3 - (path deduplication in test detection: deleted with the guessed
+       test commands, 31 October 2026)
 
 Coverage Target: >=85%
 """
@@ -160,90 +161,3 @@ class TestSummarizeTestOutput:
         result = validator._summarize_test_output(output)
         assert "Error detail:" in result
         assert "OperationalError" in result
-
-
-# ============================================================================
-# R3: _normalize_to_relative and _detect_tests_from_results tests
-# ============================================================================
-
-
-class TestNormalizeToRelative:
-    """Tests for _normalize_to_relative method."""
-
-    def test_absolute_path_under_worktree_returns_relative(self, tmp_worktree):
-        """Absolute path that is under worktree is converted to relative."""
-        validator = CoachValidator(worktree_path=str(tmp_worktree))
-        abs_path = str(tmp_worktree / "tests" / "unit" / "test_foo.py")
-        result = validator._normalize_to_relative(abs_path)
-        assert result == "tests/unit/test_foo.py"
-        assert not Path(result).is_absolute()
-
-    def test_relative_path_returned_unchanged(self, tmp_worktree):
-        """Relative path is returned as-is."""
-        validator = CoachValidator(worktree_path=str(tmp_worktree))
-        rel_path = "tests/unit/test_foo.py"
-        result = validator._normalize_to_relative(rel_path)
-        assert result == rel_path
-
-    def test_absolute_path_outside_worktree_returned_unchanged(self, tmp_worktree):
-        """Absolute path NOT under worktree is returned unchanged."""
-        validator = CoachValidator(worktree_path=str(tmp_worktree))
-        outside_path = "/some/other/path/test_foo.py"
-        result = validator._normalize_to_relative(outside_path)
-        assert result == outside_path
-
-
-class TestDetectTestsFromResultsDeduplication:
-    """
-    Tests for _detect_tests_from_results with mixed abs/rel duplicate paths.
-    """
-
-    def test_mixed_abs_rel_duplicates_deduplicated(self, tmp_worktree):
-        """
-        When files_created has the same test file listed as both an absolute path
-        and a relative path, the result should contain only a single entry.
-        """
-        validator = CoachValidator(worktree_path=str(tmp_worktree))
-
-        # Create the actual test file so full_path.exists() passes
-        test_file_rel = "tests/unit/test_dedup.py"
-        test_file_abs = str(tmp_worktree / test_file_rel)
-        test_file_path = tmp_worktree / test_file_rel
-        test_file_path.parent.mkdir(parents=True, exist_ok=True)
-        test_file_path.write_text("# test file\n")
-
-        task_work_results = {
-            "files_created": [
-                test_file_abs,   # absolute path
-                test_file_rel,   # relative path (same file)
-            ],
-            "files_modified": [],
-        }
-
-        cmd = validator._detect_tests_from_results(task_work_results)
-
-        assert cmd is not None
-        # The pytest command should list the file exactly once
-        parts = cmd.split()
-        test_files_in_cmd = [p for p in parts if "test_dedup.py" in p]
-        assert len(test_files_in_cmd) == 1, (
-            f"Expected exactly 1 entry for test_dedup.py but got {test_files_in_cmd}"
-        )
-
-    def test_relative_path_only_works(self, tmp_worktree):
-        """Relative-only path still works correctly after normalization."""
-        validator = CoachValidator(worktree_path=str(tmp_worktree))
-
-        test_file_rel = "tests/unit/test_relative.py"
-        test_file_path = tmp_worktree / test_file_rel
-        test_file_path.parent.mkdir(parents=True, exist_ok=True)
-        test_file_path.write_text("# test file\n")
-
-        task_work_results = {
-            "files_created": [test_file_rel],
-            "files_modified": [],
-        }
-
-        cmd = validator._detect_tests_from_results(task_work_results)
-        assert cmd is not None
-        assert "test_relative.py" in cmd

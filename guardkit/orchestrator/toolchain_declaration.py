@@ -68,7 +68,7 @@ pin read the main checkout), while an uncommitted edit in the worktree still
 cannot. The pinned copy is what executes for the whole build —
 :func:`load_toolchain_snapshot` is the ONLY reader the verdict path uses. It
 never falls back to the live file: no snapshot means no declaration, and the
-pre-declaration ladder runs unchanged.
+check reports that nothing is declared (GuardKit never guesses a command).
 
 Environment resolution (design §B.5)
 ------------------------------------
@@ -114,11 +114,31 @@ So the ONE declaration gains per-path sections:
   commands run in. ``cwd`` is the field that makes it real: ``flutter test``
   needs the package root, and ``cd app && …`` baked into a command string is
   invisible to the snapshot reader and to anyone auditing the receipt.
-* Selection is EXPLICIT and per task (``component: app`` in the task's
-  frontmatter). **No path inference** — a mixed-touch task must be split, not
-  silently assigned to one component (design §B.2).
-* ``extra="forbid"`` holds at BOTH levels, so a typo'd component field is as
-  loud as a typo'd root field.
+* A task's tests are chosen by the files it changed (after-task check
+  redesign, 31 October 2026). A file belongs to the declared component whose
+  ``cwd`` holds it, the deepest one winning; a file under no component belongs
+  to the root component. Each changed part's ``test`` runs once, in its own
+  folder, and the task passes only when every one of them ran and passed.
+* ``parts:`` is a list of folder patterns for parts that appear as the project
+  grows. Each entry has ``under``, ``marker`` and the same command fields:
+  every folder directly under ``under`` that holds the file ``marker`` is a
+  part, tested with the entry's ``test`` in that folder. The folders are found
+  in the tree when the check runs, so a folder made by this very task is
+  tested at once; the commands still come from the pinned declaration.
+
+  .. code-block:: yaml
+
+      toolchain:
+        parts:
+          - under: apps
+            marker: package.json
+            test: "npm test"
+
+* The full check before a merge is ``feature_check`` when declared, otherwise
+  the root ``test`` plus every component's and every pattern part's ``test``,
+  each in its own folder (:func:`full_check_parts`).
+* ``extra="forbid"`` holds at every level, so a typo'd component or part
+  field is as loud as a typo'd root field.
 
 **The snapshot law is unchanged, and that is why this shape was chosen.** The
 pin is one whole-model ``model_dump`` read back by one ``model_validate``, so a
@@ -139,12 +159,14 @@ import json
 import logging
 import re
 import subprocess
+from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import (
     Any,
     Dict,
     List,
     Optional,
+    Sequence,
     Tuple,
 )
 
@@ -218,19 +240,17 @@ class _ToolchainCommands(BaseModel):
 
     ``extra="forbid"`` is the point of the schema, not a detail: a repo that
     writes ``tests:`` instead of ``test:`` must be told, loudly, at load time
-    — a silently-ignored declaration would fall through to the detection
-    ladder and look like the tool ignoring the repo.
+    — a silently-ignored declaration would read as "nothing declared" and
+    look like the tool ignoring the repo.
     """
 
     model_config = ConfigDict(extra="forbid")
 
     # ---- verdict-bearing ------------------------------------------------
     test: Optional[str] = Field(default=None, min_length=1)
-    # B9 Lane C: the project's OWN coverage measurement. Exit 0 = the project's
-    # coverage threshold is met; non-zero = not met. The Coach runs it itself,
-    # after its own independent test run, and that exit decides coverage_met.
-    # Optional: a project that declares nothing keeps today's behaviour, and
-    # an unmeasured required coverage stays UNKNOWN rather than becoming a pass.
+    # Accepted and not run (31 October 2026: nothing measures coverage on the
+    # check path). Kept in the schema because ``extra="forbid"`` would
+    # otherwise drop the whole toolchain of a project that still declares it.
     coverage: Optional[str] = Field(default=None, min_length=1)
     coverage_timeout: int = Field(default=_DEFAULT_TIMEOUT, ge=1, le=_MAX_TIMEOUT)
 
@@ -337,25 +357,53 @@ class ComponentToolchain(_ToolchainCommands):
     @field_validator("cwd")
     @classmethod
     def _cwd_must_be_contained(cls, value: str) -> str:
-        raw = value.strip()
-        if not raw:
-            raise ValueError("cwd must not be blank")
-        if raw.startswith("~"):
-            raise ValueError(
-                f"cwd must be repo-relative, not a home-relative path: {value!r}"
-            )
-        candidate = PurePosixPath(raw.replace("\\", "/"))
-        if candidate.is_absolute() or raw.startswith("/"):
-            raise ValueError(
-                f"cwd must be repo-relative, not absolute: {value!r}"
-            )
-        if any(part == ".." for part in candidate.parts):
-            raise ValueError(
-                f"cwd must not escape the worktree (no `..` segments): {value!r}"
-            )
-        # Normalise "./app/" -> "app" so the receipt and the snapshot agree.
-        parts = [p for p in candidate.parts if p not in (".", "")]
-        return "/".join(parts) if parts else "."
+        return _contained_folder(value, "cwd")
+
+
+def _contained_folder(value: str, field: str) -> str:
+    """A repo-relative folder, normalised; refuses ``~``, absolute and ``..``."""
+    raw = value.strip()
+    if not raw:
+        raise ValueError(f"{field} must not be blank")
+    if raw.startswith("~"):
+        raise ValueError(
+            f"{field} must be repo-relative, not a home-relative path: {value!r}"
+        )
+    candidate = PurePosixPath(raw.replace("\\", "/"))
+    if candidate.is_absolute() or raw.startswith("/"):
+        raise ValueError(f"{field} must be repo-relative, not absolute: {value!r}")
+    if any(part == ".." for part in candidate.parts):
+        raise ValueError(
+            f"{field} must not escape the worktree (no `..` segments): {value!r}"
+        )
+    # Normalise "./app/" -> "app" so the receipt and the snapshot agree.
+    parts = [p for p in candidate.parts if p not in (".", "")]
+    return "/".join(parts) if parts else "."
+
+
+class PartFolders(_ToolchainCommands):
+    """One ``toolchain.parts`` entry: a folder pattern for parts.
+
+    Every folder directly under ``under`` that holds the file ``marker`` is a
+    part, and its commands run in that folder. ``marker`` is a plain file name
+    the project chooses; GuardKit attaches no meaning to it.
+    """
+
+    under: str = Field(min_length=1)
+    marker: str = Field(min_length=1)
+
+    @field_validator("under")
+    @classmethod
+    def _under_must_be_contained(cls, value: str) -> str:
+        return _contained_folder(value, "under")
+
+    @field_validator("marker")
+    @classmethod
+    def _marker_is_a_file_name(cls, value: str) -> str:
+        name = value.strip()
+        if not name or name in (".", "..") or "/" in name or "\\" in name:
+            raise ValueError(f"marker must be a plain file name: {value!r}")
+        return name
 
 
 class LanguageServer(BaseModel):
@@ -392,6 +440,8 @@ class ToolchainDeclaration(_ToolchainCommands):
 
     # ---- per-path sections (the monorepo seam, design §B.2(iii)) ---------
     components: Optional[Dict[str, ComponentToolchain]] = None
+    # ---- folder patterns for parts (31 October 2026) ---------------------
+    parts: Optional[List[PartFolders]] = None
 
     # ---- code tools (read by guardkitfactory, not by GuardKit) -----------
     language_servers: Optional[List[LanguageServer]] = None
@@ -401,8 +451,8 @@ class ToolchainDeclaration(_ToolchainCommands):
     def _component_names_must_be_usable(
         cls, value: Optional[Dict[str, "ComponentToolchain"]]
     ) -> Optional[Dict[str, "ComponentToolchain"]]:
-        """A component name is written in a task file by hand — a blank or
-        whitespace-bearing key is a typo that would never be selectable."""
+        """A blank or whitespace-bearing component name is a typo: it is
+        shown in receipts and logs as the part's name."""
         if value is None:
             return value
         for name in value:
@@ -410,8 +460,7 @@ class ToolchainDeclaration(_ToolchainCommands):
                 raise ValueError("component names must be non-empty strings")
             if name != name.strip() or any(c.isspace() for c in name):
                 raise ValueError(
-                    f"component name {name!r} must not contain whitespace — it "
-                    "is written verbatim as a task's `component:` selector"
+                    f"component name {name!r} must not contain whitespace"
                 )
         return value
 
@@ -426,7 +475,12 @@ class ToolchainDeclaration(_ToolchainCommands):
         ``test:`` the declared test command is still None, so test detection
         runs as before.
         """
-        return super().is_empty and not self.components and not self.language_servers
+        return (
+            super().is_empty
+            and not self.components
+            and not self.parts
+            and not self.language_servers
+        )
 
     @property
     def component_names(self) -> List[str]:
@@ -434,12 +488,7 @@ class ToolchainDeclaration(_ToolchainCommands):
         return sorted(self.components) if self.components else []
 
     def component(self, name: str) -> Optional[ComponentToolchain]:
-        """Return the named component's declaration, or ``None`` if undeclared.
-
-        Callers MUST treat ``None`` for a task that named a component as an
-        error, never as "fall back to the root block" — falling back is the
-        silent-wrong-verdict this whole seam exists to remove.
-        """
+        """Return the named component's declaration, or ``None`` if undeclared."""
         if not self.components:
             return None
         return self.components.get(name)
@@ -472,11 +521,12 @@ def parse_toolchain_block(raw: Any) -> ToolchainDeclaration:
             "Allowed keys: test, install, typecheck, lint, build, "
             "test_timeout, install_timeout, absent_substrings, "
             "ran_marker_regex, requires_ran_marker, runtime, components, "
-            "feature_check, feature_check_timeout, environment_inventory, "
-            "environment_inventory_timeout. "
+            "parts, language_servers, feature_check, feature_check_timeout, "
+            "environment_inventory, environment_inventory_timeout. "
             "Unknown keys are rejected — check for typos.\n"
             "Inside `components: <name>:` the SAME keys are allowed plus a "
-            "REQUIRED repo-relative `cwd:`."
+            "REQUIRED repo-relative `cwd:`; each `parts:` entry takes them "
+            "plus `under:` and `marker:`."
         ) from exc
 
 
@@ -554,8 +604,8 @@ def _declaration_from_text(
             _raise_for_refused_component_cwd(exc.__cause__, config_path)
         logger.error(
             "MALFORMED `toolchain:` block in %s — the declaration will NOT be "
-            "used for this repo until it is fixed, and command detection falls "
-            "back to the marker ladder. %s",
+            "used for this repo until it is fixed, so nothing is declared for "
+            "it. %s",
             config_path,
             exc,
         )
@@ -746,8 +796,8 @@ def snapshot_task_toolchain(
     except Exception as exc:  # pragma: no cover - defensive
         logger.warning(
             "TS-lane D.1b: toolchain snapshot failed for %s (%s) — the "
-            "declaration will be absent for this task and detection falls back "
-            "to the marker ladder",
+            "declaration will be absent for this task, so the check will say "
+            "that nothing is declared",
             task_id,
             exc,
         )
@@ -780,22 +830,156 @@ def load_toolchain_snapshot(
         return None
 
 
-def declared_coverage_command(
-    toolchain: Optional[ToolchainDeclaration],
-    component: Optional[str] = None,
-) -> Optional[str]:
-    """The coverage command declared for one task, or ``None``.
+@dataclass(frozen=True)
+class DeclaredPart:
+    """One part of the project whose tests run on their own.
 
-    The same rule as ``CoachValidator._declared_coverage_command``: a task
-    that names a component gets that component's ``coverage:`` and never the
-    root block's; a task that names none gets the root block's.
+    ``name`` is ``"root"`` for the root component, the component's name, or
+    the folder (``apps/web``) for a part found through a ``parts:`` pattern.
+    ``toolchain`` holds the part's commands with its ``cwd``; it is ``None``
+    for the root component, whose commands are the declaration's top level.
+    ``test`` is ``None`` when the part declares no test command.
     """
-    if component:
-        resolved = toolchain.component(component) if toolchain is not None else None
-        return (resolved.coverage or None) if resolved is not None else None
-    if toolchain is None:
-        return None
-    return toolchain.coverage or None
+
+    name: str
+    cwd: str
+    test: Optional[str]
+    toolchain: Optional[ComponentToolchain] = None
+
+
+ROOT_PART = "root"
+
+
+def _inside(path: str, folder: str) -> bool:
+    return folder == "." or path == folder or path.startswith(folder + "/")
+
+
+def _pattern_parts(
+    declaration: ToolchainDeclaration, tree: Path
+) -> List[DeclaredPart]:
+    """The folders the ``parts:`` patterns match in ``tree`` now."""
+    found: List[DeclaredPart] = []
+    for entry in declaration.parts or ():
+        base = Path(tree) / entry.under
+        try:
+            children = sorted(c for c in base.iterdir() if c.is_dir())
+        except OSError:
+            continue
+        for child in children:
+            if not (child / entry.marker).is_file():
+                continue
+            cwd = child.name if entry.under == "." else f"{entry.under}/{child.name}"
+            commands = entry.model_dump(exclude={"under", "marker"})
+            found.append(
+                DeclaredPart(
+                    name=cwd,
+                    cwd=cwd,
+                    test=entry.test,
+                    toolchain=ComponentToolchain(cwd=cwd, **commands),
+                )
+            )
+    return found
+
+
+def _named_parts(declaration: ToolchainDeclaration) -> List[DeclaredPart]:
+    return [
+        DeclaredPart(name=name, cwd=comp.cwd, test=comp.test, toolchain=comp)
+        for name, comp in sorted((declaration.components or {}).items())
+    ]
+
+
+def _declares_any_test(declaration: Optional[ToolchainDeclaration]) -> bool:
+    if declaration is None:
+        return False
+    return bool(
+        declaration.test
+        or any(c.test for c in (declaration.components or {}).values())
+        or any(p.test for p in declaration.parts or ())
+    )
+
+
+def parts_for_files(
+    declaration: Optional[ToolchainDeclaration],
+    tree: Path,
+    files: Sequence[str],
+) -> List[DeclaredPart]:
+    """The parts the changed ``files`` belong to, each once, root first.
+
+    A file belongs to the declared component or pattern part whose folder
+    holds it, the deepest one winning, a named component before a pattern
+    part at the same folder. A file in no such folder belongs to the root
+    component when the top level declares ``test``. When the project
+    declares no test command anywhere (or nothing at all), every file belongs
+    to the root component (whatever changed, even nothing), which then has
+    nothing declared, so the check reports that it could not run rather than
+    guess a command. Files in no
+    part (documentation in a project whose root declares no test, say) are
+    left out: nothing runs for them before the merge's full check.
+
+    The pattern parts are found in ``tree`` now, so a folder this task made
+    counts. The commands come from ``declaration`` (the pinned copy).
+    """
+    if not _declares_any_test(declaration):
+        return [DeclaredPart(name=ROOT_PART, cwd=".", test=None)]
+    assert declaration is not None
+    candidates = _named_parts(declaration)
+    named_folders = {p.cwd for p in candidates}
+    candidates += [
+        p for p in _pattern_parts(declaration, tree) if p.cwd not in named_folders
+    ]
+    root = (
+        DeclaredPart(name=ROOT_PART, cwd=".", test=declaration.test)
+        if declaration.test
+        else None
+    )
+    chosen: Dict[str, DeclaredPart] = {}
+    for raw in files:
+        path = str(raw).replace("\\", "/").lstrip("/")
+        while path.startswith("./"):
+            path = path[2:]
+        matches = [p for p in candidates if _inside(path, p.cwd)]
+        if matches:
+            # Deepest folder wins; ``max`` keeps the first (a named component)
+            # of equal depth.
+            part = max(
+                matches,
+                key=lambda p: 0 if p.cwd == "." else len(p.cwd.split("/")),
+            )
+        elif root is not None:
+            part = root
+        else:
+            continue
+        chosen.setdefault(part.name, part)
+    ordered = sorted(chosen.values(), key=lambda p: (p.name != ROOT_PART, p.name))
+    return ordered
+
+
+def full_check_parts(
+    declaration: Optional[ToolchainDeclaration], tree: Path
+) -> List[DeclaredPart]:
+    """What the project's full check runs, each in its own folder.
+
+    ``feature_check`` when declared (one command at the root). Otherwise the
+    root ``test`` when declared, then every named component, then every
+    folder a ``parts:`` pattern matches in ``tree`` (one a component already
+    names is not repeated). A component or pattern without ``test`` is
+    included with nothing declared, so the check says it could not run.
+    Empty when nothing is declared.
+    """
+    if declaration is None:
+        return []
+    if declaration.feature_check:
+        return [
+            DeclaredPart(name="feature check", cwd=".", test=declaration.feature_check)
+        ]
+    parts: List[DeclaredPart] = []
+    if declaration.test:
+        parts.append(DeclaredPart(name=ROOT_PART, cwd=".", test=declaration.test))
+    named = _named_parts(declaration)
+    folders = {p.cwd for p in named}
+    parts += named
+    parts += [p for p in _pattern_parts(declaration, tree) if p.cwd not in folders]
+    return parts
 
 
 def resolve_component_cwd(base: Path, cwd: str) -> Path:
@@ -836,5 +1020,9 @@ __all__ = [
     "toolchain_snapshot_paths",
     "snapshot_task_toolchain",
     "load_toolchain_snapshot",
-    "declared_coverage_command",
+    "DeclaredPart",
+    "ROOT_PART",
+    "PartFolders",
+    "parts_for_files",
+    "full_check_parts",
 ]

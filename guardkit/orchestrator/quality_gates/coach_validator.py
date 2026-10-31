@@ -30,8 +30,6 @@ Example:
     ...     print("Coach approved implementation")
 """
 
-import ast
-import fnmatch
 import json
 import logging
 import os
@@ -75,7 +73,9 @@ from guardkit.orchestrator.project_command_env import (
 from guardkit.orchestrator.toolchain_declaration import (
     CONFIG_RELATIVE_PATH,
     ComponentToolchain,
+    DeclaredPart,
     ToolchainDeclaration,
+    parts_for_files,
     resolve_component_cwd,
 )
 from guardkit.orchestrator.quality_gates.coach_evidence import (
@@ -100,16 +100,6 @@ from guardkit.orchestrator.run_evidence import (
     originating_worktree_identity,
     request_from_declaration,
     start_command_evidence,
-)
-from guardkit.orchestrator.baseline import (
-    BASELINE_FAILED,
-    BASELINE_UNMEASURED,
-    NO_BASELINE_COMPARISON,
-    baseline_diff_enabled,
-    compute_charged_failures,
-    failing_node_ids,
-    load_known_failure_ids,
-    read_baseline_from_worktree,
 )
 from guardkit.models.task_types import TaskType, get_profile, TASK_TYPE_ALIASES
 
@@ -438,6 +428,10 @@ class IndependentTestResult:
     # raw container events of the interval (see ``run_evidence``). Receipt
     # evidence only: no gate, verdict or feedback branch reads it.
     run_evidence: Optional[Dict[str, Any]] = None
+    # One record per part whose tests ran for this check (31 October 2026):
+    # its name, folder, command and outcome ("passed", "failed", "could not
+    # run"). ``None`` when no part ran. Receipt evidence only.
+    parts: Optional[List[Dict[str, Any]]] = None
 
     def failure_receipt(self) -> Optional[Dict[str, Any]]:
         """This run's own failure facts, for the Player's feedback.
@@ -475,7 +469,9 @@ class IndependentTestResult:
     #     ``tests_passed=False``, ``signal_absent=True``, ``tests_skipped=None``
     #     (nothing to parse). ``resolved_interpreter`` optional (subprocess
     #     shapes carry it; SDK-transport shapes do not).
-    #   - skipped:  tests not required for this task type — no advisory fields.
+    #   - skipped:  the task changed no declared part, so nothing ran. Not a
+    #               pass (31 October 2026): ``tests_passed`` is False and the
+    #               signal is absent, so no record reads it as tested.
     # ------------------------------------------------------------------
 
     @classmethod
@@ -573,14 +569,114 @@ class IndependentTestResult:
         test_command: str = "skipped",
         duration_seconds: float = 0.0,
     ) -> "IndependentTestResult":
-        """Tests not required for this task type — no run, no advisory
-        fields."""
+        """Nothing to run: the task changed no declared part.
+
+        Never a pass (after-task check redesign, 31 October 2026): it used to
+        read ``tests_passed=True``, so tasks that wrote tests were recorded as
+        tested when nothing ran. It sends nothing back either.
+        """
         return cls(
-            tests_passed=True,
+            tests_passed=False,
             test_command=test_command,
             test_output_summary=test_output_summary,
             duration_seconds=duration_seconds,
+            signal_absent=True,
         )
+
+
+def _part_outcome(result: IndependentTestResult) -> str:
+    if result.check_could_not_run or result.signal_absent:
+        return "could not run"
+    return "passed" if result.tests_passed else "failed"
+
+
+def combine_part_results(
+    runs: Sequence[Tuple[Any, IndependentTestResult]],
+) -> IndependentTestResult:
+    """One result from the runs of each changed part (31 October 2026).
+
+    ``runs`` pairs each part (a ``DeclaredPart``) with its run. A part that
+    ran and failed wins: the result is a failure, so the task goes back to
+    the builder with that part's output. Otherwise a part that could not run
+    (would not start, timed out, gave no test signal, declared nothing) makes
+    the result "the check could not run", naming the part and its command:
+    nothing was measured, and it is not the builder's to fix. Only when every
+    part ran and passed is the result a pass. ``parts`` records each part's
+    outcome.
+    """
+    records = [
+        {
+            "part": part.name,
+            "folder": part.cwd,
+            "command": result.test_command,
+            "outcome": _part_outcome(result),
+        }
+        for part, result in runs
+    ]
+    failed = [(p, r) for p, r in runs if _part_outcome(r) == "failed"]
+    not_run = [(p, r) for p, r in runs if _part_outcome(r) == "could not run"]
+    duration = sum(r.duration_seconds for _, r in runs)
+
+    def joined_command(items: Sequence[Tuple[Any, IndependentTestResult]]) -> str:
+        if len(items) == 1:
+            return items[0][1].test_command
+        return " ; ".join(f"{r.test_command} (in {p.cwd})" for p, r in items)
+
+    if failed:
+        if len(failed) == 1:
+            result = dataclass_replace(failed[0][1])
+        else:
+            result = IndependentTestResult(
+                tests_passed=False,
+                test_command=joined_command(failed),
+                test_output_summary="\n\n".join(
+                    f"Part {p.name} ({p.cwd}): {r.test_output_summary}"
+                    for p, r in failed
+                ),
+                duration_seconds=duration,
+                raw_output="\n\n".join(
+                    f"=== part {p.name} ({p.cwd}): {r.test_command}\n"
+                    f"{r.raw_output or r.test_output_summary}"
+                    for p, r in failed
+                ),
+                exit_code=failed[0][1].exit_code,
+                resolved_interpreter=failed[0][1].resolved_interpreter,
+            )
+    elif not_run:
+        detail = "The check could not run: " + "; ".join(
+            f"part {p.name} (`{r.test_command}` in {p.cwd}): "
+            f"{r.check_could_not_run_detail or r.test_output_summary}"
+            for p, r in not_run
+        )
+        result = IndependentTestResult.could_not_run(
+            test_command=joined_command(not_run),
+            detail=detail,
+            duration_seconds=duration,
+            raw_output="\n\n".join(r.raw_output for _, r in not_run if r.raw_output)
+            or None,
+            allow_worktree_fallback=False,
+        )
+    elif len(runs) == 1:
+        result = dataclass_replace(runs[0][1])
+    else:
+        result = IndependentTestResult(
+            tests_passed=True,
+            test_command=joined_command(runs),
+            test_output_summary="\n".join(
+                f"Part {p.name} ({p.cwd}): {r.test_output_summary}" for p, r in runs
+            ),
+            duration_seconds=duration,
+            raw_output="\n\n".join(r.raw_output for _, r in runs if r.raw_output)
+            or None,
+        )
+    evidence = [
+        record
+        for _, r in runs
+        for record in ((r.run_evidence or {}).get("runs") or [])
+    ]
+    result.run_evidence = {"runs": evidence} if evidence else None
+    result.parts = records
+    return result
 
 
 # The words ``_test_command_source`` carries when the command came from the
@@ -588,66 +684,6 @@ class IndependentTestResult:
 # spelling, set in one place and read in one place, so nothing downstream has
 # to match a string it invented.
 DECLARED_COMMAND_SOURCE = "repository toolchain declaration"
-
-
-@dataclass(frozen=True)
-class SuiteComparedToBase:
-    """A whole-suite run read against what the base branch was ALREADY failing.
-
-    RICH'S SECOND RULING, 2026-09-09: "zero net-new", never "all green". No
-    real repository is all green — forge's suite carries about thirty base
-    failures, guardkit's eleven to fourteen, all triaged and stable — so a
-    leg that demanded a green suite would fail on every red repository for
-    ever, and a leg that cannot tell new red from old red teaches everybody
-    to ignore red.
-
-    Nothing here is a new mechanism. The base's failing set comes from the
-    two places the estate already keeps it (``guardkit.orchestrator.baseline``
-    reads both, and the Coach's own gate already subtracts them):
-
-    * the build's MEASURED baseline — the wave-0 probe ran the suite once on
-      this branch's base, before any task touched it, and cached the result
-      in ``.guardkit/autobuild/<feature>/baseline.json``;
-    * the repository's own KNOWN-FAILURE LEDGER, ``qa/known-failures.yaml``,
-      whose own words are "every suite run is compared against THIS ledger,
-      not against 'all green'".
-
-    Fields
-    ------
-    failures_total
-        How many tests failed in this run.
-    inherited
-        How many of those the base was already failing (forgiven).
-    new_failures
-        The ones this leg is charged for — named, and ONLY these, because a
-        red leg naming twenty failures of which nineteen are inherited is a
-        leg nobody reads.
-    stale_base_entries
-        Tests the base was failing that did NOT fail here. Never a failure:
-        one plain line saying the record has gone stale in the good
-        direction.
-    base_known
-        Always ``True``. A comparison exists ONLY when the base's failing set
-        could be established; when it could not, there is no comparison at
-        all and the run's own red stands, whole. The field is kept because a
-        record that forgives a failure should say on the face of it that the
-        base was known.
-    base_source
-        Where it came from, in ordinary words, for the record.
-    passes
-        The leg's verdict: no new failures, and the run visibly did work.
-    note
-        One plain sentence a person can read in the leg's record.
-    """
-
-    failures_total: int
-    inherited: int
-    new_failures: List[str]
-    stale_base_entries: List[str]
-    base_known: bool
-    base_source: str
-    passes: bool
-    note: str
 
 
 # ============================================================================
@@ -803,7 +839,7 @@ class CoachValidator:
         basetemp_context: Optional[str] = None,  # TASK-AB-BASETEMP01
         in_autobuild_context: bool = False,  # WS3-S1 Q1 SPLIT (hard-abort)
         toolchain: Optional["ToolchainDeclaration"] = None,  # TS-lane D.1b
-        component: Optional[str] = None,  # per-component seam
+        baseline_commit: Optional[str] = None,  # the task's starting commit
         effective_concurrency: Optional[int] = None,
     ):
         """
@@ -893,15 +929,11 @@ class CoachValidator:
             the live ``<worktree>/.guardkit/config.yaml``, which sits inside
             the tree the Player edits (design §B.4). No snapshot ⇒ no
             declaration ⇒ the detection ladder runs exactly as it did before.
-        component : Optional[str]
-            The task's ``component:`` selector (per-component seam). ``None``
-            (the default, and every task in every repo today) means THE ROOT
-            BLOCK — today's semantics, byte-unchanged. A name resolves that
-            component's ``test:`` and runs it with the component's ``cwd:``.
-            A name the pinned declaration does not define NEVER falls back to
-            the root block: it becomes a loud INSTRUMENT FAULT (ABSENT /
-            UNKNOWN), because running the backend suite as the verdict on an
-            ``app/`` task is exactly the false signal this seam removes.
+        baseline_commit : Optional[str]
+            The commit the task started from (``TaskWorkScope.baseline_commit``).
+            The files changed since it decide which parts' tests run
+            (after-task check redesign, 31 October 2026). ``None`` falls back
+            to the files the builder's report lists.
         """
         self.worktree_path = Path(worktree_path)
         self.test_command = test_command
@@ -930,52 +962,23 @@ class CoachValidator:
                 self._toolchain.test_timeout,
                 self._toolchain.component_names or "none",
             )
-        # ---- the per-component seam --------------------------------------
-        # The task's selector, resolved ONCE against the pinned declaration.
-        # ``_component_absence`` is set (and the resolution left None) when the
-        # task named a component the declaration does not define — the ladder
-        # must NOT then quietly run the root command.
-        self._component: Optional[str] = component
+        # ---- the part whose tests are about to run ------------------------
+        # Set by ``_use_part`` for each changed part in turn (after-task check
+        # redesign, 31 October 2026): ``None`` for the root component, else
+        # the component's or pattern part's commands with their ``cwd``.
+        self._baseline_commit: Optional[str] = baseline_commit
+        self._component: Optional[str] = None
         self._component_toolchain: Optional["ComponentToolchain"] = None
-        self._component_absence: Optional[str] = None
-        if component:
-            self._component_toolchain = (
-                self._toolchain.component(component)
-                if self._toolchain is not None
-                else None
-            )
-            if self._component_toolchain is None:
-                self._component_absence = self._describe_component_absence(component)
-                logger.error(self._component_absence)
-            else:
-                logger.info(
-                    "CoachValidator resolved task component %r: test=%r cwd=%r "
-                    "test_timeout=%ss",
-                    component,
-                    self._component_toolchain.test,
-                    self._component_toolchain.cwd,
-                    self._component_toolchain.test_timeout,
-                )
-        # Explicit caller value > the RESOLVED component's declared timeout >
-        # the root block's > the historic 300s.
-        if test_timeout is not None:
-            self.test_timeout = test_timeout
-        elif self._component_toolchain is not None:
-            self.test_timeout = self._component_toolchain.test_timeout
-        elif self._toolchain is not None:
-            self.test_timeout = self._toolchain.test_timeout
-        else:
-            self.test_timeout = 300
-        # TS-lane D.1b: set by ``_detect_test_command`` when the ENTIRE ladder
-        # came up empty. Replaces the deleted unconditional pytest default —
-        # ``run_independent_tests`` turns it into a LOUD ABSENT signal
-        # (UNKNOWN), never a silent guess and never a pass.
+        # Explicit caller value > the part's declared timeout > the root
+        # block's > the historic 300s.
+        self._explicit_test_timeout: Optional[int] = test_timeout
+        self.test_timeout = self._timeout_for_part()
+        # Set by ``_detect_test_command`` when the part declares no test
+        # command: ``run_independent_tests`` reports that the check could not
+        # run, naming what is missing. GuardKit never guesses a command.
         self._detection_absence: Optional[str] = None
-        # Where the command about to run came from, in ordinary words
-        # ("repository toolchain declaration", "task-specific test files
-        # detected in the worktree", ...). Set by ``_detect_test_command``;
-        # read by the work leg so a red leg can say WHICH command ran and why
-        # that one. Never read by any verdict rule.
+        # Where the command about to run came from, in ordinary words. Set by
+        # ``_detect_test_command``. Never read by any verdict rule.
         self._test_command_source: Optional[str] = None
         # TASK-AB-COACHSUBPROC01: None -> resolve env > default (subprocess);
         # resolve_coach_test_execution logs the active mode + provenance once
@@ -1105,8 +1108,8 @@ class CoachValidator:
         # ``_after_isolation_fallback``; ``None`` at every other moment.
         self._isolation_fallback: Optional[IndependentTestResult] = None
         # TASK-AB-NPDET01: the non-Python stack test-execution profile resolved
-        # by ``_detect_test_command`` for THIS run (None for Python / no match /
-        # parallel-wave deferral). ``run_independent_tests`` reads it to classify
+        # by ``_detect_test_command`` for THIS run (None when no stack row
+        # matches and the declaration overlays nothing). ``run_independent_tests`` reads it to classify
         # absence stack-awarely (missing toolchain / zero-test => signal_absent).
         self._active_stack_profile: Optional[StackTestProfile] = None
         # TASK-ABFIX-011: cached result of the pytest-timeout availability probe
@@ -1238,7 +1241,8 @@ class CoachValidator:
 
         The reviewer (the LLM Coach) reads the bundle; its verdict is advice
         (27 October 2026). The turn is sent back only by what the project's
-        own runs report: its required tests (``independent_tests``), the
+        own runs report: the tests of the parts the task changed
+        (``independent_tests``, see :meth:`run_changed_parts`), the
         feature's declared smoke command (``runtime_parity``), the declared
         behavioural check (``behavioural_oracle``) and, in a whole-feature
         repair round, the project's whole-feature check. Nothing the Player
@@ -1277,34 +1281,22 @@ class CoachValidator:
         gathering_status = "complete"
         gathering_error: Optional[str] = None
 
-        # The project's tests.
+        # The tests of the parts this task changed, whatever its task type
+        # (after-task check redesign, 31 October 2026).
         test_result: Optional[IndependentTestResult]
-        if not profile.tests_required:
-            test_result = IndependentTestResult.skipped(
-                test_output_summary=(
-                    f"Independent test verification skipped "
-                    f"(tests not required for {task_type.value} tasks)"
-                ),
+        try:
+            test_result = self.run_changed_parts(
+                task_work_results=task_work_results,
+                task=task,
+                turn=turn,
             )
-        else:
-            try:
-                test_result = self.run_independent_tests(
-                    task_work_results=task_work_results,
-                    task=task,
-                    turn=turn,
-                )
-                # Failures a measured baseline shows were already there are
-                # not this task's.
-                test_result = self._apply_baseline_diff(
-                    test_result, task_work_results
-                )
-            except Exception as exc:  # noqa: BLE001 — gathering never raises
-                logger.error(
-                    "gather_evidence: run_independent_tests raised: %s", exc,
-                )
-                test_result = None
-                gathering_status = "partial_exception"
-                gathering_error = f"independent_tests_exception: {exc}"
+        except Exception as exc:  # noqa: BLE001 — gathering never raises
+            logger.error(
+                "gather_evidence: the changed parts' tests raised: %s", exc,
+            )
+            test_result = None
+            gathering_status = "partial_exception"
+            gathering_error = f"independent_tests_exception: {exc}"
 
         if test_result is not None and test_result.check_could_not_run:
             logger.warning(
@@ -1365,6 +1357,136 @@ class CoachValidator:
             security_check=security_check,
             whole_feature_check=whole_feature_check,
         )
+
+    # ------------------------------------------------------------------
+    # The tests of the parts a task changed (31 October 2026)
+    # ------------------------------------------------------------------
+
+    def _timeout_for_part(self) -> int:
+        if self._explicit_test_timeout is not None:
+            return self._explicit_test_timeout
+        if self._component_toolchain is not None:
+            return self._component_toolchain.test_timeout
+        if self._toolchain is not None:
+            return self._toolchain.test_timeout
+        return 300
+
+    def _use_part(self, part: Optional[DeclaredPart]) -> None:
+        """Make ``part`` the one the next run uses (``None``: the root)."""
+        toolchain = part.toolchain if part is not None else None
+        self._component = part.name if toolchain is not None else None
+        self._component_toolchain = toolchain
+        self.test_timeout = self._timeout_for_part()
+
+    def _files_changed_since(self, commit: str) -> Optional[List[str]]:
+        """The product files changed in the worktree since ``commit``
+        (committed or not, created, changed or deleted), or ``None`` when git
+        cannot say. Factory records are left out, as the task's own change
+        list leaves them out."""
+        from guardkit.orchestrator.task_work_scope import _product
+
+        try:
+            diff = run_git(
+                ["diff", "--no-renames", "--name-only", "-z", commit],
+                cwd=self.worktree_path,
+                timeout=60,
+            )
+            untracked = run_git(
+                ["ls-files", "--others", "--exclude-standard", "-z"],
+                cwd=self.worktree_path,
+                timeout=60,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            logger.warning("Could not list the task's changed files: %s", exc)
+            return None
+        if diff.returncode != 0 or untracked.returncode != 0:
+            return None
+        names = (diff.stdout or "").split("\0") + (untracked.stdout or "").split("\0")
+        return sorted({n for n in names if n and _product(n)})
+
+    def _changed_files(
+        self, task_work_results: Optional[Dict[str, Any]]
+    ) -> Tuple[List[str], str]:
+        """The files this task changed, and where the list came from.
+
+        From git, since the task's starting commit. The builder's report is
+        read only when that commit is not known or git cannot answer.
+        """
+        if self._baseline_commit:
+            listed = self._files_changed_since(self._baseline_commit)
+            if listed is not None:
+                return listed, (
+                    f"git, since the task's starting commit "
+                    f"{self._baseline_commit[:10]}"
+                )
+        reported: set = set()
+        for key in ("files_created", "files_modified", "files_deleted"):
+            for name in (task_work_results or {}).get(key) or []:
+                path = Path(str(name))
+                if path.is_absolute():
+                    try:
+                        path = path.relative_to(self.worktree_path)
+                    except ValueError:
+                        continue
+                if str(path) not in ("", "."):
+                    reported.add(path.as_posix())
+        return sorted(reported), "the builder's report"
+
+    def run_changed_parts(
+        self,
+        task_work_results: Optional[Dict[str, Any]] = None,
+        task: Optional[Dict[str, Any]] = None,
+        turn: Optional[int] = None,
+    ) -> IndependentTestResult:
+        """Run the declared tests of each part this task changed, once each.
+
+        The parts come from the task's changed files
+        (:func:`toolchain_declaration.parts_for_files`, matched in the
+        worktree now, commands from the pinned declaration). The results are
+        combined by :func:`combine_part_results`: a failure wins over a part
+        that could not run, which wins over a pass. A task that changed no
+        part has nothing to run (:meth:`IndependentTestResult.skipped`, never
+        a pass). A caller-supplied ``test_command`` runs alone, as before.
+        """
+        if self.test_command:
+            return self.run_independent_tests(
+                task_work_results=task_work_results, task=task, turn=turn
+            )
+        files, source = self._changed_files(task_work_results)
+        parts = parts_for_files(self._toolchain, self.worktree_path, files)
+        if not parts:
+            logger.info(
+                "%s: the %d changed file(s) (from %s) are in no declared part; "
+                "no tests to run.",
+                self.task_id, len(files), source,
+            )
+            return IndependentTestResult.skipped(
+                test_output_summary=(
+                    f"No tests to run: the {len(files)} file(s) this task "
+                    f"changed (from {source}) are in no declared part."
+                ),
+            )
+        logger.info(
+            "%s: running the tests of %d changed part(s) (%s), from %s.",
+            self.task_id, len(parts), ", ".join(p.name for p in parts), source,
+        )
+        runs: List[Tuple[DeclaredPart, IndependentTestResult]] = []
+        try:
+            for part in parts:
+                self._use_part(part)
+                runs.append(
+                    (
+                        part,
+                        self.run_independent_tests(
+                            task_work_results=task_work_results,
+                            task=task,
+                            turn=turn,
+                        ),
+                    )
+                )
+        finally:
+            self._use_part(None)
+        return combine_part_results(runs)
 
     def _gather_whole_feature_check(self) -> Optional[Dict[str, Any]]:
         """This Coach turn's run of the whole-feature check, or ``None``.
@@ -1947,465 +2069,6 @@ class CoachValidator:
                 r.returncode,
             )
         return results
-
-    # ------------------------------------------------------------------
-    # Baseline diff (red-baseline retro, L12 item 2)
-    # ------------------------------------------------------------------
-
-    def _baseline_context(self):
-        """Load (once) the measured baseline + F2 ledger IDs for this worktree.
-
-        Returns ``(baseline_result_or_None, ledger_id_set)``. The measured
-        baseline is the session-scoped observation written by the wave-0 probe
-        (``read_baseline_from_worktree``); the ledger is the human-curated
-        ``qa/known-failures.yaml`` (READ-ONLY). Cached on the instance; both
-        fail open to ``None`` / ``set()``.
-        """
-        cached = getattr(self, "_baseline_ctx_cache", "unset")
-        if cached != "unset":
-            return cached
-        baseline = None
-        ledger: set = set()
-        try:
-            baseline = read_baseline_from_worktree(self.worktree_path)
-            ledger = load_known_failure_ids(self.worktree_path)
-        except Exception as exc:  # noqa: BLE001 — fail open, diff stays inert
-            logger.debug("baseline diff: context load failed: %s", exc)
-        self._baseline_ctx_cache = (baseline, ledger)
-        return self._baseline_ctx_cache
-
-    def _baseline_diff_active(self) -> bool:
-        """Whether the baseline diff should act: flag ON + a red baseline exists.
-
-        A GREEN baseline (or no baseline.json / diff disabled) leaves every
-        gate byte-identical to today — the diff only ever suppresses charges
-        for failures already-red before wave 1.
-        """
-        if not baseline_diff_enabled():
-            return False
-        baseline, ledger = self._baseline_context()
-        # Only named failures from a measured baseline can excuse anything;
-        # an unmeasured one (did not pass, named nothing) excuses nothing.
-        has_baseline_reds = (
-            baseline is not None and baseline.state == BASELINE_FAILED
-        )
-        return has_baseline_reds or bool(ledger)
-
-    def _authored_test_files(self, task_work_results: Dict[str, Any]) -> list:
-        """Worktree-relative files the current task touched (created/modified).
-
-        Used to RE-CHARGE a baseline/ledger failure whose test file the task
-        itself worked on — a task cannot hide behind the baseline for a test
-        it was meant to fix (the retro's fixed-then-still-red constraint). The
-        broad touched-union is deliberate here: it re-charges MORE, which is
-        the safe (against-false-green) direction.
-        """
-        files: set = set()
-        for key in ("files_authored", "files_created", "files_modified"):
-            for f in task_work_results.get(key) or []:
-                if isinstance(f, str) and f.strip():
-                    files.add(f.strip())
-        return sorted(files)
-
-    def _apply_baseline_diff(
-        self,
-        test_result: "IndependentTestResult",
-        task_work_results: Dict[str, Any],
-    ) -> "IndependentTestResult":
-        """Suppress a ran-and-failed verdict whose failures are ALL pre-existing.
-
-        Red-baseline retro (L12 item 2). When the independent run failed
-        (``tests_passed is False``, signal present) and every observed failing
-        node ID is in ``measured baseline ∪ F2 ledger`` — minus any whose test
-        file the current task authored — the failures are not attributable to
-        this task, so the verdict is flipped to a pass annotated with the
-        attribution. Otherwise the result is returned UNCHANGED.
-
-        Fail CLOSED: an absent signal is never flipped; if no failing node IDs
-        parse (non-pytest stack output) the charge stands; any exception leaves
-        the original verdict intact.
-
-        IT SAYS WHY IT DID NOT ACT (2026-09-13). Every path out of here used to
-        be silent except the one that suppressed something, so a build where
-        this never fired looked identical to a build where it was never
-        reached. FEAT-19C4 stalled for five turns on six failures the ledger
-        already forgave, and the whole question — which of the four early
-        returns was taken — could not be answered from the receipt at all; the
-        only record was inside a sandbox that could not be opened. A check that
-        cannot say what it did is not a check anybody can trust, so each exit
-        now names itself once per turn at INFO, beside the one that already
-        spoke.
-        """
-        try:
-            if test_result.signal_absent or test_result.tests_passed is not False:
-                # Nothing to forgive: either the run never produced a verdict
-                # (never flipped, by design) or it already passed.
-                logger.info(
-                    "baseline diff: not applicable (signal_absent=%s, "
-                    "tests_passed=%s) — nothing to forgive",
-                    test_result.signal_absent,
-                    test_result.tests_passed,
-                )
-                return test_result
-            if not self._baseline_diff_active():
-                baseline, ledger = self._baseline_context()
-                logger.info(
-                    "baseline diff: INERT — no red base on record, so every "
-                    "failure stands (measured baseline: %s; ledger entries: "
-                    "%d; kill-switch GUARDKIT_AUTOBUILD_BASELINE_DIFF: %s)",
-                    "absent"
-                    if baseline is None
-                    else (
-                        "green" if baseline.passed
-                        else (
-                            NO_BASELINE_COMPARISON
-                            if baseline.state == BASELINE_UNMEASURED
-                            else "red"
-                        )
-                    ),
-                    len(ledger),
-                    "on" if baseline_diff_enabled() else "OFF",
-                )
-                return test_result
-            observed = failing_node_ids(test_result.raw_output)
-            if not observed:
-                # Could not identify the failures → cannot safely attribute.
-                logger.info(
-                    "baseline diff: could not read a single failing test id "
-                    "out of the run's output (%d characters of it), so no "
-                    "failure can be attributed to the base and every one of "
-                    "them stands",
-                    len(test_result.raw_output or ""),
-                )
-                return test_result
-            baseline, ledger = self._baseline_context()
-            baseline_ids = baseline.failing_node_ids if baseline else []
-            charged = compute_charged_failures(
-                observed_node_ids=observed,
-                baseline_node_ids=baseline_ids,
-                ledger_ids=ledger,
-                authored_test_files=self._authored_test_files(task_work_results),
-            )
-            if charged:
-                # At least one genuine regression → leave the failure standing.
-                # WHICH ones, and whether they are charged because the base
-                # never had them or because this task touched their test file
-                # (the re-charge rule above) — without that distinction a
-                # forgiven-looking build and a re-charged one read the same.
-                authored = self._authored_test_files(task_work_results)
-                known = set(baseline_ids) | set(ledger)
-                recharged = [n for n in charged if n in known]
-                genuinely_new = [n for n in charged if n not in known]
-                logger.info(
-                    "baseline diff: NOT applied — %d failure(s) charged to "
-                    "this task (%d newly failing; %d the base already had but "
-                    "re-charged because this task touched their test file). "
-                    "Charged: %s. Files this task is recorded as touching: %s",
-                    len(charged),
-                    len(genuinely_new),
-                    len(recharged),
-                    ", ".join(charged[:20]),
-                    ", ".join(authored[:20]) or "(none recorded)",
-                )
-                return test_result
-            attributed = sorted(set(observed))
-            # Name only the record(s) that actually covered these failures. A
-            # baseline that measured nothing, or one that named none of them,
-            # is never credited (reliability repair 2, 12 October 2026).
-            by_baseline = set(baseline_ids)
-            used_baseline = any(n in by_baseline for n in attributed)
-            used_ledger = any(
-                n in ledger and n not in by_baseline for n in attributed
-            )
-            sources_words = " and ".join(
-                words
-                for words, used in (
-                    ("the measured baseline", used_baseline),
-                    (
-                        "the repository's known-failure ledger "
-                        "(qa/known-failures.yaml)",
-                        used_ledger,
-                    ),
-                )
-                if used
-            )
-            summary = (
-                f"Independent tests: {len(attributed)} failure(s) attributed to "
-                f"{sources_words} (pre-existing before wave 1, "
-                f"not this task): {', '.join(attributed)}. No regressions "
-                f"introduced by this task (GUARDKIT_AUTOBUILD_BASELINE_DIFF)."
-            )
-            logger.info(
-                "baseline diff: suppressed %d pre-existing failure(s) as "
-                "environmental (no task regression): %s",
-                len(attributed), attributed,
-            )
-            # THE EVIDENCE MUST NOT READ AS A LIE (2026-09-13).
-            # Flipping the verdict and leaving the run's output untouched puts
-            # "tests passed" next to "12 failed" in the same bundle with
-            # nothing joining them, and the reviewer — rightly — refuses to
-            # believe it. FEAT-C2BA was refused on exactly that wording twice
-            # ('independent_tests.tests_passed=true but
-            # independent_tests.raw_output shows "12 failed"'), on turns where
-            # the builder had done everything asked of it. So the output keeps
-            # every byte it had and gains one plain line at the top saying why
-            # a pass and a red run are both true.
-            preface = (
-                "NOTE FOR THE REVIEWER: this run is reported as PASSED even "
-                f"though the output below shows {len(attributed)} failing "
-                "test(s). Every one of them was ALREADY failing on this "
-                f"branch's base before any task touched it ({sources_words}), "
-                "and none is in a file this task authored. They are "
-                "not this task's failures and there is nothing in them for "
-                "the builder to fix. Zero net-new is the bar, not all-green.\n"
-                "---\n"
-            )
-            return dataclass_replace(
-                test_result,
-                tests_passed=True,
-                test_output_summary=summary,
-                raw_output=preface + (test_result.raw_output or ""),
-            )
-        except Exception as exc:  # noqa: BLE001 — fail closed to the real verdict
-            # At INFO, not DEBUG: a build runs at INFO, so at DEBUG this said
-            # nothing where it mattered and the failure looked like a decision.
-            logger.info(
-                "baseline diff: could not run (%s: %s) — the verdict is left "
-                "exactly as the test run reported it",
-                type(exc).__name__,
-                exc,
-            )
-            return test_result
-
-    # ------------------------------------------------------------------
-    # The work leg's verdict on a whole declared suite: ZERO NET-NEW
-    # ------------------------------------------------------------------
-
-    def base_failing_tests(self) -> Tuple[bool, List[str], str]:
-        """What the branch's BASE was already failing, and how we know.
-
-        Returns ``(base_known, failing_ids, source_in_plain_words)``.
-
-        Two sources, both of which already existed and are already read
-        together by :meth:`_baseline_context` — this method only says, out
-        loud, WHICH of them answered, because a leg that forgives a failure
-        must be able to say on whose word it forgave it:
-
-        1. **The build's measured baseline.** The wave-0 probe ran the suite
-           once on this branch's base, before wave 1, and wrote
-           ``.guardkit/autobuild/<feature>/baseline.json``. This is the
-           "establish the base's failing set by running the command once and
-           cache it for the build" answer — already built, so this lane did
-           not build a second one.
-        2. **The repository's known-failure ledger**, ``qa/known-failures.yaml``
-           — the human-triaged list. A ledger that EXISTS and is empty is
-           knowledge too: it says the base is green.
-
-        The merge door asks the same question at the other end of the
-        journey and takes its answer as ``--baseline-json``, "the list of
-        tests the target branch was already failing". It reads exactly the
-        ``baseline.json`` shape source 1 writes, so the two doors are
-        reading one record, not two.
-
-        ``base_known`` is ``False`` only when neither is present — an
-        unmeasured baseline (it did not pass and named no failing test) counts
-        as not present, and the words then say no baseline comparison was
-        possible. Nothing is then forgiven: :meth:`compare_suite_against_base` makes no comparison
-        at all, the run's own red stands in full, and the record says in
-        plain words that nothing was on record. That is the fail-closed
-        direction, and it is the same verdict the Coach's own gate reaches in
-        the same state, so the leg and the Coach still agree.
-        """
-        measured, ledger = self._baseline_context()
-        sources: List[str] = []
-        ids: List[str] = []
-        # An UNMEASURED baseline (it did not pass and named no failing test —
-        # an import or collection error, say) is not knowledge of the base:
-        # it is never offered as a source, so a comparison is never claimed
-        # against it (reliability repair 2, 12 October 2026).
-        unmeasured = (
-            measured is not None and measured.state == BASELINE_UNMEASURED
-        )
-        if measured is not None and not unmeasured:
-            ids.extend(measured.failing_node_ids)
-            sources.append(
-                "the build's measured baseline (the wave-0 run on this "
-                "branch's base, before any task touched it)"
-            )
-        ledger_exists = False
-        try:
-            ledger_exists = (
-                Path(self.worktree_path) / "qa" / "known-failures.yaml"
-            ).exists()
-        except OSError:  # pragma: no cover - defensive
-            ledger_exists = bool(ledger)
-        if ledger_exists:
-            ids.extend(sorted(ledger))
-            sources.append(
-                "the repository's known-failure ledger "
-                "(qa/known-failures.yaml)"
-            )
-        if not sources:
-            if unmeasured:
-                return (
-                    False,
-                    [],
-                    f"{NO_BASELINE_COMPARISON}, and there is no "
-                    "qa/known-failures.yaml",
-                )
-            return (
-                False,
-                [],
-                "nothing on record: no measured baseline and no "
-                "qa/known-failures.yaml",
-            )
-        # De-duplicate, first-seen order.
-        seen: set = set()
-        unique: List[str] = []
-        for node in ids:
-            if node not in seen:
-                seen.add(node)
-                unique.append(node)
-        return True, unique, " and ".join(sources)
-
-    def compare_suite_against_base(
-        self,
-        test_result: "IndependentTestResult",
-        task_work_results: Optional[Dict[str, Any]] = None,
-    ) -> Optional[SuiteComparedToBase]:
-        """Read a whole-suite result as "what is NEW", not "is it all green".
-
-        Rich's ruling of 2026-09-09, second half. The bar is ZERO NET-NEW: a
-        failure the base already had is not this leg's failure, and the leg
-        passes when every failure it saw is one of those. Only the failures
-        OUTSIDE that set are named.
-
-        Returns ``None`` when the question does not arise — an absent signal
-        (never forgiven, never a pass), or output whose failing test names
-        could not be read at all (a non-pytest stack: the plain exit-code
-        rule stands and the failure stands with it).
-
-        THE ENTIRELY-RED CASE, deliberately not forgiven. If a run collapses
-        — the database never came up, a conftest failed to import, every test
-        errored — then "every failure is in the base's list" can be true by
-        accident and would forgive a suite that proved nothing. So
-        forgiveness also requires that the run VISIBLY DID WORK: at least one
-        test passed. A run where nothing passed is reported red with that
-        said in words.
-
-        THE BASE-UNKNOWN CASE, also not forgiven. When neither the measured
-        baseline nor the ledger exists, nothing is known about the base, and
-        an absence of knowledge is not evidence of innocence: forgiving on
-        the strength of "we do not know" would forgive every failure of a red
-        suite — including a test this very task wrote, because the only thing
-        naming the task's own files is ``task_work_results.json``, which is
-        itself often missing or incomplete. So no comparison is made at all
-        (``None``), the plain exit-code rule stands, and the run's red stands
-        with it. The Coach's own gate reaches the same verdict in the same
-        state — it charges every failure when neither source answered — so
-        the leg and the Coach still agree, which is the whole reason this
-        deterministic phase exists. A repository that wants its base's
-        failures subtracted here records them: the wave-0 baseline, or its
-        own ``qa/known-failures.yaml`` ledger.
-        """
-        if not baseline_diff_enabled():
-            # The operator's existing kill switch
-            # (``GUARDKIT_AUTOBUILD_BASELINE_DIFF=0``) turns off every
-            # subtraction in a build, this one included: every failure is
-            # then charged, as it was before any of this existed.
-            logger.info(
-                "zero-net-new: skipped, the baseline diff is turned off "
-                "(GUARDKIT_AUTOBUILD_BASELINE_DIFF)"
-            )
-            return None
-        if test_result.signal_absent or test_result.tests_passed is not False:
-            return None
-        observed = failing_node_ids(test_result.raw_output)
-        if not observed:
-            return None
-
-        base_known, base_ids, base_source = self.base_failing_tests()
-
-        if not base_known:
-            # FAIL CLOSED. Nothing is on record about the base, so there is
-            # nothing to subtract and no comparison to make: this method
-            # returns None and the run's own red stands, whole. A verdict
-            # needs positive evidence, which is the same reason the
-            # entirely-red run below is not forgiven either.
-            logger.info(
-                "zero-net-new: no comparison made — %s. Every failure in "
-                "this run is charged (fail closed).",
-                base_source,
-            )
-            return None
-
-        # The estate's own subtraction, unchanged:
-        # observed - (measured baseline union ledger), plus anything in a
-        # test file this task itself authored (a task cannot hide behind
-        # the base for a test it was meant to fix).
-        authored = self._authored_test_files(task_work_results or {})
-        measured, ledger = self._baseline_context()
-        new_failures = compute_charged_failures(
-            observed_node_ids=observed,
-            baseline_node_ids=measured.failing_node_ids if measured else [],
-            ledger_ids=ledger,
-            authored_test_files=authored,
-        )
-        stale = [node for node in base_ids if node not in set(observed)]
-
-        # Forgiveness needs POSITIVE evidence that the run did work: at
-        # least one test actually passed. No such evidence (nothing passed,
-        # or no counts readable at all) means no forgiveness — fail closed.
-        summary = parse_pytest_summary(test_result.raw_output)
-        something_passed = bool(summary.parsed and (summary.passed or 0) > 0)
-
-        failures_total = len(observed)
-        inherited = failures_total - len(new_failures)
-        passes = not new_failures and something_passed
-
-        if not something_passed and not new_failures:
-            note = (
-                f"{failures_total} test(s) failed and nothing passed (no "
-                f"test is on record as having passed in this run). Every "
-                f"failure may be on the base's list, but a run in which "
-                f"nothing passed proves nothing, so it is not forgiven: "
-                f"this leg is red. Check that the suite could actually run."
-            )
-        elif passes:
-            note = (
-                f"{failures_total} test(s) failed, all {inherited} of them "
-                f"already failing on the base — nothing new. Forgiven on the "
-                f"word of {base_source}."
-            )
-        else:
-            note = (
-                f"{failures_total} test(s) failed: {inherited} the base "
-                f"already had, {len(new_failures)} newly failing."
-            )
-        if stale:
-            note += (
-                f" {len(stale)} test(s) recorded as failing on the base did "
-                f"not fail here — the record has gone stale in the good "
-                f"direction (or this command did not select them)."
-            )
-
-        logger.info(
-            "zero-net-new: %d failed, %d inherited, %d new (base from %s)",
-            failures_total,
-            inherited,
-            len(new_failures),
-            base_source,
-        )
-        return SuiteComparedToBase(
-            failures_total=failures_total,
-            inherited=inherited,
-            new_failures=list(new_failures),
-            stale_base_entries=list(stale),
-            base_known=base_known,
-            base_source=base_source,
-            passes=passes,
-            note=note,
-        )
 
     @staticmethod
     def _extract_content_text(content) -> str:
@@ -4231,80 +3894,39 @@ class CoachValidator:
         turn: Optional[int] = None,
     ) -> IndependentTestResult:
         """
-        Run tests independently to verify Player's report.
-
-        This is a "trust but verify" check - we run the tests ourselves
-        to ensure the Player's reported results are accurate.
+        Run the active part's declared test command (see ``_use_part``).
 
         Parameters
         ----------
         task_work_results : Optional[Dict[str, Any]]
-            Task-work results dict (already loaded in memory). Passed through
-            to _detect_test_command for primary test file detection.
+            Task-work results dict. Not read here; kept for the callers.
         task : Optional[Dict[str, Any]]
             Task data dict. When provided, ``requires_infrastructure`` is read
             from task frontmatter and Docker containers are started before test
             execution and stopped afterwards.
         turn : Optional[int]
-            Current turn number (1-based). When provided, enables the quinary
-            fallback in ``_detect_test_command`` that scans prior player turn
-            reports to find test files created in earlier turns.
+            Current turn number (1-based), for the run records.
 
         Returns
         -------
         IndependentTestResult
             Result of independent test execution
         """
-        # Interpreter consistency diagnostic (TASK-REV-CB30 R7;
-        # TASK-FIX-COACHPYENV adds resolved_interpreter so post-mortems can
-        # confirm Coach ran under the bootstrap venv, not host PATH pytest).
-        import shutil
-        which_pytest = shutil.which("pytest")
-        logger.info(
-            "Test execution environment: sys.executable=%s, "
-            "which pytest=%s, coach_test_execution=%s, "
-            "resolved_interpreter=%s",
-            sys.executable,
-            which_pytest,
-            self._coach_test_execution,
-            self._pytest_interpreter(),
-        )
-
-        # Determine test command (pass task_id and results for task-specific filtering)
-        #
-        # ONE COMMAND, TWO CALLERS. This method is the single place a test
-        # command is chosen inside a build. The work leg's deterministic
-        # Phase-4 runner
-        # (``specialist_invocations._run_deterministic_phase_4``) calls it, and
-        # so does the Coach's own independent verification. They therefore run
-        # the SAME command by construction — which is the whole reason the
-        # deterministic phase exists, and why a repository's declared command
-        # cannot be honoured on one side of that pair and guessed on the other.
+        # The active part's declared command (or a caller-supplied one).
         if self.test_command:
             test_cmd = self.test_command
             self._test_command_source = "caller-supplied test command"
         else:
-            test_cmd = self._detect_test_command(
-                self.task_id, task_work_results=task_work_results, turn=turn
-            )
+            test_cmd = self._detect_test_command()
 
-        # If test_cmd is None, it means task-specific filtering was requested
-        # but no matching tests were found. Skip verification in this case.
+        # No declared command for this part: the check could not run, and
+        # says what is missing. GuardKit never guesses one (31 October 2026).
         if test_cmd is None:
-            # TS-lane D.1b: the deleted pytest default's replacement. When the
-            # WHOLE ladder came up empty (no declaration, no marker), this is
-            # an instrument fault — surfaced as ABSENT (UNKNOWN), which can
-            # never read as a pass. The narrower "this task wrote no tests in a
-            # shared worktree" case below is unchanged.
-            if self._detection_absence:
-                return IndependentTestResult.absent(
-                    test_command="<no test command declared or detected>",
-                    test_output_summary=self._detection_absence,
-                    duration_seconds=0.0,
-                )
-            logger.info(f"No task-specific tests found for {self.task_id}, skipping independent verification")
-            return IndependentTestResult.skipped(
-                test_output_summary=f"No task-specific tests found for {self.task_id}, skipping independent verification",
+            return IndependentTestResult.could_not_run(
+                test_command="<nothing declared>",
+                detail=self._detection_absence or "nothing declared",
+                duration_seconds=0.0,
+                allow_worktree_fallback=False,
             )
 
         # Infrastructure lifecycle for tasks with requires_infrastructure
@@ -4529,16 +4151,6 @@ class CoachValidator:
                     # held back from this command (13 October 2026).
                     summary = f"{summary}\n{self._held_back_note()}"
 
-                # TASK-FIX-BSEXTRAS01 (absence-of-failure-is-not-success):
-                # distinguish "the oracle ran and the Player's tests failed"
-                # from "the oracle never ran". When the pinned interpreter has
-                # no pytest (``python -m pytest`` → "No module named pytest")
-                # or pytest collected zero tests (exit code 5), there is NO
-                # signal about the Player's work — it must surface as
-                # signal_absent (UNKNOWN), never a Player test failure.
-                # Narrowly scoped to the runner itself: a Player test importing
-                # a missing *app* module ("No module named myapp") still fails
-                # as a real defect.
                 signal_absent = False
                 # TASK-AB-NPDET01: a non-Python deterministic run classifies
                 # absence stack-awarely on BOTH the success and failure branch —
@@ -4547,9 +4159,6 @@ class CoachValidator:
                 # "No test is available"; npm "no test specified") is an ABSENT
                 # signal (UNKNOWN), never a pass; a missing toolchain (exit 127 /
                 # "command not found") is ABSENT, never a Player test failure.
-                # The pytest classifier below is left byte-for-byte (the
-                # TASK-AB-PERTASKFG01 fix) and stays the path when no non-Python
-                # stack profile is active (``_active_stack_profile is None``).
                 if self._active_stack_profile is not None:
                     stack_combined = (result.stdout or "") + (result.stderr or "")
                     if classify_absent_for_stack(
@@ -4568,65 +4177,18 @@ class CoachValidator:
                             test_cmd,
                         )
                 elif not tests_passed:
+                    # A missing program (exit 126 or 127, or the shell's own
+                    # "command not found") means the command could not run.
+                    # No other reading of the output is applied: a declared
+                    # command that ran and exited non-zero failed (31 October
+                    # 2026, no framework-shaped readings).
                     combined = (result.stdout or "") + (result.stderr or "")
-                    runner_absent = "No module named pytest" in combined
-                    no_tests_collected = result.returncode == 5
-                    # TASK-AB-PERTASKFG01 fix #4 (absence-of-failure-is-not-success):
-                    # a conftest/collection import failure means pytest could not
-                    # even load the suite, so ZERO tests executed — the oracle
-                    # produced NO verdict on the Player's code. That is an ABSENT
-                    # signal (the test framework / its deps could not load, e.g. a
-                    # missing pytest_asyncio / app dep in the bootstrap venv —
-                    # exit code 2/4, not 5), NOT a Player test failure. Without
-                    # this, the conftest ModuleNotFoundError was mis-recorded as
-                    # "ran-and-failed" (signal_absent=False) and sent the Player
-                    # after an environment error. A Player *test* that imports a missing app
-                    # module still surfaces as a real failure: those report a test
-                    # summary and exit 1, not a collection error.
-                    collection_failed = (
-                        "ImportError while loading conftest" in combined
-                        or "errors during collection" in combined
-                        or "error collecting" in combined
-                    )
-                    # TASK-ABFIX-011 (constraint 3, defence-in-depth): if our
-                    # gated --timeout injection ever mis-fires (plugin vanished
-                    # between probe and run), pytest exits rc-4 'unrecognized
-                    # arguments: --timeout' having run ZERO tests. That is an
-                    # ABSENT signal (ABFIX-010 carries it as None, fed back), never
-                    # a counted Player failure — fail toward feedback. The match is
-                    # narrow, so a genuine exit-1 test failure is never masked.
-                    timeout_usage_error = self._is_pytest_timeout_usage_error(
-                        result.returncode, combined
-                    )
-                    # TASK-ABFIX-012: a missing host tool (the test command itself,
-                    # or a tool a test shells out to — rc 126/127 or a shell
-                    # "command not found") means the oracle could not run. ABSENT
-                    # signal (routes through the existing absent guard → feedback,
-                    # bounded by max_turns), never a Player test failure (the
-                    # false-red ABFIX-010 prevents).
-                    host_substrate_gap = self._is_host_substrate_gap(
-                        result.returncode, combined
-                    )
-                    if (
-                        runner_absent
-                        or no_tests_collected
-                        or collection_failed
-                        or timeout_usage_error
-                        or host_substrate_gap
-                    ):
+                    if self._is_host_substrate_gap(result.returncode, combined):
                         signal_absent = True
                         logger.warning(
-                            "Independent test oracle did not run "
-                            "(returncode=%s, runner-absent=%s/no-tests-collected=%s"
-                            "/collection-failed=%s/timeout-usage-error=%s"
-                            "/host-substrate-gap=%s) — "
-                            "treating as absent signal, not a test failure. cmd=%s",
+                            "Independent test command could not run "
+                            "(returncode=%s) — not a test failure. cmd=%s",
                             result.returncode,
-                            runner_absent,
-                            no_tests_collected,
-                            collection_failed,
-                            timeout_usage_error,
-                            host_substrate_gap,
                             test_cmd,
                         )
 
@@ -4958,121 +4520,38 @@ class CoachValidator:
     # Helper Methods
     # ========================================================================
 
-    def _task_id_to_pattern_prefix(self, task_id: str) -> str:
-        """
-        Convert task ID to a pattern-matching prefix.
+    def _detect_test_command(self) -> Optional[str]:
+        """The active part's declared test command, or ``None``.
 
-        Converts task IDs like "TASK-XXX-YYYY" to "task_xxx_yyyy" for
-        matching against test file naming conventions.
-
-        Parameters
-        ----------
-        task_id : str
-            Task identifier (e.g., "TASK-XXX-YYYY")
-
-        Returns
-        -------
-        str
-            Lowercase underscore-separated pattern prefix
-        """
-        return task_id.replace("-", "_").lower()
-
-    def _find_first_checkpoint_parent(self) -> Optional[str]:
-        """
-        Find the parent commit of the first checkpoint for cumulative diff.
-
-        Reads the checkpoints.json file to get the first checkpoint's commit hash,
-        then returns the parent commit hash (commit~1). This is used for cumulative
-        git diff to find test files created in earlier turns.
-
-        Returns
-        -------
-        Optional[str]
-            Parent commit hash, or None if checkpoints file not found or invalid
-        """
-        if not self.task_id:
-            return None
-
-        try:
-            checkpoints_file = (
-                self.worktree_path / ".guardkit" / "autobuild"
-                / self.task_id / "checkpoints.json"
-            )
-
-            if not checkpoints_file.exists():
-                logger.debug(f"No checkpoints file found at {checkpoints_file}")
-                return None
-
-            data = json.loads(checkpoints_file.read_text())
-            checkpoints = data.get("checkpoints", [])
-
-            if not checkpoints:
-                logger.debug("Checkpoints file exists but contains no checkpoints")
-                return None
-
-            first_commit = checkpoints[0].get("commit_hash")
-            if not first_commit:
-                logger.debug("First checkpoint has no commit_hash")
-                return None
-
-            # Get parent commit (commit~1)
-            result = run_git(
-                ["rev-parse", f"{first_commit}~1"],
-                cwd=str(self.worktree_path),
-                timeout=10,
-            )
-
-            if result.returncode != 0:
-                logger.debug(f"Failed to get parent commit for {first_commit}")
-                return None
-
-            return result.stdout.strip()
-
-        except Exception as e:
-            logger.debug(f"Error finding first checkpoint parent: {e}")
-            return None
-
-    def _detect_test_command(
-        self,
-        task_id: Optional[str] = None,
-        task_work_results: Optional[Dict[str, Any]] = None,
-        turn: Optional[int] = None,
-    ) -> Optional[str]:
-        """Choose the test command, and record where the choice came from.
-
-        The choosing itself is :meth:`_detect_test_command_ladder`, unchanged.
-        This wrapper exists only so every caller gets
-        :attr:`_test_command_source` filled in alongside the command — the
-        work leg puts it in the Phase-4 record so a person reading a red leg
-        can see which command ran and why that one.
+        Only a declared command is run (after-task check redesign, 31 October
+        2026): the part's ``test`` from the pinned declaration. With none,
+        :attr:`_detection_absence` says what is missing; GuardKit never
+        guesses a command. Records where the command came from in
+        :attr:`_test_command_source`.
         """
         self._test_command_source = None
-        command = self._detect_test_command_ladder(
-            task_id, task_work_results=task_work_results, turn=turn
+        self._active_stack_profile = None
+        self._detection_absence = None
+        declared = self._declared_test_command()
+        if declared is None:
+            self._detection_absence = self._describe_detection_absence()
+            logger.error(self._detection_absence)
+            return None
+        self._active_stack_profile = self._declared_stack_profile(declared)
+        self._test_command_source = (
+            f"{DECLARED_COMMAND_SOURCE} (part {self._component!r})"
+            if self._component
+            else DECLARED_COMMAND_SOURCE
         )
-        if command is not None and self._test_command_source is None:
-            # A rung that did not name itself: everything below the
-            # declaration is a detection from the files in the worktree.
-            self._test_command_source = (
-                "detected from the worktree (task-specific test files or "
-                "stack markers)"
-            )
-        return command
-
-    def ran_the_repository_declaration(self) -> bool:
-        """Whether the last chosen test command came from the repository's own
-        declaration rather than from a guess.
-
-        The work leg asks this before it judges a run by ZERO NET-NEW: a
-        declared command is normally the repository's WHOLE suite, and only a
-        whole-suite run can be red for somebody else's defect. A run of the
-        task's own test files is judged exactly as it always was — every
-        failure in it belongs to this task.
-        """
-        return bool(
-            self._test_command_source
-            and self._test_command_source.startswith(DECLARED_COMMAND_SOURCE)
+        logger.info(
+            "Test command for %s from the pinned declaration%s: %s",
+            self.task_id,
+            f" (part {self._component!r}, in {self._component_toolchain.cwd})"
+            if self._component_toolchain is not None
+            else "",
+            declared,
         )
+        return declared
 
     def test_command_source(self) -> Optional[str]:
         """Where the last chosen test command came from, in plain words.
@@ -5082,392 +4561,20 @@ class CoachValidator:
         """
         return self._test_command_source
 
-    def _detect_test_command_ladder(
-        self,
-        task_id: Optional[str] = None,
-        task_work_results: Optional[Dict[str, Any]] = None,
-        turn: Optional[int] = None,
-    ) -> Optional[str]:
-        """
-        Auto-detect the test command based on project files.
-
-        When task_id is provided, attempts to find task-specific test files
-        using sources in priority order:
-        1. Primary: Extract test files from task_work_results (already in memory)
-        2. Secondary: Task-ID glob pattern on disk
-        3. Tertiary: Cumulative git diff from task's first checkpoint
-        4. Quaternary: Extract test files from completion_promises
-        5. Quinary: Scan prior player_turn_N.json reports for accumulated test files
-
-        If no task-specific tests are found and task_id was provided,
-        returns None to signal that independent verification should be skipped.
-        This is essential for shared worktrees where parallel tasks may have
-        tests with unmet dependencies.
-
-        Parameters
-        ----------
-        task_id : Optional[str]
-            Task identifier for task-specific test filtering. If provided,
-            the method will search for test files matching the task ID
-            pattern. If no matching tests found, returns None to skip
-            verification (prevents running all tests from parallel tasks).
-        task_work_results : Optional[Dict[str, Any]]
-            Task-work results dict (already loaded in memory). Used as
-            primary source for test file detection via files_created
-            and files_modified lists.
-        turn : Optional[int]
-            Current turn number (1-based). When provided, enables the quinary
-            fallback that scans prior player_turn_N.json files to find test
-            files accumulated from earlier turns. On iterative fix turns the
-            Player modifies source files without re-creating the test file, so
-            files_created/files_modified in the current results will not contain
-            the test file.
-
-        Returns
-        -------
-        Optional[str]
-            Detected test command, or None if task_id was provided but no
-            task-specific tests were found (signals to skip verification)
-        """
-        # TASK-AB-NPDET01: clear any stack profile from a prior call on a reused
-        # validator; only the non-Python registry branch below sets it.
-        self._active_stack_profile = None
-        # TS-lane D.1b: same discipline for the loud-absence marker.
-        self._detection_absence = None
-
-        # ---- the per-component seam: the FIRST rung, and the only one -----
-        # A task that names a component has told us which product it is
-        # working on. Its component's declared command is THE oracle — the
-        # Python task-specific rungs below must not pre-empt it (they would
-        # judge Dart work with whatever ``.py`` files happened to be touched),
-        # and the marker ladder must not follow it (that is the guess this
-        # declaration replaces). A task WITHOUT a component never enters here,
-        # so every existing repo's ladder is byte-unchanged.
-        if self._component:
-            if self._component_absence is not None:
-                self._detection_absence = self._component_absence
-                logger.error(self._detection_absence)
-                return None
-            declared = self._declared_test_command()
-            if declared is None:
-                self._detection_absence = self._describe_detection_absence()
-                logger.error(self._detection_absence)
-                return None
-            self._active_stack_profile = self._declared_stack_profile(declared)
-            self._test_command_source = (
-                f"{DECLARED_COMMAND_SOURCE} (component {self._component!r})"
-            )
-            logger.info(
-                "Test command for %s from the DECLARED component %r "
-                "(.guardkit/config.yaml `toolchain.components.%s.test`, pinned "
-                "pre-turn-1): %s [cwd=%s]",
-                task_id or self.task_id,
-                self._component,
-                self._component,
-                declared,
-                self._component_toolchain.cwd,
-            )
-            return declared
-
-        # ---- THE REPOSITORY'S OWN DECLARATION — above every guess --------
-        #
-        # RICH'S RULING, 2026-09-09: a leg runs what the repository declares.
-        #
-        # This rung used to sit BELOW the task-specific ladder, so a task that
-        # had written a test file of its own was judged by a bare
-        # ``pytest <that file>`` even in a repository that had said, in
-        # ``.guardkit/config.yaml``, exactly how its tests are to be run. On
-        # api_test that declaration is ``qa/run-suite.sh``, which stands up a
-        # throwaway PostgreSQL, runs the suite against it and takes it down.
-        # The consequence was a fork: a database test failed inside the work
-        # leg and passed at the merge-ready checkpoint, which has always
-        # honoured the declaration. Twenty-six attempts at one fix journey
-        # died in that fork.
-        #
-        # WHAT IT COSTS, said plainly: a declared command is usually the
-        # repository's WHOLE suite, where the old guess ran only the task's
-        # own tests. So a leg can now go red for a defect somebody else left
-        # behind, and in a parallel wave a sibling task's failure lands on
-        # this task's leg. That is the price of running what the repository
-        # declared, and it is the same price the merge-ready checkpoint has
-        # always charged. The declaration is not a guess; the ladder below it
-        # is. A repository that declares nothing reaches the next line with
-        # everything exactly as it was.
-        #
-        # ONE RULE, ONE READER: the command comes from the pre-turn-1 snapshot
-        # of the repository's ``toolchain:`` block, parsed by
-        # ``toolchain_declaration.load_toolchain_declaration`` — the same
-        # parse the merge check reads through
-        # ``completion_verification.declared_toolchain_test_command``. The
-        # snapshot, not the live file, because the live file sits inside the
-        # tree the model edits (design §B.4): a model that could rewrite its
-        # own test command could green itself.
-        declared = self._declared_test_command()
-        if declared is not None:
-            self._active_stack_profile = self._declared_stack_profile(declared)
-            self._test_command_source = DECLARED_COMMAND_SOURCE
-            logger.info(
-                "Test command%s from the repo's DECLARED toolchain "
-                "(.guardkit/config.yaml `toolchain.test`, pinned pre-turn-1): "
-                "%s%s",
-                f" for {task_id}" if task_id else "",
-                declared,
-                " [parallel wave: declaration honoured, no specialist "
-                "hand-off]" if self.is_parallel else "",
-            )
-            return declared
-
-        # Try task-specific filtering first (for shared worktrees)
-        if task_id:
-            # Primary: extract test files from task_work_results (already in memory)
-            if task_work_results:
-                cmd = self._detect_tests_from_results(task_work_results)
-                if cmd:
-                    return cmd
-
-            # Fallback: task-ID glob pattern on disk (recursive)
-            task_prefix = self._task_id_to_pattern_prefix(task_id)
-            # Pattern: tests/**/test_{task_prefix}*.py (recursive into subdirectories)
-            pattern = f"tests/**/test_{task_prefix}*.py"
-
-            logger.debug(f"Searching for task-specific tests: pattern={pattern}")
-            matching_files = list(self.worktree_path.glob(pattern))
-
-            if matching_files:
-                # Deduplicate and convert to relative paths
-                unique_files = list(set(matching_files))
-                rel_files = [
-                    str(f.relative_to(self.worktree_path)) for f in sorted(unique_files)
-                ]
-                # Drop pytest-bdd glue files (TASK-FIX-CC-BDD).
-                rel_files = self._filter_bdd_glue_files(rel_files)
-                if rel_files:
-                    files_str = " ".join(rel_files)
-                    logger.info(
-                        f"Task-specific tests detected for {task_id}: "
-                        f"{len(rel_files)} file(s)"
-                    )
-                    logger.debug(f"Test files: {files_str}")
-                    return f"pytest {files_str} -v --tb=short"
-
-            # No task-specific tests found via any method
-            logger.info(
-                f"No task-specific tests found for {task_id}, skipping independent verification. "
-                f"Glob pattern tried: {pattern}"
-            )
-
-            # Tertiary fallback: cumulative git diff from task's first checkpoint
-            # to HEAD. This finds test files created in any previous turn that
-            # are now invisible because checkpoint commits moved HEAD forward.
-            # Safe for shared worktrees: only includes files changed during
-            # THIS task's checkpoint range.
-            try:
-                first_parent = self._find_first_checkpoint_parent()
-                if first_parent:
-                    diff_result = run_git(
-                        ["diff", "--name-only", first_parent, "HEAD"],
-                        cwd=str(self.worktree_path),
-                        timeout=10,
-                    )
-                    if diff_result.returncode == 0:
-                        changed_files = diff_result.stdout.strip().split("\n")
-                        test_files = [
-                            f for f in changed_files
-                            if f.strip() and (
-                                (Path(f).name.startswith("test_") and f.endswith(".py"))
-                                or f.endswith("_test.py")
-                            ) and (self.worktree_path / f).exists()
-                        ]
-                        if test_files:
-                            # Drop pytest-bdd glue files (TASK-FIX-CC-BDD).
-                            test_files = self._filter_bdd_glue_files(
-                                sorted(test_files)
-                            )
-                        if test_files:
-                            files_str = " ".join(test_files)
-                            logger.info(
-                                f"Found test files via cumulative diff for "
-                                f"{task_id}: {len(test_files)} file(s)"
-                            )
-                            return f"pytest {files_str} -v --tb=short"
-            except Exception as e:
-                logger.debug(f"Cumulative diff fallback failed: {e}")
-
-            # Quaternary fallback: extract test files from completion_promises.
-            # When the Player references test files in completion_promises
-            # (e.g., pre-existing test files from scaffolding tasks), those
-            # files may not appear in files_created/files_modified or git diff
-            # because the Player didn't create or modify them this turn.
-            if task_work_results:
-                try:
-                    promises = task_work_results.get("completion_promises", [])
-                    promise_test_files = set()
-                    for promise in promises:
-                        test_file = promise.get("test_file")
-                        if test_file and isinstance(test_file, str):
-                            p = Path(test_file)
-                            if (
-                                (p.name.startswith("test_") and p.name.endswith(".py"))
-                                or p.name.endswith("_test.py")
-                            ) and (self.worktree_path / test_file).exists():
-                                promise_test_files.add(test_file)
-
-                    if promise_test_files:
-                        # Drop pytest-bdd glue files (TASK-FIX-CC-BDD).
-                        promise_files_filtered = self._filter_bdd_glue_files(
-                            sorted(promise_test_files)
-                        )
-                        if promise_files_filtered:
-                            files_str = " ".join(promise_files_filtered)
-                            logger.info(
-                                f"Found test files via completion_promises for "
-                                f"{task_id}: {len(promise_files_filtered)} file(s)"
-                            )
-                            return f"pytest {files_str} -v --tb=short"
-                except Exception as e:
-                    logger.debug(f"Completion promises test extraction failed: {e}")
-
-            # Quinary fallback: scan prior player_turn_N.json reports for
-            # accumulated test files (TASK-FIX-70F3).
-            # On iterative fix turns (turn >= 2), the Player modifies source
-            # files but does not re-create or re-modify the test file, so
-            # files_created/files_modified in the current results won't include
-            # it. Prior player reports *do* contain the test file in their
-            # files_created/files_modified, making them the reliable source of
-            # accumulated test file knowledge across turns.
-            # Accumulation is per-task (task_id required) to avoid bleeding
-            # between tasks sharing a worktree.
-            if turn and self.task_id:
-                for prev_turn in range(turn - 1, 0, -1):
-                    prev_path = TaskArtifactPaths.player_report_path(
-                        self.task_id, prev_turn, self.worktree_path
-                    )
-                    if prev_path.exists():
-                        try:
-                            prior_results = json.loads(prev_path.read_text())
-                            cmd = self._detect_tests_from_results(prior_results)
-                            if cmd:
-                                logger.info(
-                                    "Test files found via player_turn_%d.json for %s",
-                                    prev_turn,
-                                    self.task_id,
-                                )
-                                return cmd
-                        except Exception as e:
-                            logger.debug(
-                                f"Failed to read player_turn_{prev_turn}.json: {e}"
-                            )
-
-            # TASK-AB-NPDET01: no Python task-specific tests were found. Before
-            # deferring to the LLM ``test-orchestrator`` specialist (the
-            # historic non-Python path, which can hang on a tool-call-shy model),
-            # try a deterministic non-Python whole-suite command (dotnet/npm/go).
-            #
-            # TS-lane D.1b: THE DECLARATION WINS — over the marker guess
-            # below, and in PARALLEL WAVES TOO. It is now settled one rung
-            # higher still (above the task-specific ladder, at the top of this
-            # method, on Rich's 2026-09-09 ruling), so anything reaching here
-            # has no declaration at all and the marker guess is all there is.
-            #
-            # GUARD: a whole-suite command runs SIBLING tasks' tests too, so in a
-            # parallel wave it would attribute their failures to this task
-            # (false-red). Only take over when this is a SINGLE-task wave
-            # (``not self.is_parallel``); a parallel wave returns None below and
-            # keeps today's LLM-specialist fallback. Mirrors the runtime-parity
-            # ``wave_size > 1`` deferral.
-            if not self.is_parallel:
-                profile = detect_stack_profile(self.worktree_path)
-                if profile is not None:
-                    self._active_stack_profile = profile
-                    logger.info(
-                        "No Python task-specific tests for %s; running "
-                        "deterministic %s suite: %s",
-                        task_id,
-                        profile.stack,
-                        profile.whole_suite_command,
-                    )
-                    return profile.whole_suite_command
-            elif detect_stack_profile(self.worktree_path) is not None:
-                logger.info(
-                    "Non-Python stack detected for %s but wave_size>1 "
-                    "(parallel wave); deferring to the test-orchestrator "
-                    "specialist to avoid running sibling tasks' tests.",
-                    task_id,
-                )
-
-            return None
-
-        # TS-lane D.1b: the DECLARATION outranks every marker guess below
-        # it — and is now read at the top of this method, above the
-        # task-specific ladder too, so a repository reaching this line has
-        # declared nothing and the marker guesses are all there is.
-
-        # Fallback to original detection logic
-        # Check for Python projects
-        if (self.worktree_path / "pytest.ini").exists():
-            return "pytest tests/ -v --tb=short"
-        if (self.worktree_path / "pyproject.toml").exists():
-            return "pytest tests/ -v --tb=short"
-        if (self.worktree_path / "requirements.txt").exists():
-            return "pytest tests/ -v --tb=short"
-
-        # Check for Node.js projects
-        if (self.worktree_path / "package.json").exists():
-            return "npm test"
-
-        # Check for .NET projects
-        csproj_files = list(self.worktree_path.glob("*.csproj"))
-        if csproj_files:
-            return "dotnet test"
-
-        # TS-lane D.1b: THE PYTEST DEFAULT IS DELETED.
-        #
-        # This was the last unconditional stack assumption on the verdict path
-        # ("Could not detect project type, defaulting to pytest" →
-        # ``pytest tests/ -v --tb=short``). In a repo with no pytest it ran a
-        # command that could not possibly produce a verdict, and the shrug went
-        # into the log at WARNING while the build carried on.
-        #
-        # It is replaced by a LOUD ABSENCE, not by a quieter guess: an
-        # instrument fault naming the missing declaration and every rung of the
-        # ladder that came up empty. ``run_independent_tests`` turns this into
-        # ``signal_absent`` (UNKNOWN) — never a pass, never a Player test
-        # failure (``absence-of-failure-is-not-success.md``).
-        self._detection_absence = self._describe_detection_absence()
-        logger.error(self._detection_absence)
-        return None
-
     # ------------------------------------------------------------------
     # TS-lane D.1b — the declaration's three helpers
     # ------------------------------------------------------------------
 
     def _declared_test_command(self) -> Optional[str]:
-        """Return the declared ``test`` command for THIS TASK, or ``None``.
+        """The active part's declared ``test`` command, or ``None``.
 
         Reads ONLY the pre-turn-1 snapshot resolved in ``__init__`` (design
         §B.4) — never the live ``<worktree>/.guardkit/config.yaml``, which the
-        Player can edit.
-
-        THE TASK'S COMPONENT IS RESOLVED FIRST. A task that named a component
-        gets that component's ``test:`` and nothing else; a task that named
-        none gets the root block, exactly as before the components field
-        existed.
-
-        THE MERGE CHECK'S TWIN. ``completion_verification`` asks the same
-        question of a merge target through
-        ``declared_toolchain_test_command`` / ``resolve_verify_command``, and
-        both roads end at the one parser,
-        ``toolchain_declaration.load_toolchain_declaration``. They differ in
-        WHICH copy of the file they read, and deliberately: the merge check
-        reads the merged repository, while this reads the pre-turn-1 snapshot,
-        because the worktree copy is inside the tree the model edits. If the
-        rule ever needs changing, change it in the parser — never twice.
+        Player can edit. The active part is a component or pattern part
+        (its own ``test``) or the root component (the top-level ``test``).
         """
         if self._component_toolchain is not None:
             return self._component_toolchain.test or None
-        if self._component:
-            # Named-but-undeclared: never the root command (see __init__).
-            return None
         if self._toolchain is None:
             return None
         return self._toolchain.test or None
@@ -5529,36 +4636,6 @@ class CoachValidator:
             )
         return resolved
 
-    def _describe_component_absence(self, component: str) -> str:
-        """The loud message for a task naming an undeclared component."""
-        declared = (
-            ", ".join(self._toolchain.component_names)
-            if self._toolchain is not None and self._toolchain.component_names
-            else "<none>"
-        )
-        root_state = (
-            "no `toolchain:` block is pinned for this task"
-            if self._toolchain is None
-            else "the pinned `toolchain:` block declares no such component"
-        )
-        return (
-            f"INSTRUMENT FAULT: task {self.task_id or 'this run'} selects "
-            f"`component: {component}` but {root_state}. Declared components: "
-            f"{declared}.\n"
-            "The oracle is ABSENT (UNKNOWN) — this is NOT a test failure and "
-            "NOT a pass. The root `test:` command is DELIBERATELY NOT used as "
-            "a fallback: judging one component's work with another's suite is "
-            "the false verdict this seam exists to remove.\n"
-            "FIX: declare the component, or correct the task's `component:` "
-            "key.\n"
-            "  # <repo>/.guardkit/config.yaml\n"
-            "  toolchain:\n"
-            "    components:\n"
-            f"      {component}:\n"
-            '        cwd:  "app"\n'
-            '        test: "flutter test"'
-        )
-
     def _declared_stack_profile(self, command: str) -> Optional[StackTestProfile]:
         """Overlay the declaration onto the matching stack row, if any.
 
@@ -5617,257 +4694,21 @@ class CoachValidator:
         return _checker_declared_env(self, git_ceiling)
 
     def _describe_detection_absence(self) -> str:
-        """Build the actionable message for the deleted pytest default.
-
-        Names the missing declaration FIRST (it is the fix), then every rung
-        of the detection ladder that came up empty, so the reader never has to
-        reconstruct what was tried.
-        """
-        # Per-component seam: a selected-but-testless component gets its own
-        # message and STOPS — the ladder below is about the root component and
-        # naming its empty rungs here would suggest a fallback that must never
-        # happen.
-        if self._component and self._component_toolchain is not None:
-            return (
-                "INSTRUMENT FAULT: no test command could be resolved for "
-                f"{self.task_id or 'this run'} in {self.worktree_path}. "
-                "The independent-test oracle is ABSENT (UNKNOWN) — this is NOT "
-                "a test failure and NOT a pass.\n"
-                f"  1. DECLARATION: the task selects `component: "
-                f"{self._component}` (cwd={self._component_toolchain.cwd!r}) "
-                "and that component declares no `test:` command.\n"
-                "  2. The root `test:` is NOT used as a fallback, by design — "
-                "one component's suite is not a verdict on another's work.\n"
-                "FIX: declare the component's own test command, e.g.\n"
-                "  # <repo>/.guardkit/config.yaml\n"
-                "  toolchain:\n"
-                "    components:\n"
-                f"      {self._component}:\n"
-                f'        cwd:  "{self._component_toolchain.cwd}"\n'
-                '        test: "flutter test"'
-            )
-        declared_state = (
-            "no `toolchain:` block found in <repo>/.guardkit/config.yaml"
+        """The plain sentence for a part with no declared test command."""
+        where = (
+            f"part {self._component!r} (folder {self._component_toolchain.cwd})"
+            if self._component_toolchain is not None
+            else "the root of the project"
+        )
+        state = (
+            "no `toolchain:` block is pinned for this task"
             if self._toolchain is None
-            else "a `toolchain:` block exists but declares no `test:` command"
+            else f"the pinned `toolchain:` block declares no `test:` for {where}"
         )
         return (
-            "INSTRUMENT FAULT: no test command could be resolved for "
-            f"{self.task_id or 'this run'} in {self.worktree_path}. "
-            "The independent-test oracle is ABSENT (UNKNOWN) — this is NOT a "
-            "test failure and NOT a pass.\n"
-            f"  1. DECLARATION: {declared_state}.\n"
-            "  2. Python markers: no pytest.ini, no pyproject.toml, no "
-            "requirements.txt at the worktree root.\n"
-            "  3. Node marker: no package.json at the worktree root.\n"
-            "  4. .NET marker: no *.csproj at the worktree root.\n"
-            "FIX: declare the command the repo actually uses, e.g.\n"
-            "  # <repo>/.guardkit/config.yaml\n"
-            "  toolchain:\n"
-            '    test: "npm test"\n'
-            "(Until TS-lane D.1b this fell through to "
-            '`pytest tests/ -v --tb=short` with a logged shrug, which ran a '
-            "command the repo may not even have. A guessed oracle is worse "
-            "than a named absence.)"
-        )
-
-    def _load_collect_ignore_glob(self) -> List[str]:
-        """Load ``collect_ignore_glob`` patterns from the root ``conftest.py``.
-
-        Uses AST parsing so the file is never executed. Returns an empty list
-        when the file does not exist, contains no ``collect_ignore_glob``
-        assignment, or cannot be parsed.
-
-        Returns
-        -------
-        List[str]
-            Glob patterns identical to those pytest would use for exclusion.
-        """
-        conftest = self.worktree_path / "conftest.py"
-        if not conftest.exists():
-            return []
-        try:
-            tree = ast.parse(conftest.read_text(encoding="utf-8"))
-        except (SyntaxError, OSError):
-            logger.debug("Could not parse conftest.py; skipping collect_ignore_glob")
-            return []
-
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.Assign):
-                continue
-            for target in node.targets:
-                if isinstance(target, ast.Name) and target.id == "collect_ignore_glob":
-                    if isinstance(node.value, ast.List):
-                        patterns = []
-                        for elt in node.value.elts:
-                            if isinstance(elt, ast.Constant) and isinstance(elt.value, str):
-                                patterns.append(elt.value)
-                        return patterns
-        return []
-
-    def _detect_tests_from_results(
-        self, task_work_results: Dict[str, Any]
-    ) -> Optional[str]:
-        """
-        Primary test detection: find test files from task_work_results.
-
-        Extracts test files (matching ``test_*.py`` or ``*_test.py``) from
-        the files_created/files_modified lists in task_work_results. Only
-        returns files that actually exist in the worktree. Files matching
-        any ``collect_ignore_glob`` pattern from the root ``conftest.py``
-        are excluded so they are not passed as explicit pytest arguments
-        (which would bypass pytest's automatic exclusion).
-
-        Parameters
-        ----------
-        task_work_results : Dict[str, Any]
-            Task-work results dict containing files_created and files_modified
-
-        Returns
-        -------
-        Optional[str]
-            pytest command targeting discovered test files, or None
-        """
-        ignore_patterns = self._load_collect_ignore_glob()
-
-        test_files = []
-        for file_list_key in ("files_created", "files_modified"):
-            for filepath in task_work_results.get(file_list_key, []):
-                normalized = self._normalize_to_relative(filepath)
-                basename = Path(normalized).name
-                if (basename.startswith("test_") and basename.endswith(".py")) or basename.endswith("_test.py"):
-                    full_path = self.worktree_path / normalized
-                    if full_path.exists():
-                        test_files.append(str(normalized))
-
-        if not test_files:
-            logger.debug("No test files found in task_work_results")
-            return None
-
-        # Filter files matching collect_ignore_glob patterns (fnmatch, same as pytest)
-        if ignore_patterns:
-            filtered = []
-            for tf in test_files:
-                matched = any(fnmatch.fnmatch(tf, pat) for pat in ignore_patterns)
-                if matched:
-                    pattern = next(pat for pat in ignore_patterns if fnmatch.fnmatch(tf, pat))
-                    logger.debug(
-                        f"Excluding test file '{tf}' (matches collect_ignore_glob pattern '{pattern}')"
-                    )
-                else:
-                    filtered.append(tf)
-            test_files = filtered
-
-        if not test_files:
-            logger.debug("All detected test files were excluded by collect_ignore_glob")
-            return None
-
-        # Drop pytest-bdd glue files (TASK-FIX-CC-BDD); they require
-        # task-tag-scoped execution via run_bdd_for_task, not unscoped pytest.
-        test_files = self._filter_bdd_glue_files(test_files)
-        if not test_files:
-            logger.debug(
-                "All detected test files were pytest-bdd glue; "
-                "deferring to run_bdd_for_task / bdd_results gate"
-            )
-            return None
-
-        # Deduplicate and build command
-        unique_files = sorted(set(test_files))
-        files_str = " ".join(unique_files)
-        logger.info(
-            f"Task-specific tests detected via task_work_results: "
-            f"{len(unique_files)} file(s)"
-        )
-        logger.debug(f"Test files (from task_work_results): {files_str}")
-        return f"pytest {files_str} -v --tb=short"
-
-    def _normalize_to_relative(self, filepath: str) -> str:
-        """Normalize a filepath to be relative to the worktree.
-
-        Handles both absolute paths (strips worktree prefix) and
-        relative paths (returned as-is).
-        """
-        p = Path(filepath)
-        if p.is_absolute():
-            try:
-                return str(p.relative_to(self.worktree_path))
-            except ValueError:
-                return filepath
-        return filepath
-
-    def _filter_bdd_glue_files(self, test_files: List[str]) -> List[str]:
-        """Drop pytest-bdd glue files from the independent_tests pytest cmd.
-
-        Defect: an unscoped ``pytest <files>`` invocation that includes
-        pytest-bdd glue collects every scenario in the matching ``.feature``
-        file, including scenarios tagged for downstream peer tasks. Their
-        unbound steps surface as ``FAILED``, the ``tests_passed`` /
-        ``scenarios_failed > 0`` gates fire, and the Coach rejects on a
-        deterministic, retry-immune signal. See TASK-FIX-CC-BDD and the
-        FEAT-39E1 post-mortem.
-
-        R1 DE-WIRE (Rich 08-14): the tag-scoped BDD oracle that used to own
-        glue execution is removed — nothing executes glue at all now. This
-        filter STAYS so the independent-tests command never collects
-        pytest-bdd glue (unscoped collection would newly EXECUTE scenarios,
-        exactly what R1 removes). The glue heuristic is inlined below so
-        bdd_runner.py is left unreferenced until R2 deletes both together.
-
-        Parameters
-        ----------
-        test_files : List[str]
-            Test file paths relative to ``self.worktree_path``.
-
-        Returns
-        -------
-        List[str]
-            ``test_files`` with pytest-bdd glue removed (preserves order).
-        """
-        plain: List[str] = []
-        excluded: List[str] = []
-        for tf in test_files:
-            full = self.worktree_path / tf
-            if self._is_bdd_glue_file(full):
-                excluded.append(tf)
-            else:
-                plain.append(tf)
-        if excluded:
-            logger.info(
-                "TASK-FIX-CC-BDD: Excluded %d pytest-bdd glue file(s) from "
-                "independent_tests pytest cmd; BDD execution is retired "
-                "(R1 de-wire). Excluded: %s",
-                len(excluded),
-                excluded,
-            )
-        return plain
-
-    @staticmethod
-    def _is_bdd_glue_file(file_path: Any) -> bool:
-        """Return True when the file appears to be pytest-bdd glue.
-
-        R1 DE-WIRE (Rich 08-14): inlined from ``bdd_runner.is_bdd_glue_file``
-        so the retired ``bdd_runner.py`` module is unreferenced from
-        production code (R2 deletes it). Detection is a cheap text scan for
-        pytest-bdd v8 import signatures: ``from pytest_bdd import``,
-        ``import pytest_bdd``, or ``pytest_bdd.scenarios(``. Returns
-        ``False`` for missing files, non-``.py`` files, and files that
-        cannot be read.
-        """
-        try:
-            p = Path(file_path)
-        except (TypeError, ValueError):
-            return False
-        if not p.is_file() or p.suffix != ".py":
-            return False
-        try:
-            text = p.read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            return False
-        return (
-            "pytest_bdd.scenarios(" in text
-            or "from pytest_bdd import" in text
-            or "import pytest_bdd" in text
+            f"nothing declared: {state}. GuardKit runs only the commands a "
+            "project declares in .guardkit/config.yaml (`toolchain.test`, a "
+            "component's `test`, or a `parts:` entry's `test`)."
         )
 
     def _is_host_substrate_gap(

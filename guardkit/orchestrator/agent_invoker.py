@@ -6821,13 +6821,10 @@ The builder's concerns, what it says remains, and the files git saw it create an
         Fires when ALL hold:
 
         * ``decision == "approve"`` — a feedback verdict already rejects; untouched.
-        * the task type's profile has ``tests_required`` (any type).
-        * ``independent_tests`` RAN and FAILED: ``tests_passed is False`` AND
-          ``signal_absent is False``. An ABSENT signal (including
-          ``check_could_not_run``) sends nothing back.
-        * the baseline exception did not cover it: ``_apply_baseline_diff``
-          reports a run as passed when every failure was verified as
-          pre-existing, so ``tests_passed is False`` here means it did not.
+        * ``independent_tests`` (the tests of the parts the task changed) RAN
+          and FAILED: ``tests_passed is False`` AND ``signal_absent is False``,
+          whatever the task type. An ABSENT signal sends nothing back; a check
+          that could not run stops the task before the reviewer runs.
 
         The failure classification exempts nothing (``code``,
         ``infrastructure``, ``parallel_contention`` and none alike); it only
@@ -9919,10 +9916,8 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                 # matched, kept for information only. It is not a measurement
                 # of the project's gate (Go alone prints a 0.0% line for a
                 # package with no tests before the real one), and 80 is not
-                # the project's number. So no verdict is drawn from it: the
-                # Coach runs the project's declared ``toolchain.coverage``
-                # when there is one, and otherwise coverage stays UNKNOWN,
-                # which cannot approve.
+                # the project's number. No verdict is drawn from it, and no
+                # coverage is measured on the per-task path.
                 "coverage": coverage,
                 "coverage_met": None,
                 "all_passed": quality_gates_passed,

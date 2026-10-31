@@ -19,8 +19,7 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-from guardkit.cli.autobuild import _load_baseline_failing, merge
-from tests.self_contained_python import self_contained_python
+from guardkit.cli.autobuild import merge
 
 
 def _git(repo: Path, *args: str) -> str:
@@ -197,171 +196,16 @@ class TestMergeConflict:
 
 
 class TestMergeVerifyExitCode:
-    def test_merged_with_tests_not_run_exits_zero(self, cli_runner, merge_repo):
-        # The fixture repo has no tests/ and no runner: verification resolves
-        # to no command -> "unverified". Since the cull (27 October 2026)
-        # tests that were not run do not fail the merge.
+    def test_merged_with_tests_not_run_exits_four(self, cli_runner, merge_repo):
+        # The fixture repo declares nothing: the check could not run, which
+        # is not a pass (31 October 2026), so the command exits 4.
         result = cli_runner.invoke(merge, ["FEAT-C1"])
 
-        assert result.exit_code == 0, result.output
+        assert result.exit_code == 4, result.output
         assert _branch_exists(merge_repo, "autobuild/FEAT-C1")
         # The merge itself happened; the report says the verify part plainly.
         assert (merge_repo / "feature.txt").exists()
         assert "tests were not run" in result.output
-
-
-# ---------------------------------------------------------------------------
-# --baseline-json parsing
-# ---------------------------------------------------------------------------
-
-
-class TestBaselineJsonLoading:
-    def test_bare_list(self, tmp_path: Path):
-        p = tmp_path / "baseline.json"
-        p.write_text(json.dumps(["tests/a.py::test_x"]), encoding="utf-8")
-        assert _load_baseline_failing(p) == ["tests/a.py::test_x"]
-
-    def test_baseline_object_with_failing_node_ids(self, tmp_path: Path):
-        p = tmp_path / "baseline.json"
-        p.write_text(
-            json.dumps(
-                {
-                    "command": "pytest",
-                    "passed": False,
-                    "failing_node_ids": ["tests/a.py::test_x", "tests/b.py::test_y"],
-                }
-            ),
-            encoding="utf-8",
-        )
-        assert _load_baseline_failing(p) == [
-            "tests/a.py::test_x",
-            "tests/b.py::test_y",
-        ]
-
-    def test_object_with_a_failing_list(self, tmp_path: Path):
-        """The shape the deploy sidecar hands over."""
-        p = tmp_path / "merge-baseline-FEAT-C1.json"
-        p.write_text(
-            json.dumps({"failing": ["tests/a.py::test_x"]}), encoding="utf-8"
-        )
-        assert _load_baseline_failing(p) == ["tests/a.py::test_x"]
-
-    def test_object_without_failing_node_ids_is_no_baseline(self, tmp_path: Path):
-        p = tmp_path / "baseline.json"
-        p.write_text(json.dumps({"command": "pytest"}), encoding="utf-8")
-        assert _load_baseline_failing(p) is None
-
-    def test_scalar_is_no_baseline(self, tmp_path: Path):
-        p = tmp_path / "baseline.json"
-        p.write_text(json.dumps(42), encoding="utf-8")
-        assert _load_baseline_failing(p) is None
-
-    def test_missing_file_is_a_cli_usage_error(
-        self, cli_runner, merge_repo
-    ):
-        result = cli_runner.invoke(
-            merge,
-            ["FEAT-C1", "--no-verify", "--baseline-json", "absent.json"],
-        )
-        # click.Path(exists=True) rejects it before the executor runs.
-        assert result.exit_code == 2
-        assert "absent.json" in result.output
-
-
-# ---------------------------------------------------------------------------
-# --measure-baseline / --no-measure-baseline
-# ---------------------------------------------------------------------------
-
-
-def _declare_toolchain_test(repo: Path, command: str) -> None:
-    config = repo / ".guardkit" / "config.yaml"
-    config.parent.mkdir(parents=True, exist_ok=True)
-    config.write_text(
-        "toolchain:\n" f"  test: {json.dumps(command)}\n", encoding="utf-8"
-    )
-
-
-@pytest.fixture
-def red_main_repo(tmp_path: Path, monkeypatch) -> Path:
-    """main carries one already-failing test; the branch adds a passing one."""
-    repo = _init_repo(tmp_path)
-    (repo / "pytest.ini").write_text("[pytest]\n", encoding="utf-8")
-    (repo / ".gitignore").write_text(
-        "__pycache__/\n*.pyc\n.pytest_cache/\n", encoding="utf-8"
-    )
-    tests = repo / "tests"
-    tests.mkdir()
-    (tests / "test_green.py").write_text(
-        "def test_green():\n    assert True\n", encoding="utf-8"
-    )
-    (tests / "test_already_red.py").write_text(
-        "def test_already_red():\n    assert False\n", encoding="utf-8"
-    )
-    # This session's interpreter and packages, independent of the real HOME:
-    # the merge runs the check with a private HOME (13 October 2026).
-    _declare_toolchain_test(
-        repo,
-        f'"{self_contained_python()}" -m pytest -q -p no:cacheprovider tests/',
-    )
-    _git(repo, "add", "-A")
-    _git(repo, "commit", "-q", "-m", "already red on main")
-    _git(repo, "checkout", "-q", "-b", "autobuild/FEAT-C1")
-    (tests / "test_new_green.py").write_text(
-        "def test_new_green():\n    assert True\n", encoding="utf-8"
-    )
-    _git(repo, "add", "-A")
-    _git(repo, "commit", "-q", "-m", "feature work")
-    _git(repo, "checkout", "-q", "main")
-    monkeypatch.chdir(repo)
-    return repo
-
-
-class TestMeasureBaselineOption:
-    def test_the_baseline_is_measured_by_default(self, cli_runner, red_main_repo):
-        result = cli_runner.invoke(merge, ["FEAT-C1", "--json"])
-
-        data = json.loads(result.output)
-        assert data["outcome"] == "merged"
-        assert data["baseline_measured"]["failing"] == [
-            "tests/test_already_red.py::test_already_red"
-        ]
-        assert data["baseline_measured"]["passed"] == 1
-        assert data["verify_source"] == "repository toolchain declaration"
-        # The already-red test is the target branch's, not this merge's.
-        assert data["charged_failures"] == []
-
-    def test_no_measure_baseline_charges_the_old_red(
-        self, cli_runner, red_main_repo
-    ):
-        result = cli_runner.invoke(
-            merge, ["FEAT-C1", "--json", "--no-measure-baseline"]
-        )
-
-        data = json.loads(result.output)
-        assert data["outcome"] == "merged"
-        assert data["baseline_measured"] is None
-        assert data["charged_failures"] == [
-            "tests/test_already_red.py::test_already_red"
-        ]
-        assert data["verify_status"] == "failed"
-        assert result.exit_code == 4
-
-    def test_a_supplied_baseline_file_turns_the_measurement_off(
-        self, cli_runner, red_main_repo, tmp_path
-    ):
-        baseline = tmp_path / "baseline.json"
-        baseline.write_text(
-            json.dumps({"failing": ["tests/test_already_red.py::test_already_red"]}),
-            encoding="utf-8",
-        )
-
-        result = cli_runner.invoke(
-            merge, ["FEAT-C1", "--json", "--baseline-json", str(baseline)]
-        )
-
-        data = json.loads(result.output)
-        assert data["baseline_measured"] is None
-        assert data["charged_failures"] == []
 
 
 # ---------------------------------------------------------------------------
@@ -376,5 +220,5 @@ class TestMergeHelp:
         assert "rollback path" in result.output
         assert "--expect-main-sha" in result.output
         assert "--no-verify" in result.output
-        assert "--measure-baseline" in result.output
-        assert "--no-measure-baseline" in result.output
+        assert "--measure-baseline" not in result.output
+        assert "--baseline-json" not in result.output

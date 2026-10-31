@@ -30,7 +30,6 @@ from guardkit.orchestrator.merge_executor import (
     OUTCOME_REFUSED,
     MergeReport,
     branch_to_merge,
-    charged_failures_from_output,
     conflicted_files_from_status,
     execute_merge,
     merge_commit_message,
@@ -368,82 +367,20 @@ class TestConflict:
 
 
 # ---------------------------------------------------------------------------
-# charged failures — with and without a baseline
-# ---------------------------------------------------------------------------
-
-
-_SUITE_OUTPUT = (
-    "FAILED tests/a.py::test_x - AssertionError\n"
-    "FAILED tests/b.py::test_y - ValueError\n"
-    "2 failed, 10 passed in 1.2s\n"
-)
-
-
-class TestChargedFailures:
-    def test_baseline_excuses_preexisting_reds(self, tmp_path: Path):
-        charged, notes = charged_failures_from_output(
-            tmp_path, _SUITE_OUTPUT, baseline_failing=["tests/a.py::test_x"]
-        )
-        assert charged == ["tests/b.py::test_y"]
-        assert notes == []
-
-    def test_no_baseline_reports_full_observed_set_with_note(
-        self, tmp_path: Path
-    ):
-        charged, notes = charged_failures_from_output(
-            tmp_path, _SUITE_OUTPUT, baseline_failing=None
-        )
-        # Never an invented clean: everything observed is reported.
-        assert charged == ["tests/a.py::test_x", "tests/b.py::test_y"]
-        assert any("no pre-merge baseline" in n for n in notes)
-        assert any("diff unavailable" in n for n in notes)
-
-    def test_empty_baseline_list_is_a_real_baseline_no_note(
-        self, tmp_path: Path
-    ):
-        charged, notes = charged_failures_from_output(
-            tmp_path, _SUITE_OUTPUT, baseline_failing=[]
-        )
-        assert charged == ["tests/a.py::test_x", "tests/b.py::test_y"]
-        assert notes == []
-
-    def test_known_failures_ledger_excuses(self, tmp_path: Path):
-        qa = tmp_path / "qa"
-        qa.mkdir()
-        (qa / "known-failures.yaml").write_text(
-            "known_failures:\n  - test_id: tests/a.py::test_x\n",
-            encoding="utf-8",
-        )
-        charged, _ = charged_failures_from_output(
-            tmp_path, _SUITE_OUTPUT, baseline_failing=[]
-        )
-        assert charged == ["tests/b.py::test_y"]
-
-    def test_green_suite_charges_nothing(self, tmp_path: Path):
-        charged, notes = charged_failures_from_output(
-            tmp_path, "12 passed in 0.4s\n", baseline_failing=None
-        )
-        assert charged == []
-        # A green suite with no baseline needs no scary note.
-        assert notes == []
-
-
-# ---------------------------------------------------------------------------
 # execute_merge with verification on (hermetic: no runner in the fixture repo)
 # ---------------------------------------------------------------------------
 
 
 class TestExecuteMergeWithVerify:
-    def test_tests_not_run_do_not_fail_the_merge(self, merge_repo: Path):
-        # The fixture repo has no pyproject/tests -> no runner is detected.
+    def test_tests_not_run_are_not_ok(self, merge_repo: Path):
+        # The fixture repo declares nothing, so nothing is run.
         report = execute_merge(merge_repo, "FEAT-X", verify=True)
         assert report.outcome == OUTCOME_MERGED
-        # No runner could be found, so no post-merge run was attempted
-        # (2026-09-06 spec, rule 12); since the cull that is reported, not
-        # failed.
+        # No post-merge run was attempted (2026-09-06 spec, rule 12), and a
+        # check that could not run is not ok (31 October 2026).
         assert report.verify_ran is False
         assert report.verify_status == "unverified"
-        assert report.verify_ok is True
+        assert report.verify_ok is False
         assert "validate_valid" not in report.to_dict()
         assert _branch_exists(merge_repo, "autobuild/FEAT-X")
         receipt = "\n".join(report.receipt_lines())
@@ -467,7 +404,6 @@ class TestReportShape:
             verify_ran=True,
             verify_status="passed",
             verify_detail="12 passed",
-            charged_failures=(),
             notes=("a note",),
         )
         d = report.to_dict()
@@ -476,22 +412,22 @@ class TestReportShape:
         assert d["pre_sha"] == "a" * 40
         assert d["post_sha"] == "b" * 40
         assert d["verify_ok"] is True
-        assert d["charged_failures"] == []
         assert d["conflict_files"] == []
         assert d["notes"] == ["a note"]
-        assert isinstance(d["charged_failures"], list)
+        assert "charged_failures" not in d
+        assert "baseline_measured" not in d
 
     @pytest.mark.parametrize(
         "kwargs, ok",
         [
             ({"verify_status": "failed"}, False),
-            ({"charged_failures": ("tests/a.py::test_x",)}, False),
             ({"verify_status": None, "verify_ran": False}, False),
-            ({"verify_status": "unverified", "verify_ran": False}, True),
+            ({"verify_status": "unverified", "verify_ran": False}, False),
+            ({"verify_status": "unverified", "verify_ran": True}, False),
             ({}, True),
         ],
     )
-    def test_verify_ok_is_false_only_for_tests_that_failed(self, kwargs, ok):
+    def test_verify_ok_is_true_only_for_passed(self, kwargs, ok):
         base = dict(
             outcome=OUTCOME_MERGED,
             feature_id="FEAT-X",

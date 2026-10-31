@@ -1101,6 +1101,11 @@ ALLOWED: Dict[Tuple[str, str], str] = {
         "builds its environment with the helper unless the merge hands in the one "
         "it built with the same helper; every call is checked"
     ),
+    ("orchestrator/completion_verification.py", "_run_one"): (
+        "one command of run_completion_verification: builds its environment "
+        "with the helper unless the caller hands in the one it built with the "
+        "same helper; every call is checked"
+    ),
     ("orchestrator/process_group.py", "run_in_own_group"): (
         "generic runner (a process group of its own); every call is checked"
     ),
@@ -1123,9 +1128,6 @@ ALLOWED: Dict[Tuple[str, str], str] = {
     ),
     ("orchestrator/quality_gates/coach_validator.py", "_begin_run_evidence"): (
         "passes on the env of a _run_recorded call, each of which is checked"
-    ),
-    ("orchestrator/merge_executor.py", "measure_pre_merge_baseline"): (
-        "the merge's environment from prepare_tree (project_command_environment), merge design item 2a"
     ),
     ("orchestrator/merge_executor.py", "verify_merged"): (
         "the merge's environment from prepare_tree (project_command_environment), merge design item 2a"
@@ -1201,15 +1203,15 @@ GENERIC_RUNNERS: Dict[Tuple[str, str], Dict[str, Any]] = {
         "names": {"run_completion_verification"},
         "default_is_safe": True,
     },
+    ("orchestrator/completion_verification.py", "_run_one"): {
+        "names": {"_run_one"},
+        "scope": {"orchestrator/completion_verification.py"},
+    },
     ("orchestrator/process_group.py", "run_in_own_group"): {
         "names": {"run_in_own_group"},
     },
     ("orchestrator/process_group.py", "run_project_command"): {
         "names": {"run_project_command"},
-    },
-    ("orchestrator/merge_executor.py", "measure_pre_merge_baseline"): {
-        "names": {"measure_pre_merge_baseline"},
-        "default_is_safe": True,
     },
     ("orchestrator/merge_executor.py", "verify_merged"): {
         "names": {"verify_merged"},

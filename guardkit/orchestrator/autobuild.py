@@ -1466,7 +1466,6 @@ class AutoBuildOrchestrator:
         requires_infrastructure = None  # Reset; will be resolved via frontmatter then precedence
         _task_bo_unset = object()
         _task_bo_raw: Any = _task_bo_unset
-        _component_raw: Any = None
         try:
             task_data = TaskLoader.load_task(task_id, repo_root=self.repo_root)
             frontmatter = task_data.get("frontmatter", {})
@@ -1490,24 +1489,12 @@ class AutoBuildOrchestrator:
             consumer_context = frontmatter.get("consumer_context")
             if isinstance(consumer_context, list):
                 logger.debug(f"Loaded consumer_context from task file: {consumer_context}")
-            # PER-COMPONENT SEAM: the task's `component:` selector, lifted
-            # beside behavioural_oracle for the same reason and validated the
-            # same way — RAW here, LOUDLY outside this try. Selection is
-            # explicit and never inferred from the changed-file set: a
-            # mixed-touch task must be split, not silently assigned to one
-            # component (design §B.2).
-            _component_raw = frontmatter.get("component")
             # Writable sibling membership was frozen from admitted source
             # before this mutable task metadata was read.
         except TaskNotFoundError:
             logger.debug(f"Task file not found for {task_id}, continuing with task_type=None")
         except Exception as e:
             logger.debug(f"Failed to load task metadata from task file: {e}, continuing with defaults")
-            _component_raw = None
-
-        # PER-COMPONENT SEAM: the task's `component:` selector; a name the
-        # repository does not declare means the root component.
-        component: Optional[str] = self._resolve_task_component(task_id, _component_raw)
 
         if _task_bo_raw is not _task_bo_unset and _task_bo_raw is not None:
             # The per-task declaration outranks the feature-level one.
@@ -1686,7 +1673,6 @@ class AutoBuildOrchestrator:
                     consumer_context=consumer_context,
                     time_budget_seconds=time_budget_seconds,
                     behavioural_oracle=behavioural_oracle,  # TS-lane D.1a
-                    component=component,  # per-component seam
                 )
             finally:
                 # 17 October 2026: however the loop ended (an error or
@@ -1933,40 +1919,6 @@ class AutoBuildOrchestrator:
             and independent.test_command != "skipped"
         ):
             state["tests"] = False
-
-    def _resolve_task_component(
-        self, task_id: str, raw: Any
-    ) -> Optional[str]:
-        """PER-COMPONENT SEAM: the task's ``component:`` selector, or ``None``.
-
-        ``None`` means the root component. A name the repository's
-        ``toolchain.components`` does not declare also means the root
-        component.
-        """
-        if not isinstance(raw, str) or not raw.strip():
-            return None
-        name = raw.strip()
-
-        from guardkit.orchestrator.toolchain_declaration import (
-            load_toolchain_declaration,
-        )
-
-        declaration = load_toolchain_declaration(self.repo_root)
-        if declaration is None or declaration.component(name) is None:
-            logger.warning(
-                "Task %s selects `component: %s`, which the repository does "
-                "not declare; the root component is used.",
-                task_id, name,
-            )
-            return None
-        logger.info(
-            "Task %s selects component %r (cwd=%r, test=%r)",
-            task_id,
-            name,
-            declaration.component(name).cwd,
-            declaration.component(name).test,
-        )
-        return name
 
     def _setup_phase(
         self,
@@ -2602,7 +2554,6 @@ class AutoBuildOrchestrator:
         consumer_context: Optional[list] = None,
         time_budget_seconds: Optional[float] = None,
         behavioural_oracle: Optional[Any] = None,
-        component: Optional[str] = None,  # per-component seam
     ) -> Tuple[List[TurnRecord], Literal["approved", "max_turns_exceeded", "error", "cancelled", "timeout", "design_extraction_failed", "timeout_budget_exhausted"]]:
         """
         Phase 3: Execute Player↔Coach adversarial loop.
@@ -2843,8 +2794,7 @@ class AutoBuildOrchestrator:
                         consumer_context=consumer_context,
                         remaining_budget=remaining_budget,
                         behavioural_oracle=behavioural_oracle,  # TS-lane D.1a
-                        component=component,  # per-component seam
-                    )
+                        )
                 finally:
                     # The Player-phase measurement never outlives its turn.
                     self._set_progress_files_measure(None)
@@ -3123,7 +3073,6 @@ class AutoBuildOrchestrator:
         consumer_context: Optional[list] = None,
         remaining_budget: Optional[float] = None,
         behavioural_oracle: Optional[Any] = None,
-        component: Optional[str] = None,  # per-component seam
     ) -> TurnRecord:
         """
         Execute single Player→Coach turn.
@@ -3570,7 +3519,6 @@ class AutoBuildOrchestrator:
             wave_size=self.wave_size,
             effective_concurrency=getattr(self, "effective_concurrency", None),
             behavioural_oracle=behavioural_oracle,  # TS-lane D.1a
-            component=component,  # per-component seam
         )
         # Snapshot context status after coach invocation (TASK-FIX-GCW5)
         coach_context_status = self._last_coach_context_status
@@ -5467,7 +5415,6 @@ class AutoBuildOrchestrator:
         remaining_budget: Optional[float] = None,
         wave_size: int = 1,
         behavioural_oracle: Optional[Any] = None,
-        component: Optional[str] = None,  # per-component seam
         effective_concurrency: Optional[int] = None,
     ) -> AgentInvocationResult:
         """
@@ -5630,7 +5577,6 @@ class AutoBuildOrchestrator:
             context_prompt=context_prompt,
             start_time=start_time,
             behavioural_oracle=behavioural_oracle,  # TS-lane D.1a
-            component=component,  # per-component seam
             project_documents=project_documents,
             effective_concurrency=effective_concurrency,
         )
@@ -6014,7 +5960,6 @@ class AutoBuildOrchestrator:
         # TS-lane D.1a. Defaulted so a direct caller (and every existing
         # test that calls this path by hand) keeps its current signature.
         behavioural_oracle: Optional[Any] = None,
-        component: Optional[str] = None,  # per-component seam
         project_documents: tuple = (),
         effective_concurrency: Optional[int] = None,
     ) -> AgentInvocationResult:
@@ -6060,7 +6005,11 @@ class AutoBuildOrchestrator:
             # Whole-feature repair round only; None everywhere else.
             feature_check_repair=self._feature_check_repair,
             in_autobuild_context=True,  # WS3-S1 Q1 SPLIT (hard-abort)
-            component=component,  # per-component seam
+            # The task's starting commit: the files changed since it decide
+            # which parts' tests run (31 October 2026).
+            baseline_commit=getattr(
+                getattr(self, "task_work_scope", None), "baseline_commit", None
+            ),
         )
 
         # Step 1: gather evidence bundle. Never falls back to validate() on
@@ -6141,6 +6090,17 @@ class AutoBuildOrchestrator:
                 "Failed to persist coach evidence bundle for %s turn %s: %s",
                 task_id, turn, _evidence_exc,
             )
+
+        # The check could not run (a part's command would not start, timed
+        # out, gave no test signal or is not declared). Nothing was measured
+        # and it is not the builder's to fix, so the task is not approved and
+        # no builder turn is spent on it: the turn ends as a Coach failure,
+        # which stops the task with this sentence (31 October 2026).
+        stop = self._check_could_not_run_stop(
+            evidence_bundle, task_id, turn, start_time
+        )
+        if stop is not None:
+            return stop
 
         # TASK-AB-XREPOEV01 (AC-002): run the Coach's independent tests in any
         # declared sibling repo, attach the results to the evidence bundle (so
@@ -6268,6 +6228,36 @@ class AutoBuildOrchestrator:
                 duration_seconds=time.time() - start_time,
                 error=f"LLM Coach invocation crashed: {sdk_error}",
             )
+
+    def _check_could_not_run_stop(
+        self,
+        evidence_bundle: Optional["CoachEvidenceBundle"],
+        task_id: str,
+        turn: int,
+        start_time: float,
+    ) -> Optional[AgentInvocationResult]:
+        """A failed Coach result when the changed parts' check could not run,
+        else ``None``. The error names each part and command."""
+        independent = getattr(evidence_bundle, "independent_tests", None)
+        if independent is None or not getattr(independent, "check_could_not_run", False):
+            return None
+        detail = (
+            independent.check_could_not_run_detail
+            or independent.test_output_summary
+            or "the check could not run"
+        )
+        if not detail.lower().startswith("the check could not run"):
+            detail = f"The check could not run: {detail}"
+        logger.error("%s turn %s stopped: %s", task_id, turn, detail)
+        return AgentInvocationResult(
+            task_id=task_id,
+            turn=turn,
+            agent_type="coach",
+            success=False,
+            report={},
+            duration_seconds=time.time() - start_time,
+            error=detail,
+        )
 
     def _evidence_repo_gate(
         self,

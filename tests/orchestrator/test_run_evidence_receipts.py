@@ -1,4 +1,4 @@
-"""Repair 7: the baseline probe, smoke command and whole-feature check records.
+"""Repair 7: the smoke command and whole-feature check records.
 
 Each declared command GuardKit runs outside the Coach carries the same run
 record as the Coach's own check. Real commands in a real git worktree; the
@@ -9,14 +9,11 @@ from __future__ import annotations
 
 import json
 import subprocess
-import sys
 from pathlib import Path
-from unittest.mock import MagicMock
 
 import pytest
 import yaml
 
-from guardkit.orchestrator.baseline import BaselineResult, read_baseline_from_worktree
 from guardkit.orchestrator.feature_check import FeatureCheckAttempt, run_feature_check_command
 from guardkit.orchestrator.feature_loader import (
     Feature,
@@ -25,7 +22,6 @@ from guardkit.orchestrator.feature_loader import (
     FeatureTask,
     SmokeGates,
 )
-from guardkit.orchestrator.feature_orchestrator import FeatureOrchestrator
 from guardkit.orchestrator.run_evidence import (
     NOT_DECLARED,
     NOT_LOOKED_UP,
@@ -34,7 +30,6 @@ from guardkit.orchestrator.run_evidence import (
     request_from_repo,
 )
 from guardkit.orchestrator.smoke_gates import run_smoke_gate
-from guardkit.worktrees import Worktree
 
 
 def _git(cwd: Path, *args: str) -> str:
@@ -147,44 +142,6 @@ def _feature(command: str) -> Feature:
         execution=FeatureExecution(),
         smoke_gates=SmokeGates(after_wave="all", command=command, expected_exit=0),
     )
-
-
-def test_baseline_probe_record_is_written_with_the_run_record(wt, tmp_path):
-    repo_root = tmp_path / "main-checkout"
-    _declare(repo_root, {"environment_inventory": "printf 'pkg 1.0'"})
-    orch = FeatureOrchestrator(
-        repo_root=repo_root,
-        worktree_manager=MagicMock(),
-        task_timeout=3000,
-        timeout_multiplier=1.0,
-        max_turns=5,
-    )
-    feature = _feature(f'"{sys.executable}" -m pytest -q -p no:cacheprovider test_ok.py')
-    orch._run_baseline_probe(
-        feature,
-        Worktree(task_id="FEAT-X", branch_name="autobuild/FEAT-X", path=wt, base_branch="main"),
-    )
-
-    measured = orch._measured_baseline
-    assert measured is not None and measured.passed
-    record = measured.run_evidence
-    assert record["command_kind"] == "baseline probe"
-    assert record["observer"]["feature"] == "FEAT-X"
-    assert record["environment_inventory"]["output"] == "pkg 1.0"
-    assert record["source"]["before"]["head"] == _git(wt, "rev-parse", "HEAD").strip()
-
-    loaded = read_baseline_from_worktree(wt)
-    assert loaded is not None
-    assert loaded.run_evidence["command_kind"] == "baseline probe"
-
-
-def test_baseline_record_round_trips_and_old_records_read_empty():
-    old = BaselineResult.from_dict({"command": "x", "passed": True, "exit_code": 0})
-    assert old.run_evidence == {}
-    new = BaselineResult(
-        command="x", expected_exit=0, passed=True, exit_code=0, run_evidence={"a": 1}
-    )
-    assert BaselineResult.from_dict(new.to_dict()).run_evidence == {"a": 1}
 
 
 def test_a_blocked_declaration_read_never_holds_the_smoke_command(wt, tmp_path, monkeypatch):

@@ -1,12 +1,11 @@
 """TASK-AB-NPDET01 — CoachValidator wiring for non-Python deterministic Phase-4.
 
-Covers the integration of the declarative stack registry into CoachValidator:
-- ``_detect_test_command`` consults the registry ONLY after the Python-first
-  cascade misses, AND only in a single-task wave (the parallel-wave guard);
+Covers the stack registry's absence classifier in CoachValidator:
 - ``run_independent_tests`` classifies absence stack-awarely (missing toolchain /
   zero-test => signal_absent) on BOTH the success and failure branch;
-- the Python pytest absent classifier (TASK-AB-PERTASKFG01) is UNCHANGED when no
-  stack profile is active (the regression pin).
+- with no stack profile the exit code decides; no pytest-shaped reading is
+  applied to a command's output (31 October 2026). Marker-guessed commands
+  were removed the same day: commands come only from the declaration.
 
 Pure subprocess-mocked — no guardkitfactory, no harness env var (these paths
 force ``coach_test_execution='subprocess'`` and never dispatch select_harness).
@@ -44,73 +43,6 @@ def _detect_validator(tmp_path: Path, wave_size: int = 1) -> CoachValidator:
     )
     v._coach_test_execution = "subprocess"
     return v
-
-
-# ============================================================================
-# 1. Detection: registry consulted only after Python misses, single-task wave
-# ============================================================================
-
-
-class TestDetectionTaskIdPath:
-    def test_dotnet_single_task_wave_returns_command_and_sets_profile(self, tmp_path):
-        (tmp_path / "App.csproj").write_text("<Project/>")
-        v = _detect_validator(tmp_path, wave_size=1)
-        cmd = v._detect_test_command(_TASK_ID, task_work_results=None)
-        assert cmd == "dotnet test"
-        assert v._active_stack_profile is not None
-        assert v._active_stack_profile.stack == "dotnet"
-
-    def test_node_single_task_wave(self, tmp_path):
-        (tmp_path / "package.json").write_text("{}")
-        v = _detect_validator(tmp_path, wave_size=1)
-        assert v._detect_test_command(_TASK_ID, task_work_results=None) == "npm test"
-        assert v._active_stack_profile.stack == "node"
-
-    def test_go_single_task_wave(self, tmp_path):
-        (tmp_path / "go.mod").write_text("module x")
-        v = _detect_validator(tmp_path, wave_size=1)
-        assert v._detect_test_command(_TASK_ID, task_work_results=None) == "go test ./..."
-        assert v._active_stack_profile.stack == "go"
-
-    def test_parallel_wave_defers_to_specialist(self, tmp_path):
-        """wave_size>1: a whole-suite command would run sibling tasks' tests, so
-        the registry is NOT consulted -> None (LLM specialist fallback) and the
-        profile stays None. This guard is the load-bearing false-red defense."""
-        (tmp_path / "go.mod").write_text("module x")
-        v = _detect_validator(tmp_path, wave_size=2)
-        assert v._detect_test_command(_TASK_ID, task_work_results=None) is None
-        assert v._active_stack_profile is None
-
-    def test_python_task_specific_tests_take_precedence(self, tmp_path):
-        """A worktree with BOTH a go.mod and a Python task-specific test: the
-        Python-first cascade wins -> pytest command, registry NEVER consulted
-        (profile stays None)."""
-        (tmp_path / "go.mod").write_text("module x")
-        tests_dir = tmp_path / "tests"
-        tests_dir.mkdir()
-        # Matches the glob tests/**/test_{task_prefix}*.py
-        (tests_dir / "test_task_foo_001_x.py").write_text("def test_x():\n    pass\n")
-        v = _detect_validator(tmp_path, wave_size=1)
-        cmd = v._detect_test_command(_TASK_ID, task_work_results=None)
-        assert cmd is not None and cmd.startswith("pytest")
-        assert v._active_stack_profile is None
-
-    def test_unknown_stack_returns_none(self, tmp_path):
-        """No marker, no Python tests -> None (today's specialist fallback)."""
-        v = _detect_validator(tmp_path, wave_size=1)
-        assert v._detect_test_command(_TASK_ID, task_work_results=None) is None
-        assert v._active_stack_profile is None
-
-    def test_profile_reset_between_calls(self, tmp_path):
-        """A reused validator must not carry a stale profile: a second call on a
-        worktree with no markers clears the profile set by the first."""
-        (tmp_path / "App.csproj").write_text("<Project/>")
-        v = _detect_validator(tmp_path, wave_size=1)
-        v._detect_test_command(_TASK_ID, task_work_results=None)
-        assert v._active_stack_profile is not None
-        (tmp_path / "App.csproj").unlink()
-        v._detect_test_command(_TASK_ID, task_work_results=None)
-        assert v._active_stack_profile is None
 
 
 # ============================================================================
@@ -212,15 +144,14 @@ class TestRunIndependentTestsNonPython:
 
 
 # ============================================================================
-# 3. REGRESSION PIN — Python pytest absent classifier UNCHANGED (no profile)
+# 3. No stack profile: the exit code decides
 # ============================================================================
 
 
 class TestPytestClassifierRegression:
-    """When no non-Python stack profile is active, the pytest classifier
-    (TASK-AB-PERTASKFG01 fix #4) must behave exactly as before. These mirror
-    test_coach_signal_absent_classifier.py and pin must-fix #2: the registry was
-    added as a post-Python fallback, NOT a refactor of the pytest path."""
+    """With no stack profile a non-zero exit is a failure and zero a pass;
+    pytest's own exit codes (4, 5) and phrases are not read for any command
+    (31 October 2026)."""
 
     def _pytest_validator(self, tmp_path):
         v = CoachValidator(
@@ -230,18 +161,12 @@ class TestPytestClassifierRegression:
         assert v._active_stack_profile is None  # no stack profile on the pytest path
         return v
 
-    def test_conftest_import_error_still_absent(self, tmp_path):
-        v = self._pytest_validator(tmp_path)
-        out = "ImportError while loading conftest '/wt/tests/conftest.py'.\n"
-        with patch("subprocess.run", return_value=_proc(4, stdout=out)):
-            r = v.run_independent_tests()
-        assert r.signal_absent is True
-
-    def test_no_tests_collected_exit5_still_absent(self, tmp_path):
+    def test_exit_5_is_a_failure_not_an_absence(self, tmp_path):
         v = self._pytest_validator(tmp_path)
         with patch("subprocess.run", return_value=_proc(5, stdout="no tests ran")):
             r = v.run_independent_tests()
-        assert r.signal_absent is True
+        assert r.tests_passed is False
+        assert r.signal_absent is False
 
     def test_genuine_pytest_failure_still_not_absent(self, tmp_path):
         v = self._pytest_validator(tmp_path)

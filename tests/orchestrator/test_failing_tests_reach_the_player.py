@@ -121,7 +121,16 @@ def _declare_suite(root: Path, worktree: Path, output: str, exit_code: int) -> N
 
 
 def _turn(worktree: Path) -> Dict[str, Any]:
-    """One Coach turn over the real evidence run, with the reviewer approving."""
+    """One Coach turn over the real evidence run, with the reviewer approving.
+
+    The task changed a file in the root part (the worktree is not a git
+    checkout, so the builder's report names it), so the root's declared
+    suite is what runs (31 October 2026)."""
+    from guardkit.orchestrator.paths import TaskArtifactPaths
+
+    results = TaskArtifactPaths.task_work_results_path(_TASK, worktree)
+    results.parent.mkdir(parents=True, exist_ok=True)
+    results.write_text(json.dumps({"files_modified": ["src/users.py"]}))
     bundle = CoachValidator(str(worktree), task_id=_TASK).gather_evidence(
         task_id=_TASK, turn=1, task={"acceptance_criteria": [], "task_type": "feature"},
     )

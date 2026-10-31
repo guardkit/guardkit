@@ -30,11 +30,6 @@ import pytest
 
 from guardkit.orchestrator.agent_invoker import AgentInvoker
 from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
-from guardkit.orchestrator.baseline import (
-    BaselineResult,
-    feature_baseline_path,
-    write_baseline,
-)
 from guardkit.orchestrator.harness import AssistantMessageEvent, ResultMessageEvent
 from guardkit.orchestrator.paths import TaskArtifactPaths
 from guardkit.orchestrator.quality_gates.coach_evidence import (
@@ -65,7 +60,6 @@ CLASSES = ["code", "infrastructure", "parallel_contention", None]
 @pytest.fixture(autouse=True)
 def _pin_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("GUARDKIT_HARNESS", "sdk")
-    monkeypatch.delenv("GUARDKIT_AUTOBUILD_BASELINE_DIFF", raising=False)
 
 
 # ---------------------------------------------------------------------------
@@ -156,24 +150,6 @@ def _blocked_by_rule(report: Dict[str, Any]) -> bool:
     return any(
         issue.get("category") == REQUIRED_SUITE_FAILURE_CATEGORY
         for issue in report.get("issues", [])
-    )
-
-
-def _measured_red_base(worktree: Path) -> None:
-    """A measured baseline naming exactly the one failure the run reports."""
-    write_baseline(
-        feature_baseline_path(worktree, "FEAT-B463"),
-        BaselineResult(
-            command="bash qa/run-suite.sh",
-            expected_exit=0,
-            passed=False,
-            exit_code=1,
-            failing_node_ids=[
-                "tests/test_conftest_database_url.py::test_database_url"
-            ],
-            failing_count=1,
-            timestamp="2026-10-12T00:00:00",
-        ),
     )
 
 
@@ -332,9 +308,10 @@ class TestPrimaryTaskWorkPhase4SkippedForBudget:
 
 
 class TestPrimaryPositiveControls:
-    def test_signal_absent_is_not_a_failure(self, tmp_path: Path) -> None:
-        """A run that said nothing is not a red suite: the reviewer's approval
-        stands (the absence-of-failure guard went in the cull, 27 October 2026)."""
+    def test_signal_absent_is_not_sent_back_it_stops(self, tmp_path: Path) -> None:
+        """A run that said nothing (here a timeout) is not a red suite, so
+        nothing goes back to the builder; it is not a pass either, so the task
+        stops with the reason (31 October 2026)."""
         wt = _git_worktree(tmp_path)
         _write_results(wt, mode="direct")
         absent = IndependentTestResult.absent(
@@ -345,11 +322,16 @@ class TestPrimaryPositiveControls:
 
         result = _run_primary(wt, task_type="declarative", independent=absent)
 
-        assert result.report["decision"] == "approve"
+        assert result.success is False
+        assert "timed out after 300s" in result.error
         assert not _blocked_by_rule(result.report)
-        assert not _blocked_by_rule(_persisted(wt))
 
-    def test_check_could_not_run_keeps_todays_handling(self, tmp_path: Path) -> None:
+    def test_check_could_not_run_stops_the_task_without_a_builder_turn(
+        self, tmp_path: Path
+    ) -> None:
+        """31 October 2026: a check that could not run is neither approved nor
+        sent back; the Coach turn fails with the reason, which ends the task
+        before the reviewer runs."""
         wt = _git_worktree(tmp_path)
         _write_results(wt, mode="direct")
         could_not = IndependentTestResult.could_not_run(
@@ -360,12 +342,16 @@ class TestPrimaryPositiveControls:
 
         result = _run_primary(wt, task_type="declarative", independent=could_not)
 
-        assert not _blocked_by_rule(result.report)
-        assert not _blocked_by_rule(_persisted(wt))
+        assert result.success is False
+        assert result.error.startswith("The check could not run")
+        assert "bash qa/run-suite.sh" in result.error
+        assert result.report == {}
 
-    def test_type_not_requiring_tests_is_skipped_as_today(
+    def test_a_scaffolding_task_whose_part_failed_is_sent_back(
         self, tmp_path: Path
     ) -> None:
+        """No task-type exemption: the tests that run are the changed parts'
+        (31 October 2026)."""
         wt = _git_worktree(tmp_path)
         _write_results(wt, mode="direct")
 
@@ -375,38 +361,8 @@ class TestPrimaryPositiveControls:
             independent=_independent(_RED_OUTPUT, passed=False),
         )
 
-        assert not _blocked_by_rule(result.report)
-        assert result.report["decision"] == "approve"
-
-    def test_every_failure_on_a_measured_baseline_is_approved(
-        self, tmp_path: Path
-    ) -> None:
-        """The baseline exception: every failure verified as pre-existing."""
-        wt = _git_worktree(tmp_path)
-        _write_results(wt, mode="direct")
-        write_baseline(
-            feature_baseline_path(wt, "FEAT-B463"),
-            BaselineResult(
-                command="bash qa/run-suite.sh",
-                expected_exit=0,
-                passed=False,
-                exit_code=1,
-                failing_node_ids=[
-                    "tests/test_conftest_database_url.py::test_database_url"
-                ],
-                failing_count=1,
-                timestamp="2026-10-12T00:00:00",
-            ),
-        )
-
-        result = _run_primary(
-            wt,
-            task_type="declarative",
-            independent=_independent(_RED_OUTPUT, passed=False),
-        )
-
-        assert result.report["decision"] == "approve"
-        assert _persisted(wt)["decision"] == "approve"
+        assert _blocked_by_rule(result.report)
+        assert result.report["decision"] == "feedback"
 
     def test_collection_error_gets_neutral_words(self, tmp_path: Path) -> None:
         wt = _git_worktree(tmp_path)
@@ -423,30 +379,3 @@ class TestPrimaryPositiveControls:
         rationale = _persisted(wt)["rationale"]
         assert "could not import or collect" in rationale
         assert "do not change code for it" not in rationale
-
-    def test_an_unmeasured_baseline_excuses_nothing(self, tmp_path: Path) -> None:
-        """Repair 2: a base that failed at import named nothing, so it cannot
-        stand as the baseline exception."""
-        wt = _git_worktree(tmp_path)
-        _write_results(wt, mode="direct")
-        write_baseline(
-            feature_baseline_path(wt, "FEAT-B463"),
-            BaselineResult(
-                command="bash qa/run-suite.sh",
-                expected_exit=0,
-                passed=False,
-                exit_code=4,
-                failing_node_ids=[],
-                failing_count=0,
-                timestamp="2026-10-12T00:00:00",
-            ),
-        )
-
-        result = _run_primary(
-            wt,
-            task_type="declarative",
-            independent=_independent(_RED_OUTPUT, passed=False),
-        )
-
-        assert result.report["decision"] == "feedback"
-        assert _blocked_by_rule(_persisted(wt))

@@ -1077,8 +1077,8 @@ def feature(
     default=None,
     help=(
         "Explicit verification command (implies --verify). Default "
-        "resolution: feature smoke_gates.command, else a stack-aware "
-        "test command (venv-pinned pytest for Python)"
+        "resolution: feature smoke_gates.command, else the project's "
+        "declared full check (.guardkit/config.yaml toolchain)"
     ),
 )
 @click.option(
@@ -1110,7 +1110,7 @@ def complete(
         guardkit autobuild complete FEAT-A1B2 --dry-run
         guardkit autobuild complete FEAT-A1B2 --force
         guardkit autobuild complete FEAT-A1B2 --verify
-        guardkit autobuild complete FEAT-A1B2 --verify-cmd "pytest tests/ -q"
+        guardkit autobuild complete FEAT-A1B2 --verify-cmd "make test"
 
     \b
     Workflow:
@@ -1164,7 +1164,7 @@ def complete(
         # Post-completion verification (TASK-AB-VERIFYCLI01). Report-only:
         # a failure never un-completes anything.
         if verify:
-            command, source, profile = verify_plan
+            command, source, declaration = verify_plan
             if dry_run:
                 console.print(
                     f"[yellow]--dry-run:[/yellow] would verify via "
@@ -1180,7 +1180,7 @@ def complete(
                 repo_root,
                 command,
                 source,
-                stack_profile=profile,
+                declaration=declaration,
                 timeout=verify_timeout or DEFAULT_VERIFY_TIMEOUT,
             )
             _display_verification_result(verification)
@@ -1416,7 +1416,7 @@ def _resolve_completion_verification(
                 smoke_command = feature.smoke_gates.command
         except Exception:
             # Command resolution is best-effort: fall through to the
-            # stack-aware default; the verification itself still runs.
+            # declared check; the verification itself still runs.
             logger.debug(
                 "Could not load feature %s for smoke command resolution",
                 feature_id,
@@ -1498,36 +1498,12 @@ def _display_verification_result(verification) -> None:
     ),
 )
 @click.option(
-    "--baseline-json",
-    "baseline_json",
-    type=click.Path(exists=True, dir_okay=False, path_type=Path),
-    default=None,
-    help=(
-        "The pre-merge record of failing test names: either a bare JSON "
-        "list of pytest node ids, or a baseline.json object with a "
-        "failing_node_ids field. Without it, every observed failure is "
-        "reported (never an invented clean)."
-    ),
-)
-@click.option(
     "--verify/--no-verify",
     "verify",
     default=True,
     show_default=True,
     help=(
         "Re-run the repo's test suite on the merged result."
-    ),
-)
-@click.option(
-    "--measure-baseline/--no-measure-baseline",
-    "measure_baseline",
-    default=True,
-    show_default=True,
-    help=(
-        "When no --baseline-json is given, run the same test command on the "
-        "target branch BEFORE merging and count only the NEW failures "
-        "against this merge. Turn it off and every failure the target branch "
-        "already had is counted against the merge as well."
     ),
 )
 @click.option(
@@ -1561,9 +1537,7 @@ def merge(
     target: str,
     branch: Optional[str],
     expect_main_sha: Optional[str],
-    baseline_json: Optional[Path],
     verify: bool,
-    measure_baseline: bool,
     verify_timeout: int,
     in_worktree: Optional[Path],
     as_json: bool,
@@ -1578,27 +1552,25 @@ def merge(
     that has moved since the checks ran each refuse the merge before
     anything is touched. A conflict aborts cleanly and reports the files.
 
-    With verification on and no --baseline-json, the same test command is
-    run on the target branch first, so only failures this merge actually
-    introduced are counted against it. If the tests cannot be run, the
-    merge still happens and the report says the tests were not run.
+    With verification on, the project's full check (as declared on the
+    target branch) runs once on the merged result. If it cannot run, the
+    merge still happens, the report says the check was not run, and the
+    command exits 4: a check that did not run is not a pass.
 
     \b
     Examples:
         guardkit autobuild merge FEAT-E613
         guardkit autobuild merge FEAT-E613 --expect-main-sha 3f2c1a9
         guardkit autobuild merge FEAT-E613 --branch fix/TASK-E613-FIX1-1a2b3c4d
-        guardkit autobuild merge FEAT-E613 --baseline-json baseline.json
-        guardkit autobuild merge FEAT-E613 --no-measure-baseline
         guardkit autobuild merge FEAT-E613 --no-verify --json
 
     \b
     Exit Codes:
-        0: Merged (and no test failure charged to it, when verification is on)
+        0: Merged (and the full check passed, when verification is on)
         1: Unexpected error
         2: Refused (dirty tree / target moved / branch missing)
         3: Conflict (merge aborted, tree left clean, branch kept)
-        4: Merged, but the tests ran and failed on something this merge caused
+        4: Merged, but the full check failed or could not run
     """
     from guardkit.orchestrator.merge_executor import (
         OUTCOME_CONFLICT,
@@ -1608,21 +1580,13 @@ def merge(
     )
 
     try:
-        baseline_failing = (
-            _load_baseline_failing(baseline_json)
-            if baseline_json is not None
-            else None
-        )
-
         report = execute_merge(
             repo_root=Path.cwd(),
             feature_id=feature_id,
             target_branch=target,
             expect_target_sha=expect_main_sha,
             verify=verify,
-            baseline_failing=baseline_failing,
             verify_timeout=verify_timeout,
-            measure_baseline=measure_baseline,
             branch=branch,
             working_folder=in_worktree,
         )
@@ -1646,23 +1610,6 @@ def merge(
     if report.outcome == OUTCOME_MERGED and verify and not report.verify_ok:
         sys.exit(4)
     sys.exit(0)
-
-
-def _load_baseline_failing(path: Path) -> Optional[list]:
-    """Read --baseline-json: a bare JSON list of failing pytest node ids, or
-    an object carrying the list under ``failing_node_ids`` (the shape
-    ``baseline.json`` is written in) or ``failing`` (the shape the deploy
-    sidecar hands over). Any other shape carries no list, so the merge runs
-    as if no baseline had been handed in."""
-    data = json.loads(path.read_text(encoding="utf-8"))
-    if isinstance(data, list):
-        return [str(x) for x in data]
-    if isinstance(data, dict):
-        for key in ("failing_node_ids", "failing"):
-            ids = data.get(key)
-            if isinstance(ids, list):
-                return [str(x) for x in ids]
-    return None
 
 
 # ============================================================================

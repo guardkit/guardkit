@@ -283,11 +283,10 @@ class TestIndependentTestAbsentInEvidence:
 
 
 class TestAbsentRunnerMarksAbsent:
-    """FEAT-9DDE run-6: the pinned worktree interpreter had no pytest, so
-    ``python -m pytest`` exited non-zero in 0.0s with 'No module named pytest'.
-    That is the oracle failing to RUN (absent signal), not the Player's tests
-    failing — it must set ``signal_absent=True`` instead of being read as a
-    real test failure. Sibling of the timeout/exception paths above.
+    """FEAT-9DDE run-6 read 'No module named pytest' and exit 5 as an absent
+    runner. Since 31 October 2026 no pytest-shaped reading is applied to a
+    command's output (those two tests went with it); what stays is that a
+    run that ran and failed is a real failure.
     """
 
     def _validator(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> CoachValidator:
@@ -298,36 +297,6 @@ class TestAbsentRunnerMarksAbsent:
             test_command="pytest tests/x.py",
             coach_test_execution="sdk",
         )
-
-    def test_no_module_named_pytest_marks_absent(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        validator = self._validator(tmp_path, monkeypatch)
-        completed = subprocess.CompletedProcess(
-            args=["python", "-m", "pytest"],
-            returncode=1,
-            stdout="",
-            stderr="/wt/.venv/bin/python: No module named pytest\n",
-        )
-        with patch(f"{_CV_MOD}.subprocess.run", return_value=completed):
-            result = validator.run_independent_tests()
-        assert result.signal_absent is True
-        assert result.tests_passed is False
-
-    def test_no_tests_collected_exit5_marks_absent(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        validator = self._validator(tmp_path, monkeypatch)
-        completed = subprocess.CompletedProcess(
-            args=["python", "-m", "pytest"],
-            returncode=5,  # pytest: no tests collected
-            stdout="no tests ran in 0.01s",
-            stderr="",
-        )
-        with patch(f"{_CV_MOD}.subprocess.run", return_value=completed):
-            result = validator.run_independent_tests()
-        assert result.signal_absent is True
-        assert result.tests_passed is False
 
     def test_genuine_test_failure_not_marked_absent(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

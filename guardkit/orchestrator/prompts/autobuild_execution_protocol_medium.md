@@ -85,25 +85,24 @@ A security check runs on every change: a secret, a known malicious package, a de
 
 ## Phases 4 and 5: Owned by the AutoBuildOrchestrator
 
-Phases 4 (test execution) and 5 (code review) are executed by the AutoBuildOrchestrator after your Phase 3 completes. You do not need to invoke `test-orchestrator` or `code-reviewer` directly. Focus your turn on Phases 1, 2, 3, and (optionally) Phase 4.5 (test-fix loop) for your own feedback.
+After your turn, the AutoBuildOrchestrator runs the tests of every part your changes touched: each part's own test command as declared in `.guardkit/config.yaml` (`toolchain.test`, a component's `test`, or a `parts:` entry's `test`), in that part's folder. A failure comes back to you. You do not need to invoke `test-orchestrator` or `code-reviewer`. Focus your turn on Phases 1, 2, 3, and Phase 4.5 (test-fix loop).
 
 ---
 
 ## Phase 4.5: Fix Loop
 
-Run tests inline (e.g., `pytest`, `npm test`, `dotnet test`) for your own feedback — do not invoke `test-orchestrator`. Max 3 attempts. Fix implementation, NOT tests. Do NOT skip/comment out/ignore tests.
+Run the tests of the parts you changed (each part's declared test command, in its folder) for your own feedback — do not invoke `test-orchestrator`. Max 3 attempts. Fix implementation, NOT tests. Do NOT skip/comment out/ignore tests.
 
 Loop: run tests inline → analyze failure → fix code → re-run tests inline → check results.
 If all pass: finish your turn. If attempt > 3: report BLOCKED with diagnostics.
 
-The AutoBuildOrchestrator runs `test-orchestrator` after your turn; Coach validates independently.
+After your turn the declared tests of the parts you changed are run again, independently; that run decides.
 
 ### Blocked State Diagnostics
 
 If max attempts exhausted, report:
 - Remaining compilation errors (file:line format)
 - Remaining test failures with assertion details
-- Coverage metrics
 - What was attempted and why it didn't work
 
 ---

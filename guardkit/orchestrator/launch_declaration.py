@@ -118,8 +118,7 @@ class LaunchEnvironmentError(OSError):
 class LaunchDeclarationError(LaunchEnvironmentError, ValueError):
     """The project's ``launch:`` block is malformed.
 
-    Also a ``ValueError``, like the other declaration errors that fail a task
-    load (an undeclared ``component:``, say).
+    Also a ``ValueError``, like the other declaration errors.
     """
 
 

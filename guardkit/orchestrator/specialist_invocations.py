@@ -540,24 +540,3 @@ def _extract_section(text: str, heading: str) -> str:
     if match is None:
         return ""
     return match.group(1).strip()
-
-
-def _test_command_source(validator: Any) -> Optional[str]:
-    """Where the validator's chosen test command came from, in plain words.
-
-    Best-effort and defensive: a stand-in validator (tests, an older build)
-    need not carry the accessor, and whatever it returns must be a plain
-    string before it goes into a JSON record. ``None`` when unknown.
-    """
-    getter = getattr(validator, "test_command_source", None)
-    if not callable(getter):
-        return None
-    try:
-        source = getter()
-    except Exception:  # noqa: BLE001 — forensic metadata never breaks a run
-        return None
-    return source if isinstance(source, str) and source else None
-
-
-
-

@@ -295,27 +295,6 @@ class TestUsageErrorClassifier:
             is False
         )
 
-    def test_standard_path_usage_error_is_absent(self, tmp_path):
-        """rc-4 'unrecognized arguments: --timeout' on the standard path →
-        signal_absent=True (ABFIX-010 then carries it as None, fed back)."""
-        v = _make_validator(tmp_path, test_cmd="pytest tests/ -v")
-        v._pytest_timeout_available_cache = True
-        err = "ERROR: usage: pytest [options]\nunrecognized arguments: --timeout 60"
-        with patch("subprocess.run", return_value=_proc(4, stderr=err)):
-            r = v.run_independent_tests()
-        assert r.tests_passed is False
-        assert r.signal_absent is True
-
-    def test_isolated_path_usage_error_is_absent(self, tmp_path):
-        """Same on the parallel-wave isolated path (parity — AC #5)."""
-        v = _make_validator(tmp_path, test_cmd="pytest tests/ -v", wave_size=2)
-        v._pytest_timeout_available_cache = True
-        err = "unrecognized arguments: --timeout 60"
-        with patch("subprocess.run", return_value=_proc(4, stderr=err)):
-            r = v.run_independent_tests()
-        assert r.tests_passed is False
-        assert r.signal_absent is True
-
     def test_genuine_failure_not_masked(self, tmp_path):
         """A real test failure (rc-1, test summary) stays signal_absent=False —
         the narrow usage-error match must never mask it."""

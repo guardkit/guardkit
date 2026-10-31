@@ -130,13 +130,13 @@ A security check runs on every change: a secret, a known malicious package, a de
 
 ## Phases 4 and 5: Owned by the AutoBuildOrchestrator
 
-Phases 4 (test execution) and 5 (code review) are executed by the AutoBuildOrchestrator after your Phase 3 completes. You do not need to invoke `test-orchestrator` or `code-reviewer` directly. Focus your turn on Phases 1, 2, 3, and (optionally) Phase 4.5 (test-fix loop) for your own feedback.
+After your turn, the AutoBuildOrchestrator runs the tests of every part your changes touched: each part's own test command as declared in `.guardkit/config.yaml` (`toolchain.test`, a component's `test`, or a `parts:` entry's `test`), in that part's folder. A failure comes back to you. You do not need to invoke `test-orchestrator` or `code-reviewer`. Focus your turn on Phases 1, 2, 3, and Phase 4.5 (test-fix loop).
 
 ---
 
 ## Phase 4.5: Test Enforcement Loop
 
-If tests fail or coverage is below threshold, enter the fix loop.
+If the tests of the parts you changed fail, enter the fix loop.
 
 ### Fix Loop Rules
 
@@ -148,21 +148,20 @@ If tests fail or coverage is below threshold, enter the fix loop.
 
 ### Fix Loop Workflow
 
-Phase 4.5 is Player guidance, not a runtime loop. Run tests inline (e.g., `pytest`, `npm test`, `dotnet test`) directly — you do not invoke `test-orchestrator`. You are expected to:
+Phase 4.5 is Player guidance, not a runtime loop. Run the tests of the parts you changed (each part's declared test command, in its folder) directly — you do not invoke `test-orchestrator`. You are expected to:
 
 1. Read the output of your inline test run and identify compilation errors and test failures qualitatively (look for build-error markers, `FAILED`, assertion lines, framework summary lines, non-zero exit codes).
 2. If issues remain, fix the root cause in implementation code (not the tests — see the rules above) and re-run the tests inline.
 3. You may take up to **three fix attempts**. The "3" is an instruction to you, not a runtime counter; track it in your own reasoning.
 4. After each re-run, re-inspect the output. If compilation is clean and all tests pass, finish your turn. If you have exhausted three attempts without passing, stop and report BLOCKED with diagnostics (see below).
 
-The AutoBuildOrchestrator runs `test-orchestrator` after your turn as the gate input, and Coach enforces the pass bar independently: regardless of what this protocol reports, `coach_validator` runs its own pytest pass on the final worktree and that run is the deterministic gate. Keep this section as the Player's guidance; the ground truth comes from Coach's own execution. See `installer/core/commands/task-work.md` Phase 4.5 for the matching spec-side prose — the two files are intentionally synced.
+After your turn the AutoBuildOrchestrator runs the declared tests of the parts you changed again, independently, and that run decides: a failure comes back to you. Keep this section as your guidance; the ground truth is that run.
 
 ### Blocked State Diagnostics
 
 If max attempts exhausted, report:
 - Remaining compilation errors (file:line format)
 - Remaining test failures with assertion details
-- Coverage metrics
 - What was attempted and why it didn't work
 
 ---

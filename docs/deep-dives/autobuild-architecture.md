@@ -87,7 +87,20 @@ toolchain:
   build: "npm run build"
 ```
 
-Use commands that actually exist in the target repository. The test command is verdict-bearing; merely listing `typecheck`, `lint` or `build` does not make them enforced gates. A plan must bind those through the supported conformance checks. Toolchain declarations are snapshotted before implementation so the Player cannot change the live command to green its own work. Monorepos can declare named components and assign tasks explicitly. [Toolchain declaration contract](https://github.com/guardkit/guardkit/blob/23d99208598706f81f43a21628f5dcfb89d92a55/guardkit/orchestrator/toolchain_declaration.py)
+Use commands that actually exist in the target repository. The test command is verdict-bearing; merely listing `typecheck`, `lint` or `build` does not make them enforced gates. A plan must bind those through the supported conformance checks. Toolchain declarations are snapshotted before implementation so the Player cannot change the live command to green its own work.
+
+A project of several parts declares each one, and after each task GuardKit runs the tests of the parts that task changed, each in its own folder. A file belongs to the named component whose folder holds it (the deepest wins), else to the root `test`:
+
+```yaml
+toolchain:
+  test: "bash scripts/check.sh"        # the root part
+  components:
+    app: {cwd: app, test: "flutter test"}
+  parts:                               # every folder under apps/ holding package.json
+    - {under: apps, marker: package.json, test: "npm test"}
+```
+
+A task is approved only when the tests of every part it changed ran and passed; a failure goes back to the builder, and a check that could not run (nothing declared, would not start, timed out, no test signal) stops the task. Before a merge the full check runs once: `feature_check` if declared, else the root `test` and every part's `test`. GuardKit never guesses a command a project did not declare. [Toolchain declaration contract](https://github.com/guardkit/guardkit/blob/23d99208598706f81f43a21628f5dcfb89d92a55/guardkit/orchestrator/toolchain_declaration.py)
 
 The historical `implementation_mode: task-work` loads an inline implementation protocol, task requirements and feedback into the Player. It does **not** spawn interactive `/task-work`, and it does **not** invoke the factory's `guardkit task-work` command. [Player invocation](https://github.com/guardkit/guardkit/blob/23d99208598706f81f43a21628f5dcfb89d92a55/guardkit/orchestrator/agent_invoker.py)
 

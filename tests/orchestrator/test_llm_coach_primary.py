@@ -619,6 +619,17 @@ def _real_turn(
     worktree = Worktree(
         task_id=_TASK, branch_name=f"autobuild/{_TASK}", path=root, base_branch="main",
     )
+    # The task's own change since its starting commit, in the root part, so
+    # the root's declared suite is what runs (31 October 2026).
+    from types import SimpleNamespace
+
+    start = subprocess.run(
+        ["git", "-C", str(root), "rev-parse", "HEAD"],
+        check=True, capture_output=True, text=True,
+    ).stdout.strip()
+    orchestrator.task_work_scope = SimpleNamespace(baseline_commit=start)
+    (root / "src").mkdir(exist_ok=True)
+    (root / "src" / "users.py").write_text("DELETED = set()\n", encoding="utf-8")
     with patch.object(invoker, "_invoke_with_role", reviewer):
         result = orchestrator._invoke_coach_safely(
             task_id=_TASK,

@@ -5,19 +5,20 @@ Flutter app under ``app/``. One flat ``test:`` cannot be right for both — add
 the backend's and every ``app/`` task silently gets the Python suite as its
 verdict on Dart work; add the app's and every backend task gets ``flutter
 test``. So the task says which component it is, and the declaration says what
-that component's command is and WHERE it runs.
+that component's command is and WHERE it runs. Since 31 October 2026 the
+component is the one the task's changed files fall in (the part, see
+``test_changed_parts_check.py``); these tests select it directly.
 
 Four things are pinned here:
 
-1. **The task's component is resolved FIRST** — its declared command is the
-   oracle, and no rung of the ladder below may pre-empt it or follow it.
+1. **The part's command is the oracle** — its declared command, nothing
+   guessed.
 2. **``cwd`` is real** — proved by a REAL subprocess that records the
    directory it actually ran in, not by a mocked kwarg alone. ``flutter test``
    needs the package root; ``cd app && …`` inside a command string is
    invisible to the snapshot reader and to anyone auditing the receipt.
-3. **An unresolvable component NEVER falls back to the root command** — it is
-   a loud INSTRUMENT FAULT (ABSENT / UNKNOWN), never a pass and never a
-   Player test failure.
+3. **A part with no declared command never falls back to the root command**
+   — the check could not run, never a pass and never a Player test failure.
 4. **Everything else is byte-unchanged** — no component key, or no
    declaration at all, resolves exactly what it resolved before, at the same
    cwd, through the same branch.
@@ -38,7 +39,10 @@ from guardkit.orchestrator.quality_gates.coach_validator import (
     CoachValidator,
     IndependentTestResult,
 )
-from guardkit.orchestrator.toolchain_declaration import snapshot_task_toolchain
+from guardkit.orchestrator.toolchain_declaration import (
+    DeclaredPart,
+    snapshot_task_toolchain,
+)
 
 _TASK_ID = "TASK-PC-042"
 
@@ -81,8 +85,19 @@ def _validator(root, worktree, block, **kwargs):
     sequence, so these tests exercise the snapshot seam too."""
     _write_config(root, block)
     snapshot_task_toolchain(_TASK_ID, worktree, root)
+    component = kwargs.pop("component", None)
     kwargs.setdefault("task_id", _TASK_ID)
-    return CoachValidator(str(worktree), **kwargs)
+    validator = CoachValidator(str(worktree), **kwargs)
+    if component:
+        _select(validator, component)
+    return validator
+
+
+def _select(validator, name):
+    """Make the named component the part whose tests run (the part a task's
+    changed files fall in)."""
+    comp = validator._toolchain.component(name)
+    validator._use_part(DeclaredPart(name=name, cwd=comp.cwd, test=comp.test, toolchain=comp))
 
 
 # =========================================================================
@@ -94,23 +109,24 @@ class TestComponentCommandResolution:
     def test_a_component_task_gets_the_components_command(self, repo):
         root, worktree = repo
         v = _validator(root, worktree, STUDY_TUTOR_SHAPE, component="app")
-        assert v._detect_test_command(_TASK_ID) == "flutter test"
+        assert v._detect_test_command() == "flutter test"
 
     def test_a_task_with_no_component_gets_the_root_command(self, repo):
         """Today's semantics, unchanged, in the SAME repo and the SAME
         declaration — the §E stage-3 exit receipt in one assertion pair."""
         root, worktree = repo
         v = _validator(root, worktree, STUDY_TUTOR_SHAPE)
-        assert v._detect_test_command(None) == "uv run --no-sync python -m pytest -q"
+        assert v._detect_test_command() == "uv run --no-sync python -m pytest -q"
 
     def test_both_oracles_come_out_of_one_declaration(self, repo):
         root, worktree = repo
         _write_config(root, STUDY_TUTOR_SHAPE)
         snapshot_task_toolchain(_TASK_ID, worktree, root)
-        app = CoachValidator(str(worktree), task_id=_TASK_ID, component="app")
+        app = CoachValidator(str(worktree), task_id=_TASK_ID)
+        _select(app, "app")
         backend = CoachValidator(str(worktree), task_id=_TASK_ID)
-        assert app._detect_test_command(None) == "flutter test"
-        assert backend._detect_test_command(None) != app._detect_test_command(None)
+        assert app._detect_test_command() == "flutter test"
+        assert backend._detect_test_command() != app._detect_test_command()
 
     def test_the_component_outranks_the_python_task_specific_rung(self, repo):
         """A component task must NOT be judged by whatever ``.py`` files
@@ -120,7 +136,7 @@ class TestComponentCommandResolution:
         tests_dir.mkdir()
         (tests_dir / "test_task_pc_042_thing.py").touch()
         v = _validator(root, worktree, STUDY_TUTOR_SHAPE, component="app")
-        assert v._detect_test_command(_TASK_ID) == "flutter test"
+        assert v._detect_test_command() == "flutter test"
 
     def test_the_control_without_a_component_takes_the_root_declaration(
         self, repo
@@ -137,13 +153,13 @@ class TestComponentCommandResolution:
         tests_dir.mkdir()
         (tests_dir / "test_task_pc_042_thing.py").touch()
         v = _validator(root, worktree, STUDY_TUTOR_SHAPE)
-        assert v._detect_test_command(_TASK_ID) == STUDY_TUTOR_SHAPE["test"]
+        assert v._detect_test_command() == STUDY_TUTOR_SHAPE["test"]
 
     def test_the_component_is_honoured_in_a_parallel_wave(self, repo):
         root, worktree = repo
         v = _validator(root, worktree, STUDY_TUTOR_SHAPE, component="app", wave_size=4)
         assert v.is_parallel is True
-        assert v._detect_test_command(_TASK_ID) == "flutter test"
+        assert v._detect_test_command() == "flutter test"
 
     def test_the_components_test_timeout_is_honoured(self, repo):
         root, worktree = repo
@@ -180,7 +196,7 @@ class TestComponentCommandResolution:
             },
             component="app",
         )
-        v._detect_test_command(_TASK_ID)
+        v._detect_test_command()
         profile = v._active_stack_profile
         assert profile is not None
         assert profile.stack == "node"  # matched in app/, not at the root
@@ -354,36 +370,11 @@ class TestComponentCwd:
 
 
 # =========================================================================
-# 3. An unresolvable component is ABSENT — never the root command
+# 3. A part with no command could not run — never the root command
 # =========================================================================
 
 
 class TestComponentAbsence:
-    def test_an_undeclared_component_never_runs_the_root_command(self, repo):
-        root, worktree = repo
-        v = _validator(root, worktree, STUDY_TUTOR_SHAPE, component="api")
-        assert v._detect_test_command(_TASK_ID) is None
-        assert "INSTRUMENT FAULT" in v._detection_absence
-        assert "api" in v._detection_absence
-        assert "NOT used as a fallback" in v._detection_absence
-
-    def test_that_absence_is_unknown_never_a_pass_and_never_a_failure(self, repo):
-        root, worktree = repo
-        v = _validator(root, worktree, STUDY_TUTOR_SHAPE, component="api")
-        with patch("subprocess.run") as mock_run:
-            result = v.run_independent_tests()
-        mock_run.assert_not_called()  # no substituted command was executed
-        assert result.signal_absent is True
-        assert result.tests_passed is False
-        assert "INSTRUMENT FAULT" in result.test_output_summary
-
-    def test_the_absence_is_loud(self, repo, caplog):
-        root, worktree = repo
-        with caplog.at_level("ERROR"):
-            v = _validator(root, worktree, STUDY_TUTOR_SHAPE, component="api")
-            v._detect_test_command(_TASK_ID)
-        assert any(r.levelname == "ERROR" for r in caplog.records)
-
     def test_a_component_declaring_no_test_command_says_so(self, repo):
         root, worktree = repo
         v = _validator(
@@ -395,19 +386,21 @@ class TestComponentAbsence:
             },
             component="app",
         )
-        assert v._detect_test_command(_TASK_ID) is None
-        assert "declares no `test:` command" in v._detection_absence
-        assert "component: app" in v._detection_absence
+        assert v._detect_test_command() is None
+        assert "declares no `test:` for part 'app'" in v._detection_absence
+        result = v.run_independent_tests()
+        assert result.check_could_not_run is True
 
-    def test_no_snapshot_means_a_component_task_cannot_be_served(self, repo):
+    def test_no_snapshot_means_nothing_is_declared(self, repo):
         """THE §B.4 LAW at the executor: a config the Player wrote into the
         worktree with NO pre-turn-1 snapshot is invisible, components and
-        all — and the absence is loud rather than a root-block fallback."""
+        all — and the absence is said plainly."""
         root, worktree = repo
         _write_config(worktree, STUDY_TUTOR_SHAPE)  # Player-side only
-        v = CoachValidator(str(worktree), task_id=_TASK_ID, component="app")
-        assert v._detect_test_command(None) is None
-        assert "INSTRUMENT FAULT" in v._detection_absence
+        v = CoachValidator(str(worktree), task_id=_TASK_ID)
+        assert v._toolchain is None
+        assert v._detect_test_command() is None
+        assert "no `toolchain:` block is pinned" in v._detection_absence
 
     def test_a_pinned_component_survives_a_mid_build_config_rewrite(self, repo):
         """THE ATTACK, end to end: the Player rewrites the component's command
@@ -421,7 +414,7 @@ class TestComponentAbsence:
         }
         _write_config(worktree, self_green)
         _write_config(root, self_green)
-        assert v._detect_test_command(_TASK_ID) == "flutter test"
+        assert v._detect_test_command() == "flutter test"
 
 
 # =========================================================================
@@ -436,16 +429,17 @@ class TestBackCompat:
         worktree.mkdir(parents=True)
         (worktree / "package.json").touch()
         v = _validator(root, worktree, {"test": "npm test"})
-        assert v._detect_test_command(None) == "npm test"
+        assert v._detect_test_command() == "npm test"
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0, stdout="ok", stderr="")
             v.run_independent_tests()
         assert mock_run.call_args.kwargs["cwd"] == str(worktree)
 
-    def test_a_repo_with_no_declaration_is_untouched(self, tmp_path):
+    def test_a_repo_with_no_declaration_gets_no_guessed_command(self, tmp_path):
         (tmp_path / "pyproject.toml").touch()
         v = CoachValidator(str(tmp_path))
-        assert v._detect_test_command(None) == "pytest tests/ -v --tb=short"
+        assert v._detect_test_command() is None
+        assert v._detection_absence.startswith("nothing declared")
         assert v._component is None
         assert v._component_toolchain is None
 
@@ -471,19 +465,3 @@ class TestBackCompat:
         mock_run.assert_not_called()
         assert result.signal_absent is True
         assert result.tests_passed is False
-
-
-def test_declared_test_command_second_belt_never_falls_to_root():
-    """Coordinator pin (the PC coach's surviving mutant): the belt INSIDE
-    _declared_test_command must hold on its own — a named-but-undeclared
-    component returns None, NEVER the root command, even if the earlier
-    absence-return is ever reordered away."""
-    from types import SimpleNamespace
-
-    from guardkit.orchestrator.quality_gates.coach_validator import CoachValidator
-
-    v = object.__new__(CoachValidator)
-    v._component_toolchain = None
-    v._component = "app"
-    v._toolchain = SimpleNamespace(test="pytest -q")
-    assert v._declared_test_command() is None

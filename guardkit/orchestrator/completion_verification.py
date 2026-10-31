@@ -8,34 +8,30 @@ the Python CLI never implemented; this module is the ONE implementation both
 entry points share (``cli-wrapper-shares-client-acquisition-path.md`` — a
 CLI-only second implementation is exactly the divergence that rule documents).
 
-Verification semantics (the cull, 27 October 2026):
+Verification semantics (after-task check redesign, 31 October 2026):
 
-- The verdict is the command's own exit code: 0 is ``passed`` and any other
-  exit is ``failed``. Only a run that never really ran is ``unverified``: no
-  command could be found, the runner could not start (exit 126 or 127, or an
-  error starting it), pytest collected nothing or was given a usage error
-  (exit 5 or 4), or a stack runner said it found no tests. ``unverified``
-  reports that the tests were not run; it is not a failure.
-- A timeout is ``failed`` (ran-and-hung is a real defect — the
-  runtime-parity L3 precedent), never absent.
-- The command itself is resolved in one place (``resolve_verify_command``):
-  an explicit override, then the feature's smoke command, then the
-  repository's own declared test command (``.guardkit/config.yaml``,
-  ``toolchain.test``), then a stack default.
-- The verification runs as a SUBPROCESS in the merge-target repo with the
-  project's own interpreter/venv where one exists — not guardkit's — so a
-  merged-in missing dependency cannot be masked by guardkit's environment
-  (``namespace-hygiene.md``).
+- The verdict is each command's own exit code: 0 is ``passed`` and any other
+  exit, 126 and 127 included, is ``failed`` (a declared script that ran and
+  hit a missing program inside it failed; FEAT-8BB4). Only a check that never
+  ran is ``unverified``: nothing is declared, or the command could not be
+  started at all. ``unverified`` is not a pass.
+- A timeout is ``failed`` (ran-and-hung is a real defect), never absent.
+- The command is resolved in one place (``resolve_verify_command``): an
+  explicit override, then the feature's smoke command, then the project's
+  full check as declared in ``.guardkit/config.yaml``
+  (``toolchain_declaration.full_check_parts``: ``feature_check``, else the
+  root ``test`` plus every component's and pattern part's ``test``, each in
+  its own folder). GuardKit never chooses a command a project did not
+  declare.
 """
 
 from __future__ import annotations
 
 import logging
-import re
 import subprocess
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Dict, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from guardkit.orchestrator.launch_declaration import load_launch_declaration
 from guardkit.orchestrator.project_command_env import (
@@ -43,10 +39,11 @@ from guardkit.orchestrator.project_command_env import (
     project_command_environment,
 )
 
-from guardkit.orchestrator.quality_gates.stack_test_execution import (
-    StackTestProfile,
-    classify_absent_for_stack,
-    detect_stack_profile,
+from guardkit.orchestrator.toolchain_declaration import (
+    ToolchainDeclaration,
+    full_check_parts,
+    load_toolchain_declaration,
+    resolve_component_cwd,
 )
 from guardkit.orchestrator import process_group
 
@@ -54,7 +51,8 @@ logger = logging.getLogger(__name__)
 
 __all__ = [
     "VerificationResult",
-    "declared_toolchain_test_command",
+    "NOTHING_DECLARED",
+    "check_command_texts",
     "resolve_verify_command",
     "resolve_verify_command_with_declaration",
     "run_completion_verification",
@@ -64,11 +62,11 @@ __all__ = [
 # smoke default; 600s matches the smoke-gate schema's upper bound.
 DEFAULT_VERIFY_TIMEOUT = 600
 
-_ABSENT_RETURNCODES = frozenset({126, 127})
-
-# pytest's "N passed" summary, quoted in a passing run's detail when present.
-# The feature orchestrator's baseline probe also imports it from here.
-_PYTEST_PASSED_RE = re.compile(r"\b[1-9]\d*\s+passed\b")
+#: The source words when a project declares no check at all.
+NOTHING_DECLARED = (
+    "nothing declared: .guardkit/config.yaml declares no `toolchain` test "
+    "command or feature_check"
+)
 
 
 @dataclass(frozen=True)
@@ -110,160 +108,87 @@ class VerificationResult:
         return self.full_output or self.output_tail or ""
 
 
-def _project_python(repo_root: Path) -> Optional[Path]:
-    """Return the project's own venv interpreter, if one exists."""
-    for candidate in (
-        repo_root / ".venv" / "bin" / "python",
-        repo_root / "venv" / "bin" / "python",
-        repo_root / ".venv" / "Scripts" / "python.exe",
-        repo_root / "venv" / "Scripts" / "python.exe",
-    ):
-        if candidate.exists():
-            return candidate
-    return None
-
-
-def _looks_python(repo_root: Path) -> bool:
-    return any(
-        (repo_root / marker).exists()
-        for marker in ("pyproject.toml", "pytest.ini", "setup.cfg", "tox.ini")
-    ) and (repo_root / "tests").is_dir()
-
-
-def declared_toolchain_test_command(repo_root: Path) -> Optional[str]:
-    """The repository's own declared test command, or ``None``.
-
-    Reads ``<repo_root>/.guardkit/config.yaml``, the top-level ``toolchain:``
-    block, through the one reader the rest of guardkit uses
-    (``toolchain_declaration.load_toolchain_declaration``) — so a repository
-    states how its tests are run in exactly one place, and this module does
-    not grow a second, drifting copy of that rule.
-
-    Never raises: a missing file, a malformed block, or a missing dependency
-    all mean "no declaration", and resolution carries on down the list.
-
-    THE WORK LEG ASKS THE SAME QUESTION. Since Rich's ruling of 2026-09-09 a
-    build's own test phase runs the declared command too, so the fork where a
-    database test failed in the leg and passed here is closed. It reaches the
-    declaration by the same parser (``load_toolchain_declaration``) but
-    through the task's pre-turn-1 snapshot
-    (``CoachValidator._declared_test_command``), because the copy in a
-    worktree is inside the tree the model edits and this one is not. One rule,
-    one parser, two copies of the file — if the rule changes, change it in the
-    parser and both follow.
-    """
-    try:
-        from guardkit.orchestrator.toolchain_declaration import (
-            load_toolchain_declaration,
-        )
-    except ImportError:  # pragma: no cover - guardkit always ships this module
-        return None
-    try:
-        declaration = load_toolchain_declaration(Path(repo_root))
-    except Exception as exc:  # noqa: BLE001 - resolution never crashes a merge
-        logger.warning(
-            "Could not read the toolchain declaration in %s: %s", repo_root, exc
-        )
-        return None
+def check_command_texts(declaration: Optional[ToolchainDeclaration]) -> List[str]:
+    """The text of every command the full check can run, for the merge's
+    judge-file rule: ``feature_check``, else the root ``test`` and every
+    component's and ``parts:`` entry's ``test``."""
     if declaration is None:
-        return None
-    command = (declaration.test or "").strip()
-    return command or None
+        return []
+    if declaration.feature_check:
+        return [declaration.feature_check]
+    texts = [declaration.test] if declaration.test else []
+    texts += [c.test for _, c in sorted((declaration.components or {}).items()) if c.test]
+    texts += [entry.test for entry in declaration.parts or () if entry.test]
+    return texts
 
 
 def resolve_verify_command(
     repo_root: Path,
     smoke_command: Optional[str] = None,
     override: Optional[str] = None,
-) -> Tuple[Optional[str], str, Optional[StackTestProfile]]:
-    """Resolve the verification command for ``repo_root``.
+) -> Tuple[Optional[str], str, Optional[ToolchainDeclaration]]:
+    """Resolve the verification for ``repo_root``.
 
     Precedence: explicit ``--verify-cmd`` override > the feature YAML's
-    ``smoke_gates.command`` > the repository's own declared test command
-    (``.guardkit/config.yaml``, ``toolchain.test``) > a stack-aware default
-    (venv-pinned pytest for Python; the ``stack_test_execution`` registry for
-    .NET/JS-TS/Go).
+    ``smoke_gates.command`` > the project's declared full check
+    (:func:`resolve_verify_command_with_declaration`).
 
-    The declared command sits above the stack defaults because a repository
-    that has said how to run its tests has said it for a reason — the venv
-    default is a guess, and guessing is what sent a merge check looking for an
-    interpreter that was not there (2026-09-06 spec, rule 7).
-
-    Returns ``(command, source, stack_profile)``; ``command`` is ``None``
-    when no runner could be determined (the caller reports UNVERIFIED —
-    never a pass). A declared command carries no stack profile, so its exit
-    code is read by the pytest rules when the command mentions pytest and by
-    the plain exit-code rule otherwise.
+    Returns ``(command, source, declaration)``. ``command`` is the text shown
+    in receipts, ``None`` when nothing is declared (the caller reports
+    UNVERIFIED, never a pass). ``declaration`` is set when the full check is
+    the declared one; :func:`run_completion_verification` then runs each part
+    in its own folder.
     """
     if override:
         return override, "--verify-cmd override", None
     if smoke_command:
         return smoke_command, "feature smoke_gates.command", None
-    return resolve_verify_command_with_declaration(
-        repo_root, declared_toolchain_test_command(repo_root)
-    )
+    try:
+        declaration = load_toolchain_declaration(Path(repo_root))
+    except Exception as exc:  # noqa: BLE001 - resolution never crashes a merge
+        logger.warning(
+            "Could not read the toolchain declaration in %s: %s", repo_root, exc
+        )
+        declaration = None
+    return resolve_verify_command_with_declaration(repo_root, declaration)
 
 
 def resolve_verify_command_with_declaration(
-    repo_root: Path, declared: Optional[str]
-) -> Tuple[Optional[str], str, Optional[StackTestProfile]]:
-    """The rest of :func:`resolve_verify_command`, given the declared command.
+    repo_root: Path, declaration: Optional[ToolchainDeclaration]
+) -> Tuple[Optional[str], str, Optional[ToolchainDeclaration]]:
+    """The declared full check of ``declaration``, as the caller already read it.
 
-    ``declared`` is the repository's declared test command as the caller has
-    ALREADY read it, or ``None`` when nothing is declared. The merge reads
-    ``.guardkit/config.yaml`` once with its own fail-closed reader
-    (``merge_environment.read_merge_declarations``) and hands the command in
-    here, so the file is not read a second time by the forgiving reader.
-    Without a declared command the stack defaults follow, as before.
+    The merge reads ``.guardkit/config.yaml`` once with its own fail-closed
+    reader (``merge_environment.read_merge_declarations``) and hands the
+    declaration in here. With nothing declared the command is ``None``.
     """
-    if declared:
-        return declared, "repository toolchain declaration", None
-    if _looks_python(repo_root):
-        python = _project_python(repo_root)
-        if python is not None:
-            return f'"{python}" -m pytest tests/', "python stack default (project venv)", None
-        logger.warning(
-            "TASK-AB-VERIFYCLI01: no project venv found at %s — falling back "
-            "to PATH pytest, which may resolve from guardkit's environment",
-            repo_root,
-        )
-        return "pytest tests/", "python stack default (PATH pytest)", None
-    profile = detect_stack_profile(repo_root)
-    if profile is not None:
-        return (
-            profile.whole_suite_command,
-            f"{profile.stack} stack default",
-            profile,
-        )
-    return None, "no test runner detected", None
+    parts = full_check_parts(declaration, Path(repo_root))
+    if not parts and not (declaration is not None and declaration.parts):
+        return None, NOTHING_DECLARED, None
+    assert declaration is not None
+    # Said from the declaration, not from the folders found now: the check
+    # is chosen on the target and the pattern parts are found in the joined
+    # tree when it runs.
+    pieces = [
+        (p.test or "<nothing declared>") + ("" if p.cwd == "." else f" (in {p.cwd})")
+        for p in parts
+        if p.toolchain is None or p.name in (declaration.components or {})
+    ]
+    pieces += [
+        f"{entry.test or '<nothing declared>'} (in each folder under "
+        f"{entry.under} holding {entry.marker})"
+        for entry in declaration.parts or ()
+    ]
+    text = pieces[0] if len(pieces) == 1 and parts and parts[0].cwd == "." else " ; ".join(pieces)
+    source = (
+        "repository toolchain declaration (feature_check)"
+        if declaration.feature_check
+        else "repository toolchain declaration"
+    )
+    return text, source, declaration
 
 
-def _classify_pytest(returncode: int, output: str) -> Tuple[str, str]:
-    if returncode in _ABSENT_RETURNCODES:
-        return "unverified", "test runner could not start"
-    if returncode == 5:
-        return "unverified", "zero tests collected (pytest exit 5)"
-    if returncode == 4:
-        return "unverified", "pytest usage error (exit 4)"
-    if returncode == 0:
-        match = _PYTEST_PASSED_RE.search(output)
-        return "passed", match.group(0) if match else "test run passed (exit 0)"
-    return "failed", f"test run failed (exit {returncode})"
-
-
-def _classify_stack(
-    profile: StackTestProfile, returncode: int, output: str
-) -> Tuple[str, str]:
-    if returncode == 0:
-        return "passed", f"{profile.stack} suite passed"
-    if classify_absent_for_stack(profile, returncode, output):
-        return "unverified", f"{profile.stack} run produced no test verdict"
-    return "failed", f"{profile.stack} suite failed (exit {returncode})"
-
-
-def _classify_custom(returncode: int) -> Tuple[str, str]:
-    if returncode in _ABSENT_RETURNCODES:
-        return "unverified", "verification command could not start"
+def _classify(returncode: int) -> Tuple[str, str]:
     if returncode == 0:
         return "passed", "verification command exited 0"
     return "failed", f"verification command failed (exit {returncode})"
@@ -273,16 +198,100 @@ def run_completion_verification(
     repo_root: Path,
     command: Optional[str],
     source: str,
-    stack_profile: Optional[StackTestProfile] = None,
+    declaration: Optional[ToolchainDeclaration] = None,
     timeout: int = DEFAULT_VERIFY_TIMEOUT,
     env: Optional[dict] = None,
     own_process_group: bool = False,
 ) -> VerificationResult:
-    """Run the resolved verification command in the merge-target repo.
+    """Run the resolved verification in ``repo_root``.
 
-    Never raises: every outcome (including a missing command, a timeout, or a
-    subprocess error) is a :class:`VerificationResult`. Only ``passed`` may
-    ever be rendered as success.
+    With ``declaration`` (the declared full check), every part of
+    :func:`toolchain_declaration.full_check_parts`, found in ``repo_root``
+    now, runs its ``test`` once in its own folder, each with the whole
+    ``timeout``. The result is ``failed`` if any part failed, otherwise
+    ``unverified`` if any part could not run (nothing declared for it, or it
+    could not start), otherwise ``passed``. Without it, ``command`` runs at
+    ``repo_root``.
+
+    Never raises. Only ``passed`` may ever be rendered as success. ``env``
+    and ``own_process_group`` are as for :func:`_run_one`.
+    """
+    cwd = str(repo_root)
+    if not command:
+        return VerificationResult(
+            status="unverified",
+            command="",
+            cwd=cwd,
+            returncode=None,
+            detail=f"UNVERIFIED: {source}",
+            source=source,
+        )
+    if declaration is None:
+        return _run_one(
+            Path(repo_root), command, source, timeout, env, own_process_group
+        )
+    parts = full_check_parts(declaration, Path(repo_root))
+    if not parts:
+        return VerificationResult(
+            status="unverified", command=command, cwd=cwd, returncode=None,
+            detail=f"UNVERIFIED: {NOTHING_DECLARED}", source=source,
+        )
+    results: List[Tuple[str, VerificationResult]] = []
+    for part in parts:
+        label = part.name if part.cwd == "." else f"{part.name} (in {part.cwd})"
+        if not part.test:
+            results.append((label, VerificationResult(
+                status="unverified", command="", cwd=part.cwd, returncode=None,
+                detail=f"nothing declared for part {label}", source=source,
+            )))
+            continue
+        try:
+            folder = resolve_component_cwd(Path(repo_root), part.cwd)
+        except ValueError as exc:
+            results.append((label, VerificationResult(
+                status="unverified", command=part.test, cwd=part.cwd,
+                returncode=None, detail=str(exc), source=source,
+            )))
+            continue
+        results.append(
+            (label, _run_one(folder, part.test, source, timeout, env, own_process_group))
+        )
+    if len(results) == 1:
+        return replace(results[0][1], command=command)
+    statuses = [r.status for _, r in results]
+    status = (
+        "failed" if "failed" in statuses
+        else "unverified" if "unverified" in statuses
+        else "passed"
+    )
+    shown = [(label, r) for label, r in results if r.status == status]
+    detail = "; ".join(f"{label}: {r.detail}" for label, r in shown)
+    full = "\n".join(
+        f"=== {label}: {r.command}\n{r.full_output or r.output_tail}"
+        for label, r in results
+    )
+    return VerificationResult(
+        status=status,
+        command=command,
+        cwd=cwd,
+        returncode=next((r.returncode for _, r in shown if r.returncode), None)
+        if status == "failed" else (0 if status == "passed" else None),
+        detail=detail,
+        output_tail=full[-2000:],
+        source=source,
+        full_output=full,
+    )
+
+
+def _run_one(
+    repo_root: Path,
+    command: str,
+    source: str,
+    timeout: int,
+    env: Optional[dict],
+    own_process_group: bool,
+) -> VerificationResult:
+    """Run one command in ``repo_root``. Never raises.
 
     ``env`` is the command's whole environment. ``None`` (every caller but
     the merge) builds it here from nothing, with ``repo_root``'s own
@@ -297,16 +306,6 @@ def run_completion_verification(
     runs exactly as before.
     """
     cwd = str(repo_root)
-    if not command:
-        return VerificationResult(
-            status="unverified",
-            command="",
-            cwd=cwd,
-            returncode=None,
-            detail=f"UNVERIFIED: {source}",
-            source=source,
-        )
-
     logger.info(
         "Post-completion verification (%s): %s (cwd=%s, timeout=%ds)",
         source,
@@ -369,7 +368,7 @@ def run_completion_verification(
             command, run.returncode, run.stdout, run.stderr
         )
         return _noted(
-            _verification_from_run(proc, command, cwd, source, stack_profile),
+            _verification_from_run(proc, command, cwd, source),
             run_env if built_here else None,
         )
 
@@ -413,7 +412,7 @@ def run_completion_verification(
         )
 
     return _noted(
-        _verification_from_run(proc, command, cwd, source, stack_profile),
+        _verification_from_run(proc, command, cwd, source),
         run_env if built_here else None,
     )
 
@@ -436,17 +435,10 @@ def _verification_from_run(
     command: str,
     cwd: str,
     source: str,
-    stack_profile: Optional[StackTestProfile],
 ) -> VerificationResult:
-    """Classify a finished run into a :class:`VerificationResult`."""
+    """Classify a finished run by its exit code alone."""
     output = (proc.stdout or "") + "\n" + (proc.stderr or "")
-    if stack_profile is not None:
-        status, detail = _classify_stack(stack_profile, proc.returncode, output)
-    elif "pytest" in command:
-        status, detail = _classify_pytest(proc.returncode, output)
-    else:
-        status, detail = _classify_custom(proc.returncode)
-
+    status, detail = _classify(proc.returncode)
     return VerificationResult(
         status=status,
         command=command,

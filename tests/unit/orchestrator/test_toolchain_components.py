@@ -1,4 +1,4 @@
-"""THE PER-COMPONENT SEAM — schema, the snapshot law, and the task selector.
+"""THE PER-COMPONENT SEAM — schema and the snapshot law.
 
 study-tutor is two products in one tree: a Python backend at the root and a
 Flutter app under ``app/``. There is no single ``test:`` string that is correct
@@ -16,9 +16,9 @@ Four properties are pinned here:
    whole-model validate, so nesting costs zero snapshot changes. Proved by
    round-trip AND by the attack: a Player rewriting a COMPONENT's test command
    mid-build changes nothing.
-3. **The selector is explicit** — a task names its component; a name the
-   repository does not declare means the root component, with a warning
-   (27 October 2026 cull: no longer a task-load failure).
+3. **There is no task selector** — since 31 October 2026 a task's parts are
+   the ones its changed files fall in (``test_changed_parts_check.py``); the
+   frontmatter ``component:`` key is not read.
 4. **Absence is a no-op** — a flat declaration, and a repo with none at all,
    are byte-unchanged.
 
@@ -96,10 +96,12 @@ class TestComponentSchemaGood:
 
     def test_a_component_carries_the_same_fields_as_the_root(self):
         """"the SAME fields" is a claim; this is the check."""
-        # ``components`` and ``language_servers`` are repo-level only: neither is
-        # a command field a component could carry (the code tools read the
-        # servers from the root block alone).
-        root_fields = set(ToolchainDeclaration.model_fields) - {"components", "language_servers"}
+        # ``components``, ``parts`` and ``language_servers`` are repo-level
+        # only: none is a command field a component could carry (the code
+        # tools read the servers from the root block alone).
+        root_fields = set(ToolchainDeclaration.model_fields) - {
+            "components", "parts", "language_servers",
+        }
         component_fields = set(ComponentToolchain.model_fields) - {"cwd"}
         assert root_fields == component_fields
 
@@ -356,81 +358,24 @@ class TestResolveComponentCwd:
 
 
 # =========================================================================
-# 6. THE SELECTOR — lifted from frontmatter, validated LOUDLY
+# 6. No selector: parts come from the files a task changed
 # =========================================================================
 
 
-def _orchestrator(root):
+def test_the_frontmatter_selector_is_gone():
+    """31 October 2026: the task's ``component:`` key is no longer read or
+    threaded; the reviewer's check gets the task's starting commit instead."""
     from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
 
-    orchestrator = AutoBuildOrchestrator.__new__(AutoBuildOrchestrator)
-    orchestrator.repo_root = root
-    return orchestrator
-
-
-class TestComponentSelector:
-    def test_absent_selector_means_the_root_component(self, tmp_path):
-        """Today's semantics, unchanged — including on a componented repo."""
-        _write_config(tmp_path, STUDY_TUTOR_SHAPE)
-        assert _orchestrator(tmp_path)._resolve_task_component(_TASK_ID, None) is None
-
-    def test_a_declared_component_resolves(self, tmp_path):
-        _write_config(tmp_path, STUDY_TUTOR_SHAPE)
-        assert (
-            _orchestrator(tmp_path)._resolve_task_component(_TASK_ID, "app") == "app"
-        )
-
-    # 27 October 2026 cull: a selector the repository does not declare, or
-    # one that is not a name, is not a reason to stop the task. It means the
-    # root component, and the warning names it.
-    def test_an_undeclared_component_means_the_root_component(
-        self, tmp_path, caplog
+    assert not hasattr(AutoBuildOrchestrator, "_resolve_task_component")
+    source = inspect.getsource(AutoBuildOrchestrator._orchestrate_owned)
+    assert 'frontmatter.get("component")' not in source
+    for method in (
+        AutoBuildOrchestrator._loop_phase,
+        AutoBuildOrchestrator._execute_turn,
+        AutoBuildOrchestrator._invoke_coach_safely,
+        AutoBuildOrchestrator._invoke_coach_primary,
     ):
-        _write_config(tmp_path, STUDY_TUTOR_SHAPE)
-        assert _orchestrator(tmp_path)._resolve_task_component(_TASK_ID, "api") is None
-        assert "component: api" in caplog.text
-        assert "root component is used" in caplog.text
-
-    def test_a_component_on_a_repo_with_no_declaration_means_the_root(self, tmp_path):
-        assert _orchestrator(tmp_path)._resolve_task_component(_TASK_ID, "app") is None
-
-    def test_a_component_on_a_flat_declaration_means_the_root(self, tmp_path):
-        _write_config(tmp_path, {"test": "pytest -q"})
-        assert _orchestrator(tmp_path)._resolve_task_component(_TASK_ID, "app") is None
-
-    @pytest.mark.parametrize("bad", ["", "   ", 7, ["app"], {"name": "app"}])
-    def test_a_non_name_selector_means_the_root(self, tmp_path, bad):
-        _write_config(tmp_path, STUDY_TUTOR_SHAPE)
-        assert _orchestrator(tmp_path)._resolve_task_component(_TASK_ID, bad) is None
-
-    def test_the_selector_is_whitespace_trimmed(self, tmp_path):
-        _write_config(tmp_path, STUDY_TUTOR_SHAPE)
-        assert (
-            _orchestrator(tmp_path)._resolve_task_component(_TASK_ID, " app ") == "app"
-        )
-
-
-class TestTheSelectorIsThreaded:
-    """The task's ``component:`` key reaches the CoachValidator."""
-
-    def test_the_frontmatter_key_is_component(self):
-        from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
-
-        source = inspect.getsource(AutoBuildOrchestrator._orchestrate_owned)
-        assert 'frontmatter.get("component")' in source
-
-    def test_the_selector_reaches_the_validator_constructor(self):
-        """Threaded like ``behavioural_oracle``: orchestrate → loop → turn →
-        coach → CoachValidator. Without the last hop the seam is dead wire."""
-        from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
-
-        for method in (
-            AutoBuildOrchestrator._loop_phase,
-            AutoBuildOrchestrator._execute_turn,
-            AutoBuildOrchestrator._invoke_coach_safely,
-            AutoBuildOrchestrator._invoke_coach_primary,
-        ):
-            assert "component" in inspect.signature(method).parameters
-        primary = inspect.getsource(AutoBuildOrchestrator._invoke_coach_primary)
-        assert "CoachValidator(" in primary
-        assert "component=component" in primary
+        assert "component" not in inspect.signature(method).parameters
+    primary = inspect.getsource(AutoBuildOrchestrator._invoke_coach_primary)
+    assert "baseline_commit=" in primary

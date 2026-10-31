@@ -1,4 +1,4 @@
-"""The merge installs before it checks, and its baseline is honest.
+"""The merge installs before it checks.
 
 The merge design of 13 October 2026. A factory build was joined in a working
 folder that had no installed dependencies: the merge never ran the project's declared install,
@@ -43,7 +43,6 @@ from tests.self_contained_python import self_contained_python
 from guardkit.orchestrator.merge_executor import (
     OUTCOME_MERGED,
     execute_merge,
-    measure_pre_merge_baseline,
 )
 
 FEATURE = "FEAT-I"
@@ -283,7 +282,9 @@ def _report_text(report) -> str:
 
 
 class TestTheMergeInstallsFirst:
-    def test_the_target_is_installed_before_the_baseline(self, standin: Standin):
+    def test_the_merged_result_is_installed_once_before_the_check(
+        self, standin: Standin
+    ):
         standin.init().branch({"feature.txt": "built\n"})
 
         report = standin.merge()
@@ -291,13 +292,14 @@ class TestTheMergeInstallsFirst:
         assert report.outcome == OUTCOME_MERGED
         assert report.verify_status == "passed", report.verify_detail
         assert report.verify_ok is True
-        # The baseline is a real measurement now: a passing run on the
-        # installed target, not a failed run that named nothing.
-        assert report.baseline_measured is not None
         notes = " ".join(report.notes)
         assert "bash scripts/install.sh" in notes
-        assert f"ran on {TARGET}" in notes
+        assert f"ran on {TARGET}" not in notes
         assert "ran on the merged result" in notes
+        # 31 October 2026: no run on the target first, so one install and
+        # one check.
+        assert standin.lines("install-ran") == ["install"]
+        assert standin.lines("check-ran") == ["check"]
 
     def test_a_dependency_the_branch_adds_is_installed_for_the_check(
         self, standin: Standin
@@ -309,8 +311,8 @@ class TestTheMergeInstallsFirst:
         report = standin.merge()
 
         assert report.verify_status == "passed", report.verify_detail
-        # Installed twice: once on the target, once on the merged result.
-        assert len(standin.lines("install-ran")) == 2
+        # Installed once, on the merged result.
+        assert len(standin.lines("install-ran")) == 1
         assert (standin.folder / "installed" / "gamma").exists()
 
     def test_a_branch_cannot_change_the_install_that_judges_it(
@@ -326,7 +328,7 @@ class TestTheMergeInstallsFirst:
         report = standin.merge()
 
         assert report.verify_status == "passed", report.verify_detail
-        assert len(standin.lines("install-ran")) == 2
+        assert len(standin.lines("install-ran")) == 1
         assert (standin.folder / "installed" / "gamma").exists()
 
     def test_a_failed_install_is_could_not_run(self, standin: Standin):
@@ -345,7 +347,7 @@ class TestTheMergeInstallsFirst:
         assert report.outcome == OUTCOME_MERGED
         assert report.verify_status == "unverified"
         assert report.verify_ran is False
-        assert report.baseline_measured is None
+        assert report.verify_ok is False
         assert "registry unreachable" in report.verify_detail
         assert "exit 3" in report.verify_detail
         assert "bash scripts/install.sh" in report.verify_detail
@@ -363,8 +365,8 @@ class TestTheMergeInstallsFirst:
         assert report.verify_status != "failed"
         assert "the registry refused forbidden" in report.verify_detail
         assert "merged result" in report.verify_detail
-        # Tests that were not run do not fail the verification (the cull).
-        assert report.verify_ok is True
+        # A check that could not run is not ok (31 October 2026).
+        assert report.verify_ok is False
 
     def test_install_and_check_share_the_declared_launch_environment(
         self, standin: Standin, monkeypatch: pytest.MonkeyPatch
@@ -409,45 +411,17 @@ class TestTheMergeInstallsFirst:
 
 
 # ---------------------------------------------------------------------------
-# 8, 9 and decision 3: an honest baseline
+# 8, 9: a project without an install or launch block
 # ---------------------------------------------------------------------------
 
 
-class TestAnHonestBaseline:
-    def test_a_red_baseline_that_names_nothing_is_not_a_measurement(
-        self, standin: Standin
-    ):
-        # The design's example command, ``sh -c 'exit 1'``, is itself refused
-        # by item 2b (a word with a space in it), so the merge half of this
-        # test uses ``false``: a plain word that also fails naming nothing.
-        standin.init(config=config_text(install=None, test="false", launch=None))
-        standin.branch({"feature.txt": "built\n"})
-        folder = standin.join_folder()
-
-        measured = measure_pre_merge_baseline(
-            folder,
-            TARGET,
-            resolved_command=("sh -c 'exit 1'", "repository toolchain declaration", None),
-        )
-        assert measured.ran is False
-        assert "measured nothing" in measured.detail
-        assert "exit 1" in measured.detail
-
-        report = standin.merge()
-
-        assert report.verify_status == "unverified"
-        assert report.verify_ran is False
-        assert report.baseline_measured is None
-        assert "measured nothing" in report.verify_detail
-        notes = " ".join(report.notes)
-        assert "0 failing, 0 passing" not in notes
-        assert "measured nothing" in notes
-
+class TestNoInstallOrLaunchBlock:
     def test_no_install_and_no_launch_block_runs_exactly_as_before(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ):
-        """A pytest-shaped project without either block: the red baseline
-        names its failure and the clean branch merges green, as before.
+        """A project without either block runs its declared check as
+        before; a test main was already failing fails the merge (there is no
+        known-failure baseline, 31 October 2026).
 
         The design's premise, corrected: an interpreter on PATH that carries
         its own packages is found, because the merge keeps GuardKit's PATH.
@@ -489,12 +463,9 @@ class TestAnHonestBaseline:
 
         report = execute_merge(repo, FEATURE)
 
-        assert report.verify_status == "passed", report.verify_detail
-        assert report.verify_suite_status == "failed"
-        assert report.baseline_measured is not None
-        assert report.baseline_measured.failing == (
-            "tests/test_a.py::test_old_red",
-        )
+        assert report.verify_status == "failed", report.verify_detail
+        assert report.verify_ok is False
+        assert "test_old_red" in report.verify_output_tail
         assert report.verify_command == command
 
     def test_a_package_only_in_the_real_homes_user_site_is_not_visible(
@@ -503,8 +474,8 @@ class TestAnHonestBaseline:
         """The private HOME is deliberate: the check cannot read the user's
         own folders (~/.docker/config.json, ~/.git-credentials, ~/.netrc),
         and so it cannot use a package found only in the user's site folder
-        either. The result is a plain "could not run" that names nothing
-        from that folder."""
+        either. The check fails, and its record names nothing from that
+        folder."""
         home = tmp_path / "real-home"
         candidates = [sys.executable, getattr(sys, "_base_executable", "")]
         candidates += [shutil.which("python3") or ""]
@@ -545,12 +516,10 @@ class TestAnHonestBaseline:
         report = standin.merge()
 
         assert report.outcome == OUTCOME_MERGED
-        assert report.verify_status == "unverified", report.verify_detail
-        assert report.verify_ran is False
-        assert "measured nothing" in report.verify_detail
+        assert report.verify_status == "failed", report.verify_detail
+        assert report.verify_ok is False
         text = _report_text(report)
         assert str(home) not in text
-        assert "standin_only_in_home" not in text
         assert SENTINELS["GUARDKIT_NATS_PASSWORD"] not in text
 
     def test_a_declared_marker_that_matches_is_a_pass(self, standin: Standin):
@@ -595,7 +564,7 @@ class TestTheJudgeFiles:
         assert report.verify_status == "passed", report.verify_detail
         assert report.verify_ok is True
         assert report.judged_with_main_copies == ("scripts/check.sh",)
-        assert standin.lines("check-ran") == ["check", "check"]
+        assert standin.lines("check-ran") == ["check"]
         assert standin.build_copy_never_ran()
 
     def test_a_branch_that_edits_the_install_script_is_installed_with_mains_copy(
@@ -608,7 +577,7 @@ class TestTheJudgeFiles:
 
         assert report.verify_status == "passed", report.verify_detail
         assert report.judged_with_main_copies == ("scripts/install.sh",)
-        assert standin.lines("install-ran") == ["install", "install"]
+        assert standin.lines("install-ran") == ["install"]
         assert standin.build_copy_never_ran()
 
     def test_a_branch_that_adds_a_new_judge_script_counts(self, standin: Standin):
@@ -617,9 +586,9 @@ class TestTheJudgeFiles:
 
         report = standin.merge()
 
-        # Main names a file it does not have: the baseline on main measured
-        # nothing useful, and the build's script is never run.
-        assert report.verify_status == "unverified", report.verify_detail
+        # Main names a file it does not have, so main's command fails, and
+        # the build's script is never run.
+        assert report.verify_status == "failed", report.verify_detail
         assert standin.build_copy_never_ran()
 
     @pytest.mark.parametrize(
@@ -635,7 +604,7 @@ class TestTheJudgeFiles:
 
         assert report.verify_status == "passed", report.verify_detail
         assert "scripts/check.sh" in report.judged_with_main_copies
-        assert standin.lines("check-ran") == ["check", "check"]
+        assert standin.lines("check-ran") == ["check"]
         assert standin.build_copy_never_ran()
 
     def test_a_named_test_folder_does_not_stop_the_verdict(self, standin: Standin):
@@ -667,7 +636,7 @@ class TestTheJudgeFiles:
 
         assert report.verify_status == "passed", report.verify_detail
         assert report.judged_with_main_copies == ("scripts/check.sh",)
-        assert standin.lines("check-ran") == ["check", "check"]
+        assert standin.lines("check-ran") == ["check"]
         assert standin.build_copy_never_ran()
 
     CANNOT_FOLLOW_CASES = [
@@ -1175,10 +1144,11 @@ class TestDeclarationsAreReadFailClosed:
 
         report = standin.merge()
 
-        # No declared command and no stack markers: exactly today's answer.
+        # No declared command: nothing is run and the check could not run.
         assert report.outcome == OUTCOME_MERGED
         assert report.verify_command is None
-        assert report.verify_source == "no test runner detected"
+        assert report.verify_source.startswith("nothing declared")
+        assert report.verify_ok is False
         assert report.verify_status == "unverified"
         assert report.verify_ran is False
         assert standin.ran() == set()
@@ -1254,14 +1224,15 @@ class TestNothingOutlivesATimeout:
 
         pid = int(standin.lines("background.pid")[0])
         try:
-            assert report.verify_status == "unverified"
+            # A check that hangs failed (a timeout is a real defect).
+            assert report.verify_status == "failed"
             assert not _still_running(pid), "the check's child outlived the merge"
         finally:
             _kill_quietly(pid)
 
 
 class TestInstallPathsTheCoachProvedByHand:
-    def test_an_install_that_times_out_before_the_merge_is_could_not_run(
+    def test_an_install_that_times_out_is_could_not_run(
         self, standin: Standin
     ):
         slow_install = "#!/bin/sh\nexec sleep 30\n"
@@ -1274,28 +1245,10 @@ class TestInstallPathsTheCoachProvedByHand:
         assert report.outcome == OUTCOME_MERGED
         assert report.verify_status == "unverified"
         assert report.verify_ran is False
-        assert report.baseline_measured is None
+        assert report.verify_ok is False
         assert "ran out of its 2 seconds" in report.verify_detail
-        assert TARGET in report.verify_detail
+        assert "the merged result" in report.verify_detail
         assert "check-ran" not in standin.ran()
-
-    @pytest.mark.parametrize("how", ["baseline off", "baseline handed in"])
-    def test_a_single_install_when_no_baseline_is_measured(
-        self, standin: Standin, how: str
-    ):
-        standin.init().branch({"deps.txt": "alpha\nbeta\ngamma\n"})
-
-        if how == "baseline off":
-            report = standin.merge(measure_baseline=False)
-        else:
-            report = standin.merge(baseline_failing=[])
-
-        assert report.verify_status == "passed", report.verify_detail
-        assert len(standin.lines("install-ran")) == 1
-        assert len(standin.lines("check-ran")) == 1
-        notes = " ".join(report.notes)
-        assert "ran on the merged result" in notes
-        assert f"ran on {TARGET}" not in notes
 
     def test_an_install_that_dirties_the_merged_tree_still_runs_the_check(
         self, standin: Standin
@@ -1319,8 +1272,8 @@ class TestInstallPathsTheCoachProvedByHand:
         # What the install wrote is left in the folder; the check runs.
         assert report.outcome == OUTCOME_MERGED
         assert report.verify_ran is True, report.verify_detail
-        assert len(standin.lines("install-ran")) == 2
-        assert len(standin.lines("check-ran")) == 2
+        assert len(standin.lines("install-ran")) == 1
+        assert len(standin.lines("check-ran")) == 1
 
     def test_an_install_command_that_cannot_start_is_could_not_run(
         self, standin: Standin
@@ -1497,7 +1450,7 @@ class TestTheMergeCheckUsesTheTargetsJudges:
         assert report.verify_status == "passed", report.verify_detail
         assert report.judged_with_main_copies == ("scripts/check.sh",)
         assert "appended" not in standin.lines("check-ran")
-        assert standin.lines("check-ran") == ["check", "check"]
+        assert standin.lines("check-ran") == ["check"]
         folder = standin.folder
         assert _clean(folder)
         assert (folder / "scripts/check.sh").read_text(encoding="utf-8") == appended
@@ -1512,7 +1465,7 @@ class TestTheMergeCheckUsesTheTargetsJudges:
         report = standin.merge()
 
         assert report.verify_status == "passed", report.verify_detail
-        assert standin.lines("tools") == ["absent", "absent"]
+        assert standin.lines("tools") == ["absent"]
         assert "tools/check.sh" in report.judged_with_main_copies
         assert (standin.folder / "tools/check.sh").is_file()
         assert _clean(standin.folder)
@@ -1527,7 +1480,7 @@ class TestTheMergeCheckUsesTheTargetsJudges:
         report = standin.merge()
 
         assert report.verify_status == "passed", report.verify_detail
-        assert standin.lines("install-ran") == ["install", "install"]
+        assert standin.lines("install-ran") == ["install"]
         assert report.judged_with_main_copies == ("scripts/install.sh",)
         assert not (standin.folder / "scripts/install.sh").exists()
         assert _clean(standin.folder)
@@ -1553,7 +1506,7 @@ class TestTheMergeCheckUsesTheTargetsJudges:
         # October 2026); the check runs after the join, with main's copy.
         assert report.outcome == OUTCOME_MERGED
         assert report.verify_ran is True, report.verify_detail
-        assert standin.lines("check-ran") == ["check", "check"]
+        assert standin.lines("check-ran") == ["check"]
         assert standin.build_copy_never_ran()
 
     def test_the_report_names_the_files_checked_with_mains_copies(
@@ -1629,7 +1582,7 @@ class TestTheMergeCheckUsesTheTargetsJudges:
         assert report.verify_status == "passed", report.verify_detail
         assert new in report.judged_with_main_copies
         marker = "check-ran" if role == "check" else "install-ran"
-        assert standin.lines(marker) == [role, role]
+        assert standin.lines(marker) == [role]
         assert standin.build_copy_never_ran()
         assert _clean(standin.folder)
 
@@ -1654,7 +1607,7 @@ class TestAJudgeOutsideTheProtectedPaths:
         assert report.verify_status == "passed", report.verify_detail
         assert report.judged_with_main_copies == ()
         assert report.judged_with_build_copies == ("scripts/check.sh",)
-        assert standin.lines("check-ran") == ["check", "check", "appended"]
+        assert standin.lines("check-ran") == ["check", "appended"]
         receipt = "\n".join(report.receipt_lines())
         assert "this build's version was kept" in receipt
         assert "scripts/check.sh" in receipt
@@ -1971,7 +1924,7 @@ class TestTheTargetsBytesWhateverTheBuildsAttributes:
         assert report.verify_status == "unverified", report.verify_detail
         assert "failed on the merged result" in report.verify_detail
         assert _no_converted_marker(standin)
-        assert standin.lines("check-ran") == ["check"]  # only the baseline
+        assert standin.lines("check-ran") == []  # the install failed first
 
 
 class TestTheReportSaysWhatWasPutInPlace:
@@ -2154,7 +2107,7 @@ class TestGitFailingAroundTheCheck:
         assert (folder / "scripts/install.sh").read_text(
             encoding="utf-8"
         ) == green_install
-        assert standin.ran() == {"install-ran", "check-ran"}  # the baseline only
+        assert standin.ran() == set()  # nothing ran after the join
         assert standin.build_copy_never_ran()
         assert "did not finish" in _report_text(report)
 
