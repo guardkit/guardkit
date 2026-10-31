@@ -35,6 +35,16 @@
 - reason: <one line>
 -->
 
+### 2026-10-31 — touched and restored, no net byte change (guardkit/orchestrator/feature_loader.py)
+- specialist-agent re-pin commit / contract §0 note: none needed; the file's bytes at
+  60266ffb equal those at 394d80e5.
+- G2b re-freeze: not requested; no pin moves.
+- reason: the after-task check redesign (02316ab2) removed `SmokeGates.exit5_is_hard_fail`
+  from this file without the re-freeze; 60266ffb put the file back to its pinned bytes.
+  The field is read again but no longer changes anything: the smoke gate passes only on
+  `expected_exit`, so exit 5 fails either way. The field's docstring here still describes
+  the old soft pass; correcting it, or removing the field, is a re-freeze for Rich to decide.
+
 ### 2026-10-27 — the cull: step 8.6 removed from feature-plan.md (installer/core/commands/feature-plan.md)
 - specialist-agent re-pin commit / contract §0 note: OWED — specialist-agent
   `src/specialist_agent/templates/pins.py` (line 163) and
