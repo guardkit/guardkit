@@ -1,10 +1,8 @@
 """CoachValidator awareness of the OPERATOR_HANDOFF task_type (TASK-FPTC-004).
 
-A task with ``task_type: operator_handoff`` short-circuits
-``CoachValidator.gather_evidence``: no project checks run, and the
-``task_work_results.json`` file (which may not exist, because the Player was
-skipped) is never read. Every other task type proceeds to the regular
-evidence gathering.
+A task with ``task_type: operator_handoff`` has its changed parts tested
+like every other task type (1 November 2026: it used to skip the check, so a
+part it changed went untested).
 
 Coverage Target: >=85%
 """
@@ -30,55 +28,33 @@ def validator(tmp_path: Path) -> CoachValidator:
     return CoachValidator(str(tmp_path))
 
 
-class TestOperatorHandoffShortCircuit:
-    """operator_handoff returns an empty, complete bundle."""
+class TestOperatorHandoffIsTestedLikeAnyTask:
+    """An operator hand-over no longer skips the check (1 November 2026).
 
-    def test_operator_handoff_returns_empty_bundle(
+    In a feature build the orchestrator defers these tasks without running
+    the builder (TASK-FPTC-003), so they change nothing and have nothing to
+    run. A single-task build did reach the Coach, which skipped the check, so
+    a part the task changed went untested. Its changed parts are now tested
+    like any other task's (tests/orchestrator/test_changed_parts_check.py
+    runs one for real).
+    """
+
+    def test_operator_handoff_runs_the_changed_parts_check(
         self, validator: CoachValidator
     ) -> None:
-        task = {
-            "id": "TASK-FPTC-OP-001",
-            "task_type": "operator_handoff",
-            "acceptance_criteria": [
-                "AC-1: operator runs ./scripts/foo and observes 200 OK",
-                "AC-2: registry shows the new entry within 30 seconds",
-            ],
-        }
-
-        bundle = validator.gather_evidence(
-            task_id="TASK-FPTC-OP-001", turn=1, task=task
-        )
-
-        assert isinstance(bundle, CoachEvidenceBundle)
-        assert bundle.gathering_status == "complete"
-        assert bundle.task_type == TaskType.OPERATOR_HANDOFF.value
-        assert bundle.independent_tests is None
-        assert bundle.runtime_parity is None
-        assert bundle.behavioural_oracle is None
-
-    def test_operator_handoff_skips_results_read_and_test_run(
-        self, validator: CoachValidator
-    ) -> None:
-        """The short-circuit fires BEFORE ``read_quality_gate_results``.
-
-        If the orchestrator skipped Player invocation (TASK-FPTC-003), the
-        ``task_work_results.json`` file will not exist.
-        """
         task = {"id": "TASK-FPTC-OP-003", "task_type": "operator_handoff"}
+        ran = IndependentTestResult.skipped(test_output_summary="nothing changed")
 
         with patch.object(
-            CoachValidator, "read_quality_gate_results"
-        ) as read_mock, patch.object(
-            CoachValidator, "run_independent_tests"
+            CoachValidator, "run_changed_parts", return_value=ran
         ) as run_mock:
             bundle = validator.gather_evidence(
                 task_id="TASK-FPTC-OP-003", turn=1, task=task
             )
 
-        assert bundle.independent_tests is None
-        read_mock.assert_not_called()
-        run_mock.assert_not_called()
-
+        run_mock.assert_called_once()
+        assert bundle.task_type == TaskType.OPERATOR_HANDOFF.value
+        assert bundle.independent_tests is ran
 
 class TestNonOperatorHandoffNotShortCircuited:
     """Every other task type proceeds to the regular evidence gathering."""

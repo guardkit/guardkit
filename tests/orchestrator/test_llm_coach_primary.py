@@ -140,10 +140,18 @@ def orchestrator(
 
 
 def _empty_bundle() -> CoachEvidenceBundle:
+    """A complete bundle whose changed parts' tests ran and passed. A bundle
+    with no test result at all now stops the turn (1 November 2026)."""
     return CoachEvidenceBundle(
         gathering_status="complete",
         task_type="feature",
         profile_name="feature",
+        independent_tests=IndependentTestResult(
+            tests_passed=True,
+            test_command="true",
+            test_output_summary="passed",
+            duration_seconds=0.0,
+        ),
     )
 
 
@@ -267,12 +275,12 @@ class TestPrimaryFlow:
 
 
 # ---------------------------------------------------------------------------
-# A gathering error: the reviewer runs without the bundle
+# A gathering error: nothing was measured, so the check could not run
 # ---------------------------------------------------------------------------
 
 
 class TestPrimaryFlowGatheringError:
-    def test_gather_evidence_exception_runs_the_reviewer_without_a_bundle(
+    def test_gather_evidence_exception_stops_the_turn_as_could_not_run(
         self,
         orchestrator: AutoBuildOrchestrator,
         mock_worktree: Worktree,
@@ -290,9 +298,12 @@ class TestPrimaryFlowGatheringError:
 
             result = _invoke_coach(orchestrator, mock_worktree)
 
-        assert mock_agent_invoker.invoke_coach.call_count == 1
-        assert mock_agent_invoker.invoke_coach.call_args.kwargs["evidence_bundle"] is None
-        assert result.report.get("decision") == "approve"
+        # It used to run the reviewer without the bundle and approve the
+        # task untested (1 November 2026).
+        assert mock_agent_invoker.invoke_coach.call_count == 0
+        assert result.success is False
+        assert result.error.startswith("The check could not run")
+        assert "RuntimeError: boom" in result.error
         evidence_path = TaskArtifactPaths.private_artifact_path(
             "TASK-LCP-001", "coach_evidence_turn_1.json", tmp_path
         )

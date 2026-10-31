@@ -46,6 +46,7 @@ from guardkit.orchestrator.harness.selector import (
 )
 from guardkit.orchestrator.paths import TaskArtifactPaths
 from guardkit.orchestrator.quality_gates.coach_evidence import CoachEvidenceBundle
+from guardkit.orchestrator.quality_gates.coach_validator import IndependentTestResult
 from guardkit.worktrees.manager import Worktree
 
 
@@ -361,6 +362,17 @@ def _docs(root: Path) -> tuple[ProjectDocument, ...]:
 
 
 def _bundle(**extra: Any) -> CoachEvidenceBundle:
+    """A complete bundle whose changed parts' tests ran and passed (one with
+    no test result stops the turn, 1 November 2026)."""
+    extra.setdefault(
+        "independent_tests",
+        IndependentTestResult(
+            tests_passed=True,
+            test_command="true",
+            test_output_summary="passed",
+            duration_seconds=0.0,
+        ),
+    )
     return CoachEvidenceBundle(gathering_status="complete", **extra)
 
 

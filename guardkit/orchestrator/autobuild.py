@@ -6027,13 +6027,16 @@ class AutoBuildOrchestrator:
                 skip_arch_review=skip_arch_review,
                 context=context_prompt if context_prompt else None,
             )
-        except Exception as exc:  # noqa: BLE001 — the turn goes on without it
+        except Exception as exc:  # noqa: BLE001 — the turn stops below
             logger.error(
-                "gather_evidence raised for %s turn %s: %s. The reviewer runs "
-                "without the evidence bundle.",
+                "gather_evidence raised for %s turn %s: %s. Nothing was "
+                "measured, so the check could not run.",
                 task_id, turn, exc, exc_info=True,
             )
             evidence_bundle = None
+            gather_error = f"{type(exc).__name__}: {exc}"
+        else:
+            gather_error = None
 
         if evidence_bundle is not None:
             self._carry_measured_checks(evidence_bundle.independent_tests)
@@ -6083,7 +6086,7 @@ class AutoBuildOrchestrator:
         # no builder turn is spent on it: the turn ends as a Coach failure,
         # which stops the task with this sentence (31 October 2026).
         stop = self._check_could_not_run_stop(
-            evidence_bundle, task_id, turn, start_time
+            evidence_bundle, task_id, turn, start_time, gather_error=gather_error
         )
         if stop is not None:
             return stop
@@ -6221,17 +6224,34 @@ class AutoBuildOrchestrator:
         task_id: str,
         turn: int,
         start_time: float,
+        gather_error: Optional[str] = None,
     ) -> Optional[AgentInvocationResult]:
         """A failed Coach result when the changed parts' check could not run,
-        else ``None``. The error names each part and command."""
+        else ``None``. The error names each part and command.
+
+        No evidence bundle (gathering raised) or a bundle with no result of
+        the changed parts' tests is the check not having run too (1 November
+        2026): it used to approve the task untested.
+        """
         independent = getattr(evidence_bundle, "independent_tests", None)
-        if independent is None or not getattr(independent, "check_could_not_run", False):
+        if evidence_bundle is None:
+            detail = (
+                "The check could not run: gathering the evidence raised "
+                f"{gather_error or 'an error'}"
+            )
+        elif independent is None:
+            detail = (
+                "The check could not run: no result of the changed parts' "
+                "tests was recorded"
+            )
+        elif not getattr(independent, "check_could_not_run", False):
             return None
-        detail = (
-            independent.check_could_not_run_detail
-            or independent.test_output_summary
-            or "the check could not run"
-        )
+        else:
+            detail = (
+                independent.check_could_not_run_detail
+                or independent.test_output_summary
+                or "the check could not run"
+            )
         if not detail.lower().startswith("the check could not run"):
             detail = f"The check could not run: {detail}"
         logger.error("%s turn %s stopped: %s", task_id, turn, detail)

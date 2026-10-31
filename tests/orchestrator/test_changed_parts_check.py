@@ -413,6 +413,60 @@ class TestTheCheckOnAWorktree:
         assert bundle.independent_tests.tests_passed is True
         assert bundle.independent_tests.test_command != "skipped"
 
+    def test_an_operator_handoff_task_that_changes_a_part_runs_its_tests(
+        self, repo: Path, tmp_path: Path
+    ):
+        """An operator hand-over used to skip the check entirely, so a part
+        it changed went untested. Its changed parts are tested like any
+        other task's (1 November 2026)."""
+        marker = tmp_path / "ran.txt"
+        validator = _validator(
+            repo, {"components": {"app": {"cwd": "app", "test": _recorder(marker)}}}
+        )
+        _write(repo, "app/lib/new.dart", "void main() {}\n")
+
+        bundle = validator.gather_evidence(
+            "TASK-PARTS-001", 1, {"task_type": "operator_handoff"}
+        )
+
+        assert marker.exists()
+        assert bundle.independent_tests.tests_passed is True
+
+    def test_an_exception_while_testing_is_the_check_not_running(
+        self, repo: Path, monkeypatch
+    ):
+        """It used to be recorded as no result, which nothing stopped on,
+        and the task could be approved untested."""
+        validator = _validator(repo, {"test": "true"})
+
+        def boom(**_kwargs):
+            raise RuntimeError("the part could not be read")
+
+        monkeypatch.setattr(validator, "run_changed_parts", boom)
+        bundle = validator.gather_evidence("TASK-PARTS-001", 1, {})
+
+        result = bundle.independent_tests
+        assert result.check_could_not_run is True
+        assert "RuntimeError: the part could not be read" in result.check_could_not_run_detail
+        orch = AutoBuildOrchestrator.__new__(AutoBuildOrchestrator)
+        stop = orch._check_could_not_run_stop(bundle, "TASK-PARTS-001", 1, 0.0)
+        assert stop is not None and stop.success is False
+        assert "the part could not be read" in stop.error
+
+    def test_no_bundle_or_no_test_result_stops_the_task(self):
+        orch = AutoBuildOrchestrator.__new__(AutoBuildOrchestrator)
+        stop = orch._check_could_not_run_stop(
+            None, "TASK-PARTS-001", 1, 0.0, gather_error="OSError: disk gone"
+        )
+        assert stop is not None and stop.success is False
+        assert stop.error.startswith("The check could not run")
+        assert "OSError: disk gone" in stop.error
+        stop = orch._check_could_not_run_stop(
+            CoachEvidenceBundle(), "TASK-PARTS-001", 1, 0.0
+        )
+        assert stop is not None and stop.success is False
+        assert "no result of the changed parts' tests" in stop.error
+
     def test_the_builders_report_is_only_the_fallback(self, repo: Path, tmp_path: Path):
         marker = tmp_path / "ran.txt"
         validator = CoachValidator(

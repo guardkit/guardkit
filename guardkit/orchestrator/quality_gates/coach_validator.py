@@ -1194,14 +1194,9 @@ class CoachValidator:
         profile = get_profile(task_type)
         profile_name = getattr(profile, "name", None) or task_type.value
 
-        # OPERATOR_HANDOFF: no evidence to gather.
-        if task_type == TaskType.OPERATOR_HANDOFF:
-            return CoachEvidenceBundle(
-                gathering_status="complete",
-                task_type=task_type.value,
-                profile_name=profile_name,
-            )
-
+        # Every task type, an operator hand-over included, has the parts it
+        # changed tested (1 November 2026): a task that changed no part has
+        # nothing to run, and one that did cannot be approved untested.
         task_work_results = self.read_quality_gate_results(task_id)
         if "error" in task_work_results:
             logger.info(
@@ -1216,7 +1211,7 @@ class CoachValidator:
 
         # The tests of the parts this task changed, whatever its task type
         # (after-task check redesign, 31 October 2026).
-        test_result: Optional[IndependentTestResult]
+        test_result: IndependentTestResult
         try:
             test_result = self.run_changed_parts(
                 task_work_results=task_work_results,
@@ -1227,7 +1222,17 @@ class CoachValidator:
             logger.error(
                 "gather_evidence: the changed parts' tests raised: %s", exc,
             )
-            test_result = None
+            # Nothing was measured, so the task is not approved: the check
+            # could not run (1 November 2026; it used to be recorded as no
+            # result at all, and nothing stopped on that).
+            test_result = IndependentTestResult.could_not_run(
+                test_command="<the changed parts' tests>",
+                detail=(
+                    "the check could not run: "
+                    f"{type(exc).__name__}: {exc}"
+                ),
+                duration_seconds=0.0,
+            )
             gathering_status = "partial_exception"
             gathering_error = f"independent_tests_exception: {exc}"
 
