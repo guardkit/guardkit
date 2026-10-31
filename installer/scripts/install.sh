@@ -464,7 +464,7 @@ install_python_package() {
         print_warning "Claude Agent SDK not importable"
         print_info "AutoBuild features require the SDK. Install with:"
         print_info "  pip install claude-agent-sdk"
-        print_info "  # OR reinstall guardkit with: pip install guardkit-py[autobuild]"
+        print_info "  # OR reinstall guardkit from its checkout: python3 -m pip install -e \"<guardkit checkout>[autobuild]\""
     fi
 
 }
@@ -994,7 +994,7 @@ case "$1" in
         else
             # Fall back to shell script
             echo -e "${YELLOW}Note: guardkit-py not found, using shell init${NC}"
-            echo -e "${YELLOW}Install with: pip install guardkit-py${NC}"
+            echo -e "${YELLOW}Install with: python3 -m pip install -e <guardkit checkout> (guardkit-py is not on PyPI)${NC}"
             echo ""
             shift
             export CLAUDE_HOME="$AGENTECFLOW_HOME"

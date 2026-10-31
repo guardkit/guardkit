@@ -53,11 +53,14 @@ autobuild = [
     # Upper bound <0.3 = the 0.2.x series, audited against GuardKit's use of
     # the SDK on 18 October 2026; re-audit before bumping past 0.3.
     "claude-agent-sdk>=0.2.121,<0.3",
-    # TASK-HMIG-006 AC-005: cross-repo dispatch through the
-    # HarnessAdapter substrate seam. Resolved from a sibling repo in
-    # operator-side dev via [tool.uv.sources] below; end-user installs
-    # pick up whichever release matches the version contract.
-    "guardkitfactory>=0.2.0,<1",
+    # Cross-repo dispatch through the HarnessAdapter seam. guardkitfactory,
+    # nats-core and fleet-memory are GuardKit's own public repositories and are
+    # not on PyPI (31 Oct 2026: guardkitfactory and fleet-memory are absent there,
+    # and PyPI's "nats-core" is an unrelated NATS package), so a plain name made
+    # `pip install ".[autobuild]"` fail or reach the wrong package. Each is taken
+    # from its GitHub repository at an exact commit; move the commit to update.
+    # uv still uses the sibling checkouts in [tool.uv.sources] for local work.
+    "guardkitfactory @ git+https://github.com/guardkit/guardkitfactory.git@cd00e2d520e2e2517cc333dffcfd634c0b3c42f1",
 ]
 # FalkorDB Python client. Used by `guardkit memory migrate-graph`
 # (guardkit/memory/graph_export.py reads Episodic nodes directly). Formerly
@@ -111,8 +114,8 @@ templates = [
 # worktree venv via `bootstrap_extras: [dev, memory]` (a bare extra is never
 # installed otherwise).
 memory = [
-    "nats-core>=0.4,<1",
-    "fleet-memory>=0.1,<1",
+    "nats-core @ git+https://github.com/guardkit/nats-core.git@ef4d8fd704ceb7ad10f9a9563bd3fed722e106de",
+    "fleet-memory @ git+https://github.com/guardkit/fleet-memory.git@e8ccf1283ff6ddab4882d6a63a3e7fe9b5980a1f",
 ]
 # Visual comparison for design mode (guardkit/orchestrator/visual_comparator.py):
 # the SSIM score comes from scikit-image and the images are read with Pillow. It
@@ -126,9 +129,9 @@ visual = [
 ]
 all = [
     "claude-agent-sdk>=0.2.121,<0.3",
-    "guardkitfactory>=0.2.0,<1",
-    "nats-core>=0.4,<1",
-    "fleet-memory>=0.1,<1",
+    "guardkitfactory @ git+https://github.com/guardkit/guardkitfactory.git@cd00e2d520e2e2517cc333dffcfd634c0b3c42f1",
+    "nats-core @ git+https://github.com/guardkit/nats-core.git@ef4d8fd704ceb7ad10f9a9563bd3fed722e106de",
+    "fleet-memory @ git+https://github.com/guardkit/fleet-memory.git@e8ccf1283ff6ddab4882d6a63a3e7fe9b5980a1f",
     "falkordb>=1.6,<2",
     "pytest>=7.4.3",
     "pytest-cov>=4.1.0",
@@ -177,6 +180,10 @@ Homepage = "https://github.com/guardkit/guardkit"
 Documentation = "https://github.com/guardkit/guardkit/tree/main/docs"
 Repository = "https://github.com/guardkit/guardkit"
 Issues = "https://github.com/guardkit/guardkit/issues"
+
+[tool.hatch.metadata]
+# The extras above name GuardKit's own GitHub repositories at exact commits.
+allow-direct-references = true
 
 [tool.hatch.version]
 path = "guardkit/__init__.py"

@@ -1136,8 +1136,7 @@ dependencies = [
     { name = "langchain-openai" },
     { name = "langgraph" },
     { name = "langsmith" },
-    { name = "tree-sitter" },
-    { name = "tree-sitter-language-pack" },
+    { name = "pyyaml" },
 ]
 
 [package.metadata]
@@ -1151,10 +1150,8 @@ requires-dist = [
     { name = "langsmith", specifier = ">=0.12.4,<1" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.10" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8" },
-    { name = "pytest-bdd", marker = "extra == 'dev'", specifier = ">=7" },
+    { name = "pyyaml", specifier = ">=6,<7" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6" },
-    { name = "tree-sitter", specifier = ">=0.25,<1" },
-    { name = "tree-sitter-language-pack", specifier = ">=1.0,<2" },
 ]
 provides-extras = ["dev"]
 
