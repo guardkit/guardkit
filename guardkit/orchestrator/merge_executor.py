@@ -52,6 +52,7 @@ from guardkit.orchestrator.completion_verification import (
     DEFAULT_VERIFY_TIMEOUT,
     VerificationResult,
     check_command_texts,
+    part_install_texts,
     resolve_verify_command,
     resolve_verify_command_with_declaration,
     run_completion_verification,
@@ -836,8 +837,8 @@ def _pin_the_judge_on_target(
       command is looked for anywhere else, so ``resolution`` is ``None``;
     * the full check comes from that reading (nothing declared means no
       check: GuardKit never chooses a command), and the plain words of every
-      command it can run with the install's are the judge words
-      (:func:`judge_words`);
+      command it can run with the install's and every component's and
+      part's install are the judge words (:func:`judge_words`);
     * a file those commands name directly (a judge file) that is a symbolic
       link, or sits under one, in the target's tree or the build's, means no
       automatic verdict (:data:`JUDGE_IS_A_LINK`);
@@ -872,6 +873,7 @@ def _pin_the_judge_on_target(
         declarations,
         " ; ".join(check_command_texts(declarations.toolchain)) or None,
         verify_timeout,
+        part_installs=part_install_texts(declarations.toolchain),
     )
 
     if pinned.judge_words:

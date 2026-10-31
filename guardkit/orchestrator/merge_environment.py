@@ -482,13 +482,18 @@ def pin_merge_environment(
     declarations: MergeDeclarations,
     test_command: Optional[str],
     verify_timeout: int,
+    part_installs: Sequence[str] = (),
 ) -> Tuple[Optional[MergeEnvironment], Optional[str]]:
     """Pin what the merge will run.
 
     Returns ``(pinned, None)``: the second place is kept for callers that
     read it and is always ``None``. The judge words come from the resolved
-    test command and the declared install. The install runs as the argument
-    list ``shlex.split`` gives; text that cannot be split is not run.
+    test command, the declared install and ``part_installs``: every
+    component's and part's install, which the full check runs in the part's
+    folder as an argument list, without a shell (31 October 2026; they were
+    left out, so a protected script a part's install runs was run from the
+    build's copy). The install runs as the argument list ``shlex.split``
+    gives; text that cannot be split is not run.
     ``judge_files_changed`` is filled in later, by the
     merge, from the files the build changed.
     """
@@ -496,6 +501,9 @@ def pin_merge_environment(
     if test_command:
         test_words, _ = judge_words(test_command, through_shell=True)
         words.extend(test_words or ())
+    for text in part_installs:
+        part_words, _ = judge_words(text, through_shell=False)
+        words.extend(part_words or ())
 
     toolchain = declarations.toolchain
     install_text = (toolchain.install or "") if toolchain is not None else ""

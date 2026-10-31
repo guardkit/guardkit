@@ -580,6 +580,57 @@ class TestTheJudgeFiles:
         assert standin.lines("install-ran") == ["install"]
         assert standin.build_copy_never_ran()
 
+    @pytest.mark.parametrize("declared_as", ["component", "part"])
+    def test_a_branch_that_edits_a_parts_install_script_is_installed_with_mains_copy(
+        self, standin: Standin, declared_as: str
+    ):
+        # 31 October 2026: the merge's full check runs every component's and
+        # part's install before that part's tests, so a protected script one
+        # of them runs is judged like the root install's: main's copy runs.
+        part_setup = (
+            "#!/bin/sh\n"
+            'echo setup >> "@MARKERS@/part-install-ran"\n'
+        )
+        edited_setup = (
+            "#!/bin/sh\n"
+            'echo edited >> "@MARKERS@/part-install-ran"\n'
+        )
+        if declared_as == "component":
+            extra = (
+                "  components:\n"
+                "    app:\n"
+                "      cwd: apps/app\n"
+                '      install: "bash scripts/setup.sh"\n'
+                '      test: "true"\n'
+            )
+        else:
+            extra = (
+                "  parts:\n"
+                "    - under: apps\n"
+                "      marker: part.txt\n"
+                '      install: "bash scripts/setup.sh"\n'
+                '      test: "true"\n'
+            )
+        standin.init(
+            config=config_text(
+                extra_toolchain=extra, protected=("scripts", "apps/app/scripts")
+            ),
+            files={
+                "apps/app/part.txt": "a part\n",
+                "apps/app/scripts/setup.sh": standin.script(part_setup),
+            },
+        )
+        standin.branch(
+            {"apps/app/scripts/setup.sh": standin.script(edited_setup)}
+        )
+
+        report = standin.merge()
+
+        assert report.verify_status == "passed", report.verify_detail
+        assert report.judged_with_main_copies == ("apps/app/scripts/setup.sh",)
+        assert "setup" in standin.lines("part-install-ran")
+        assert "edited" not in standin.lines("part-install-ran")
+
     def test_a_branch_that_adds_a_new_judge_script_counts(self, standin: Standin):
         standin.init(files={"scripts/check.sh": None})
         standin.branch({"scripts/check.sh": standin.script(ALWAYS_GREEN_SH)})

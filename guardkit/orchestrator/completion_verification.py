@@ -56,6 +56,7 @@ __all__ = [
     "VerificationResult",
     "NOTHING_DECLARED",
     "check_command_texts",
+    "part_install_texts",
     "resolve_verify_command",
     "resolve_verify_command_with_declaration",
     "run_completion_verification",
@@ -120,6 +121,27 @@ def check_command_texts(declaration: Optional[ToolchainDeclaration]) -> List[str
     texts = [declaration.test] if declaration.test else []
     texts += [c.test for _, c in sorted((declaration.components or {}).items()) if c.test]
     texts += [entry.test for entry in declaration.parts or () if entry.test]
+    return texts
+
+
+def part_install_texts(declaration: Optional[ToolchainDeclaration]) -> List[str]:
+    """The text of every component's and ``parts:`` entry's ``install``, for
+    the merge's judge-file rule (31 October 2026).
+
+    The full check runs each one in its part's folder before that part's
+    tests (:func:`_install_part`), so a script one of them names is judged
+    like a script the root install names: the target's copy when it is under
+    the protected paths, and the link rule applies. The root ``install`` is
+    the merge's own pinned install and is not listed here.
+    """
+    if declaration is None:
+        return []
+    texts = [
+        c.install
+        for _, c in sorted((declaration.components or {}).items())
+        if c.install
+    ]
+    texts += [entry.install for entry in declaration.parts or () if entry.install]
     return texts
 
 
