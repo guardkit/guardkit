@@ -78,7 +78,7 @@ PIPE_NAME = "0123456789abcdef0123456789abcdef"  # 32 characters
 def test_a_socket_in_the_tmpdir_fits_with_a_deep_repo_and_a_long_feature(
     tmp_path: Path,
 ) -> None:
-    deep = tmp_path / ("very-long-folder-name-" * 4) / "Projects" / "appmilla_github"
+    deep = tmp_path / ("very-long-folder-name-" * 4) / "Projects" / "work"
     deep.mkdir(parents=True)
     repo = deep / "career-assistant-dotnet"
     repo.mkdir()
