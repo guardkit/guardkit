@@ -15,8 +15,7 @@ Where it lives
 ``<repo>/.guardkit/config.yaml``, top-level ``toolchain:`` block — the repo
 level, because a toolchain is a property of the REPO and every existing
 mechanism that answers "how do I run this repo's tests" is already repo-keyed
-(``STACK_TEST_PROFILES`` matches repo marker globs; ``_scan_directory`` reads
-repo manifests; the deleted pytest default was a repo-level assumption wearing
+(``_scan_directory`` reads repo manifests; the deleted pytest default was a repo-level assumption wearing
 a per-task disguise). The reader precedent is
 ``AutoBuildOrchestrator._load_coach_config``, which reads the same file.
 
@@ -32,9 +31,6 @@ Shape
       typecheck:       "npm run typecheck" # non-verdict legs (see below)
       lint:            "npm run lint"
       build:           "npm run build"
-      absent_substrings: ["missing script"] # optional stack-row overlay
-      ran_marker_regex:  null
-      requires_ran_marker: true
       runtime: {node: "v24.15.0"}
       environment_inventory: "npm ls --all" # evidence only (run_evidence)
 
@@ -47,10 +43,12 @@ Two laws (design §B.4)
 ----------------------
 **LAW — exit code is the verdict.** A declared command passes iff
 ``returncode == 0``. Parsing a command's stdout is advisory only; it may
-enrich a checkpoint or a summary, it may never decide green. The one
-permitted exception is not parsing-for-verdict but a false-green guard
-(``success_requires_ran_marker``), which may turn a 0 into "absent", never an
-absence into a pass.
+enrich a checkpoint or a summary, it may never decide anything. (Until 1
+November 2026 a per-framework "a test ran" rule could turn a 0 into "no
+test signal"; it was removed with the stack rows it used. The
+``absent_substrings``, ``ran_marker_regex`` and ``requires_ran_marker``
+fields are still accepted, so a project that declares them keeps its
+toolchain, and are not used.)
 
 **LAW — the declaration is snapshotted before the model's first turn.** This
 file lives INSIDE the target repo, which means it lives inside the worktree
@@ -290,7 +288,10 @@ class _ToolchainCommands(BaseModel):
     test_timeout: int = Field(default=_DEFAULT_TIMEOUT, ge=1, le=_MAX_TIMEOUT)
     install_timeout: int = Field(default=_DEFAULT_TIMEOUT, ge=1, le=_MAX_TIMEOUT)
 
-    # ---- optional overlay of the stack row's absence classifier ----------
+    # ---- accepted and not used (1 November 2026) -------------------------
+    # They overlaid the removed per-framework "a test ran" rule. Kept in the
+    # schema because ``extra="forbid"`` would otherwise drop the whole
+    # toolchain of a project that still declares them.
     absent_substrings: Optional[List[str]] = None
     ran_marker_regex: Optional[str] = None
     requires_ran_marker: Optional[bool] = None

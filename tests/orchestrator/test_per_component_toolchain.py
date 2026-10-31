@@ -30,15 +30,12 @@ Network-free and broker-free: the only subprocesses are ``pwd``/``true``/
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 import yaml
 
-from guardkit.orchestrator.quality_gates.coach_validator import (
-    CoachValidator,
-    IndependentTestResult,
-)
+from guardkit.orchestrator.quality_gates.coach_validator import CoachValidator
 from guardkit.orchestrator.toolchain_declaration import (
     DeclaredPart,
     snapshot_task_toolchain,
@@ -177,30 +174,6 @@ class TestComponentCommandResolution:
             root, worktree, STUDY_TUTOR_SHAPE, component="app", test_timeout=120
         )
         assert v.test_timeout == 120
-
-    def test_a_components_classifier_overlay_is_the_components_own(self, repo):
-        root, worktree = repo
-        (worktree / "app" / "package.json").touch()  # a node row in the SUBDIR
-        v = _validator(
-            root,
-            worktree,
-            {
-                "test": "pytest -q",
-                "components": {
-                    "app": {
-                        "cwd": "app",
-                        "test": "npx vitest run",
-                        "absent_substrings": ["no test files found"],
-                    }
-                },
-            },
-            component="app",
-        )
-        v._detect_test_command()
-        profile = v._active_stack_profile
-        assert profile is not None
-        assert profile.stack == "node"  # matched in app/, not at the root
-        assert profile.absent_substrings == ("no test files found",)
 
 
 # =========================================================================

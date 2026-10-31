@@ -85,40 +85,6 @@ class TestDeclaredWinsOverDetection:
         v = CoachValidator(str(worktree), task_id=_TASK_ID)
         assert v._detect_test_command() is None
 
-    def test_declaration_overlays_the_matched_stack_row(self, repo):
-        """The row is DATA; the declaration overlays it. The node row's
-        false-green guard (``success_requires_ran_marker``) is inherited."""
-        root, worktree = repo
-        (worktree / "package.json").touch()
-        v = _validator_with_declaration(root, worktree, {"test": "npx vitest run"})
-        v._detect_test_command()
-        profile = v._active_stack_profile
-        assert profile is not None
-        assert profile.stack == "node"
-        assert profile.whole_suite_command == "npx vitest run"
-        assert profile.success_requires_ran_marker is True
-
-    def test_declared_classifier_fields_override_the_row(self, repo):
-        root, worktree = repo
-        (worktree / "package.json").touch()
-        v = _validator_with_declaration(
-            root,
-            worktree,
-            {
-                "test": "npx vitest run",
-                "absent_substrings": ["no test files found"],
-                "requires_ran_marker": False,
-            },
-        )
-        v._detect_test_command()
-        profile = v._active_stack_profile
-        assert profile.absent_substrings == ("no test files found",)
-        assert profile.success_requires_ran_marker is False
-        # ran_marker_regex was NOT declared ⇒ inherited from the node row.
-        assert profile.ran_marker_regex is not None
-
-    # ---- the M0-positive half -------------------------------------------
-
     def test_parallel_wave_honours_the_declaration(self, repo):
         """A parallel wave must NOT fall through to the LLM test-orchestrator
         when the repo has told us the answer. This removes the one frontier
@@ -201,17 +167,6 @@ class TestPytestDemotion:
         assert chosen == _TODAYS_PYTEST_DEFAULT
         # The same repository without the declaration gets no command.
         assert control._detect_test_command() is None
-
-    def test_declared_pytest_acquires_no_stack_profile(self, repo):
-        """No marker row matched and no classifier field was declared, so the
-        run keeps the existing pytest absence classifier — which is what makes
-        the byte-identity claim true at execution time, not just at
-        string-comparison time."""
-        root, worktree = repo
-        (worktree / "pyproject.toml").touch()
-        v = _validator_with_declaration(root, worktree, {"test": _TODAYS_PYTEST_DEFAULT})
-        v._detect_test_command()
-        assert v._active_stack_profile is None
 
     def test_a_declared_pytest_command_runs_exactly_as_declared(self, repo):
         """31 October 2026: GuardKit does not rewrite a declared ``pytest …``

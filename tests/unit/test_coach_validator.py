@@ -192,8 +192,11 @@ class TestIndependentTestVerification:
             validator = CoachValidator(str(tmp_worktree), toolchain=ToolchainDeclaration(test="make test"))
             result = validator.run_independent_tests()
 
+        # The command did not start, so the check could not run (1 November
+        # 2026; it was recorded as no test signal).
         assert result.tests_passed is False
-        assert "failed" in result.test_output_summary.lower()
+        assert result.check_could_not_run is True
+        assert "could not start" in result.test_output_summary
 
     def test_run_tests_uses_custom_command(self, tmp_worktree):
         """Test custom test command is used."""

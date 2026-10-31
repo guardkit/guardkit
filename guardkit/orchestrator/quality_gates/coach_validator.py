@@ -52,12 +52,6 @@ from typing import (
 from guardkit.lib.pytest_summary import parse_pytest_summary
 from guardkit.orchestrator import evidence_repos as evidence_repos_lib
 from guardkit.orchestrator.evidence_repos import EvidenceRepo, EvidenceTestResult
-from guardkit.orchestrator.quality_gates.stack_test_execution import (
-    StackTestProfile,
-    classify_absent_for_stack,
-    detect_stack_profile,
-    overlay_declared_profile,
-)
 from guardkit.orchestrator.launch_declaration import (
     load_launch_declaration,
     load_launch_snapshot,
@@ -636,20 +630,14 @@ class CoachValidator:
         "cassandra",
     ]
 
-    # TASK-ABFIX-012: stack-agnostic HOST-SUBSTRATE gap signals. A test command
-    # that could not run because a host tool is missing (the command itself, or a
-    # tool a test shells out to — e.g. psql/docker/dotnet/npm/node). Routed to
-    # ("infrastructure", "high") in ``_classify_test_failure`` AND to
-    # ``signal_absent=True`` in ``run_independent_tests`` (via
-    # ``_is_host_substrate_gap``), so a substrate-blocked TESTING task surfaces as
-    # ABSENT / feedback (bounded by max_turns) — never a code-class block (the
-    # false-red ABFIX-010 prevents) and never a false pass
-    # (absence-of-failure-is-not-success). Stack-agnostic shell vocabulary, not
-    # Python-specific. NOTE: the bare ": not found" / "no such file or directory"
-    # idioms are intentionally EXCLUDED — they false-match legitimate code
-    # failures ("key: not found", a test asserting FileNotFoundError), which would
-    # mis-route a real bug to infrastructure and re-open a false-green. The
-    # definitive rc-126/127 signal in ``_is_host_substrate_gap`` covers those.
+    # TASK-ABFIX-012: shell words for a missing host tool (psql, docker, npm).
+    # They only shape the words the builder is sent (``_classify_test_failure``
+    # labels such a failure "infrastructure"); since 1 November 2026 they never
+    # turn a failed run into "no test signal": a declared command whose own
+    # program is missing could not run (``missing_program``), and a tool
+    # missing inside a running script is a failure. The bare ": not found" /
+    # "no such file or directory" idioms are excluded: they match legitimate
+    # code failures ("key: not found").
     _HOST_SUBSTRATE_MISSING_PATTERNS: List[str] = [
         "command not found",
         "executable file not found",
@@ -808,11 +796,6 @@ class CoachValidator:
         # started the round. None on every other turn -> nothing runs.
         self.feature_check_repair: Optional[Any] = feature_check_repair
         self.wave_size = max(1, int(wave_size))
-        # TASK-AB-NPDET01: the non-Python stack test-execution profile resolved
-        # by ``_detect_test_command`` for THIS run (None when no stack row
-        # matches and the declaration overlays nothing). ``run_independent_tests`` reads it to classify
-        # absence stack-awarely (missing toolchain / zero-test => signal_absent).
-        self._active_stack_profile: Optional[StackTestProfile] = None
         # TASK-DIAG-F4A2: Turn number for sdk_debug preservation paths.
         # Default 1 keeps backwards-compat for callers that don't pass it.
         self._turn = max(1, int(turn))
@@ -2111,39 +2094,13 @@ class CoachValidator:
                     # held back from this command (13 October 2026).
                     summary = f"{summary}\n{self._held_back_note()}"
 
-                signal_absent = False
-                # TASK-AB-NPDET01: a non-Python deterministic run classifies
-                # absence stack-awarely on BOTH the success and failure branch —
-                # the exit-0 zero-test guard. A runner that exits 0 having
-                # executed ZERO tests (go ``[no test files]`` only; dotnet
-                # "No test is available"; npm "no test specified") is an ABSENT
-                # signal (UNKNOWN), never a pass; a missing toolchain (exit 127 /
-                # "command not found") is ABSENT, never a Player test failure.
-                if self._active_stack_profile is not None:
-                    stack_combined = (result.stdout or "") + (result.stderr or "")
-                    if classify_absent_for_stack(
-                        self._active_stack_profile,
-                        result.returncode,
-                        stack_combined,
-                    ):
-                        signal_absent = True
-                        tests_passed = False  # IndependentTestResult invariant
-                        logger.warning(
-                            "Non-Python independent test oracle did not run "
-                            "(stack=%s, returncode=%s) — absent signal, not a "
-                            "test failure. cmd=%s",
-                            self._active_stack_profile.stack,
-                            result.returncode,
-                            test_cmd,
-                        )
-                # Otherwise the exit code is the verdict: 126 and 127 included,
-                # since the command's own program was found above, so a missing
-                # program is one inside the script that ran (FEAT-8BB4's
-                # "eslint: not found"), which fails (1 November 2026).
-
+                # The exit code is the verdict, 126 and 127 included: the
+                # command's own program was found above, so a missing program
+                # is one inside the script that ran (FEAT-8BB4's "eslint: not
+                # found"), which fails. No framework's idea of "a test ran" is
+                # applied (1 November 2026).
                 logger.info(
-                    f"Independent tests "
-                    f"{'passed' if tests_passed else ('absent' if signal_absent else 'failed')} "
+                    f"Independent tests {'passed' if tests_passed else 'failed'} "
                     f"in {duration:.1f}s"
                 )
 
@@ -2153,7 +2110,6 @@ class CoachValidator:
                         test_output_summary=summary,
                         duration_seconds=duration,
                         output=(result.stdout or "") + (result.stderr or ""),
-                        signal_absent=signal_absent,
                         exit_code=result.returncode,
                     )
 
@@ -2186,14 +2142,16 @@ class CoachValidator:
                     raw_output=message,
                 )
             except Exception as e:
+                # The command did not start (its folder escapes the worktree,
+                # its environment could not be built, the process could not be
+                # made): nothing was measured, so the check could not run.
                 duration = time.time() - start_time
                 logger.error(f"Test execution failed: {e}")
-                # TASK-FIX-COACHTESTTO: execution error before any verdict.
-                return IndependentTestResult.absent(
-                        test_command=test_cmd,
-                        test_output_summary=f"Test execution failed: {e}",
-                        duration_seconds=duration,
-                    )
+                return IndependentTestResult.could_not_run(
+                    test_command=test_cmd,
+                    detail=f"`{test_cmd}` could not start: {type(e).__name__}: {e}",
+                    duration_seconds=duration,
+                )
 
         finally:
             if infra_started:
@@ -2444,14 +2402,12 @@ class CoachValidator:
         :attr:`_test_command_source`.
         """
         self._test_command_source = None
-        self._active_stack_profile = None
         self._detection_absence = None
         declared = self._declared_test_command()
         if declared is None:
             self._detection_absence = self._describe_detection_absence()
             logger.error(self._detection_absence)
             return None
-        self._active_stack_profile = self._declared_stack_profile(declared)
         self._test_command_source = (
             f"{DECLARED_COMMAND_SOURCE} (part {self._component!r})"
             if self._component
@@ -2548,36 +2504,6 @@ class CoachValidator:
                 base,
             )
         return resolved
-
-    def _declared_stack_profile(self, command: str) -> Optional[StackTestProfile]:
-        """Overlay the declaration onto the matching stack row, if any.
-
-        Returns ``None`` for the common Python case (no marker row matched and
-        the declaration overrides no classifier field), which is precisely what
-        keeps a repo declaring ``pytest …`` byte-identical to today: no stack
-        profile ⇒ the existing pytest absence classifier still applies.
-        """
-        if self._toolchain is None:
-            return None
-        # Per-component seam: a component's markers live in the component's
-        # own directory, and a component's classifier overlay is the
-        # component's — never the root block's.
-        source: "ComponentToolchain | ToolchainDeclaration" = (
-            self._component_toolchain
-            if self._component_toolchain is not None
-            else self._toolchain
-        )
-        try:
-            marker_root = self._component_run_cwd(self.worktree_path)
-        except ValueError:
-            marker_root = self.worktree_path
-        return overlay_declared_profile(
-            detect_stack_profile(marker_root),
-            command=command,
-            absent_substrings=source.absent_substrings,
-            ran_marker_regex=source.ran_marker_regex,
-            requires_ran_marker=source.requires_ran_marker,
-        )
 
     def _declared_command_env(self) -> Dict[str, str]:
         """Environment for a declared / non-pytest test command (design §B.5).

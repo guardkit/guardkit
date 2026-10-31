@@ -1,14 +1,12 @@
-"""TASK-AB-NPDET01 — CoachValidator wiring for non-Python deterministic Phase-4.
+"""Declared test commands of any language: the exit code is the verdict.
 
-Covers the stack registry's absence classifier in CoachValidator:
-- ``run_independent_tests`` classifies absence stack-awarely (missing toolchain /
-  zero-test => signal_absent) on BOTH the success and failure branch;
-- with no stack profile the exit code decides; no pytest-shaped reading is
-  applied to a command's output (31 October 2026). Marker-guessed commands
-  were removed the same day: commands come only from the declaration.
+TASK-AB-NPDET01 once added a per-framework "a test ran" rule for .NET, Node
+and Go (stack rows matched by marker files). It was removed on 1 November
+2026 with the stack rows: no framework knowledge stays in central code, and
+"no test signal" is left only where nothing ran at all. Marker-guessed
+commands were removed on 31 October: commands come only from the declaration.
 
-Pure subprocess-mocked — no guardkitfactory, no harness env var (these paths
-force ``coach_test_execution='subprocess'`` and never dispatch select_harness).
+Pure subprocess-mocked.
 """
 
 import subprocess
@@ -18,9 +16,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from guardkit.orchestrator.quality_gates.coach_validator import CoachValidator
-from guardkit.orchestrator.quality_gates.stack_test_execution import (
-    STACK_TEST_PROFILES,
-)
 
 _TASK_ID = "TASK-FOO-001"
 
@@ -33,10 +28,6 @@ def _programs_are_found(monkeypatch):
         "guardkit.orchestrator.quality_gates.coach_validator.missing_program",
         lambda *_args: None,
     )
-
-
-def _profile(stack):
-    return next(p for p in STACK_TEST_PROFILES if p.stack == stack)
 
 
 def _proc(returncode, stdout="", stderr=""):
@@ -57,100 +48,37 @@ def _detect_validator(tmp_path: Path, wave_size: int = 1) -> CoachValidator:
 
 
 # ============================================================================
-# 2. run_independent_tests: stack-aware absent classification end-to-end
+# 2. Every declared command: the exit code is the verdict
 # ============================================================================
 
 
-class TestRunIndependentTestsNonPython:
-    def _validator_with_profile(self, tmp_path, stack):
-        v = CoachValidator(
-            worktree_path=str(tmp_path),
-            task_id=_TASK_ID,
-            test_command=_profile(stack).whole_suite_command,
-        )
-        v._active_stack_profile = _profile(stack)
-        return v
+class TestTheExitCodeIsTheVerdict:
+    """1 November 2026: the per-framework "a test ran" rule for Node, Go and
+    .NET is gone. Output that rule used to read as "no test signal" (a
+    missing npm script, a Go module with no tests, .NET's "No test is
+    available", a Vitest run with nothing to run) is now judged by the
+    command's exit code alone, like every other declared command. A project
+    that wants "no tests ran" to fail says so in its own command."""
 
-    def test_dotnet_missing_toolchain_is_absent(self, tmp_path):
-        v = self._validator_with_profile(tmp_path, "dotnet")
-        with patch("subprocess.run", return_value=_proc(127, stderr="dotnet: not found")):
+    @pytest.mark.parametrize(
+        "command,returncode,output,passed",
+        [
+            ("dotnet test", 0, "No test is available in Foo.dll", True),
+            ("dotnet test", 1, "Failed!  - Failed: 2, Passed: 3", False),
+            ("go test ./...", 0, "?   example.com/m [no test files]\n", True),
+            ("go test ./...", 1, "--- FAIL: TestX\nFAIL\texample.com/m 0.01s\n", False),
+            ("npm test", 1, 'npm error Missing script: "test"', False),
+            ("npm test", 0, "No test files found, exiting with code 0", True),
+            ("npm test", 0, "Tests  3 passed (3)", True),
+        ],
+    )
+    def test_the_exit_code_decides(self, tmp_path, command, returncode, output, passed):
+        v = CoachValidator(worktree_path=str(tmp_path), task_id=_TASK_ID, test_command=command)
+        with patch("subprocess.run", return_value=_proc(returncode, stdout=output)):
             r = v.run_independent_tests()
-        assert r.signal_absent is True
-        assert r.tests_passed is False
-
-    def test_dotnet_zero_tests_exit0_is_absent_not_a_pass(self, tmp_path):
-        """The exit-0 zero-test false-green guard: returncode 0 but 'No test is
-        available' -> absent (UNKNOWN), tests_passed forced to False."""
-        v = self._validator_with_profile(tmp_path, "dotnet")
-        with patch("subprocess.run", return_value=_proc(0, stdout="No test is available in Foo.dll")):
-            r = v.run_independent_tests()
-        assert r.signal_absent is True
-        assert r.tests_passed is False
-
-    def test_dotnet_real_failure_is_ran_and_failed(self, tmp_path):
-        v = self._validator_with_profile(tmp_path, "dotnet")
-        with patch("subprocess.run", return_value=_proc(1, stdout="Failed!  - Failed: 2, Passed: 3")):
-            r = v.run_independent_tests()
+        assert r.tests_passed is passed
         assert r.signal_absent is False
-        assert r.tests_passed is False
-
-    def test_dotnet_pass(self, tmp_path):
-        v = self._validator_with_profile(tmp_path, "dotnet")
-        with patch("subprocess.run", return_value=_proc(0, stdout="Passed!  - Failed: 0, Passed: 5")):
-            r = v.run_independent_tests()
-        assert r.signal_absent is False
-        assert r.tests_passed is True
-
-    def test_go_all_testless_exit0_is_absent(self, tmp_path):
-        v = self._validator_with_profile(tmp_path, "go")
-        out = "?   ex/a\t[no test files]\n?   ex/b\t[no test files]\n"
-        with patch("subprocess.run", return_value=_proc(0, stdout=out)):
-            r = v.run_independent_tests()
-        assert r.signal_absent is True
-        assert r.tests_passed is False
-
-    def test_go_mixed_module_pass_is_not_absent(self, tmp_path):
-        v = self._validator_with_profile(tmp_path, "go")
-        out = "ok  \tex/a\t0.012s\n?   ex/b\t[no test files]\n"
-        with patch("subprocess.run", return_value=_proc(0, stdout=out)):
-            r = v.run_independent_tests()
-        assert r.signal_absent is False
-        assert r.tests_passed is True
-
-    def test_node_missing_script_is_absent(self, tmp_path):
-        v = self._validator_with_profile(tmp_path, "node")
-        with patch("subprocess.run", return_value=_proc(1, stderr='npm error Missing script: "test"')):
-            r = v.run_independent_tests()
-        assert r.signal_absent is True
-        assert r.tests_passed is False
-
-    def test_node_pass_with_no_tests_exit0_is_absent_not_a_pass(self, tmp_path):
-        """Review hole #1 end-to-end: ``jest --passWithNoTests`` exits 0 having
-        run zero tests -> absent (UNKNOWN), tests_passed forced False, NOT a pass."""
-        v = self._validator_with_profile(tmp_path, "node")
-        out = "> jest --passWithNoTests\n\nNo tests found, exiting with code 0\n"
-        with patch("subprocess.run", return_value=_proc(0, stdout=out)):
-            r = v.run_independent_tests()
-        assert r.signal_absent is True
-        assert r.tests_passed is False
-
-    def test_node_real_pass_is_not_absent(self, tmp_path):
-        v = self._validator_with_profile(tmp_path, "node")
-        out = "PASS src/foo.test.js\nTests:       3 passed, 3 total\n"
-        with patch("subprocess.run", return_value=_proc(0, stdout=out)):
-            r = v.run_independent_tests()
-        assert r.signal_absent is False
-        assert r.tests_passed is True
-
-    def test_node_passing_run_with_incidental_not_found_is_not_absent(self, tmp_path):
-        """Review hole #2 end-to-end: a passing run whose output mentions a
-        '404: Not Found' must NOT be false-red'd to absent/failed."""
-        v = self._validator_with_profile(tmp_path, "node")
-        out = "GET /missing -> 404: Not Found\n5 passing\n"
-        with patch("subprocess.run", return_value=_proc(0, stdout=out)):
-            r = v.run_independent_tests()
-        assert r.signal_absent is False
-        assert r.tests_passed is True
+        assert r.check_could_not_run is False
 
 
 # ============================================================================
@@ -159,7 +87,7 @@ class TestRunIndependentTestsNonPython:
 
 
 class TestPytestClassifierRegression:
-    """With no stack profile a non-zero exit is a failure and zero a pass;
+    """A non-zero exit is a failure and zero a pass;
     pytest's own exit codes (4, 5) and phrases are not read for any command
     (31 October 2026)."""
 
@@ -167,7 +95,6 @@ class TestPytestClassifierRegression:
         v = CoachValidator(
             worktree_path=str(tmp_path), task_id=_TASK_ID, test_command="pytest tests/ -v"
         )
-        assert v._active_stack_profile is None  # no stack profile on the pytest path
         return v
 
     def test_exit_5_is_a_failure_not_an_absence(self, tmp_path):
