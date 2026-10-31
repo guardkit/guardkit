@@ -1122,7 +1122,8 @@ def select_harness(
     launch_declaration = harness_kwargs.pop("launch_declaration", None)
     # 29 October 2026: the task's pinned ``toolchain.language_servers``
     # entries, from the agent invoker's memory, for the builder's
-    # ``code_references``. LangGraph only.
+    # ``code_references``. Since 31 October the SDK harness also runs them,
+    # as a Claude Code plugin.
     language_servers = harness_kwargs.pop("language_servers", None)
 
     # Role is consumed by this selector so it never leaks into either
@@ -1204,7 +1205,13 @@ def select_harness(
 
         if sdk_env is not None:
             harness_kwargs["env"] = sdk_env
-        return ClaudeSDKHarness(**harness_kwargs)
+        # 31 October 2026: the reviewer's tool list is enforced on Claude too,
+        # and the declared language servers reach Claude Code's LSP tool.
+        return ClaudeSDKHarness(
+            **harness_kwargs,
+            harness_role=harness_role,
+            language_servers=language_servers,
+        )
 
     if name == "langgraph":
         # TASK-FIX-002R-CONSUME: import the backend + permissions factories

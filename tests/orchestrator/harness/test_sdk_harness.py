@@ -876,6 +876,160 @@ class TestConstructorPlumbing:
 
 
 # ----------------------------------------------------------------------
+# The reviewer's tool set and the project's language servers (31 Oct 2026)
+# ----------------------------------------------------------------------
+
+_PYRIGHT = {
+    "command": ["pyright-langserver", "--stdio"],
+    "files": ["**/*.py"],
+    "language_id": "python",
+}
+
+
+async def _options_for(harness: ClaudeSDKHarness, cwd: Path, role: str):
+    """The ClaudeAgentOptions one invoke() builds, and whether its plugin
+    folder still existed while the call ran."""
+    captured: dict = {}
+
+    def capture(**kwargs):
+        options = kwargs.get("options")
+        captured["options"] = options
+        plugins = getattr(options, "plugins", None) or []
+        captured["plugin_existed"] = [Path(p["path"]).is_dir() for p in plugins]
+        return RecordingAsyncGen([("yield", _result_msg())])
+
+    with patch.object(claude_agent_sdk, "query", side_effect=capture):
+        async for _ in harness.invoke(
+            prompt="p", role=role, tools=[], cwd=cwd, timeout_seconds=60
+        ):
+            pass
+    return captured
+
+
+class TestReviewerToolsAndLanguageServers:
+    """``allowed_tools`` only pre-approves tools in the SDK; for the
+    reviewer the list is the whole tool set (31 October 2026)."""
+
+    @pytest.mark.asyncio
+    async def test_look_up_pass_gets_only_its_tools_under_claude_names(
+        self, tmp_path
+    ):
+        harness = _make_harness(
+            allowed_tools=["Read", "Search", "Grep", "Glob"],
+            permission_mode="bypassPermissions",
+            harness_role="coach",
+        )
+        captured = await _options_for(harness, tmp_path, "coach")
+        assert list(captured["options"].tools) == ["Read", "Grep", "Glob"]
+
+    @pytest.mark.asyncio
+    async def test_look_up_pass_gets_lsp_when_servers_are_declared(
+        self, tmp_path
+    ):
+        harness = _make_harness(
+            allowed_tools=["Read", "Search", "Grep", "Glob"],
+            harness_role="coach",
+            language_servers=[_PYRIGHT],
+        )
+        captured = await _options_for(harness, tmp_path, "coach")
+        assert list(captured["options"].tools) == ["Read", "Grep", "Glob", "LSP"]
+
+    @pytest.mark.asyncio
+    async def test_verdict_call_has_no_tools_at_all(self, tmp_path):
+        harness = _make_harness(
+            allowed_tools=[], harness_role="coach", language_servers=[_PYRIGHT]
+        )
+        captured = await _options_for(harness, tmp_path, "coach")
+        assert list(captured["options"].tools) == []
+
+    @pytest.mark.asyncio
+    async def test_checker_test_run_keeps_only_its_shell(self, tmp_path):
+        """CoachValidator's SDK test run: role ``coach``, ``["Bash"]``."""
+        harness = _make_harness(allowed_tools=["Bash"], harness_role="coach")
+        captured = await _options_for(harness, tmp_path, "coach_test")
+        assert list(captured["options"].tools) == ["Bash"]
+
+    @pytest.mark.asyncio
+    async def test_builder_tool_set_is_untouched(self, tmp_path):
+        harness = _make_harness(
+            allowed_tools=["Read", "Write", "Edit", "Bash"],
+            harness_role="player",
+            language_servers=[_PYRIGHT],
+        )
+        captured = await _options_for(harness, tmp_path, "player")
+        assert captured["options"].tools is None
+        assert list(captured["options"].allowed_tools) == [
+            "Read", "Write", "Edit", "Bash",
+        ]
+
+    @pytest.mark.asyncio
+    async def test_no_plugin_without_declared_servers(self, tmp_path):
+        harness = _make_harness(harness_role="player")
+        captured = await _options_for(harness, tmp_path, "player")
+        assert not captured["options"].plugins
+
+    @pytest.mark.asyncio
+    async def test_plugin_exists_during_the_call_and_is_removed_after(
+        self, tmp_path
+    ):
+        harness = _make_harness(harness_role="player", language_servers=[_PYRIGHT])
+        captured = await _options_for(harness, tmp_path, "player")
+        plugins = captured["options"].plugins
+        assert [p["type"] for p in plugins] == ["local"]
+        assert captured["plugin_existed"] == [True]
+        assert not Path(plugins[0]["path"]).exists()
+
+
+class TestLanguageServerPlugin:
+    """:func:`language_server_plugin` writes Claude Code's ``lspServers``."""
+
+    def _read(self, servers):
+        import json
+        import shutil
+
+        from guardkit.orchestrator.harness.sdk_harness import (
+            language_server_plugin,
+        )
+
+        folder = language_server_plugin(servers)
+        try:
+            return json.loads(
+                (folder / ".claude-plugin" / "plugin.json").read_text()
+            )
+        finally:
+            shutil.rmtree(folder)
+
+    def test_command_args_extensions_and_language_id(self):
+        plugin = self._read([_PYRIGHT])
+        assert plugin["name"] == "guardkit-language-servers"
+        server = plugin["lspServers"]["server-1"]
+        assert server["command"].endswith("pyright-langserver")
+        assert server["args"] == ["--stdio"]
+        assert server["extensionToLanguage"] == {".py": "python"}
+
+    def test_brace_globs_and_extension_as_fallback_language_id(self):
+        plugin = self._read([{"command": ["tsls"], "files": ["src/**/*.{ts,tsx}"]}])
+        server = plugin["lspServers"]["server-1"]
+        assert server["args"] == []
+        assert server["extensionToLanguage"] == {".ts": "ts", ".tsx": "tsx"}
+
+    def test_declared_env_and_options_kept_and_path_fixed(self):
+        plugin = self._read([
+            _PYRIGHT | {"env": {"GOFLAGS": "-mod=mod"},
+                        "initialization_options": {"a": 1}},
+        ])
+        server = plugin["lspServers"]["server-1"]
+        assert server["env"]["GOFLAGS"] == "-mod=mod"
+        assert server["initializationOptions"] == {"a": 1}
+        try:
+            from guardkitfactory.code_search import SERVER_PATH_DIRS
+        except ImportError:
+            assert "PATH" not in server["env"]
+        else:
+            assert server["env"]["PATH"] == ":".join(SERVER_PATH_DIRS)
+
+
+# ----------------------------------------------------------------------
 # Cooperative cancellation (TASK-FIX-CTOUT01)
 # ----------------------------------------------------------------------
 

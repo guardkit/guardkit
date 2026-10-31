@@ -325,6 +325,25 @@ class TestSelectHarnessDispatch:
         assert harness._env == {"PYTHONPATH": "/wt"}
 
     @pytest.mark.personal_run
+    def test_sdk_receives_role_and_language_servers(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """31 October 2026: the role and the declared servers reach the SDK
+        harness (the reviewer's enforced tools, Claude Code's LSP tool)."""
+        monkeypatch.setenv(_TEST_ENV_VAR, "sdk")
+        servers = [{"command": ["gopls"], "files": ["**/*.go"]}]
+
+        harness = select_harness(
+            env_var=_TEST_ENV_VAR,
+            harness_role="coach",
+            language_servers=servers,
+            **_sdk_kwargs(),
+        )
+
+        assert harness._harness_role == "coach"
+        assert harness._language_servers == servers
+
+    @pytest.mark.personal_run
     def test_explicit_sdk_case_insensitive(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:

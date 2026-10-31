@@ -76,8 +76,11 @@ caller).
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import shutil
 import sys
+import tempfile
 from contextlib import suppress
 from pathlib import Path
 from typing import Any, AsyncGenerator, Callable, Dict, List, Optional
@@ -145,6 +148,15 @@ class ClaudeSDKHarness(HarnessAdapter):
         passed as ``ClaudeAgentOptions.env`` (merged over the inherited
         environment). Lets a caller set e.g. ``PYTHONPATH`` for one run
         without changing ``os.environ``, which parallel tasks share.
+    harness_role:
+        The permission role the selector was given (``"player"`` or
+        ``"coach"``). For the coach, ``allowed_tools`` becomes the whole
+        tool set (``ClaudeAgentOptions.tools``), not only the pre-approved
+        list: an empty list means no tools at all (31 October 2026).
+    language_servers:
+        The task's pinned ``toolchain.language_servers`` entries. When given,
+        they run as a local Claude Code plugin, so the agent has the ``LSP``
+        tool and diagnostics after edits (31 October 2026).
     """
 
     def __init__(
@@ -162,7 +174,11 @@ class ClaudeSDKHarness(HarnessAdapter):
         ] = None,
         setting_sources: Optional[List[str]] = None,
         env: Optional[Dict[str, str]] = None,
+        harness_role: Optional[str] = None,
+        language_servers: Optional[List[Dict[str, Any]]] = None,
     ) -> None:
+        self._harness_role = harness_role
+        self._language_servers = list(language_servers or [])
         self._sdk_timeout_seconds = sdk_timeout_seconds
         self._allowed_tools = list(allowed_tools)
         self._permission_mode = permission_mode
@@ -285,6 +301,21 @@ class ClaudeSDKHarness(HarnessAdapter):
         )
         if self._model is not None:
             options_kwargs["model"] = self._model
+        # 31 October 2026 (reviewer replay on Claude): ``allowed_tools`` only
+        # pre-approves tools, so under "bypass permissions" a reviewer could
+        # edit and run commands. The reviewer's list is the whole tool set.
+        if (self._harness_role or role) == "coach":
+            options_kwargs["tools"] = claude_tool_names(
+                self._allowed_tools, bool(self._language_servers)
+            )
+        # The project's declared language servers, as a local Claude Code
+        # plugin (removed again in the ``finally`` below).
+        plugin_folder: Optional[Path] = None
+        if self._language_servers:
+            plugin_folder = language_server_plugin(self._language_servers)
+            options_kwargs["plugins"] = [
+                {"type": "local", "path": str(plugin_folder)}
+            ]
         if self._env:
             options_kwargs["env"] = dict(self._env)
         if self._resume_session_id is not None:
@@ -299,6 +330,8 @@ class ClaudeSDKHarness(HarnessAdapter):
         try:
             options = ClaudeAgentOptions(**options_kwargs)
         except ValueError as e:
+            if plugin_folder is not None:
+                shutil.rmtree(plugin_folder, ignore_errors=True)
             raise AgentInvocationError(
                 f"SDK value error for role {role} ({type(e).__name__}): {e}",
                 error_class=type(e).__name__,
@@ -555,6 +588,8 @@ class ClaudeSDKHarness(HarnessAdapter):
             # invoke() doesn't observe a stale generator from a prior
             # call.
             self._active_gen = None
+            if plugin_folder is not None:
+                shutil.rmtree(plugin_folder, ignore_errors=True)
 
     async def cancel(self) -> None:
         """TASK-FIX-CTOUT01: close the active ``query()`` async generator.
@@ -599,6 +634,78 @@ class ClaudeSDKHarness(HarnessAdapter):
                     await gen.aclose()
             except (asyncio.TimeoutError, asyncio.CancelledError):
                 pass
+
+
+#: GuardKit's tool names that Claude Code knows as something else.
+_CLAUDE_TOOL_NAME = {"Search": "Grep"}
+
+
+def claude_tool_names(allowed: List[str], language_server: bool) -> List[str]:
+    """Claude Code's tool set for a reviewer call: the asked-for tools under
+    Claude's names, plus ``LSP`` when the project declares a language server.
+    An empty list stays empty: the verdict call has no tools at all."""
+    names: List[str] = []
+    for name in allowed:
+        name = _CLAUDE_TOOL_NAME.get(name, name)
+        if name not in names:
+            names.append(name)
+    if names and language_server and "LSP" not in names:
+        names.append("LSP")
+    return names
+
+
+def _server_program(name: str) -> str:
+    """Where a declared program is installed: the same fixed folders the
+    factory's own find-references tool uses, else the name as given."""
+    try:
+        from guardkitfactory.code_search import server_program
+    except ImportError:
+        return name
+    found = server_program(name)
+    return str(found) if found is not None else name
+
+
+def _extensions(pattern: str) -> List[str]:
+    """``**/*.py`` -> ``[".py"]``; ``**/*.{ts,tsx}`` -> ``[".ts", ".tsx"]``."""
+    tail = pattern.rsplit("*", 1)[-1]
+    if tail.startswith(".{") and tail.endswith("}"):
+        return ["." + part for part in tail[2:-1].split(",") if part]
+    return [tail] if tail.startswith(".") and len(tail) > 1 else []
+
+
+def language_server_plugin(servers: List[Dict[str, Any]]) -> Path:
+    """A local Claude Code plugin running the project's declared language
+    servers (``toolchain.language_servers``), so Claude's ``LSP`` tool and its
+    after-edit diagnostics use them. Written to a new temporary folder."""
+    try:
+        from guardkitfactory.code_search import SERVER_PATH_DIRS
+    except ImportError:
+        SERVER_PATH_DIRS = ()
+    lsp: Dict[str, Any] = {}
+    for index, server in enumerate(servers):
+        command = list(server["command"])
+        mapping: Dict[str, str] = {}
+        for pattern in server.get("files") or []:
+            for extension in _extensions(pattern):
+                mapping[extension] = server.get("language_id") or extension[1:]
+        entry: Dict[str, Any] = {
+            "command": _server_program(command[0]),
+            "args": command[1:],
+            "extensionToLanguage": mapping,
+        }
+        env = dict(server.get("env") or {})
+        if SERVER_PATH_DIRS:
+            env["PATH"] = ":".join(SERVER_PATH_DIRS)
+        if env:
+            entry["env"] = env
+        if server.get("initialization_options") is not None:
+            entry["initializationOptions"] = server["initialization_options"]
+        lsp[f"server-{index + 1}"] = entry
+    folder = Path(tempfile.mkdtemp(prefix="guardkit-language-servers-"))
+    (folder / ".claude-plugin").mkdir()
+    (folder / ".claude-plugin" / "plugin.json").write_text(json.dumps(
+        {"name": "guardkit-language-servers", "version": "1.0.0", "lspServers": lsp}, indent=1))
+    return folder
 
 
 def _extract_assistant_text(message: Any) -> str:
