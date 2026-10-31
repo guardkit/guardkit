@@ -3214,8 +3214,9 @@ class CoachValidator:
                 # A run that started and did not finish within its declared
                 # limit is usually the code's doing (a hang, an endless loop,
                 # tests too slow for the limit), so it is a failure the builder
-                # is sent, not a check that could not run (31 October 2026;
-                # TASK-C2C7-002 was fixed by its builder on the next turn).
+                # is sent, not a check that could not run (31 October 2026: a
+                # recorded TypeScript build's builder fixed exactly this on its
+                # next turn, 27 October).
                 duration = time.time() - start_time
                 where = (
                     f"part {self._component} (in {self._component_toolchain.cwd})"
