@@ -968,3 +968,89 @@ def test_cancelled_waiter_cannot_start_after_the_owner_exits(tmp_path):
         finally:
             release.set()
             first.result(5)
+
+
+def _forget_this_process(root):
+    """What a new process (a resumed build) knows: nothing in memory."""
+    from guardkit.orchestrator import task_work_scope as m
+
+    _, gd = m.identity(root)
+    for registry in (m._fresh, m._selected, m._bindings, m._approved_heads):
+        registry.pop(str(gd), None)
+
+
+def test_a_resumed_task_tests_the_parts_changed_in_every_turn(tmp_path):
+    """Turn 1 changes part A and is checkpointed; the build is resumed and
+    the next turn changes only part B. The resumed admission keeps the
+    task's first starting commit, so part A is still tested (1 November
+    2026: the resume used to start from the HEAD it found)."""
+    from guardkit.orchestrator.toolchain_declaration import (
+        parse_toolchain_block,
+        parts_for_files,
+    )
+
+    root = repository(tmp_path / "checkout")
+    start = git(root, "rev-parse", "HEAD")
+    declaration = parse_toolchain_block({
+        "components": {
+            "a": {"cwd": "a", "test": "true"},
+            "b": {"cwd": "b", "test": "true"},
+        }
+    })
+    with checkout_lease(root) as lease:
+        scope = lease.admit("TASK-RESUME")
+        assert scope.baseline_commit == start
+        (root / "a").mkdir()
+        (root / "a" / "one.txt").write_text("turn 1\n")
+        WorktreeCheckpointManager(
+            root, "TASK-RESUME", expected_branch="main", task_work_scope=scope
+        ).create_checkpoint(1, None)
+        lease.poison("the process stopped mid-task")
+    assert git(root, "rev-parse", "HEAD") != start
+
+    _forget_this_process(root)
+    with checkout_lease(root) as lease:
+        resumed = lease.admit("TASK-RESUME")
+        assert resumed.baseline_commit == start
+        assert resumed.admission_reason == "resumed"
+        (root / "b").mkdir()
+        (root / "b" / "two.txt").write_text("turn 2\n")
+        changes = collect_changes(resumed)
+    files = changes["created"] + changes["modified"]
+    assert [p.name for p in parts_for_files(declaration, root, files)] == ["a", "b"]
+
+
+def test_a_resume_with_only_a_checkpoint_starts_from_its_parent(tmp_path):
+    """No scope record (an older run): the parent of the task's first
+    checkpoint is its starting commit."""
+    from guardkit.orchestrator.paths import TaskArtifactPaths
+
+    root = repository(tmp_path / "checkout")
+    start = git(root, "rev-parse", "HEAD")
+    with checkout_lease(root) as lease:
+        scope = lease.admit("TASK-OLD")
+        (root / "work.txt").write_text("turn 1\n")
+        WorktreeCheckpointManager(
+            root, "TASK-OLD", expected_branch="main", task_work_scope=scope
+        ).create_checkpoint(1, None)
+    for record in TaskArtifactPaths.task_private_dir("TASK-OLD", root).glob("scope-*.json"):
+        record.unlink()
+
+    _forget_this_process(root)
+    with checkout_lease(root) as lease:
+        assert lease.admit("TASK-OLD").baseline_commit == start
+
+
+def test_a_repair_round_starts_from_where_it_is_admitted(tmp_path):
+    """A recorded starting commit belongs to its own round: a repair round
+    is admitted at the HEAD it finds."""
+    root = repository(tmp_path / "checkout")
+    with checkout_lease(root) as lease:
+        scope = lease.admit("TASK-R")
+        (root / "work.txt").write_text("turn 1\n")
+        WorktreeCheckpointManager(
+            root, "TASK-R", expected_branch="main", task_work_scope=scope
+        ).create_checkpoint(1, None)
+    head = git(root, "rev-parse", "HEAD")
+    with checkout_lease(root) as lease:
+        assert lease.admit("TASK-R", round_id="2").baseline_commit == head

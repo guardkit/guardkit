@@ -232,7 +232,17 @@ class CheckoutLease:
             return self.scope
         is_repair = str(round_id) not in {"initial", "1"}
         # What earlier tasks left in the checkout, approved or not, is this
-        # task's starting point.
+        # task's starting point. A task admitted again in the same round (a
+        # resumed build) keeps the starting commit it was first given, so the
+        # parts changed in its earlier turns are still tested (1 November
+        # 2026: a resume used to test only what changed since the resume).
+        recorded = _first_recorded_baselines(
+            task_id, str(round_id), self.repositories
+        )
+        resumed = False
+        for root_key, commit in recorded.items():
+            if commit != self.expected[root_key]:
+                resumed = True
         self.scope = TaskWorkScope(
             task_id,
             feature_id,
@@ -242,13 +252,13 @@ class CheckoutLease:
                     name,
                     str(root),
                     str(git_dir),
-                    self.expected[str(root)],
+                    recorded.get(str(root), self.expected[str(root)]),
                     self.branches[str(root)],
                 )
                 for name, root, git_dir in self.repositories
             ),
             str(round_id),
-            "gate repair" if is_repair else "fresh",
+            "gate repair" if is_repair else ("resumed" if resumed else "fresh"),
             build_id=_selected.get(str(self.repositories[0][2]), {}).get(
                 "build_id", ""
             ),
@@ -278,6 +288,97 @@ class CheckoutLease:
     def poison(self, reason):
         """This writer did not finish approved; it never refuses the next one."""
         self.failure = self.failure or str(reason) or "Writer did not settle; work preserved"
+
+
+def _is_ancestor(root, commit, head):
+    from guardkit.lib.project_git import run_git
+
+    try:
+        done = run_git(
+            ["merge-base", "--is-ancestor", commit, head], cwd=Path(root), timeout=30
+        )
+    except Exception:  # noqa: BLE001 — an unreadable record is no record
+        return False
+    return done.returncode == 0
+
+
+def _distance(root, commit, head):
+    try:
+        return int(_git(root, "rev-list", "--count", f"{commit}..{head}"))
+    except Exception:  # noqa: BLE001
+        return -1
+
+
+def _first_recorded_baselines(task_id, round_id, repositories):
+    """The starting commit each repository was first given for ``task_id``
+    in ``round_id``, keyed by checkout root; empty when nothing is recorded.
+
+    Read from the task's scope records (``scope-<id>.json`` in its private
+    folder, written at every admission); failing that, the parent of the
+    task's first checkpoint (``checkpoints.json``). A recorded commit counts
+    only when it is an ancestor of the checkout's HEAD now, and of several the
+    earliest wins. Never raises.
+    """
+    from guardkit.orchestrator.paths import TaskArtifactPaths
+
+    primary = repositories[0][1]
+    heads = {}
+    for name, root, _ in repositories:
+        try:
+            heads[name] = (str(root), _git(root, "rev-parse", "HEAD"))
+        except Exception:  # noqa: BLE001
+            return {}
+    candidates = {name: [] for name in heads}
+    try:
+        records = sorted(
+            TaskArtifactPaths.task_private_dir(task_id, primary).glob("scope-*.json")
+        )
+    except OSError:
+        records = []
+    for record in records:
+        try:
+            data = json.loads(record.read_text())
+        except (OSError, ValueError):
+            continue
+        if not isinstance(data, dict) or data.get("task_id") != task_id:
+            continue
+        if str(data.get("round_id", "initial")) != round_id:
+            continue
+        for repo in data.get("repositories") or ():
+            if isinstance(repo, dict) and repo.get("name") in candidates:
+                if repo.get("baseline"):
+                    candidates[repo["name"]].append(str(repo["baseline"]))
+    if not any(candidates.values()) and round_id in {"initial", "1"}:
+        checkpoints = Path(primary) / ".guardkit" / "autobuild" / task_id / "checkpoints.json"
+        try:
+            saved = json.loads(checkpoints.read_text())
+            entries = saved.get("checkpoints", saved) if isinstance(saved, dict) else saved
+            first = min(
+                (c for c in entries if isinstance(c, dict) and c.get("commit_hash")),
+                key=lambda c: c.get("turn", 0),
+            )
+        except (OSError, ValueError, TypeError, AttributeError):
+            first = None
+        if first is not None:
+            for name in candidates:
+                commit = (
+                    first["commit_hash"] if name == ""
+                    else (first.get("evidence_commits") or {}).get(name)
+                )
+                if commit:
+                    try:
+                        candidates[name].append(
+                            _git(heads[name][0], "rev-parse", f"{commit}^")
+                        )
+                    except Exception:  # noqa: BLE001
+                        pass
+    chosen = {}
+    for name, commits in candidates.items():
+        root, head = heads[name]
+        usable = [c for c in set(commits) if _is_ancestor(root, c, head)]
+        if usable:
+            chosen[root] = max(usable, key=lambda c: _distance(root, c, head))
+    return chosen
 
 
 @contextmanager
