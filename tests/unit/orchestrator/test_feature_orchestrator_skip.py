@@ -468,7 +468,6 @@ class TestMixedWave:
         dispatched_task = mock_execute_task.call_args.args[0]
         assert dispatched_task.id == "TASK-FPTC-N1"
         assert mock_execute_task.call_args.kwargs["wave_size"] == 2
-        assert mock_execute_task.call_args.kwargs["effective_concurrency"] == 1
         assert mock_execute_task.call_args.kwargs["shares_working_copy"] is False
 
         # The two outcomes match expectations.

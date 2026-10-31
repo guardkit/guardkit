@@ -118,7 +118,6 @@ from guardkit.orchestrator.parallel_strategy import (
     apply_feature_recommended_parallel,
     bound_concurrency,
     collect_wave_task_paths,
-    effective_concurrency,
     resolve_max_parallel,
     tasks_run_at_the_same_time,
 )
@@ -2971,9 +2970,6 @@ The detailed specifications are in the task markdown file.
             shares_working_copy = tasks_run_at_the_same_time(
                 len(queued_calls), effective_max_parallel
             )
-            resolved_effective_concurrency = effective_concurrency(
-                len(queued_calls), effective_max_parallel
-            )
 
             async def _dispatch_queued_call(
                 task: FeatureTask,
@@ -2988,7 +2984,7 @@ The detailed specifications are in the task markdown file.
                     loop = asyncio.get_running_loop()
                     worker = asyncio.create_task(asyncio.to_thread(
                         self._execute_task, task, feature, worktree,
-                        shares_working_copy=False, effective_concurrency=1,
+                        shares_working_copy=False,
                         admission_event=lambda: loop.call_soon_threadsafe(admitted.set), **call_kwargs,
                     ))
                     # The time limit starts at admission. A worker that ends
@@ -3774,7 +3770,6 @@ The detailed specifications are in the task markdown file.
                     self._bootstrap_environment(worktree, feature=feature)
                 self._update_task_started(feature, task.id)
                 kwargs['shares_working_copy'] = False
-                kwargs['effective_concurrency'] = 1
                 if admitted:
                     admitted()
                 result = self._execute_task_owned(task, feature, worktree, **kwargs)
@@ -3913,7 +3908,6 @@ The detailed specifications are in the task markdown file.
         shares_working_copy: bool = False,
         feature_check_repair: Optional[FeatureCheckRepair] = None,
         repair_round: Optional[RepairRound] = None,
-        effective_concurrency: Optional[int] = None,
     ) -> TaskExecutionResult:
         """
         Execute single task using AutoBuildOrchestrator with shared worktree.
@@ -4009,8 +4003,7 @@ The detailed specifications are in the task markdown file.
                     else self.task_timeout
                 ),
                 timeout_multiplier=self.timeout_multiplier,  # TASK-FIX-VL05
-                wave_size=wave_size,  # Parallel wave context for Coach isolation (TASK-ABFIX-005)
-                effective_concurrency=effective_concurrency,
+                wave_size=wave_size,  # Parallel wave context (TASK-ABFIX-005)
                 # FEAT-2C42: True only when other tasks of the wave change
                 # the working copy at the same time as this one.
                 shares_working_copy=shares_working_copy,

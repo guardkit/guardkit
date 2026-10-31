@@ -309,21 +309,6 @@ class TestComponentCwd:
         assert argv[1:3] == ["-m", "pytest"]
         assert mock_run.call_args.kwargs["cwd"] == str(worktree / "app")
 
-    def test_the_parallel_isolated_copy_also_runs_in_the_component_dir(self, repo):
-        """The isolated copy is a copy of the WHOLE worktree, so the component
-        exists inside it at the same relative path."""
-        root, worktree = repo
-        v = _validator(
-            root, worktree, STUDY_TUTOR_SHAPE, component="app", wave_size=4
-        )
-        with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0, stdout="ok", stderr="")
-            v.run_independent_tests()
-        cwd = Path(mock_run.call_args.kwargs["cwd"])
-        assert cwd.name == "app"
-        assert cwd.parent != worktree  # the temp copy, not the live worktree
-        assert "guardkit-coach-iso-" in str(cwd)
-
     def test_a_component_forces_the_deterministic_subprocess_path(self, repo):
         """The SDK path bakes ``cwd=worktree`` into the harness call, so a
         component task must not take it (and says so at WARNING)."""

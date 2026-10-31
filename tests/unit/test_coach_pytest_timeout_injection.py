@@ -209,26 +209,6 @@ class TestStandardSubprocessInjection:
         assert "--timeout" not in mock_run.call_args.args[0]
 
 
-class TestIsolatedParallelInjection:
-    def test_injected_into_isolated_parallel_cmd(self, tmp_path):
-        """wave_size > 1 → _run_isolated_tests path also injects (the easy-to-miss
-        4th injection site, ABFIX-010 GAP 3)."""
-        v = _make_validator(tmp_path, test_cmd="pytest tests/ -v", wave_size=2)
-        v._pytest_timeout_available_cache = True
-        assert v.is_parallel is True
-        with patch("subprocess.run", return_value=_proc(0, stdout="3 passed")) as mock_run:
-            v.run_independent_tests()
-        cmd = mock_run.call_args.args[0]
-        assert "--timeout" in cmd and "--timeout-method" in cmd
-
-    def test_not_injected_when_unavailable_isolated(self, tmp_path):
-        v = _make_validator(tmp_path, test_cmd="pytest tests/ -v", wave_size=2)
-        v._pytest_timeout_available_cache = False
-        with patch("subprocess.run", return_value=_proc(0, stdout="3 passed")) as mock_run:
-            v.run_independent_tests()
-        assert "--timeout" not in mock_run.call_args.args[0]
-
-
 class TestSdkPinInjection:
     def test_pin_pytest_command_appends_timeout(self, tmp_path):
         v = _make_validator(tmp_path)
@@ -348,22 +328,6 @@ class TestRealHungTest:
         assert r.signal_absent is False  # it RAN — a real attribution, not absent
         assert "test_b_hangs" in r.raw_output
         assert "2 passed" in r.raw_output
-
-    def test_parallel_wave_hung_test_is_attributed(self, tmp_path, monkeypatch):
-        """wave_size=2 → the isolated/parallel path, the 4th injection site."""
-        monkeypatch.setenv("GUARDKIT_COACH_PYTEST_TIMEOUT_SECONDS", "2")
-        monkeypatch.delenv("GUARDKIT_COACH_PYTEST_TIMEOUT", raising=False)
-        wt = self._worktree(tmp_path)
-        v = _make_validator(
-            wt, test_cmd="pytest test_hang.py -p no:cacheprovider", wave_size=2
-        )
-        assert v.is_parallel is True
-        r = v.run_independent_tests()
-        assert r.tests_passed is False
-        assert r.signal_absent is False
-        assert "test_b_hangs" in r.raw_output
-        assert "2 passed" in r.raw_output
-
 
 @pytest.mark.skipif(
     not (_HAS_TIMEOUT and _HAS_ASYNCIO),

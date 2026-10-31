@@ -217,7 +217,6 @@ def _capture_coach_task_dict(
     mock_worktree: Mock,
     *,
     behavioural_oracle: Any = None,
-    effective_concurrency: Optional[int] = None,
     constructor_kwargs: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Return the task dict ``_invoke_coach_safely`` hands to CoachValidator
@@ -243,163 +242,12 @@ def _capture_coach_task_dict(
             worktree=mock_worktree,
             acceptance_criteria=["AC1"],
             behavioural_oracle=behavioural_oracle,
-            wave_size=2 if effective_concurrency is not None else 1,
-            effective_concurrency=effective_concurrency,
         )
         if constructor_kwargs is not None:
             constructor_kwargs.update(mock_cv.call_args.kwargs)
 
     assert captured, "the Coach validator was never handed a task dict"
     return captured[0]
-
-
-def test_the_coach_receives_effective_concurrency(
-    orchestrator: AutoBuildOrchestrator,
-    mock_worktree: Mock,
-) -> None:
-    captured: Dict[str, Any] = {}
-    _capture_coach_task_dict(
-        orchestrator,
-        mock_worktree,
-        effective_concurrency=1,
-        constructor_kwargs=captured,
-    )
-
-    assert captured["wave_size"] == 2
-    assert captured["effective_concurrency"] == 1
-
-
-def test_execute_turn_forwards_effective_concurrency_to_the_coach(
-    tmp_path: Path,
-    mock_worktree: Mock,
-    mock_worktree_manager: Mock,
-    mock_agent_invoker: Mock,
-    mock_progress_display: Mock,
-    mock_pre_loop_gates: MagicMock,
-) -> None:
-    """A real constructed turn preserves nominal width and serial capacity."""
-    task_id = "TASK-CONCURRENCY-TURN"
-    mock_worktree.path = tmp_path
-    mock_agent_invoker._get_implementation_mode.return_value = "task-work"
-    orchestrator = AutoBuildOrchestrator(
-        repo_root=tmp_path,
-        max_turns=3,
-        enable_pre_loop=False,
-        enable_checkpoints=False,
-        enable_context=False,
-        worktree_manager=mock_worktree_manager,
-        agent_invoker=mock_agent_invoker,
-        progress_display=mock_progress_display,
-        pre_loop_gates=mock_pre_loop_gates,
-        wave_size=2,
-        effective_concurrency=1,
-    )
-    coach = Mock(return_value=_coach_approve_result(task_id))
-
-    with patch.object(
-        orchestrator, "_invoke_player_safely", return_value=_player_result(task_id)
-    ), patch.object(
-        orchestrator, "_invoke_coach_safely", coach
-    ), patch.object(
-        orchestrator, "_restore_protected_paths", return_value=None
-    ), patch.object(
-        orchestrator, "_maybe_refresh_venv_for_manifest_change", return_value=None
-    ), patch(
-        "guardkit.orchestrator.autobuild._worktree_change_snapshot", return_value={}
-    ):
-        record = orchestrator._execute_turn(
-            turn=1,
-            task_id=task_id,
-            requirements="req",
-            worktree=mock_worktree,
-            previous_feedback=None,
-            acceptance_criteria=["AC1"],
-        )
-
-    assert record.decision == "approve"
-    coach.assert_called_once()
-    assert coach.call_args.kwargs["wave_size"] == 2
-    assert coach.call_args.kwargs["effective_concurrency"] == 1
-
-
-@pytest.mark.parametrize("effective_concurrency", [1, 2])
-def test_primary_coach_caller_reaches_real_test_isolation_decision(
-    tmp_path: Path,
-    orchestrator: AutoBuildOrchestrator,
-    mock_worktree: Mock,
-    mock_agent_invoker: Mock,
-    monkeypatch: pytest.MonkeyPatch,
-    effective_concurrency: int,
-) -> None:
-    """Connect the normal caller to the inherited runner's isolation choice."""
-    from guardkit.orchestrator.quality_gates.coach_evidence import CoachEvidenceBundle
-    from guardkit.orchestrator.quality_gates.coach_validator import IndependentTestResult
-
-    task_id = "TASK-CONCURRENCY-RUNNER"
-    mock_worktree.path = tmp_path
-    orchestrator.enable_context = False
-    mock_agent_invoker._get_implementation_mode.return_value = "task-work"
-    mock_agent_invoker.invoke_coach.return_value = _coach_approve_result(task_id)
-    monkeypatch.setenv("GUARDKIT_COACH_TEST_EXECUTION", "subprocess")
-    validators: List[CoachValidator] = []
-    test_results: List[IndependentTestResult] = []
-
-    class RunnerEvidenceValidator(CoachValidator):
-        def __init__(self, *args: Any, **kwargs: Any) -> None:
-            super().__init__(*args, test_command="printf verified", **kwargs)
-            validators.append(self)
-
-        def _is_docker_available(self) -> bool:
-            return False
-
-        def gather_evidence(self, **kwargs: Any) -> CoachEvidenceBundle:
-            result = self.run_independent_tests(
-                task_work_results={}, task=kwargs["task"], turn=kwargs["turn"]
-            )
-            test_results.append(result)
-            return CoachEvidenceBundle(independent_tests=result)
-
-    isolated_result = IndependentTestResult(
-        tests_passed=True,
-        test_command="printf verified",
-        test_output_summary="isolated verification",
-        duration_seconds=0.0,
-    )
-    with patch(
-        "guardkit.orchestrator.autobuild.CoachValidator", RunnerEvidenceValidator
-    ), patch.object(
-        orchestrator, "_coach_documents_for_turn", return_value=()
-    ), patch.object(
-        CoachValidator, "_run_isolated_tests", return_value=isolated_result
-    ) as isolated, patch(
-        "guardkit.orchestrator.quality_gates.coach_validator.process_group.run_project_command",
-        return_value=Mock(returncode=0, stdout="verified", stderr=""),
-    ) as subprocess_run:
-        result = orchestrator._invoke_coach_safely(
-            task_id=task_id,
-            turn=1,
-            requirements="req",
-            player_report={"files_modified": [], "tests_passed": True},
-            worktree=mock_worktree,
-            wave_size=2,
-            effective_concurrency=effective_concurrency,
-        )
-
-    assert result.success is True
-    assert result.report["decision"] == "approve"
-    mock_agent_invoker.invoke_coach.assert_awaited_once()
-    assert len(validators) == len(test_results) == 1
-    assert validators[0].wave_size == 2
-    assert validators[0].effective_concurrency == effective_concurrency
-    assert test_results[0].tests_passed is True
-    if effective_concurrency == 1:
-        isolated.assert_not_called()
-        subprocess_run.assert_called_once()
-        assert subprocess_run.call_args.kwargs["cwd"] == str(tmp_path)
-    else:
-        isolated.assert_called_once_with("printf verified")
-        subprocess_run.assert_not_called()
-        assert test_results[0] is isolated_result
 
 
 # ============================================================================

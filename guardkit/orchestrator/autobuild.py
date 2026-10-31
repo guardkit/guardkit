@@ -975,7 +975,6 @@ class AutoBuildOrchestrator:
         sdk_timeout_is_override: Optional[bool] = None,
         expected_branch: Optional[str] = None,
         expected_branch_pinned: bool = False,
-        effective_concurrency: Optional[int] = None,
     ):
         """
         Initialize AutoBuildOrchestrator.
@@ -1202,11 +1201,6 @@ class AutoBuildOrchestrator:
         # "Unknown error occurred" (TASK-FIX-TBXMSG01).
         self._timeout_budget_remaining: Optional[float] = None
         self.wave_size: int = max(1, int(wave_size))  # Parallel wave context (TASK-ABFIX-005)
-        self.effective_concurrency: Optional[int] = (
-            int(effective_concurrency)
-            if effective_concurrency is not None
-            else None
-        )
         self.shares_working_copy: bool = bool(shares_working_copy)  # FEAT-2C42
         # Per-turn context status tracking for progress display (TASK-FIX-GCW5)
         self._last_player_context_status: Optional[ContextStatus] = None
@@ -3517,7 +3511,6 @@ class AutoBuildOrchestrator:
             consumer_context=consumer_context,
             remaining_budget=coach_remaining_budget,
             wave_size=self.wave_size,
-            effective_concurrency=getattr(self, "effective_concurrency", None),
             behavioural_oracle=behavioural_oracle,  # TS-lane D.1a
         )
         # Snapshot context status after coach invocation (TASK-FIX-GCW5)
@@ -5415,7 +5408,6 @@ class AutoBuildOrchestrator:
         remaining_budget: Optional[float] = None,
         wave_size: int = 1,
         behavioural_oracle: Optional[Any] = None,
-        effective_concurrency: Optional[int] = None,
     ) -> AgentInvocationResult:
         """
         Invoke Coach agent with comprehensive error handling.
@@ -5578,7 +5570,6 @@ class AutoBuildOrchestrator:
             start_time=start_time,
             behavioural_oracle=behavioural_oracle,  # TS-lane D.1a
             project_documents=project_documents,
-            effective_concurrency=effective_concurrency,
         )
 
     #: The captured set, kept once per BUILD (keyed by the worktree's name: the
@@ -5961,7 +5952,6 @@ class AutoBuildOrchestrator:
         # test that calls this path by hand) keeps its current signature.
         behavioural_oracle: Optional[Any] = None,
         project_documents: tuple = (),
-        effective_concurrency: Optional[int] = None,
     ) -> AgentInvocationResult:
         """The Coach turn: the project's own checks, then the reviewer.
 
@@ -5993,7 +5983,6 @@ class AutoBuildOrchestrator:
             coach_test_execution=coach_test_execution,
             matching_strategy=matching_strategy,
             wave_size=wave_size,
-            effective_concurrency=effective_concurrency,
             turn=turn,
             model_name=self._model_name,  # TASK-FIX-LGFM3
             coach_model_name=self._coach_model_name,  # TASK-FIX-COACHBUDG01

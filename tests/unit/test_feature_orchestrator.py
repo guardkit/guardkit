@@ -1318,7 +1318,6 @@ Test requirements.
             sample_feature,
             mock_worktree,
             wave_size=2,
-            effective_concurrency=1,
         )
 
         # Verify task executed successfully
@@ -1328,7 +1327,6 @@ Test requirements.
         call_kwargs = mock_orch_class.call_args[1]
         assert call_kwargs.get("enable_pre_loop") is False
         assert call_kwargs["wave_size"] == 2
-        assert call_kwargs["effective_concurrency"] == 1
 
 
 def test_execute_task_enable_pre_loop_from_task_frontmatter(
@@ -1480,7 +1478,6 @@ async def test_execute_wave_parallel_says_whether_tasks_share_the_working_copy(
         (kwargs.get("admission_event") or (lambda: None))()  # admitted at once
         seen[task.id] = (
             kwargs.get("wave_size"),
-            kwargs.get("effective_concurrency"),
             kwargs.get("shares_working_copy"),
         )
         return TaskExecutionResult(
@@ -1498,8 +1495,8 @@ async def test_execute_wave_parallel_says_whether_tasks_share_the_working_copy(
     # One writer holds the checkout at a time (step 2, 26 October 2026), so
     # each task runs alone on it whatever max_parallel says.
     assert seen == {
-        "TASK-P-001": (2, 1, False),
-        "TASK-P-002": (2, 1, False),
+        "TASK-P-001": (2, False),
+        "TASK-P-002": (2, False),
     }
 
 
@@ -1827,7 +1824,6 @@ async def test_completed_tasks_skipped_in_parallel(temp_repo, parallel_feature, 
         assert p002_result.success is True
         mock_execute.assert_called_once()  # Only P-002 executed
         assert mock_execute.call_args.kwargs["wave_size"] == 2
-        assert mock_execute.call_args.kwargs["effective_concurrency"] == 1
         assert mock_execute.call_args.kwargs["shares_working_copy"] is False
 
 

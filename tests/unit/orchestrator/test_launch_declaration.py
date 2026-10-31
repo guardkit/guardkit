@@ -807,28 +807,6 @@ class TestReliabilityRequirements:
             text = repr(source)
             assert "guardkit-scratch" not in text and "TOOL_CACHE" not in text
 
-    def test_4_isolated_copy_uses_the_originating_worktrees_scratch(self, clone):
-        root, wt = clone
-        _write_config(root, {"scratch": ["TOOL_CACHE"]})
-        snapshot_task_launch(_TASK_ID, wt, root)
-
-        result = _coach(wt, _CACHE_FILLING + "test -f src.txt", 2).run_independent_tests(
-            turn=1
-        )
-
-        assert result.tests_passed, result.test_output_summary
-        record = result.run_evidence["runs"][0]
-        copy_root = Path(record["execution_root"]).resolve()
-        assert copy_root != wt.resolve()
-        assert "without Git metadata" in record["execution_root_is"]
-        cache = Path(os.path.realpath(builder_scratch_dir(wt))) / "toolchain" / "TOOL_CACHE"
-        # The command ran in the copy, and its cache was the original's.
-        ran_in = Path((cache / "cwd").read_text().strip()).resolve()
-        assert ran_in == copy_root
-        assert not cache.is_relative_to(copy_root)
-        assert cache.is_relative_to(Path(os.path.realpath(root / ".git")))
-
-
 def _config_pipe_holding_a_launch_block(root: Path) -> tuple:
     """A named pipe at the config path whose buffer already holds a valid
     ``launch:`` block, with a writer kept open: a read that ignored the

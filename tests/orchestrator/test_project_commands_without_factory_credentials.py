@@ -313,14 +313,6 @@ def _run_checker_test(p: Project) -> Dict[str, str]:
     return p.read("checker-test")
 
 
-def _run_checker_isolated(p: Project) -> Dict[str, str]:
-    _validator(p, test_command=p.sh("checker-isolated"))._run_isolated_tests(
-        p.sh("checker-isolated")
-    )
-    return p.read("checker-isolated")
-
-
-
 def _run_runtime_parity(p: Project) -> Dict[str, str]:
     _validator(p, smoke_command=p.sh("runtime-parity"))._gather_runtime_parity()
     return p.read("runtime-parity")
@@ -459,7 +451,6 @@ GENERIC_SITES: List[Tuple[str, Callable[..., Dict[str, str]]]] = [
     ("2 install retry (PEP 668)", _run_install_retry),
     ("3 single dependency install", _run_single_dependency),
     ("4 checker's declared test", _run_checker_test),
-    ("6 checker's run in an isolated copy", _run_checker_isolated),
     ("8 runtime-parity smoke", _run_runtime_parity),
     ("11 oracle command from YAML", _run_yaml_oracle),
     ("15 whole-feature check", _run_feature_check),

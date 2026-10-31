@@ -7,7 +7,7 @@ three turns straight). Every pytest argv the ORCHESTRATOR ITSELF constructs
 must carry a unique ``--basetemp`` under the system temp dir:
 
 1. Coach standard subprocess independent-test run (``coach_validator.py``).
-2. Coach isolated parallel-wave snapshot run (``_run_isolated_tests``).
+2. (The isolated parallel-wave copy, removed on 31 October 2026.)
 3. A caller-chosen run label (``CoachValidator(basetemp_context=...)``).
 4. BDD runner subprocess (``bdd_runner._invoke_pytest_bdd``).
 
@@ -112,66 +112,6 @@ class TestStandardSubprocessBasetemp:
             r = v.run_independent_tests()
         assert r.tests_passed is False
         assert r.signal_absent is False
-
-
-# ============================================================================
-# 2. Coach isolated parallel-wave snapshot path
-# ============================================================================
-
-
-class TestIsolatedRunBasetemp:
-    def test_injected_with_isolated_context(self, tmp_path):
-        v = _make_validator(tmp_path, wave_size=2)
-        assert v.is_parallel is True
-        with patch("subprocess.run", return_value=_proc(0, stdout="3 passed")) as mock_run:
-            v.run_independent_tests()
-        cmd = mock_run.call_args.args[0]
-        assert "--basetemp" in cmd
-        basetemp = _basetemp_value(cmd)
-        # The tempdir COPY isolates the CWD, but the basetemp must be its own
-        # unique dir under the system temp dir — not the shared per-user
-        # default, and not inside the snapshot copy.
-        assert os.path.dirname(basetemp) == tempfile.gettempdir()
-        assert "TASK-AB-BASETEMP01-coach-isolated" in os.path.basename(basetemp)
-        assert not str(basetemp).startswith(str(mock_run.call_args.kwargs["cwd"]))
-
-    def test_basetemp_cleaned_up_after_isolated_run(self, tmp_path):
-        v = _make_validator(tmp_path, wave_size=2)
-        with patch("subprocess.run", return_value=_proc(0, stdout="1 passed")) as mock_run:
-            v.run_independent_tests()
-        basetemp = _basetemp_value(mock_run.call_args.args[0])
-        assert not os.path.exists(basetemp)
-
-    def test_preexisting_basetemp_wins_isolated(self, tmp_path):
-        v = _make_validator(
-            tmp_path, test_cmd="pytest tests/ --basetemp=/custom/tmp", wave_size=2
-        )
-        with patch("subprocess.run", return_value=_proc(0, stdout="1 passed")) as mock_run:
-            v.run_independent_tests()
-        cmd = mock_run.call_args.args[0]
-        assert "--basetemp=/custom/tmp" in cmd
-        assert sum(
-            1
-            for tok in cmd
-            if tok == "--basetemp" or tok.startswith("--basetemp=")
-        ) == 1
-
-    def test_concurrent_validators_get_distinct_basetemps(self, tmp_path):
-        """AC-006c: two simulated concurrent invocations never share a
-        basetemp."""
-        seen = []
-
-        def record(cmd, **kwargs):
-            seen.append(_basetemp_value(cmd))
-            return _proc(0, stdout="1 passed")
-
-        v1 = _make_validator(tmp_path)
-        v2 = _make_validator(tmp_path)
-        with patch("subprocess.run", side_effect=record):
-            v1.run_independent_tests()
-            v2.run_independent_tests()
-        assert len(seen) == 2
-        assert seen[0] != seen[1]
 
 
 # ============================================================================

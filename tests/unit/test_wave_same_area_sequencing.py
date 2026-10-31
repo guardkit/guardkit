@@ -820,7 +820,6 @@ class TestBannerAgreesWithTheDecision:
         def _execute(task, *_args, **kwargs):
             seen[task.id] = (
                 kwargs["wave_size"],
-                kwargs["effective_concurrency"],
                 kwargs["shares_working_copy"],
             )
             return TaskExecutionResult(
@@ -837,8 +836,8 @@ class TestBannerAgreesWithTheDecision:
 
         assert all(result.success for result in results)
         assert seen == {
-            "TASK-TS-001": (2, 1, False),
-            "TASK-TS-002": (2, 1, False),
+            "TASK-TS-001": (2, False),
+            "TASK-TS-002": (2, False),
         }
 
     def test_independent_wave_banner_says_what_the_executor_allows(

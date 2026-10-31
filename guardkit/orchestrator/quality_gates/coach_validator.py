@@ -36,11 +36,10 @@ import logging
 import os
 import re
 import shlex
-import stat
 import subprocess
 import sys
 import time
-from contextlib import aclosing, contextmanager
+from contextlib import aclosing
 from dataclasses import dataclass, replace as dataclass_replace
 from pathlib import Path
 from typing import (
@@ -73,7 +72,6 @@ from guardkit.orchestrator.project_command_env import (
     project_command_environment,
 )
 from guardkit.orchestrator.toolchain_declaration import (
-    CONFIG_RELATIVE_PATH,
     ComponentToolchain,
     DeclaredPart,
     ToolchainDeclaration,
@@ -98,8 +96,6 @@ from guardkit.orchestrator.paths import TaskArtifactPaths
 from guardkit.orchestrator.run_evidence import (
     CommandEvidence,
     EvidenceRequest,
-    mark_copy_stability,
-    originating_worktree_identity,
     request_from_declaration,
     start_command_evidence,
 )
@@ -258,7 +254,6 @@ def _checker_env(
     additions: Optional[Dict[str, str]] = None,
     path_first: Sequence[str] = (),
     fixtures: bool = False,
-    git_ceiling: Optional[Path] = None,
     main_checkout: bool = False,
 ) -> Dict[str, str]:
     """The environment one of the checker's project commands runs with,
@@ -268,29 +263,24 @@ def _checker_env(
     return project_command_environment(
         validator.worktree_path,
         validator._launch_declaration(main_checkout),
-        additions=validator._command_additions(additions, fixtures, git_ceiling),
+        additions=validator._command_additions(additions, fixtures),
         path_first=path_first,
     )
 
 
-def _checker_pytest_env(
-    validator: "CoachValidator", git_ceiling: Optional[Path] = None
-) -> Dict[str, str]:
+def _checker_pytest_env(validator: "CoachValidator") -> Dict[str, str]:
     """The checker's pytest-run environment: the worktree venv's ``bin``
     first on PATH and this task's test-service URLs."""
     return _checker_env(
         validator,
         path_first=_worktree_venv_bin(validator.worktree_path),
         fixtures=True,
-        git_ceiling=git_ceiling,
     )
 
 
-def _checker_declared_env(
-    validator: "CoachValidator", git_ceiling: Optional[Path] = None
-) -> Dict[str, str]:
+def _checker_declared_env(validator: "CoachValidator") -> Dict[str, str]:
     """The checker's declared-command environment, with the test-service URLs."""
-    return _checker_env(validator, fixtures=True, git_ceiling=git_ceiling)
+    return _checker_env(validator, fixtures=True)
 
 
 # ============================================================================
@@ -321,15 +311,10 @@ def _combined_output_tail(
 
 #: The kinds of command run record the independent check makes (repair 7),
 #: and what each one's execution root is, in plain words.
-EVIDENCE_ISOLATED = "independent suite (isolated copy)"
 EVIDENCE_WORKTREE = "independent suite (worktree)"
 EVIDENCE_SDK = "independent suite (through the SDK, in the worktree)"
 EVIDENCE_ORACLE = "behavioural oracle"
 EVIDENCE_ROOT_DESCRIPTIONS = {
-    EVIDENCE_ISOLATED: (
-        "an isolated copy of the build worktree, without Git metadata; the "
-        "originating worktree's identity at copy time is recorded separately"
-    ),
     EVIDENCE_WORKTREE: "the build worktree",
     EVIDENCE_SDK: "the build worktree (the command was run by an SDK agent)",
     EVIDENCE_ORACLE: "the build worktree",
@@ -409,23 +394,13 @@ class IndependentTestResult:
     # One plain sentence for the operator: the command, the directory it was
     # asked to run in, and what was missing. Never shown to the builder.
     check_could_not_run_detail: Optional[str] = None
-    # Set when an isolated (parallel-wave) attempt could not start and the
-    # check was run in the real worktree instead — the same run a wave of one
-    # uses. Records THAT it fell back and WHY. Receipt evidence only: no gate,
-    # verdict or feedback branch reads it.
-    isolation_fallback_reason: Optional[str] = None
-    # Most isolated-copy failures may retry in the worktree. A required
-    # project-configuration snapshot failure sets this false so the command
-    # never runs against mutable configuration after isolation was refused.
-    allow_worktree_fallback: bool = True
     # The command's own exit status, when it ran as a subprocess (12 October
     # 2026). ``None`` when there was none to read (the agent-shell path, a
     # timeout, a skipped run). Read only by ``failure_receipt`` below.
     exit_code: Optional[int] = None
 
     # WHAT THE CHECK RAN AGAINST (repair 7, 2026-10-12): one record per
-    # command run for this check, in order — the isolated attempt and its
-    # worktree fallback are two. Each names the real execution root, its
+    # command run for this check, in order. Each names the real execution root, its
     # source before and after, the declared environment inventory and the
     # raw container events of the interval (see ``run_evidence``). Receipt
     # evidence only: no gate, verdict or feedback branch reads it.
@@ -536,7 +511,6 @@ class IndependentTestResult:
         duration_seconds: float,
         raw_output: Optional[str] = None,
         resolved_interpreter: Optional[str] = None,
-        allow_worktree_fallback: bool = True,
     ) -> "IndependentTestResult":
         """THE CHECK COULD NOT RUN — nothing about the builder's work was
         measured, because the command could not start where it was asked to
@@ -560,7 +534,6 @@ class IndependentTestResult:
             resolved_interpreter=resolved_interpreter,
             check_could_not_run=True,
             check_could_not_run_detail=detail,
-            allow_worktree_fallback=allow_worktree_fallback,
         )
 
     @classmethod
@@ -679,7 +652,6 @@ def combine_part_results(
             duration_seconds=duration,
             raw_output="\n\n".join(r.raw_output for _, r in not_run if r.raw_output)
             or None,
-            allow_worktree_fallback=False,
         )
     elif len(runs) == 1:
         result = dataclass_replace(runs[0][1])
@@ -865,7 +837,6 @@ class CoachValidator:
         in_autobuild_context: bool = False,  # WS3-S1 Q1 SPLIT (hard-abort)
         toolchain: Optional["ToolchainDeclaration"] = None,  # TS-lane D.1b
         baseline_commit: Optional[str] = None,  # the task's starting commit
-        effective_concurrency: Optional[int] = None,
     ):
         """
         Initialize CoachValidator.
@@ -909,10 +880,9 @@ class CoachValidator:
             ``ANTHROPIC_BASE_URL`` points to a non-Anthropic endpoint, otherwise
             ``"text"``.  Can also be set via ``GUARDKIT_MATCHING_STRATEGY`` env var.
         wave_size : int
-            Number of tasks executing in parallel in the current wave (default: 1).
-            When >1, the Coach runs independent tests in an isolated temp directory
-            to prevent spurious failures from concurrent worktree mutations, and
-            applies more lenient failure classification for contention-related errors.
+            Number of tasks in the current wave (default: 1). When >1 the
+            failure classification is more lenient for contention-related
+            errors; it only shapes the words the builder is sent.
         model_name : Optional[str]
             Orchestrator-configured model name to thread through to the harness
             for SDK-based Coach test execution. Used as a fallback when the
@@ -1122,16 +1092,6 @@ class CoachValidator:
         # pytest --basetemp; None -> per-path defaults (see _basetemp_context).
         self._basetemp_context: Optional[str] = basetemp_context
         self.wave_size = max(1, int(wave_size))
-        self.effective_concurrency: Optional[int] = (
-            int(effective_concurrency)
-            if effective_concurrency is not None
-            else None
-        )
-        # Set for the length of one check when an isolated (parallel-wave)
-        # attempt could not START and the check is being run in the real
-        # worktree instead. Read and cleared by
-        # ``_after_isolation_fallback``; ``None`` at every other moment.
-        self._isolation_fallback: Optional[IndependentTestResult] = None
         # TASK-AB-NPDET01: the non-Python stack test-execution profile resolved
         # by ``_detect_test_command`` for THIS run (None when no stack row
         # matches and the declaration overlays nothing). ``run_independent_tests`` reads it to classify
@@ -1170,13 +1130,6 @@ class CoachValidator:
     def is_parallel(self) -> bool:
         """Return True when this Coach is running in a parallel wave (wave_size > 1)."""
         return self.wave_size > 1
-
-    @property
-    def test_isolation_concurrency(self) -> int:
-        """Concurrency used only for independent-test snapshot selection."""
-        if self.effective_concurrency is not None:
-            return self.effective_concurrency
-        return self.wave_size
 
     def _get_coach_test_model(self) -> Optional[str]:
         """Return the model for Coach SDK test invocations, or None to use CLI default.
@@ -1496,7 +1449,6 @@ class CoachValidator:
                 test_command=command,
                 detail=f"the declared install (`{command}`) for part {part.name} {why}",
                 duration_seconds=0.0,
-                allow_worktree_fallback=False,
             )
 
         try:
@@ -2690,181 +2642,6 @@ class CoachValidator:
             == "langgraph"
         )
 
-    # Directories to skip when copying worktree for isolated test execution.
-    _ISOLATION_SKIP_DIRS: set = {
-        ".git", "__pycache__", ".guardkit", ".venv", "venv", "node_modules",
-        ".tox", ".mypy_cache", ".pytest_cache", "dist", "build", "*.egg-info",
-    }
-
-    # Of the entries the copy does not carry, these two are never linked to
-    # either: version control, and guardkit's own state for this build (which
-    # contains the worktrees themselves). Everything else the copy skipped is
-    # linked back to the real thing, so a command that needs it can reach it.
-    # A bootstrap-created environment that lives INSIDE guardkit's own state
-    # directory is reached individually — see
-    # ``_paths_the_snapshot_must_reach``.
-    _ISOLATION_NEVER_LINK: set = {".git", ".guardkit"}
-
-    # Name stem of the isolated copy. The copy itself is called
-    # ``guardkit-coach-iso-<random>``; the folder that holds it carries the
-    # same name with a leading dot.
-    _ISOLATION_COPY_PREFIX = "guardkit-coach-iso-"
-
-    @contextmanager
-    def _isolated_copy_location(self):
-        """Make an empty folder for the isolated copy, beside the worktree.
-
-        Yields ``(copy_dir, holder_dir)``. The copy goes into ``copy_dir``;
-        ``holder_dir`` is the folder around it, which is removed afterwards.
-
-        WHERE IT LIVES, AND WHY. The copy sits in the worktree's parent
-        directory, not in the system temp folder. A test command can hand a
-        path inside the copy to another program that does not share this
-        process's view of the files — a container engine bind-mounting
-        ``<copy>/probe.py`` is the case that broke (FEAT-FFEC and FEAT-78F7,
-        3 October 2026): the engine ran on another machine, could not see this
-        process's ``/tmp``, made an empty folder in place of the file, and the
-        test failed before it reached the code. Whatever can see the worktree
-        at its path can, in every layout we run, also see the folder that
-        holds it, so the copy is visible wherever the worktree is.
-
-        It is never inside the worktree being tested, so it can never appear
-        as a change to that worktree. The holder carries a ``.gitignore``
-        that ignores everything (itself included), so if the parent folder
-        belongs to a git checkout the copy does not show up there either.
-        This does not depend on the worktree being a git worktree; a plain
-        directory works the same.
-
-        If the parent folder cannot take a new folder (read-only, or the
-        worktree is the filesystem root), the copy falls back to the system
-        temp folder, as before, and says so in the log.
-
-        Cleanup is ``_remove_isolated_copy``: the copy first, and the ignore
-        file only once nothing is left.
-        """
-        import tempfile
-
-        holder: Optional[Path] = None
-        parent = Path(os.path.abspath(str(self.worktree_path))).parent
-        if parent != Path(os.path.abspath(str(self.worktree_path))):
-            try:
-                holder = Path(
-                    tempfile.mkdtemp(
-                        prefix="." + self._ISOLATION_COPY_PREFIX, dir=str(parent)
-                    )
-                )
-            except OSError as exc:
-                logger.warning(
-                    "Could not make the isolated copy beside the worktree in "
-                    "%s (%s); using the system temp folder instead. A test "
-                    "that hands a path inside the copy to a program on "
-                    "another machine (a container engine, say) may not find "
-                    "it there.",
-                    parent,
-                    exc,
-                )
-        if holder is None:
-            holder = Path(
-                tempfile.mkdtemp(prefix="." + self._ISOLATION_COPY_PREFIX)
-            )
-
-        copy_dir = holder / holder.name.lstrip(".")
-        try:
-            (holder / ".gitignore").write_text("*\n", encoding="utf-8")
-            copy_dir.mkdir()
-            yield copy_dir, holder
-        finally:
-            self._remove_isolated_copy(holder, copy_dir=copy_dir)
-
-    @staticmethod
-    def _remove_isolated_copy(holder: Path, *, copy_dir: Path) -> None:
-        """Remove the copy, then its holder — but keep the ignore file if
-        anything survives.
-
-        ORDER MATTERS. The copy goes first. Only when it is completely gone
-        are the holder's ``.gitignore`` and the holder removed. If a test
-        left something this process cannot delete (a root-owned folder a
-        container wrote into, say), the holder and its ignore-everything
-        ``.gitignore`` stay, so the leftovers never become visible to git in
-        a checkout that holds the worktree's parent and cannot block a
-        clean-tree check. Leftovers are logged, never raised: they must not
-        turn a finished check into "could not run".
-        """
-        import shutil
-
-        def _report(_func, path, exc) -> None:
-            logger.warning(
-                "Could not remove %s while cleaning up the isolated copy: %s",
-                path,
-                exc,
-            )
-
-        def _open_up(root: Path) -> None:
-            # One bounded pass, top down: make every folder in the copy that
-            # this process owns writable and traversable before it is
-            # entered, so read-only and unreadable folders the test left
-            # (nested ones included) can be emptied. Never through a symlink:
-            # the copy links back to real things in the worktree (a
-            # bootstrap environment, say), and chmod follows links.
-            # Folders this process does not own fail chmod quietly here and
-            # are reported by the removal below.
-            def _chmod_dir(p: str) -> None:
-                if os.path.islink(p):
-                    return
-                try:
-                    os.chmod(p, stat.S_IRWXU)
-                except OSError:
-                    pass
-
-            if not root.is_dir() or root.is_symlink():
-                return
-            _chmod_dir(str(root))
-            for dirpath, dirnames, _files in os.walk(str(root)):
-                for name in dirnames:
-                    _chmod_dir(os.path.join(dirpath, name))
-
-        if copy_dir.exists() or copy_dir.is_symlink():
-            _open_up(copy_dir)
-            shutil.rmtree(str(copy_dir), onexc=_report)
-
-        if copy_dir.exists() or copy_dir.is_symlink():
-            # Something survived: keep (and re-assert) the protection.
-            try:
-                (holder / ".gitignore").write_text("*\n", encoding="utf-8")
-            except OSError as exc:
-                logger.warning(
-                    "Could not restore %s over the isolated copy's leftovers: "
-                    "%s",
-                    holder / ".gitignore",
-                    exc,
-                )
-            logger.warning(
-                "The isolated copy could not be removed completely; what is "
-                "left stays in %s, which ignores everything in it so git "
-                "never sees it. Remove it by hand when convenient.",
-                holder,
-            )
-            return
-
-        try:
-            others = [p.name for p in holder.iterdir() if p.name != ".gitignore"]
-            if others:
-                # Something was put beside the copy, outside it. Leave it
-                # under the ignore file rather than expose it.
-                logger.warning(
-                    "Left the isolated copy's holder %s in place: it still "
-                    "holds %s, which the copy's cleanup does not own.",
-                    holder,
-                    ", ".join(sorted(others)),
-                )
-                return
-            (holder / ".gitignore").unlink(missing_ok=True)
-            holder.rmdir()
-        except OSError as exc:
-            logger.warning(
-                "Could not remove the isolated copy's holder %s: %s", holder, exc
-            )
-
     def _pytest_interpreter(self) -> str:
         """Return the interpreter Coach should run pytest under.
 
@@ -2939,7 +2716,6 @@ class CoachValidator:
         additions: Optional[Dict[str, str]] = None,
         path_first: Sequence[str] = (),
         fixtures: bool = False,
-        git_ceiling: Optional[Path] = None,
         main_checkout: bool = False,
     ) -> Dict[str, str]:
         """The environment one of the checker's project commands runs with.
@@ -2955,12 +2731,6 @@ class CoachValidator:
 
         * ``fixtures`` — the URLs of the test services this validator started
           (:meth:`_start_infrastructure_containers`), for the test commands;
-        * ``git_ceiling`` — ``GIT_CEILING_DIRECTORIES`` for a run inside the
-          isolated copy. The copy deliberately has no ``.git``; beside the
-          worktree, the folder above it can belong to a git checkout (the
-          build's own clone), and a ``git`` command in the test suite would
-          otherwise act on that checkout. Set to the holder, git behaves as
-          it did in the system temp folder: no repository here;
         * ``additions`` — anything else the caller is promised.
 
         Raises ``LaunchEnvironmentError`` (an ``OSError``) when the command
@@ -2972,7 +2742,6 @@ class CoachValidator:
             additions=additions,
             path_first=path_first,
             fixtures=fixtures,
-            git_ceiling=git_ceiling,
             main_checkout=main_checkout,
         )
 
@@ -2986,14 +2755,11 @@ class CoachValidator:
         self,
         additions: Optional[Dict[str, str]],
         fixtures: bool,
-        git_ceiling: Optional[Path],
     ) -> Dict[str, str]:
         """The factory's own additions for one of the checker's commands."""
         adds: Dict[str, str] = {}
         if fixtures:
             adds.update(getattr(self, "_fixture_env", {}) or {})
-        if git_ceiling is not None:
-            adds["GIT_CEILING_DIRECTORIES"] = str(git_ceiling)
         adds.update(additions or {})
         return adds
 
@@ -3168,701 +2934,11 @@ class CoachValidator:
             return f"{self.task_id}-{label}"
         return label
 
-    def _paths_the_snapshot_must_reach(self) -> List[Path]:
-        """What the declared test command needs that a file copy does not carry.
-
-        ASK WHAT BUILT IT, NEVER GUESS THE DIRECTORY. There is no directory
-        name that is right for every repository: guess ``.venv`` and the same
-        build in a TypeScript repository is missing ``node_modules``; guess
-        both and a Go repository is missing its module cache. So nothing here
-        is guessed. Two things are asked, and both already know the answer for
-        THIS repository:
-
-        * guardkit's environment bootstrap, which created this build's
-          environment and records where it put it
-          (``environment_bootstrap.bootstrap_created_paths``);
-        * the copy itself — an entry it did not carry is, by definition, an
-          entry the command cannot reach in the copy.
-
-        A repository whose bootstrap created nothing (a stack that needs no
-        per-build environment) yields nothing from the first ask, and behaves
-        exactly as it did before this existed.
-
-        Returns
-        -------
-        List[Path]
-            Existing paths in the real worktree, each to be linked into the
-            snapshot at the same relative position.
-        """
-        reach: List[Path] = []
-
-        def _add(path: Path) -> None:
-            if path not in reach and path != self.worktree_path:
-                reach.append(path)
-
-        # Ask #1: the bootstrap that built this build's environment.
-        try:
-            from guardkit.orchestrator.environment_bootstrap import (
-                bootstrap_created_paths,
-            )
-
-            for created in bootstrap_created_paths(self.worktree_path):
-                _add(created)
-        except Exception as exc:  # noqa: BLE001 — asking must never break a run
-            logger.warning(
-                "Could not ask the environment bootstrap what it created for "
-                "%s (%s); the copy carries only what it copied.",
-                self.worktree_path,
-                exc,
-            )
-
-        # Ask #2: what the copy left behind. Version control and guardkit's
-        # own state stay behind deliberately.
-        try:
-            for item in self.worktree_path.iterdir():
-                if item.name in self._ISOLATION_NEVER_LINK:
-                    continue
-                if item.name in self._ISOLATION_SKIP_DIRS or item.name.endswith(
-                    ".egg-info"
-                ):
-                    _add(item)
-        except OSError as exc:
-            logger.warning(
-                "Could not list %s while working out what the isolated copy "
-                "must reach: %s",
-                self.worktree_path,
-                exc,
-            )
-
-        return reach
-
-    def _reach_into_snapshot(
-        self, snapshot_root: Path, paths: List[Path]
-    ) -> List[str]:
-        """Link *paths* into *snapshot_root* at the same relative positions.
-
-        Linking rather than copying: an environment can be gigabytes, and
-        nothing in a parallel wave edits it — the contention this snapshot
-        exists to defend against is peers editing SOURCE files, which are
-        copied.
-
-        Returns the relative paths that were linked, for the operator's log.
-        """
-        linked: List[str] = []
-        for real in paths:
-            try:
-                relative = real.relative_to(self.worktree_path)
-            except ValueError:
-                continue
-            destination = snapshot_root / relative
-            if destination.exists() or destination.is_symlink():
-                continue
-            try:
-                destination.parent.mkdir(parents=True, exist_ok=True)
-                destination.symlink_to(real, target_is_directory=real.is_dir())
-                linked.append(str(relative))
-            except OSError as exc:
-                logger.warning(
-                    "Could not carry %s into the isolated copy: %s",
-                    relative,
-                    exc,
-                )
-        return linked
-
-    def _copy_project_config_into_snapshot(
-        self, snapshot_root: Path
-    ) -> Optional[str]:
-        """Copy the optional project config as independent regular bytes.
-
-        ``None`` means either success or genuine absence. A returned string
-        is a plain failure reason; the caller refuses worktree fallback before
-        the project command starts.
-        """
-        source = self.worktree_path / CONFIG_RELATIVE_PATH
-        relative = str(CONFIG_RELATIVE_PATH)
-
-        try:
-            source.lstat()
-        except (FileNotFoundError, NotADirectoryError):
-            return None
-        except OSError as exc:
-            return (
-                f"project configuration {relative} could not be looked up "
-                f"({type(exc).__name__}: {exc})"
-            )
-
-        source_fd: Optional[int] = None
-        try:
-            # Follow a source symlink, as the declaration loaders do, but a
-            # pipe/device must never block or be accepted as configuration.
-            source_fd = os.open(source, os.O_RDONLY | _O_NONBLOCK)
-        except (FileNotFoundError, NotADirectoryError):
-            # A dangling source link is absent to the strict and non-strict
-            # declaration loaders, so it is absent here too.
-            return None
-        except OSError as exc:
-            return (
-                f"project configuration {relative} could not be opened "
-                f"({type(exc).__name__}: {exc})"
-            )
-
-        try:
-            opened = os.fstat(source_fd)
-            if not stat.S_ISREG(opened.st_mode):
-                return (
-                    f"project configuration {relative} is not a regular "
-                    "file when opened"
-                )
-            payload = bytearray()
-            while True:
-                chunk = os.read(source_fd, 1024 * 1024)
-                if not chunk:
-                    break
-                payload.extend(chunk)
-        except OSError as exc:
-            return (
-                f"project configuration {relative} could not be read "
-                f"({type(exc).__name__}: {exc})"
-            )
-        finally:
-            if source_fd is not None:
-                try:
-                    os.close(source_fd)
-                except OSError:
-                    pass
-
-        destination_dir = snapshot_root / CONFIG_RELATIVE_PATH.parent
-        try:
-            destination_dir.mkdir(parents=True, exist_ok=True)
-            directory_info = destination_dir.lstat()
-        except OSError as exc:
-            return (
-                f"project configuration {relative} could not create or "
-                f"inspect its snapshot directory ({type(exc).__name__}: {exc})"
-            )
-        if not stat.S_ISDIR(directory_info.st_mode):
-            return (
-                f"project configuration {relative} snapshot directory is "
-                "not a real directory"
-            )
-
-        destination = snapshot_root / CONFIG_RELATIVE_PATH
-        destination_fd: Optional[int] = None
-        try:
-            destination_fd = os.open(
-                destination,
-                os.O_WRONLY | os.O_CREAT | os.O_EXCL | _O_NOFOLLOW,
-                stat.S_IMODE(opened.st_mode) or stat.S_IRUSR,
-            )
-            remaining = memoryview(payload)
-            while remaining:
-                written = os.write(destination_fd, remaining)
-                if written <= 0:
-                    raise OSError("write returned no progress")
-                remaining = remaining[written:]
-        except OSError as exc:
-            return (
-                f"project configuration {relative} could not be written to "
-                f"the isolated snapshot ({type(exc).__name__}: {exc})"
-            )
-        finally:
-            if destination_fd is not None:
-                try:
-                    os.close(destination_fd)
-                except OSError:
-                    pass
-        return None
-
-    @staticmethod
-    def _command_runs_pytest(test_cmd: str) -> bool:
-        """True when the declared command actually invokes pytest.
-
-        NOTHING HERE MAY ASSUME PYTHON. Exit code 5 means "collected no
-        tests" to pytest and nothing at all to anybody else: to ``go test``
-        or to a shell wrapper it is simply a non-zero exit, which usually
-        means the checks FAILED. Reading a Go wrapper's exit 5 as "the check
-        could not run" would hide a genuine red behind an estate fault and
-        tell the operator something untrue about a command that has no
-        opinion about Python. So the pytest-shaped readings below are asked
-        only of a pytest-shaped command.
-
-        Matches pytest as a word in the command — ``pytest -q``,
-        ``python -m pytest``, ``uv run pytest``, ``/path/to/pytest`` — and
-        nothing else. ``make test``, ``./scripts/test.sh``, ``go test ./...``
-        and ``npm test`` are all not pytest-shaped, whatever they run
-        underneath, because from here they are opaque.
-        """
-        for token in (test_cmd or "").replace(";", " ").replace("&", " ").split():
-            stripped = token.strip("\"'")
-            if stripped == "pytest" or stripped.endswith("/pytest"):
-                return True
-        return False
-
-    def _absence_from_run(
-        self,
-        returncode: Optional[int],
-        combined_output: str,
-        tests_passed: bool,
-        test_cmd: str,
-    ) -> Optional[str]:
-        """Why this run produced NO verdict, or ``None`` when it produced one.
-
-        Every branch here is a run that never told us anything about the
-        builder's code. A run that exits cleanly having executed nothing is
-        one of them: unknown is not a pass.
-
-        These are the same conditions the worktree run applies inline, in the
-        same order, stated once so the isolated copy cannot drift away from
-        them — the recurring "Nth-injection-site" lesson of the
-        absence-of-failure rule family. The worktree run is deliberately left
-        calling its own inline copy: a single-task wave must stay exactly what
-        it is today, proved by its existing tests, and this lane changes only
-        the parallel-wave path.
-
-        Two kinds of reading live here and they are kept apart, because on
-        this path a "could not run" ends the turn with nothing for the
-        builder:
-
-        * the stack-agnostic ones — the command could not be STARTED at all
-          (exit 126 or 127, or one of the shell's own missing-tool
-          sentences). True of any command in any language, so they are asked
-          of every command;
-        * the pytest-shaped ones — exit code 5, a conftest import error, a
-          collection error, a rejected ``--timeout``. These are readings of
-          pytest's own vocabulary, so they are asked only when the command
-          really invokes pytest (see ``_command_runs_pytest``). A declared
-          shell wrapper or a ``go test`` line keeps its own meaning for the
-          same exit codes, and a genuine red stays the builder's to fix.
-        """
-        if self._active_stack_profile is not None:
-            if classify_absent_for_stack(
-                self._active_stack_profile,
-                returncode,
-                combined_output,
-            ):
-                return (
-                    f"the run reported no tests for the declared stack "
-                    f"({self._active_stack_profile.stack}), exit code "
-                    f"{returncode}"
-                )
-            return None
-        if tests_passed:
-            return None
-        if self._command_runs_pytest(test_cmd):
-            if "No module named pytest" in combined_output:
-                return (
-                    "the test runner itself was not installed where the "
-                    "command ran"
-                )
-            if returncode == 5:
-                return "the command collected no tests at all"
-            if (
-                "ImportError while loading conftest" in combined_output
-                or "errors during collection" in combined_output
-                or "error collecting" in combined_output
-            ):
-                return (
-                    "the suite could not be loaded, so no test ran (a missing "
-                    "dependency where the command ran)"
-                )
-            if self._is_pytest_timeout_usage_error(returncode, combined_output):
-                return (
-                    "the per-test timeout option was rejected, so no test ran "
-                    "(the timeout plugin was missing where the command ran)"
-                )
-        if self._is_host_substrate_gap(returncode, combined_output):
-            return (
-                f"the command could not be executed where it was asked to run "
-                f"(exit code {returncode}) — something it needs was not there"
-            )
-        return None
-
-    # ------------------------------------------------------------------
-    # THE RULE: a check that could not run is not a check that failed
-    # ------------------------------------------------------------------
-    # "The check ran and the result is bad" and "the check could not run" are
-    # different outcomes, and they never share a code path. A check that could
-    # not run is an ESTATE fault:
-    #
-    #   1. it is NEVER put in the builder's feedback as something to fix —
-    #      not as a must-fix, not as an observation, not as a record of
-    #      honesty. The builder did not cause it and cannot fix it, and on
-    #      2026-09-11 a build handed one to the coder five turns running until
-    #      the coder deleted two working functions trying to satisfy it;
-    #   2. it can NEVER let a quality gate report the check as passed. The
-    #      gate says UNKNOWN, which is not a pass — the same false receipt as
-    #      an image that verifies green carrying yesterday's code;
-    #   3. it IS reported, in plain words, naming the command, the directory
-    #      it ran in and what was missing, to the operator's log and the
-    #      turn's receipt.
-    # ------------------------------------------------------------------
-
-    def _worktree_run_said_nothing(
-        self,
-        result: "IndependentTestResult",
-        worktree_returncode: Optional[int],
-    ) -> bool:
-        """Did the worktree run really fail to say anything about the code?
-
-        Only asked after an isolated attempt could not start, because only
-        there does the answer END THE TURN with nothing for the builder. That
-        is why the question is asked again here rather than taken from the
-        worktree run's own inline reading.
-
-        THE INLINE READING IS NOT SAFE TO END A TURN ON. The worktree run
-        classifies absence with its own copy of the pytest vocabulary
-        whenever no stack profile is declared: exit code 5 as "collected no
-        tests", the words "errors during collection" as "the suite could not
-        load". Those are true of pytest and of nothing else. A repository
-        that declares a shell wrapper — ``qa/run-suite.sh`` — gets that
-        vocabulary applied to a script that has no opinion about Python, and
-        exit 5 there usually means the checks FAILED. Honouring it would
-        erase a genuine red, clear the builder's real must-fixes and tell the
-        operator that nothing ran while quoting the five things that failed.
-        The same wrong answer would come back for ``go test`` and for
-        ``npm test``.
-
-        So only a command that could not START counts here: the
-        stack-agnostic reading (exit 126 or 127, or one of the shell's own
-        missing-tool sentences, ``_is_host_substrate_gap``), and, for a
-        command that really invokes pytest, the test runner itself missing
-        where it ran. Everything else is what a wave of one would report. A
-        red stays the builder's, and the receipt simply records that the
-        check fell back.
-
-        A run that started and reported no tests — pytest exit 5, a stack's
-        "no tests" phrase, a declared absence phrase, an exit 0 with no test
-        count recognised — stays an absent signal, exactly as a wave of one
-        reports it: never a pass, and the Coach and the builder see it. Ending
-        the turn as an estate fault instead made a wave of two worse than a
-        wave of one, and stopped a whole feature on a project check that
-        passed but ran no tests the stack profile recognises (23 October
-        2026). The isolated copy still asks the wider ``_absence_from_run``
-        question, so such a run there still falls back to the worktree.
-
-        ``worktree_returncode`` is ``None`` when the command never completed
-        at all — a timeout, or a failure before any exit code existed. There
-        is no exit code to misread there and nothing was verified either way,
-        so it stays what it is: the check could not run.
-        """
-        if result.check_could_not_run:
-            return True
-        if not result.signal_absent:
-            return False
-        if worktree_returncode is None:
-            return True
-        if worktree_returncode == 0:
-            return False
-        return self._is_host_substrate_gap(
-            worktree_returncode, result.raw_output or ""
-        ) or (
-            self._command_runs_pytest(result.test_command)
-            and "No module named pytest" in (result.raw_output or "")
-        )
-
-    def _after_isolation_fallback(
-        self,
-        result: "IndependentTestResult",
-        *,
-        worktree_returncode: Optional[int],
-    ) -> "IndependentTestResult":
-        """Close out a check that fell back from the isolated copy.
-
-        No-op unless an isolated attempt could not start this turn. When one
-        did:
-
-        * the worktree run started — keep its result, and record on the
-          receipt that it fell back and why. A red is a red and an absent
-          signal is an absent signal: each reaches the builder exactly as a
-          wave of one would have delivered it;
-        * the command could not start in the worktree either (or never
-          finished) — the turn ends as an estate fault, naming the command,
-          both directories and what was missing, in the operator's log and on
-          the receipt.
-
-        Which of the two it is comes from ``_worktree_run_said_nothing``, not
-        from the worktree run's own inline reading. ``worktree_returncode``
-        is required, not defaulted, so a future caller cannot silently lose
-        the fence and start ending turns on a misread exit code again.
-        """
-        isolated = self._isolation_fallback
-        self._isolation_fallback = None
-        if isolated is None:
-            return result
-
-        reason = isolated.check_could_not_run_detail or (
-            "the isolated copy could not start the check"
-        )
-        if self._worktree_run_said_nothing(result, worktree_returncode):
-            detail = (
-                f"The check could not run anywhere. Command: "
-                f"{result.test_command}. In an isolated copy of the worktree: "
-                f"{reason} In the worktree itself ({self.worktree_path}): "
-                f"{result.test_output_summary}"
-            )
-            logger.error("%s", detail)
-            return IndependentTestResult.could_not_run(
-                test_command=result.test_command,
-                detail=detail,
-                duration_seconds=result.duration_seconds,
-                raw_output=result.raw_output,
-                resolved_interpreter=result.resolved_interpreter,
-            )
-
-        if result.signal_absent:
-            outcome = "an absent signal, exactly as a wave of one would report"
-        elif result.tests_passed:
-            outcome = "passed"
-        else:
-            outcome = "failed"
-        logger.info(
-            "The check ran in the worktree after the isolated copy could not "
-            "start it, and the result is the builder's to read (%s).",
-            outcome,
-        )
-        return dataclass_replace(result, isolation_fallback_reason=reason)
-
-    def _run_isolated_tests(self, test_cmd: str) -> "IndependentTestResult":
-        """
-        Run tests in an isolated copy of the worktree (Option B: copy).
-
-        Copies the worktree to a folder beside it (see
-        ``_isolated_copy_location`` for where and why — not the system temp
-        folder), excluding large/irrelevant directories, and runs tests
-        there. This prevents spurious failures caused by concurrent mutations
-        from other tasks running in the same parallel wave.
-
-        Parameters
-        ----------
-        test_cmd : str
-            Test command to run (e.g. ``"pytest tests/test_foo.py -v --tb=short"``)
-
-        Returns
-        -------
-        IndependentTestResult
-            Result of isolated test execution
-        """
-        import shutil
-
-        start_time = time.time()
-        logger.info(
-            f"[TASK-ABFIX-005] Running isolated tests (wave_size={self.wave_size}): {test_cmd}"
-        )
-
-        try:
-            with self._isolated_copy_location() as (tmpdir_path, holder):
-                # Repair 7: who the copy came from, at the moment of copying.
-                copied_from = self._originating_identity_for_copy()
-
-                # Copy worktree snapshot, skipping large/irrelevant directories
-                for item in self.worktree_path.iterdir():
-                    dest = tmpdir_path / item.name
-                    if item.name in self._ISOLATION_SKIP_DIRS or item.name.endswith(".egg-info"):
-                        continue
-                    try:
-                        if item.is_dir():
-                            shutil.copytree(
-                                str(item),
-                                str(dest),
-                                ignore=shutil.ignore_patterns(
-                                    "__pycache__", "*.pyc", "*.pyo",
-                                    ".pytest_cache", ".mypy_cache",
-                                ),
-                            )
-                        else:
-                            shutil.copy2(str(item), str(dest))
-                    except (OSError, shutil.Error) as copy_err:
-                        logger.warning(
-                            f"[TASK-ABFIX-005] Skipping {item.name} during isolation copy: {copy_err}"
-                        )
-
-                config_copy_error = self._copy_project_config_into_snapshot(
-                    tmpdir_path
-                )
-                if config_copy_error is not None:
-                    duration = time.time() - start_time
-                    detail = (
-                        f"The check could not run. Command: {test_cmd}. "
-                        f"Directory: {self._component_run_cwd(tmpdir_path)} "
-                        f"(an isolated copy of the worktree). What was "
-                        f"missing: {config_copy_error}."
-                    )
-                    logger.error("%s", detail)
-                    return IndependentTestResult.could_not_run(
-                        test_command=test_cmd,
-                        detail=detail,
-                        duration_seconds=duration,
-                        resolved_interpreter=self._resolved_interpreter_for(
-                            test_cmd
-                        ),
-                        allow_worktree_fallback=False,
-                    )
-
-                logger.info(
-                    f"[TASK-ABFIX-005] Worktree snapshot created at {tmpdir_path}"
-                )
-                # Repair 7: did the worktree hold still while it was copied?
-                copied_from = self._copy_stability(copied_from)
-
-                # THE COPY IS NOT ENOUGH. The copy carries the source files;
-                # the declared test command also needs whatever guardkit's
-                # bootstrap built for this build, which the copy deliberately
-                # does not duplicate. Ask what built it, never guess the
-                # directory — see ``_paths_the_snapshot_must_reach``.
-                linked = self._reach_into_snapshot(
-                    tmpdir_path, self._paths_the_snapshot_must_reach()
-                )
-                if linked:
-                    logger.info(
-                        "The isolated copy can reach what the test command "
-                        "needs: %s",
-                        ", ".join(linked),
-                    )
-
-                # Run tests in the isolated copy
-                if test_cmd.startswith("pytest"):
-                    parts = test_cmd.split()
-                    # TASK-FIX-COACHPYENV: pin pytest to the bootstrap venv
-                    # interpreter, never sys.executable / PATH pytest.
-                    # TASK-ABFIX-011: append a gated per-test --timeout so a hung
-                    # test on a PARALLEL wave is named-FAILED, not tests_run=0
-                    # (the easy-to-miss 4th injection site — ABFIX-010 GAP 3).
-                    # TASK-AB-BASETEMP01: the tempdir COPY isolates the CWD but
-                    # NOT pytest's basetemp — that is still the shared per-user
-                    # /tmp/pytest-of-<user> default, which two concurrent loops
-                    # on one host race. Inject a unique --basetemp (a
-                    # pre-existing --basetemp in the command wins; the dir is
-                    # best-effort removed after the run).
-                    with isolated_basetemp(
-                        self._basetemp_run_context("coach-isolated"),
-                        parts[1:],
-                    ) as basetemp_argv:
-                        cmd = (
-                            [self._pytest_interpreter(), "-m", "pytest"]
-                            + parts[1:]
-                            + self._pytest_timeout_argv()
-                            + basetemp_argv
-                        )
-                        result = self._run_recorded(
-                            cmd,
-                            evidence=(EVIDENCE_ISOLATED, tmpdir_path, copied_from),
-                            cwd=str(self._component_run_cwd(tmpdir_path)),
-                            capture_output=True,
-                            text=True,
-                            timeout=self.test_timeout,
-                            env=_checker_pytest_env(self, git_ceiling=holder),
-                        )
-                else:
-                    # Per-component seam: the isolated copy is a copy of the
-                    # WHOLE worktree, so the component's directory exists
-                    # inside it at the same relative path. Without this the
-                    # parallel-wave oracle would run the component's command
-                    # at the copy's root — the same wrong-directory failure the
-                    # standard path was fixed for.
-                    result = self._run_recorded(
-                        test_cmd,
-                        evidence=(EVIDENCE_ISOLATED, tmpdir_path, copied_from),
-                        shell=True,
-                        cwd=str(self._component_run_cwd(tmpdir_path)),
-                        capture_output=True,
-                        text=True,
-                        timeout=self.test_timeout,
-                        env=_checker_declared_env(self, git_ceiling=holder),
-                    )
-
-                duration = time.time() - start_time
-                tests_passed = result.returncode == 0
-                output = result.stdout or result.stderr or "No output"
-                summary = self._summarize_test_output(output)
-
-                # DID THIS RUN SAY ANYTHING AT ALL? ``_absence_from_run``
-                # states the conditions once: a command that could not be
-                # executed at all (asked of every command, in any language),
-                # and — only when the command really invokes pytest — a
-                # missing runner, a suite that could not load, a rejected
-                # timeout option. None of them is a verdict on the builder's
-                # code, and in the isolated copy every one of them means the
-                # copy could not start the check. The turn then falls back to
-                # the real worktree (see ``run_independent_tests``), which is
-                # the run a wave of one already uses. Anything else — a
-                # wrapper script exiting 5 because five checks failed, say —
-                # is a verdict, and stays the builder's to fix.
-                combined = (result.stdout or "") + (result.stderr or "")
-                could_not_start = self._absence_from_run(
-                    result.returncode, combined, tests_passed, test_cmd
-                )
-                if could_not_start is not None:
-                    detail = (
-                        f"The check could not run. Command: {test_cmd}. "
-                        f"Directory: {self._component_run_cwd(tmpdir_path)} "
-                        f"(an isolated copy of the worktree). What was missing: "
-                        f"{could_not_start}."
-                    )
-                    logger.error("%s", detail)
-                    return IndependentTestResult.could_not_run(
-                        test_command=test_cmd,
-                        detail=detail,
-                        duration_seconds=duration,
-                        raw_output=combined,
-                        resolved_interpreter=self._resolved_interpreter_for(
-                            test_cmd
-                        ),
-                    )
-
-                logger.info(
-                    f"[TASK-ABFIX-005] Isolated tests "
-                    f"{'passed' if tests_passed else 'failed'} "
-                    f"in {duration:.1f}s"
-                )
-
-                # ``combined`` is byte-identical to raw_output here (both are
-                # stdout+stderr); from_run derives tests_skipped from it.
-                return IndependentTestResult.from_run(
-                    tests_passed=tests_passed,
-                    test_command=test_cmd,
-                    test_output_summary=summary,
-                    duration_seconds=duration,
-                    output=(result.stdout or "") + (result.stderr or ""),
-                    signal_absent=False,
-                    resolved_interpreter=self._resolved_interpreter_for(test_cmd),
-                    exit_code=result.returncode,
-                )
-
-        except subprocess.TimeoutExpired:
-            duration = time.time() - start_time
-            logger.error(f"[TASK-ABFIX-005] Isolated test execution timed out after {self.test_timeout}s")
-            # TASK-FIX-COACHTESTTO: timeout — oracle did not complete.
-            return IndependentTestResult.absent(
-                test_command=test_cmd,
-                test_output_summary=f"Isolated test execution timed out after {self.test_timeout}s",
-                duration_seconds=duration,
-                resolved_interpreter=self._resolved_interpreter_for(test_cmd),
-            )
-        except Exception as e:
-            duration = time.time() - start_time
-            # The copy, or the command's own start, went wrong before any
-            # verdict existed: the check COULD NOT RUN in the isolated copy,
-            # so the turn falls back to the real worktree.
-            detail = (
-                f"The check could not run. Command: {test_cmd}. Directory: an "
-                f"isolated copy of {self.worktree_path}. What was missing: "
-                f"the copy could not be prepared or the command could not be "
-                f"started ({e})."
-            )
-            logger.error("%s", detail)
-            return IndependentTestResult.could_not_run(
-                test_command=test_cmd,
-                detail=detail,
-                duration_seconds=duration,
-                resolved_interpreter=self._resolved_interpreter_for(test_cmd),
-            )
-
     # ---- what the check ran against (repair 7, 2026-10-12) ---------------
     #
     # Every command this validator runs for its independent check is
-    # recorded by ``run_evidence``: the real execution root (the worktree, or
-    # the isolated copy that has no ``.git``), its source just before and just
-    # after, the declared environment inventory, and the raw container events
+    # recorded by ``run_evidence``: the real execution root (the worktree),
+    # its source just before and just after, the declared environment inventory, and the raw container events
     # of the interval. Recording NEVER changes a verdict: the command itself
     # is run exactly as before by ``subprocess.run``, and every capture error
     # is written into the record, never raised.
@@ -3880,8 +2956,7 @@ class CoachValidator:
 
         The check itself is :meth:`_run_independent_tests_unrecorded`,
         unchanged. This adds the run records it produced to the result's
-        ``run_evidence`` (one per command: an isolated attempt and its
-        worktree fallback are two) and touches nothing else.
+        ``run_evidence`` and touches nothing else.
         """
         problem = getattr(self, "_interpreter_problem", None)
         if problem:
@@ -3889,7 +2964,6 @@ class CoachValidator:
                 test_command="the project's test command",
                 detail=problem,
                 duration_seconds=0.0,
-                allow_worktree_fallback=False,
             )
         self._run_evidence_log = []
         self._run_evidence_turn = turn
@@ -3994,24 +3068,6 @@ class CoachValidator:
                 except Exception as exc:  # noqa: BLE001
                     record_into["capture_errors"] = [f"{type(exc).__name__}: {exc}"]
 
-    def _copy_stability(
-        self, at_start: Optional[Dict[str, Any]]
-    ) -> Optional[Dict[str, Any]]:
-        """Take the identity again after copying and say whether it held."""
-        try:
-            return mark_copy_stability(at_start, self._originating_identity_for_copy())
-        except Exception as exc:  # noqa: BLE001 — evidence never fails a check
-            record = dict(at_start or {})
-            record["stable_during_copy"] = f"not known (capture error: {exc})"
-            return record
-
-    def _originating_identity_for_copy(self) -> Optional[Dict[str, Any]]:
-        """The worktree's HEAD and temporary-index tree, taken as it is copied."""
-        try:
-            return originating_worktree_identity(self.worktree_path)
-        except Exception as exc:  # noqa: BLE001 — evidence never fails a check
-            return {"status": f"not recorded: capture error ({exc})"}
-
     def _run_independent_tests_unrecorded(
         self,
         task_work_results: Optional[Dict[str, Any]] = None,
@@ -4051,7 +3107,6 @@ class CoachValidator:
                 test_command="<nothing declared>",
                 detail=self._detection_absence or "nothing declared",
                 duration_seconds=0.0,
-                allow_worktree_fallback=False,
             )
 
         # Infrastructure lifecycle for tasks with requires_infrastructure
@@ -4166,36 +3221,6 @@ class CoachValidator:
                         msg += f" stderr: {stderr_head}"
                     logger.warning(msg)
                     # Fall through to subprocess path below
-
-            # Parallel wave isolation (TASK-ABFIX-005): run tests in temp directory
-            # snapshot to prevent spurious failures from concurrent worktree mutations.
-            # Applied when wave_size > 1 and not using SDK (SDK already runs in isolation).
-            if self.test_isolation_concurrency > 1 and not use_sdk:
-                logger.info(
-                    "[TASK-ABFIX-005] Concurrent test execution detected "
-                    f"(wave_size={self.wave_size}, "
-                    f"effective_concurrency={self.effective_concurrency}), "
-                    f"running tests in an isolated copy beside the worktree"
-                )
-                isolated = self._run_isolated_tests(test_cmd)
-                if not isolated.check_could_not_run:
-                    return isolated
-                if not isolated.allow_worktree_fallback:
-                    return isolated
-                # THE FALLBACK. A wave of one already runs this check in the
-                # real worktree and it works; a wave of two must not be worse
-                # than a wave of one. The isolated copy could not start the
-                # check, so run it where a wave of one runs it, and record
-                # plainly that it fell back and why. Only if THAT cannot run
-                # either does the turn end as an estate fault
-                # (``_after_isolation_fallback``).
-                logger.warning(
-                    "The isolated copy could not start the check, so it will "
-                    "run in the worktree instead — the same run a single-task "
-                    "wave uses. %s",
-                    isolated.check_could_not_run_detail,
-                )
-                self._isolation_fallback = isolated
 
             # Subprocess path (default for coach_test_execution="subprocess", SDK fallback,
             # or infrastructure-dependent tasks forced to subprocess by TASK-REV-CB30 R5)
@@ -4323,8 +3348,7 @@ class CoachValidator:
                     f"in {duration:.1f}s"
                 )
 
-                return self._after_isolation_fallback(
-                    IndependentTestResult.from_run(
+                return IndependentTestResult.from_run(
                         tests_passed=tests_passed,
                         test_command=test_cmd,
                         test_output_summary=summary,
@@ -4335,20 +3359,13 @@ class CoachValidator:
                             test_cmd
                         ),
                         exit_code=result.returncode,
-                    ),
-                    # The command completed and has an exit code, so a
-                    # fallback close-out can re-ask what that exit code
-                    # really means for THIS command before ending a turn on
-                    # it.
-                    worktree_returncode=result.returncode,
-                )
+                    )
 
             except subprocess.TimeoutExpired:
                 duration = time.time() - start_time
                 logger.error(f"Test execution timed out after {self.test_timeout}s")
                 # TASK-FIX-COACHTESTTO: timeout — oracle did not complete.
-                return self._after_isolation_fallback(
-                    IndependentTestResult.absent(
+                return IndependentTestResult.absent(
                         test_command=test_cmd,
                         test_output_summary=(
                             f"Test execution timed out after "
@@ -4358,26 +3375,19 @@ class CoachValidator:
                         resolved_interpreter=self._resolved_interpreter_for(
                             test_cmd
                         ),
-                    ),
-                    # No exit code exists: the command never finished.
-                    worktree_returncode=None,
-                )
+                    )
             except Exception as e:
                 duration = time.time() - start_time
                 logger.error(f"Test execution failed: {e}")
                 # TASK-FIX-COACHTESTTO: execution error before any verdict.
-                return self._after_isolation_fallback(
-                    IndependentTestResult.absent(
+                return IndependentTestResult.absent(
                         test_command=test_cmd,
                         test_output_summary=f"Test execution failed: {e}",
                         duration_seconds=duration,
                         resolved_interpreter=self._resolved_interpreter_for(
                             test_cmd
                         ),
-                    ),
-                    # No exit code exists: the command never ran to an end.
-                    worktree_returncode=None,
-                )
+                    )
 
         finally:
             if infra_started:
@@ -4721,15 +3731,14 @@ class CoachValidator:
         Returns ``base`` UNCHANGED whenever no component is active — which is
         every task in every repo that has not opted in, so the execution paths
         below are byte-equivalent for them. When a component IS active its
-        repo-relative ``cwd:`` is applied under ``base`` (the worktree, or the
-        parallel-wave isolated copy of it), with the containment re-check that
+        repo-relative ``cwd:`` is applied under ``base`` (the worktree), with
+        the containment re-check that
         catches a symlink no schema can see.
 
         A containment failure RAISES after a loud error rather than degrading
         to ``base``: silently relocating a refused run to the worktree root
         would execute the component's command against the wrong product. The
-        raise is caught by ``run_independent_tests`` / ``_run_isolated_tests``
-        and becomes an ABSENT (UNKNOWN) result — never a pass, never a Player
+        raise is caught by ``run_independent_tests`` and becomes an ABSENT (UNKNOWN) result — never a pass, never a Player
         test failure.
 
         Raises
@@ -4791,9 +3800,7 @@ class CoachValidator:
             requires_ran_marker=source.requires_ran_marker,
         )
 
-    def _declared_command_env(
-        self, git_ceiling: Optional[Path] = None
-    ) -> Dict[str, str]:
+    def _declared_command_env(self) -> Dict[str, str]:
         """Environment for a declared / non-pytest test command (design §B.5).
 
         Built from nothing (13 October 2026, :meth:`_project_env`): ``PATH``
@@ -4816,7 +3823,7 @@ class CoachValidator:
         The URLs of the test services this validator started are added on top
         (see :meth:`_start_infrastructure_containers`).
         """
-        return _checker_declared_env(self, git_ceiling)
+        return _checker_declared_env(self)
 
     def _describe_detection_absence(self) -> str:
         """The plain sentence for a part with no declared test command."""

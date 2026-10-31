@@ -171,47 +171,6 @@ class TestParallelClassificationIntegration:
 class TestIsolationRoutingIntegration:
     """Test that parallel waves route to isolated test execution."""
 
-    def test_parallel_wave_routes_to_isolated_tests(self, tmp_path):
-        """
-        Verify that when wave_size > 1 and subprocess mode is active,
-        run_independent_tests routes to _run_isolated_tests().
-        """
-        validator = _make_validator(tmp_path, wave_size=3)
-
-        with patch.object(
-            validator, "_run_isolated_tests",
-            return_value=IndependentTestResult(
-                tests_passed=True,
-                test_command="pytest tests/ -v",
-                test_output_summary="5 passed",
-                duration_seconds=1.5,
-                raw_output="5 passed",
-            ),
-        ) as mock_isolated:
-            result = validator.run_independent_tests()
-
-        # _run_isolated_tests should have been called (not direct subprocess)
-        mock_isolated.assert_called_once()
-        assert result.tests_passed is True
-
-    def test_serial_task_runs_tests_directly(self, tmp_path):
-        """
-        Verify that serial tasks (wave_size=1) do NOT use _run_isolated_tests.
-        """
-        validator = _make_validator(tmp_path, wave_size=1)
-
-        with patch.object(
-            validator, "_run_isolated_tests",
-        ) as mock_isolated, patch(
-            "subprocess.run",
-            return_value=_make_completed_process(returncode=0, stdout="5 passed"),
-        ):
-            result = validator.run_independent_tests()
-
-        # _run_isolated_tests should NOT have been called for serial tasks
-        mock_isolated.assert_not_called()
-
-
 # ============================================================================
 # Run Tests
 # ============================================================================

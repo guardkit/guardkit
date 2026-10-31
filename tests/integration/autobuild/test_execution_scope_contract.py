@@ -184,7 +184,6 @@ def test_real_feature_task_entry_serializes_aliases(tmp_path):
     order = []
 
     def run(self, task, feature, worktree, **kwargs):
-        assert kwargs["effective_concurrency"] == 1
         assert kwargs["shares_working_copy"] is False
         invoker = AgentInvoker(worktree_path=worktree.path)
         scope = invoker.task_work_scope
@@ -272,7 +271,6 @@ def test_real_wave_dispatcher_invoker_audit_checkpoint(tmp_path):
         if kwargs.get("repair_round"):
             assert kwargs["repair_round"].start_commit == scope.baseline_commit
             assert scope.admission_reason == "gate repair"
-        assert kwargs["effective_concurrency"] == 1
         suffix = "-repair" if kwargs.get("repair_round") else ""
         target = f"{task.id}{suffix}.source"
         (root / target).write_text("authored by this task\n")
