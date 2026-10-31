@@ -412,24 +412,37 @@ class IndependentTestResult:
 
 
 def _folder_fingerprint(folder: Path) -> str:
-    """A fingerprint of the files directly in ``folder`` (not subfolders):
-    each name with its content, or its link target for a symbolic link."""
+    """A fingerprint of the files git tracks directly in ``folder`` (not
+    subfolders): each name with its content as it is on disk, or its link
+    target for a symbolic link.
+
+    Only tracked files count (1 November 2026), so what a build or a test
+    run writes there (a ``tsconfig.tsbuildinfo``, a coverage or JUnit file)
+    never makes the part's install due again. Empty when git cannot list the
+    folder.
+    """
     digest = hashlib.sha256()
     try:
-        entries = sorted(folder.iterdir(), key=lambda e: e.name)
-    except OSError:
+        listed = run_git(["ls-files", "-z", "--", "."], cwd=folder, timeout=60)
+    except (OSError, subprocess.SubprocessError):
         return ""
-    for entry in entries:
+    if listed.returncode != 0:
+        return ""
+    names = sorted(
+        {n for n in (listed.stdout or "").split("\0") if n and "/" not in n}
+    )
+    for name in names:
+        entry = folder / name
         try:
             if entry.is_symlink():
                 body = ("link:" + os.readlink(entry)).encode("utf-8", "surrogateescape")
             elif entry.is_file():
                 body = entry.read_bytes()
             else:
-                continue
+                body = b"<deleted>"
         except OSError:
             body = b"<unreadable>"
-        digest.update(entry.name.encode("utf-8", "surrogateescape") + b"\0")
+        digest.update(name.encode("utf-8", "surrogateescape") + b"\0")
         digest.update(hashlib.sha256(body).digest())
     return digest.hexdigest()
 
@@ -1103,8 +1116,9 @@ class CoachValidator:
         """Run a component's or pattern part's declared ``install`` when due.
 
         Due the first time the part is tested in this worktree, and again only
-        when its dependency files have changed since: the files directly in
-        the part's folder (no subfolders), fingerprinted by name and content.
+        when its dependency files have changed since: the files git tracks
+        directly in the part's folder (no subfolders), fingerprinted by name
+        and content, so build and test outputs never count.
         GuardKit names no file; whatever a project keeps there counts. The
         install runs in the part's folder as the argument list the text
         splits into, with the part's ``install_timeout``. The root component

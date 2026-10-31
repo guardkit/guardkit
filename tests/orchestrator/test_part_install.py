@@ -114,6 +114,22 @@ class TestThePartInstall:
 
         assert _ran(marker) == ["install", "test", "install", "test"]
 
+    def test_build_and_test_outputs_do_not_reinstall(
+        self, repo: Path, tmp_path: Path
+    ):
+        """Only files git tracks count (1 November 2026): what a build or a
+        test run leaves in the part's folder (a tsbuildinfo, a JUnit or
+        coverage file) does not make the install due again."""
+        marker = tmp_path / "ran.txt"
+        (repo / "apps" / "web" / "src" / "a.ts").write_text("export const a = 2;\n")
+        _validator(repo, marker).run_changed_parts()
+        (repo / "apps" / "web" / "tsconfig.tsbuildinfo").write_text("{}\n")
+        (repo / "apps" / "web" / "junit.xml").write_text("<testsuites/>\n")
+
+        _validator(repo, marker).run_changed_parts()
+
+        assert _ran(marker) == ["install", "test", "test"]
+
     def test_a_failed_install_is_could_not_run_and_runs_no_tests(
         self, repo: Path, tmp_path: Path
     ):
