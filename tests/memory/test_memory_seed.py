@@ -369,6 +369,50 @@ class TestPlan:
         # A decision-like name without a status line is an ordinary document.
         assert items["docs/ADR-ARCH-009-notes.md"].payload_type == "document"
 
+    def test_status_in_front_matter_is_a_decision_record(self, tmp_path: Path) -> None:
+        # The form /system-design writes: the status only in YAML front matter.
+        ddr = (
+            "---\nid: DDR-008\ntitle: \"No pagination anywhere\"\nstatus: accepted\n"
+            "date: 2026-10-22\ncommand: /system-design\n---\n\n"
+            "# DDR-008: No pagination anywhere\n\n## Context\n\nOne user.\n\n"
+            "## Decision\n\nNo endpoint takes limit or offset.\n"
+        )
+        repo = _repo(tmp_path, {"docs/design/decisions/DDR-008-no-pagination.md": ddr})
+        item = plan_seed(repo, "alpha").items[0]
+        assert item.payload_type == "adr"
+        assert item.natural_key == "adr:alpha:DDR_008"
+        assert item.payload["status"] == "accepted"
+        assert item.payload["title"] == "No pagination anywhere"
+        assert item.payload["decision"] == "No endpoint takes limit or offset."
+        get_model_for_type("adr")(**item.payload)
+
+    @pytest.mark.parametrize(
+        "text,expected",
+        [
+            ("---\nstatus: 'proposed'\n---\n# X\n", "proposed"),
+            ("---\nstatus: accepted\n---\n# X\n\n**Status:** Superseded\n", "accepted"),
+            ("# X\n\n**Status:** Accepted\n", "Accepted"),
+            # A status: key outside front matter is not a status line.
+            ("# X\n\nstatus: accepted\n", None),
+            # Front matter without a status key falls back to the body line.
+            ("---\nid: DDR-001\n---\n# X\n\n> Status: Accepted\n", "Accepted"),
+            ("---\nid: DDR-001\n---\n# X\n", None),
+            # An empty front-matter value falls back to the body line.
+            ("---\nstatus: \"\"\n---\n# X\n\nStatus: Accepted\n", "Accepted"),
+            ("---\nstatus: accepted # set by /system-design\n---\n# X\n", "accepted"),
+            ("\ufeff---\nstatus: accepted\n---\n# X\n", "accepted"),
+        ],
+    )
+    def test_status_sources(self, text: str, expected: Optional[str]) -> None:
+        from guardkit.memory.seed import decision_id_for
+
+        found = decision_id_for("DDR-001-x.md", text)
+        assert found == ("DDR-001" if expected else None)
+        if expected:
+            from guardkit.memory.seed import decision_fields
+
+            assert decision_fields("DDR-001", text, "alpha")["status"] == expected
+
     def test_seed_documents_patterns_over_committed_files(self, tmp_path: Path) -> None:
         repo = _repo(tmp_path, {
             ".guardkit/config.yaml": (

@@ -83,6 +83,18 @@ _STATUS_LINE = re.compile(
     r"^[ \t]*(?:>[ \t]*)?(?:\*\*Status:\*\*|\*\*Status\*\*:|Status:)[ \t]*(?P<status>\S.*?)[ \t]*$",
     re.MULTILINE,
 )
+#: YAML front matter at the very start of a file, and its ``status:`` key
+#: (31 October 2026). ``/system-design`` writes DDRs this way (``---``,
+#: ``status: accepted``, ``---``), with no status line in the body, so seed
+#: stored them as plain documents. Only the front matter is read for the key,
+#: never a ``status:`` line further down the body.
+_FRONT_MATTER = re.compile(
+    r"\A\ufeff?---[ \t]*\r?\n(?P<body>.*?)\r?\n---[ \t]*(?:\r?\n|\Z)", re.DOTALL
+)
+_FRONT_MATTER_STATUS = re.compile(r"^status:[ \t]*(?P<status>[^\r\n]*?)[ \t]*$", re.MULTILINE)
+#: A YAML comment after a value: `` # note``.
+_YAML_COMMENT = re.compile(r"[ \t]+#.*$")
+
 _SUPERSEDES_LINE = re.compile(
     r"^[ \t]*(?:>[ \t]*)?(?:\*\*Supersedes:\*\*|\*\*Supersedes\*\*:|Supersedes:)(?P<rest>.*)$",
     re.MULTILINE | re.IGNORECASE,
@@ -227,6 +239,22 @@ def _is_pattern(entry: str) -> bool:
     return any(char in entry for char in "*?[")
 
 
+def _status(text: str) -> Optional[str]:
+    """A decision record's status: its front matter's ``status:`` key, else a
+    body status line. ``None`` when it has neither. When both are present the
+    front matter, the record's own metadata, wins. An empty front-matter value
+    falls back to the body line; quotes and a trailing YAML comment are dropped."""
+    front = _FRONT_MATTER.match(text)
+    if front is not None:
+        key = _FRONT_MATTER_STATUS.search(front.group("body"))
+        if key is not None:
+            value = _YAML_COMMENT.sub("", key.group("status")).strip().strip("'\"").strip()
+            if value:
+                return value
+    line = _STATUS_LINE.search(text)
+    return line.group("status") if line is not None else None
+
+
 # ---------------------------------------------------------------------------
 # Decision records
 # ---------------------------------------------------------------------------
@@ -235,7 +263,7 @@ def _is_pattern(entry: str) -> bool:
 def decision_id_for(path: str, text: str) -> Optional[str]:
     """The decision id when ``path`` is a GuardKit decision record, else ``None``."""
     match = _DECISION_FILE.match(Path(path).name)
-    if match is None or _STATUS_LINE.search(text) is None:
+    if match is None or _status(text) is None:
         return None
     return match.group("id")
 
@@ -318,8 +346,7 @@ def _supersedes_section_ids(section: str) -> list[str]:
 
 def decision_fields(decision_id: str, text: str, project: str) -> dict:
     """Title, status, context, decision, consequences, alternatives and supersedes."""
-    status_match = _STATUS_LINE.search(text)
-    status = status_match.group("status").strip() if status_match else ""
+    status = (_status(text) or "").strip()
     status = status.strip("*").strip() or status
     title, sections = _sections(text)
     if title:
