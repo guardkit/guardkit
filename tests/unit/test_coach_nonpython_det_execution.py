@@ -53,7 +53,6 @@ def _detect_validator(tmp_path: Path, wave_size: int = 1) -> CoachValidator:
     v = CoachValidator(
         worktree_path=str(tmp_path), task_id=_TASK_ID, wave_size=wave_size
     )
-    v._coach_test_execution = "subprocess"
     return v
 
 
@@ -69,7 +68,6 @@ class TestRunIndependentTestsNonPython:
             task_id=_TASK_ID,
             test_command=_profile(stack).whole_suite_command,
         )
-        v._coach_test_execution = "subprocess"
         v._active_stack_profile = _profile(stack)
         return v
 
@@ -169,7 +167,6 @@ class TestPytestClassifierRegression:
         v = CoachValidator(
             worktree_path=str(tmp_path), task_id=_TASK_ID, test_command="pytest tests/ -v"
         )
-        v._coach_test_execution = "subprocess"
         assert v._active_stack_profile is None  # no stack profile on the pytest path
         return v
 

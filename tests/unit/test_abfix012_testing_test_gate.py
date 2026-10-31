@@ -82,35 +82,6 @@ def _validator(tmp_path: Path, wave_size: int = 1) -> CoachValidator:
 
 
 # ============================================================================
-# 1. _is_host_substrate_gap (the shared helper)
-# ============================================================================
-
-
-class TestIsHostSubstrateGap:
-    def test_returncode_127_is_substrate(self, tmp_path: Path) -> None:
-        assert _validator(tmp_path)._is_host_substrate_gap(127, "anything") is True
-
-    def test_returncode_126_is_substrate(self, tmp_path: Path) -> None:
-        assert _validator(tmp_path)._is_host_substrate_gap(126, "anything") is True
-
-    def test_command_not_found_string_is_substrate(self, tmp_path: Path) -> None:
-        assert _validator(tmp_path)._is_host_substrate_gap(1, "psql: command not found") is True
-
-    def test_windows_not_recognized_is_substrate(self, tmp_path: Path) -> None:
-        out = "'dotnet' is not recognized as an internal or external command"
-        assert _validator(tmp_path)._is_host_substrate_gap(1, out) is True
-
-    def test_key_not_found_is_NOT_substrate(self, tmp_path: Path) -> None:
-        # The over-broad ": not found" idiom was deliberately excluded so a real
-        # code failure mentioning "not found" is never mis-routed to substrate.
-        assert _validator(tmp_path)._is_host_substrate_gap(1, "KeyError: 'key: not found'") is False
-
-    def test_file_not_found_assertion_is_NOT_substrate(self, tmp_path: Path) -> None:
-        out = "E   FileNotFoundError: [Errno 2] No such file or directory: '/data/x.txt'"
-        assert _validator(tmp_path)._is_host_substrate_gap(1, out) is False
-
-
-# ============================================================================
 # 2. _classify_test_failure widening + TESTING own-code override
 # ============================================================================
 
@@ -195,7 +166,6 @@ def _subprocess_validator(tmp_path: Path) -> CoachValidator:
         task_id="TASK-FMDR-004",
         test_command="pytest tests/ -v",
     )
-    v._coach_test_execution = "subprocess"
     return v
 
 

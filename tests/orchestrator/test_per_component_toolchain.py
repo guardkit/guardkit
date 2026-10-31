@@ -287,50 +287,6 @@ class TestComponentCwd:
         v.run_independent_tests()
         assert (worktree / "clients" / "web" / "here.txt").exists()
 
-    def test_a_component_forces_the_deterministic_subprocess_path(self, repo):
-        """The SDK path bakes ``cwd=worktree`` into the harness call, so a
-        component task must not take it (and says so at WARNING)."""
-        root, worktree = repo
-        v = _validator(
-            root,
-            worktree,
-            STUDY_TUTOR_SHAPE,
-            component="app",
-            coach_test_execution="sdk",
-        )
-        with patch.object(
-            CoachValidator, "_is_custom_api_base", return_value=False
-        ), patch.object(
-            CoachValidator, "_is_langgraph_harness", return_value=False
-        ), patch.object(
-            CoachValidator, "_run_tests_via_sdk", new_callable=AsyncMock
-        ) as mock_sdk, patch(
-            "subprocess.run"
-        ) as mock_run:
-            mock_run.return_value = MagicMock(returncode=0, stdout="ok", stderr="")
-            v.run_independent_tests()
-        mock_sdk.assert_not_called()
-        assert mock_run.call_args.kwargs["cwd"] == str(worktree / "app")
-
-    def test_the_control_without_a_component_still_reaches_the_sdk_path(self, repo):
-        """Proves the guard above is what redirected the run, not the env."""
-        root, worktree = repo
-        v = _validator(
-            root, worktree, STUDY_TUTOR_SHAPE, coach_test_execution="sdk"
-        )
-        with patch.object(
-            CoachValidator, "_is_custom_api_base", return_value=False
-        ), patch.object(
-            CoachValidator, "_is_langgraph_harness", return_value=False
-        ), patch.object(
-            CoachValidator, "_run_tests_via_sdk", new_callable=AsyncMock
-        ) as mock_sdk:
-            mock_sdk.return_value = IndependentTestResult.absent(
-                test_command="x", test_output_summary="y", duration_seconds=0.0
-            )
-            v.run_independent_tests()
-        mock_sdk.assert_called_once()
-
 
 # =========================================================================
 # 3. A part with no command could not run — never the root command

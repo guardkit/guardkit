@@ -86,7 +86,6 @@ def _make_validator(tmp_path: Path, wave_size: int = 1) -> CoachValidator:
         wave_size=wave_size,
     )
     # Force subprocess execution so isolation path is reachable
-    validator._coach_test_execution = "subprocess"
     return validator
 
 

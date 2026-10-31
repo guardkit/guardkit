@@ -23,7 +23,6 @@ import pytest
 
 from guardkit.orchestrator import run_evidence
 from guardkit.orchestrator.quality_gates.coach_validator import (
-    EVIDENCE_SDK,
     EVIDENCE_WORKTREE,
     CoachValidator,
 )
@@ -72,7 +71,6 @@ def _validator(wt: Path, cmd: str, *, wave_size: int = 1, toolchain=None) -> Coa
         wave_size=wave_size,
         toolchain=toolchain,
     )
-    v._coach_test_execution = "subprocess"
     return v
 
 
@@ -149,62 +147,39 @@ def test_a_python_run_keeps_the_verdict_and_lists_what_it_made(worktree):
     assert any("__pycache__" in p or ".pytest_cache" in p for p in created["paths"])
 
 
-@pytest.mark.parametrize(
-    "route", ["the declared command in the worktree", "through the SDK"]
-)
-def test_every_route_returns_the_object_the_check_made_with_its_record(worktree, monkeypatch, route):
-    """The pytest-argv routes and the SDK route hand back the very result the
-    check produced (not a copy), with the run record attached; a failing
-    pytest run keeps its exit status beside the record."""
+def test_the_check_returns_the_object_it_made_with_its_record(worktree, monkeypatch):
+    """The declared command's route hands back the very result the check
+    produced (not a copy), with the run record attached; a failing pytest
+    run keeps its exit status beside the record. (The SDK route was removed
+    on 1 November 2026.)"""
     import sys
-    from unittest.mock import AsyncMock
 
     from guardkit.orchestrator.quality_gates.coach_validator import IndependentTestResult
 
     (worktree / "test_red.py").write_text("def test_red():\n    assert 1 == 2\n")
     made = []
+    real_from_run = IndependentTestResult.from_run.__func__
 
-    if route == "through the SDK":
-        monkeypatch.setenv("GUARDKIT_HARNESS", "sdk")
-        monkeypatch.delenv("ANTHROPIC_BASE_URL", raising=False)
-        v = CoachValidator(
-            str(worktree), task_id="TASK-R7-001", test_command="pytest test_red.py",
-            coach_test_execution="sdk",
-        )
-        sentinel = IndependentTestResult(
-            tests_passed=True, test_command="pytest test_red.py",
-            test_output_summary="sdk ran", duration_seconds=1.0,
-        )
-        made.append(sentinel)
-        monkeypatch.setattr(v, "_run_tests_via_sdk", AsyncMock(return_value=sentinel))
-    else:
-        real_from_run = IndependentTestResult.from_run.__func__
+    def _recording_from_run(cls, **kwargs):
+        obj = real_from_run(cls, **kwargs)
+        made.append(obj)
+        return obj
 
-        def _recording_from_run(cls, **kwargs):
-            obj = real_from_run(cls, **kwargs)
-            made.append(obj)
-            return obj
-
-        monkeypatch.setattr(
-            IndependentTestResult, "from_run", classmethod(_recording_from_run)
-        )
-        v = _validator(worktree, f'"{sys.executable}" -m pytest -q -p no:cacheprovider test_red.py')
+    monkeypatch.setattr(
+        IndependentTestResult, "from_run", classmethod(_recording_from_run)
+    )
+    v = _validator(worktree, f'"{sys.executable}" -m pytest -q -p no:cacheprovider test_red.py')
 
     result = v.run_independent_tests()
 
     assert made and result is made[-1]
     runs = result.run_evidence["runs"]
     assert len(runs) == 1
-    expected_kind = {
-        "the declared command in the worktree": EVIDENCE_WORKTREE,
-        "through the SDK": EVIDENCE_SDK,
-    }[route]
-    assert runs[0]["command_kind"] == expected_kind
-    if route != "through the SDK":
-        assert result.tests_passed is False
-        assert result.exit_code == 1
-        assert result.failure_receipt()["exit_code"] == 1
-        assert runs[0]["command"] == v.test_command  # run exactly as declared
+    assert runs[0]["command_kind"] == EVIDENCE_WORKTREE
+    assert result.tests_passed is False
+    assert result.exit_code == 1
+    assert result.failure_receipt()["exit_code"] == 1
+    assert runs[0]["command"] == v.test_command  # run exactly as declared
 
 
 # ---------------------------------------------------------------------------

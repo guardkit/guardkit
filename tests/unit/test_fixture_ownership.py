@@ -329,7 +329,6 @@ def test_parallel_tasks_do_not_share_service_urls(tmp_path: Path, monkeypatch) -
             str(wt),
             task_id=task_id,
             test_command=f"make test {task_id}",
-            coach_test_execution="subprocess",
         )
         with patch.object(v, "_is_docker_available", return_value=True):
             v.run_independent_tests(
@@ -352,41 +351,6 @@ def test_parallel_tasks_do_not_share_service_urls(tmp_path: Path, monkeypatch) -
         assert env["REDIS_URL"].endswith(f":{own_redis}"), (task, env["REDIS_URL"])
     assert seen["TASK-A"]["DATABASE_URL"] != seen["TASK-B"]["DATABASE_URL"]
     assert dict(os.environ) == environ_before
-
-
-def test_sdk_test_run_passes_paths_explicitly(tmp_path: Path, monkeypatch) -> None:
-    """The SDK test run must not swap PYTHONPATH/PATH in the shared environment."""
-    import asyncio
-
-    monkeypatch.setenv("PYTHONPATH", "/pre-existing")
-    environ_before = dict(os.environ)
-    during: List[Dict[str, str]] = []
-
-    class _Harness:
-        supports_resume = False
-        session_id = None
-
-        async def invoke(self, prompt, role, tools, cwd, *, timeout_seconds):
-            during.append(dict(os.environ))
-            if False:  # pragma: no cover - makes this an async generator
-                yield None
-
-    captured: Dict[str, object] = {}
-
-    def fake_select_harness(**kwargs):
-        captured.update(kwargs)
-        return _Harness()
-
-    v = CoachValidator(str(tmp_path))
-    with patch(
-        "guardkit.orchestrator.quality_gates.coach_validator.select_harness",
-        side_effect=fake_select_harness,
-    ):
-        asyncio.run(v._run_tests_via_sdk("pytest tests/"))
-
-    assert during == [environ_before]
-    env = captured["env"]
-    assert env["PYTHONPATH"] == f"{tmp_path}:/pre-existing"
 
 
 # ============================================================================

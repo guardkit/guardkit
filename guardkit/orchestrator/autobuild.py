@@ -120,10 +120,6 @@ from guardkit.orchestrator.quality_gates import (
 )
 from guardkit.orchestrator.quality_gates.coach_evidence import CoachEvidenceBundle
 
-# TASK-AB-COACHSUBPROC01: env > config > default (subprocess) resolution for
-# the Coach's independent test-execution mode.
-from guardkit.orchestrator.quality_gates.coach_validator import resolve_coach_test_execution
-
 # Import task type models for quality gate profile resolution
 from guardkit.models.task_types import TaskType, TASK_TYPE_ALIASES, get_profile as get_quality_gate_profile
 
@@ -5969,22 +5965,13 @@ class AutoBuildOrchestrator:
             )
 
         coach_cfg = self._load_coach_config()
-        # TASK-AB-COACHSUBPROC01: env > config > default (subprocess);
-        # logs the active mode + provenance once per validator init.
-        coach_test_execution = resolve_coach_test_execution(
-            coach_cfg.get("test_execution")
-        )
         matching_strategy = coach_cfg.get("matching_strategy", "auto")
         validator = CoachValidator(
             str(worktree.path),
             task_id=task_id,
-            coach_test_execution=coach_test_execution,
             matching_strategy=matching_strategy,
             wave_size=wave_size,
             turn=turn,
-            model_name=self._model_name,  # TASK-FIX-LGFM3
-            coach_model_name=self._coach_model_name,  # TASK-FIX-COACHBUDG01
-            venv_python=self._venv_python,  # TASK-FIX-COACHPYENV
             evidence_repos=self._evidence_repos,  # TASK-AB-XREPOEV01 (AC-002)
             smoke_command=self._smoke_command,  # TASK-AB-COACHRUNPARITY01 (arm b)
             smoke_expected_exit=self._smoke_expected_exit,  # TASK-AB-COACHRUNPARITY01 (arm b)

@@ -1,18 +1,9 @@
 """Regression tests for TASK-FIX-COACHTESTTO.
 
-Coach independent-test (trust-but-verify) execution timed out at 300s under
-the LangGraph harness because the SDK path runs pytest through a one-turn LLM
-agent invocation against a slow local model (run-19, FEAT-AOF). The fix has
-two load-bearing parts:
-
-  AC-2 — under the LangGraph harness, ``run_independent_tests`` forces the
-          deterministic subprocess path (``_is_langgraph_harness`` gate),
-          bypassing the LLM turn entirely.
-  AC-3 — every non-completion path (SDK timeout, SDK API error, subprocess
-          timeout, isolated-test timeout, generic execution error) marks the
-          result ``signal_absent=True`` (with ``tests_passed=False``) so it
-          never reads as a pass, and the reviewer sees ``signal_absent`` in
-          the evidence bundle.
+The Coach's independent test run: a run that does not produce a verdict
+never reads as a pass, and the reviewer sees ``signal_absent`` in the evidence
+bundle. (The SDK test path and its LangGraph bypass were removed on 1 November
+2026; the declared command always runs through the shell.)
 
 See ``docs/state/TASK-FIX-COACHTESTTO/diagnosis.md`` and
 ``.claude/rules/absence-of-failure-is-not-success.md``.
@@ -49,100 +40,6 @@ def _build_invoker(worktree: Path) -> AgentInvoker:
 
 
 # ---------------------------------------------------------------------------
-# AC-2: LangGraph harness forces the subprocess path
-# ---------------------------------------------------------------------------
-
-
-class TestLangGraphForcesSubprocess:
-    """Under ``GUARDKIT_HARNESS=langgraph`` the Coach must run pytest via
-    subprocess, never via the LLM-mediated SDK path that timed out in run-19.
-    """
-
-    def test_is_langgraph_harness_detects_env(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        validator = CoachValidator(str(tmp_path), task_id="TASK-T")
-
-        monkeypatch.setenv("GUARDKIT_HARNESS", "langgraph")
-        assert validator._is_langgraph_harness() is True
-
-        monkeypatch.setenv("GUARDKIT_HARNESS", "LangGraph")  # case-insensitive
-        assert validator._is_langgraph_harness() is True
-
-        monkeypatch.setenv("GUARDKIT_HARNESS", "sdk")
-        assert validator._is_langgraph_harness() is False
-
-        monkeypatch.delenv("GUARDKIT_HARNESS", raising=False)
-        # TASK-HMIG-011 cutover (2026-06-16): default flipped "sdk" -> "langgraph".
-        assert validator._is_langgraph_harness() is True  # default "langgraph"
-
-    def test_langgraph_dispatch_skips_sdk_path(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """coach_test_execution='sdk' + LangGraph harness ⇒ subprocess path,
-        and ``_run_tests_via_sdk`` is NOT called."""
-        monkeypatch.setenv("GUARDKIT_HARNESS", "langgraph")
-        monkeypatch.delenv("ANTHROPIC_BASE_URL", raising=False)
-
-        validator = CoachValidator(
-            str(tmp_path),
-            task_id="TASK-T",
-            test_command="pytest tests/x.py",
-            coach_test_execution="sdk",
-        )
-
-        sdk_spy = MagicMock(
-            side_effect=AssertionError("SDK path must not run under LangGraph")
-        )
-        completed = subprocess.CompletedProcess(
-            args=["pytest"], returncode=0, stdout="1 passed", stderr=""
-        )
-        with patch.object(validator, "_run_tests_via_sdk", sdk_spy), patch(
-            f"{_CV_MOD}.subprocess.run", return_value=completed
-        ) as run_mock:
-            result = validator.run_independent_tests()
-
-        sdk_spy.assert_not_called()
-        run_mock.assert_called_once()
-        assert result.tests_passed is True
-        assert result.signal_absent is False
-
-    def test_sdk_harness_still_uses_sdk_path(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """Negative control: with the explicit SDK harness (no LangGraph, no
-        custom API base), the SDK path is still selected.
-
-        TASK-HMIG-011 cutover (2026-06-16): the default flipped to "langgraph",
-        so the SDK path is now opted into via GUARDKIT_HARNESS=sdk rather than
-        relying on the (former) default.
-        """
-        monkeypatch.setenv("GUARDKIT_HARNESS", "sdk")
-        monkeypatch.delenv("ANTHROPIC_BASE_URL", raising=False)
-
-        validator = CoachValidator(
-            str(tmp_path),
-            task_id="TASK-T",
-            test_command="pytest tests/x.py",
-            coach_test_execution="sdk",
-        )
-
-        sentinel = IndependentTestResult(
-            tests_passed=True,
-            test_command="pytest tests/x.py",
-            test_output_summary="sdk ran",
-            duration_seconds=1.0,
-        )
-        with patch.object(
-            validator, "_run_tests_via_sdk", AsyncMock(return_value=sentinel)
-        ) as sdk_mock:
-            result = validator.run_independent_tests()
-
-        sdk_mock.assert_called_once()
-        assert result is sentinel
-
-
-# ---------------------------------------------------------------------------
 # AC-3: non-completion paths mark the result ABSENT (signal_absent=True)
 # ---------------------------------------------------------------------------
 
@@ -166,12 +63,10 @@ class TestAbsentSignalMarking:
     ) -> None:
         """31 October 2026: a run that started and did not finish within its
         limit is a failure for the builder (TASK-C2C7-002), not an absence."""
-        monkeypatch.setenv("GUARDKIT_HARNESS", "langgraph")  # force subprocess
         validator = CoachValidator(
             str(tmp_path),
             task_id="TASK-T",
             test_command="pytest tests/x.py",
-            coach_test_execution="sdk",
             test_timeout=5,
         )
         timeout_exc = subprocess.TimeoutExpired(cmd="pytest", timeout=5)
@@ -187,12 +82,10 @@ class TestAbsentSignalMarking:
     def test_subprocess_generic_error_marks_absent(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setenv("GUARDKIT_HARNESS", "langgraph")  # force subprocess
         validator = CoachValidator(
             str(tmp_path),
             task_id="TASK-T",
             test_command="pytest tests/x.py",
-            coach_test_execution="sdk",
         )
         with patch(
             f"{_CV_MOD}.subprocess.run", side_effect=OSError("boom")
@@ -201,44 +94,6 @@ class TestAbsentSignalMarking:
 
         assert result.signal_absent is True
         assert result.tests_passed is False
-
-    @pytest.mark.skipif(
-        sys.version_info < (3, 11),
-        reason=(
-            "_run_tests_via_sdk uses asyncio.timeout(), added in Python 3.11; "
-            "the SDK path is exercised only on 3.11+ (run-19/production). The "
-            "subprocess path — the default under LangGraph after this fix — has "
-            "no such dependency and is covered by the tests above."
-        ),
-    )
-    def test_sdk_asyncio_timeout_marks_absent(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """The original run-19 failure mode: the harness LLM turn exceeds
-        ``test_timeout``. The SDK path must return an ABSENT result, not a
-        silent fail that could read as a real verdict."""
-        monkeypatch.delenv("GUARDKIT_AUTOBUILD_PRESERVE_DEBUG", raising=False)
-
-        validator = CoachValidator(
-            str(tmp_path),
-            task_id="TASK-T",
-            coach_test_execution="sdk",
-            test_timeout=1,  # tiny budget so the hang trips the timeout fast
-        )
-
-        class _HangingHarness:
-            async def invoke(self, *args, **kwargs):
-                await asyncio.sleep(30)  # never completes within test_timeout
-                yield  # pragma: no cover - unreachable
-
-        with patch(f"{_CV_MOD}.select_harness", return_value=_HangingHarness()):
-            result = asyncio.run(
-                validator._run_tests_via_sdk("pytest tests/x.py")
-            )
-
-        assert result.signal_absent is True
-        assert result.tests_passed is False
-        assert "timed out" in result.test_output_summary.lower()
 
 
 # ---------------------------------------------------------------------------
@@ -294,12 +149,10 @@ class TestAbsentRunnerMarksAbsent:
     """
 
     def _validator(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> CoachValidator:
-        monkeypatch.setenv("GUARDKIT_HARNESS", "langgraph")  # force subprocess path
         return CoachValidator(
             str(tmp_path),
             task_id="TASK-T",
             test_command="pytest tests/x.py",
-            coach_test_execution="sdk",
         )
 
     def test_genuine_test_failure_not_marked_absent(

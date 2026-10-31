@@ -396,22 +396,3 @@ class TestResolvedInterpreterEvidence:
         # Key PRESENT and None — unknown stays unknown through serialization.
         assert "resolved_interpreter" in ind
         assert ind["resolved_interpreter"] is None
-
-    def test_subprocess_run_records_resolved_interpreter(
-        self, tmp_path: Path
-    ) -> None:
-        """run_independent_tests (subprocess path) records the pinned
-        interpreter it actually ran pytest under."""
-        validator = CoachValidator(
-            str(tmp_path),
-            test_command="pytest -q",
-            coach_test_execution="subprocess",
-        )
-        proc = MagicMock(returncode=0, stdout="5 passed in 0.1s", stderr="")
-        with patch(
-            "guardkit.orchestrator.quality_gates.coach_validator.subprocess.run",
-            return_value=proc,
-        ):
-            result = validator.run_independent_tests()
-        assert result.resolved_interpreter == validator._pytest_interpreter()
-

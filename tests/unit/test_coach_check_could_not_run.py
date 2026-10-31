@@ -86,7 +86,6 @@ def _validator(worktree: Path, wave_size: int) -> CoachValidator:
     validator = CoachValidator(
         str(worktree), task_id=_TASK_ID, wave_size=wave_size
     )
-    validator._coach_test_execution = "subprocess"
     return validator
 
 

@@ -35,7 +35,6 @@ def test_is_docker_available_returns_boolean(tmp_path):
     """
     validator = CoachValidator(
         worktree_path=str(tmp_path),
-        coach_test_execution="subprocess",
     )
     result = validator._is_docker_available()
     assert isinstance(result, bool), (

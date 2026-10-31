@@ -273,7 +273,6 @@ class TestCoachValidatorEntersDockerLifecycleGuard:
         """
         validator = CoachValidator(
             worktree_path=str(tmp_path),
-            coach_test_execution="subprocess",
             test_command="pytest tests/",
         )
         task = {"requires_infrastructure": _REQUIRES_INFRA}
@@ -301,7 +300,6 @@ class TestCoachValidatorEntersDockerLifecycleGuard:
         """
         validator = CoachValidator(
             worktree_path=str(tmp_path),
-            coach_test_execution="subprocess",
             test_command="pytest tests/",
         )
         task: Dict[str, Any] = {}

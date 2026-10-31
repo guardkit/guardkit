@@ -37,9 +37,7 @@ import os
 import re
 import shlex
 import subprocess
-import sys
 import time
-from contextlib import aclosing
 from dataclasses import dataclass, replace as dataclass_replace
 from pathlib import Path
 from typing import (
@@ -52,7 +50,6 @@ from typing import (
 )
 
 from guardkit.lib.pytest_summary import parse_pytest_summary
-from guardkit.orchestrator.coach_verification import _resolve_venv_python
 from guardkit.orchestrator import evidence_repos as evidence_repos_lib
 from guardkit.orchestrator.evidence_repos import EvidenceRepo, EvidenceTestResult
 from guardkit.orchestrator.quality_gates.stack_test_execution import (
@@ -101,21 +98,6 @@ from guardkit.orchestrator.run_evidence import (
 )
 from guardkit.models.task_types import TaskType, get_profile, TASK_TYPE_ALIASES
 
-# TASK-HMIG-006.3: Coach's independent SDK invocation dispatches through
-# the HarnessAdapter substrate seam established by TASK-HMIG-006 (Player
-# path) and TASK-HMIG-006.2 (cross-repo helper migration). Importing at
-# module top matches the Player path convention in
-# ``agent_invoker.py:71-77`` and makes ``select_harness`` a stable patch
-# target for tests under ``coach_validator.select_harness``.
-from guardkit.orchestrator.exceptions import AgentInvocationError
-from guardkit.orchestrator.harness import (
-    AssistantMessageEvent,
-    ResultMessageEvent,
-    ToolResultEvent,
-    select_harness,
-)
-from guardkit.orchestrator.harness.selector import DEFAULT_HARNESS
-from guardkit.orchestrator.sdk_utils import check_assistant_message_error
 from guardkit.orchestrator import process_group
 from guardkit.lib.project_git import run_git
 
@@ -135,111 +117,6 @@ try:
     _O_NONBLOCK = os.O_NONBLOCK
 except AttributeError:  # pragma: no cover - not on every platform
     _O_NONBLOCK = 0
-
-# TASK-ABFIX-011: default per-test pytest-timeout (seconds) the Coach injects
-# into its isolated pytest run so a single hanging test is marked FAILED while
-# the others still run, instead of consuming the whole subprocess budget and
-# yielding ``tests_run=0``. Generous by design — the Coach runs focused
-# per-task suites, so a test exceeding 60s is almost certainly hung, not slow.
-# Operator-tunable via ``GUARDKIT_COACH_PYTEST_TIMEOUT_SECONDS``; injection is
-# triple-gated (operator flag, Python stack, plugin-resolvable). See
-# ``.claude/rules/stack-plugin-architecture.md`` and
-# ``.claude/rules/absence-of-failure-is-not-success.md``.
-_DEFAULT_COACH_PER_TEST_TIMEOUT_S = 60
-
-# TASK-AB-COACHSUBPROC01 (2026-07-04): single source of truth for the Coach's
-# independent test-execution default — flipped "sdk" -> "subprocess". The SDK
-# "environment parity" path failed with the opaque exit-1 "Fatal error in
-# message reader" on essentially 100% of invocations across every repo,
-# machine and vintage in the 2026 retro corpus (2026-07-04 xref §5 item 15);
-# every verdict actually came from the subprocess fallback, so each Coach turn
-# paid one doomed SDK attempt. The SDK path stays in-repo as an explicit
-# opt-in (config `autobuild.coach.test_execution: sdk` or env
-# `GUARDKIT_COACH_TEST_EXECUTION=sdk`) for the open diagnosis tasks
-# (TASK-REV-COSE, TASK-FIX-A7B7). Mirrors the ``selector.py::DEFAULT_HARNESS``
-# cutover shape: permanent rollback = change this one constant back to "sdk".
-DEFAULT_COACH_TEST_EXECUTION = "subprocess"
-
-# Env override for the Coach test-execution mode. Precedence mirrors the
-# TASK-AB-PERTASKFG01 ``GUARDKIT_PHASE4_TEST_EXECUTION`` pattern:
-# env > config (``autobuild.coach.test_execution``) > default.
-COACH_TEST_EXECUTION_ENV = "GUARDKIT_COACH_TEST_EXECUTION"
-
-_VALID_COACH_TEST_EXECUTION_MODES = ("subprocess", "sdk")
-
-
-def resolve_coach_test_execution(config_value: Optional[str] = None) -> str:
-    """Resolve the Coach independent test-execution mode.
-
-    Precedence: ``GUARDKIT_COACH_TEST_EXECUTION`` env var > *config_value*
-    (``.guardkit/config.yaml`` ``autobuild.coach.test_execution``) >
-    :data:`DEFAULT_COACH_TEST_EXECUTION`. Read at call time (not import time)
-    so tests and operators can flip it per-invocation. An unrecognised value
-    at either tier logs a WARNING and that tier is ignored (falls through to
-    the next tier), so an invalid value can never select a mode by accident.
-
-    Logs the active mode and its provenance (env/config/default) at INFO —
-    called once per :class:`CoachValidator` init, so operators can see which
-    execution path the Coach will use and where the decision came from
-    (display-must-derive-from-enforcement-source: the logged value IS the
-    value the validator consumes, not a proxy).
-
-    Parameters
-    ----------
-    config_value : Optional[str]
-        The raw ``autobuild.coach.test_execution`` value from
-        ``.guardkit/config.yaml``, or None when unset.
-
-    Returns
-    -------
-    str
-        ``"subprocess"`` or ``"sdk"``.
-    """
-    mode: Optional[str] = None
-    source = "default"
-
-    env_raw = os.environ.get(COACH_TEST_EXECUTION_ENV)
-    if env_raw is not None and env_raw.strip():
-        candidate = env_raw.strip().lower()
-        if candidate in _VALID_COACH_TEST_EXECUTION_MODES:
-            mode, source = candidate, "env"
-        else:
-            logger.warning(
-                "Invalid %s=%r (expected one of %s); ignoring env override.",
-                COACH_TEST_EXECUTION_ENV,
-                env_raw,
-                _VALID_COACH_TEST_EXECUTION_MODES,
-            )
-
-    if mode is None and config_value is not None and str(config_value).strip():
-        candidate = str(config_value).strip().lower()
-        if candidate in _VALID_COACH_TEST_EXECUTION_MODES:
-            mode, source = candidate, "config"
-        else:
-            logger.warning(
-                "Invalid autobuild.coach.test_execution=%r in "
-                ".guardkit/config.yaml (expected one of %s); "
-                "falling back to default %r.",
-                config_value,
-                _VALID_COACH_TEST_EXECUTION_MODES,
-                DEFAULT_COACH_TEST_EXECUTION,
-            )
-
-    if mode is None:
-        mode = DEFAULT_COACH_TEST_EXECUTION
-
-    logger.info(
-        "Coach test execution mode: %s (source: %s; "
-        "%s > autobuild.coach.test_execution > default %r) "
-        "[TASK-AB-COACHSUBPROC01]",
-        mode,
-        source,
-        COACH_TEST_EXECUTION_ENV,
-        DEFAULT_COACH_TEST_EXECUTION,
-    )
-    return mode
-
-
 
 def _checker_env(
     validator: "CoachValidator",
@@ -295,11 +172,9 @@ def _combined_output_tail(
 #: The kinds of command run record the independent check makes (repair 7),
 #: and what each one's execution root is, in plain words.
 EVIDENCE_WORKTREE = "independent suite (worktree)"
-EVIDENCE_SDK = "independent suite (through the SDK, in the worktree)"
 EVIDENCE_ORACLE = "behavioural oracle"
 EVIDENCE_ROOT_DESCRIPTIONS = {
     EVIDENCE_WORKTREE: "the build worktree",
-    EVIDENCE_SDK: "the build worktree (the command was run by an SDK agent)",
     EVIDENCE_ORACLE: "the build worktree",
 }
 
@@ -443,7 +318,7 @@ class IndependentTestResult:
         test_output_summary: str,
         duration_seconds: float,
         output: Optional[str],
-        resolved_interpreter: Optional[str],
+        resolved_interpreter: Optional[str] = None,
         signal_absent: bool = False,
         exit_code: Optional[int] = None,
     ) -> "IndependentTestResult":
@@ -805,13 +680,9 @@ class CoachValidator:
         test_command: Optional[str] = None,
         test_timeout: Optional[int] = None,  # TS-lane D.1b: declaration-aware
         task_id: Optional[str] = None,
-        coach_test_execution: Optional[str] = None,
         matching_strategy: str = "auto",
         wave_size: int = 1,
         turn: int = 1,
-        model_name: Optional[str] = None,
-        coach_model_name: Optional[str] = None,  # TASK-FIX-COACHBUDG01
-        venv_python: Optional[str] = None,  # TASK-FIX-COACHPYENV
         evidence_repos: Optional[List["EvidenceRepo"]] = None,  # TASK-AB-XREPOEV01
         smoke_command: Optional[str] = None,  # TASK-AB-COACHRUNPARITY01 (arm b)
         smoke_expected_exit: int = 0,  # TASK-AB-COACHRUNPARITY01 (arm b)
@@ -838,22 +709,6 @@ class CoachValidator:
             Task identifier for task-specific test filtering in shared worktrees.
             When provided, test detection will first look for task-specific test
             files before falling back to running the full test suite.
-        coach_test_execution : Optional[str]
-            Test execution mode: "subprocess" (default,
-            TASK-AB-COACHSUBPROC01) uses subprocess.run() directly with the
-            venv-pinned interpreter; "sdk" (opt-in — see the open diagnosis
-            tasks TASK-REV-COSE / TASK-FIX-A7B7) runs pytest through the
-            Claude Agent SDK Bash tool for environment parity, with the
-            subprocess path as fallback. None (default) resolves via
-            :func:`resolve_coach_test_execution` (env
-            ``GUARDKIT_COACH_TEST_EXECUTION`` > default). Callers that read
-            ``.guardkit/config.yaml`` resolve
-            ``resolve_coach_test_execution(config_value)`` before
-            constructing. An explicit value is authoritative (validated, but
-            never env-overridden) so pinned callers like the deterministic
-            Phase-4 runner (``specialist_invocations.py``,
-            TASK-AB-PERTASKFG01: never an LLM turn) cannot be flipped by the
-            Coach env lever.
         matching_strategy : str
             Text matching strategy for acceptance criteria verification.
             ``"text"``: strict Jaccard threshold (70%), ``"semantic"``: lower
@@ -865,25 +720,6 @@ class CoachValidator:
             Number of tasks in the current wave (default: 1). When >1 the
             failure classification is more lenient for contention-related
             errors; it only shapes the words the builder is sent.
-        model_name : Optional[str]
-            Orchestrator-configured model name to thread through to the harness
-            for SDK-based Coach test execution. Used as a fallback when the
-            ``GUARDKIT_COACH_TEST_MODEL`` env var is not set. Mirrors the model
-            threading precedent set by TASK-FIX-LGFM2 / TASK-FIX-MODELPLUMB in
-            ``AgentInvoker``. Without this, the LangGraph harness receives
-            ``model=None`` for ``role='coach_test'`` and falls back to subprocess
-            (TASK-FIX-LGFM3 / F12).
-        venv_python : Optional[str]
-            Path to the bootstrap venv Python interpreter Coach should run its
-            independent tests under (typically ``BootstrapResult.venv_python``
-            threaded from the feature orchestrator). When set, the SDK and
-            subprocess test paths pin pytest to this interpreter instead of the
-            host ``which pytest`` / ``sys.executable``. Resolution follows
-            :func:`guardkit.orchestrator.coach_verification._resolve_venv_python`.
-            Without it, Coach could validate against the wrong interpreter
-            (TASK-FIX-COACHPYENV — sibling of the TASK-FIX-7A05 CoachVerifier fix).
-            WORKTREE tests only: this interpreter is never threaded into
-            sibling ``evidence_repos`` tests (TASK-FIX-SIBTESTENV01).
         evidence_repos : Optional[List[EvidenceRepo]]
             Declared sibling repos whose independent tests the Coach runs
             (TASK-AB-XREPOEV01 AC-002). When a repo carries a ``test_command``,
@@ -949,82 +785,6 @@ class CoachValidator:
         # Where the command about to run came from, in ordinary words. Set by
         # ``_detect_test_command``. Never read by any verdict rule.
         self._test_command_source: Optional[str] = None
-        # TASK-AB-COACHSUBPROC01: None -> resolve env > default (subprocess);
-        # resolve_coach_test_execution logs the active mode + provenance once
-        # per init. An explicit value is authoritative (validated with safe
-        # degrade, never env-overridden — protects pinned callers like the
-        # deterministic Phase-4 runner).
-        if coach_test_execution is None:
-            coach_test_execution = resolve_coach_test_execution()
-        elif coach_test_execution not in _VALID_COACH_TEST_EXECUTION_MODES:
-            # 2026-07-04 code review: an INVALID explicit value is not a pin —
-            # delegate to the standard env > default resolution instead of
-            # jumping straight to the default, so a valid
-            # GUARDKIT_COACH_TEST_EXECUTION override still applies (mirrors
-            # resolve_coach_test_execution's invalid-tier fall-through). Only
-            # a VALID explicit value stays authoritative over env.
-            logger.warning(
-                "Invalid coach_test_execution=%r (expected one of %s); "
-                "delegating to %s > default resolution.",
-                coach_test_execution,
-                _VALID_COACH_TEST_EXECUTION_MODES,
-                COACH_TEST_EXECUTION_ENV,
-            )
-            coach_test_execution = resolve_coach_test_execution()
-        else:
-            logger.debug(
-                "Coach test execution mode: %s (source: caller)",
-                coach_test_execution,
-            )
-        self._coach_test_execution = coach_test_execution
-        # TASK-FIX-COACHPYENV: resolve the interpreter Coach runs independent
-        # tests under. Prefers the explicit bootstrap venv, then a filesystem
-        # recovery probing ``<worktree>/.venv/bin/python`` (current bootstrap
-        # layout) and legacy ``<worktree>/.guardkit/venv/bin/python``
-        # (TASK-AB-RESUMEVENV01), else None (PATH pytest / sys.executable for
-        # non-Python projects). Reuses the helper already battle-tested for
-        # CoachVerifier (TASK-FIX-7A05) so the two Coach verification surfaces
-        # resolve interpreters identically.
-        # The interpreter is used only by the opt-in SDK test path and the
-        # declared behavioural oracle's records. A worktree without one is
-        # never a reason the check cannot run: the declared command runs as
-        # declared (31 October 2026; it used to stop a project whose root held
-        # a Python marker file but no venv, whatever it declared).
-        self._configured_venv_python: Optional[str] = venv_python
-        self._venv_python: Optional[Path] = _resolve_venv_python(
-            self.worktree_path, venv_python, in_autobuild_context=False
-        )
-        if venv_python and (
-            self._venv_python is None
-            or str(self._venv_python) != str(Path(venv_python))
-        ):
-            # AC-4 mismatch guard: a bootstrap interpreter was configured but
-            # the resolved interpreter differs (stale path / disappeared venv).
-            # Loud WARNING — Coach is about to verify against a DIFFERENT
-            # interpreter than the bootstrap installed packages into, which is
-            # exactly the run-9 spurious-failure shape.
-            logger.warning(
-                "Coach test interpreter MISMATCH: configured bootstrap venv "
-                "%s but resolved to %s. Independent tests may run under the "
-                "wrong interpreter (TASK-FIX-COACHPYENV).",
-                venv_python,
-                self._venv_python if self._venv_python is not None else
-                "PATH pytest / sys.executable",
-            )
-        elif self._venv_python is not None:
-            logger.info(
-                "CoachValidator pinning independent-test interpreter to %s",
-                self._venv_python,
-            )
-        # TASK-FIX-LGFM3: orchestrator model threaded through for SDK test
-        # execution path; falls back to None when caller didn't supply one.
-        self._model_name: Optional[str] = model_name
-        # TASK-FIX-COACHBUDG01 (2026-06-06): per-role Coach override. When
-        # non-None, takes precedence over _model_name for the coach_test
-        # path (consumed by _get_coach_test_model). Lets the operator
-        # route Coach SDK test execution to the same Coach-specific model
-        # (gemma4:26b) the Player↔Coach loop uses.
-        self._coach_model_name: Optional[str] = coach_model_name
         # TASK-AB-XREPOEV01 (AC-002): declared sibling repos whose tests the
         # Coach runs independently. Empty -> no sibling test execution.
         self._evidence_repos: List[EvidenceRepo] = list(evidence_repos or [])
@@ -1053,11 +813,6 @@ class CoachValidator:
         # matches and the declaration overlays nothing). ``run_independent_tests`` reads it to classify
         # absence stack-awarely (missing toolchain / zero-test => signal_absent).
         self._active_stack_profile: Optional[StackTestProfile] = None
-        # TASK-ABFIX-011: cached result of the pytest-timeout availability probe
-        # against the pinned interpreter (``None`` = not yet probed). The pinned
-        # interpreter is fixed per validator instance, so one probe per instance
-        # is sufficient and is shared across all three pytest injection sites.
-        self._pytest_timeout_available_cache: Optional[bool] = None
         # TASK-DIAG-F4A2: Turn number for sdk_debug preservation paths.
         # Default 1 keeps backwards-compat for callers that don't pass it.
         self._turn = max(1, int(turn))
@@ -1086,30 +841,6 @@ class CoachValidator:
     def is_parallel(self) -> bool:
         """Return True when this Coach is running in a parallel wave (wave_size > 1)."""
         return self.wave_size > 1
-
-    def _get_coach_test_model(self) -> Optional[str]:
-        """Return the model for Coach SDK test invocations, or None to use CLI default.
-
-        Resolution order:
-        1. ``GUARDKIT_COACH_TEST_MODEL`` env var (operator override — e.g.
-           claude-haiku-4-5-20251001 for cost reduction on the real Anthropic API).
-        2. Orchestrator-supplied ``coach_model_name`` (TASK-FIX-COACHBUDG01):
-           per-role Coach override (e.g. ``gemma4:26b`` while Player stays on
-           ``qwen36-workhorse`` — TASK-HMIG-013). Takes precedence over the
-           generic ``model_name`` for this Coach-specific path.
-        3. Orchestrator-supplied ``model_name`` (TASK-FIX-LGFM3): same value
-           threaded into ``AgentInvoker.select_harness`` calls. Without this
-           fallback, the LangGraph harness receives ``model=None`` for
-           ``role='coach_test'`` and the SDK path errors out (F12).
-        4. ``None`` (harness uses CLI default).
-        """
-        import os
-        env_model = os.environ.get("GUARDKIT_COACH_TEST_MODEL") or None
-        if env_model is not None:
-            return env_model
-        if self._coach_model_name is not None:
-            return self._coach_model_name
-        return self._model_name
 
     def _resolve_task_type(self, task: Dict[str, Any]) -> TaskType:
         """
@@ -1614,13 +1345,9 @@ class CoachValidator:
 
         try:
             # Built from nothing (13 October 2026), with the main checkout's
-            # ``launch:`` block as the smoke gate reads it, and the bootstrap
-            # venv first on PATH so a bare ``python`` / ``pytest`` in the smoke
-            # command resolves to the right interpreter (mirrors
-            # smoke_gates.run_smoke_gate's venv handling).
-            env = _checker_env(self,
-                path_first=self._venv_bin_first(), main_checkout=True
-            )
+            # ``launch:`` block as the smoke gate reads it. The command runs as
+            # declared: no interpreter put first on PATH (1 November 2026).
+            env = _checker_env(self, main_checkout=True)
             proc = process_group.run_project_command(
                 command,
                 shell=True,
@@ -2082,554 +1809,6 @@ class CoachValidator:
             )
         return results
 
-    @staticmethod
-    def _extract_content_text(content) -> str:
-        """Extract text from ToolResultBlock.content (str | list[dict] | None)."""
-        if content is None:
-            return ""
-        if isinstance(content, str):
-            return content
-        if isinstance(content, list):
-            parts = []
-            for item in content:
-                if isinstance(item, dict):
-                    parts.append(item.get("text", str(item)))
-                else:
-                    parts.append(str(item))
-            return "\n".join(parts)
-        return str(content)
-
-    # TASK-FIX-COACHTRES01 (heuristic precision): the pytest result summary
-    # line, e.g. ``==== 15 passed in 2.75s ====`` /
-    # ``==== 1 failed, 14 passed in 0.3s ====`` / ``==== 2 errors in 1.0s ====``.
-    # Wrapped in ``=`` runs and ending in ``in <float>s``; the body carries the
-    # real per-outcome counts.
-    _PYTEST_SUMMARY_RE = re.compile(
-        r"^=+\s+(?P<body>.*?\b(?:passed|failed|error|errors|skipped|xfailed|"
-        r"xpassed|no tests ran)\b.*?)\s+in\s+[\d.]+\s*s\b.*?=*\s*$",
-        re.IGNORECASE | re.MULTILINE,
-    )
-
-    @classmethod
-    def _verdict_from_pytest_summary(cls, output_text: str) -> Optional[bool]:
-        """Derive pass/fail from the pytest summary line, not substring scan.
-
-        TASK-FIX-COACHTRES01. The capture fix surfaces the *real* pytest output
-        to the SDK-path determination — but the legacy heuristic scanned the
-        WHOLE output for the substrings ``"error"`` / ``"failed"`` /
-        ``"failure"``, which false-positives on a *passing* run whose verbose
-        test names or ``--cov`` file paths contain those words (e.g. a passing
-        ``test_..._displays_error`` or a covered ``*_error_messages.py``). That
-        is the FEAT-HARV TASK-HARV-006 false-block: ``15 passed in 2.75s`` read
-        as a failure because two unrelated ``"error"`` substrings appeared.
-
-        The pytest *summary line* carries only the real counts, so parse that.
-
-        Returns
-        -------
-        Optional[bool]
-            ``True``  — a passing summary (>=1 passed, zero failed/errored).
-            ``False`` — a failing summary (>=1 failed or errored).
-            ``None``  — no pytest summary line found (e.g. narration-only or a
-                        truncated capture), so the caller falls back to the
-                        legacy substring heuristic / absent handling.
-        """
-        if not output_text:
-            return None
-        matches = list(cls._PYTEST_SUMMARY_RE.finditer(output_text))
-        if not matches:
-            return None
-        body = matches[-1].group("body").lower()
-        # Any non-zero failed/errored count is a fail, regardless of passes.
-        if re.search(r"\b[1-9]\d*\s+(?:failed|error|errors)\b", body):
-            return False
-        if re.search(r"\b[1-9]\d*\s+passed\b", body):
-            return True
-        # Only skipped / xfailed / "no tests ran" — not a clear pass; defer.
-        return None
-
-    async def _run_tests_via_sdk(self, test_cmd: str) -> IndependentTestResult:
-        """Run tests via the harness substrate seam (TASK-HMIG-006.3).
-
-        Dispatches through :func:`select_harness` so ``GUARDKIT_HARNESS``
-        routes Coach's independent verification through the SDK or
-        LangGraph substrate consistently with the Player path migrated
-        in TASK-HMIG-006/006.2. Coach-specific orchestrator concerns
-        (``allowed_tools=["Bash"]``, ``max_turns=1``,
-        ``permission_mode="bypassPermissions"``, ``self.test_timeout``)
-        remain orchestrator-side per AC-002.
-
-        The method name retains the historical ``_via_sdk`` suffix so
-        callers (``run_independent_tests`` at line ~2867) need no
-        change; the dispatch is now harness-agnostic.
-
-        Parameters
-        ----------
-        test_cmd : str
-            Shell command to run tests
-
-        Returns
-        -------
-        IndependentTestResult
-            Result of test execution via the substrate seam.
-        """
-        import asyncio
-        import time
-
-        # ``select_harness``, harness event types, ``AgentInvocationError``,
-        # and ``check_assistant_message_error`` are imported at module top
-        # (TASK-HMIG-006.3) so ``coach_validator.select_harness`` is a
-        # stable patch target. ``asyncio`` / ``time``
-        # remain method-local to preserve the historic lazy-import shape
-        # for the rest of the method body.
-
-        def _sdk_env_overrides(prepend: str, venv_bin: Optional[str]) -> Dict[str, str]:
-            """PYTHONPATH/PATH for this one harness call (Step D, TASK-FIX-COACHPYENV).
-
-            The worktree root is prepended to ``PYTHONPATH`` and, when a
-            bootstrap venv is resolved, its ``bin`` to ``PATH``, so a bare
-            ``pytest``/``python`` the tests shell out to resolves inside the
-            bootstrap environment. These used to be swapped into
-            ``os.environ`` around ``harness.invoke()``; parallel wave tasks run
-            in threads of one process, so another task's swap or restore could
-            leak into this run (or this worktree into theirs). They are now
-            handed to the harness explicitly (``env=``), which the SDK merges
-            over the inherited environment for its own subprocess only.
-            """
-            current = os.environ.get("PYTHONPATH", "")
-            overrides = {
-                "PYTHONPATH": f"{prepend}:{current}" if current else prepend
-            }
-            if venv_bin:
-                path = os.environ.get("PATH", "")
-                overrides["PATH"] = (
-                    f"{venv_bin}{os.pathsep}{path}" if path else venv_bin
-                )
-            return overrides
-
-        start_time = time.time()
-        # TASK-FIX-COACHPYENV: pin the interpreter in the command the Bash tool
-        # runs so it cannot resolve a stray PATH ``pytest`` (the run-9 Python
-        # 3.14 framework-pytest mismatch). No-op when no venv is resolved.
-        sdk_test_cmd = self._pin_pytest_command(test_cmd)
-        if sdk_test_cmd != test_cmd:
-            logger.info(
-                "Coach SDK test command pinned to bootstrap interpreter: %s",
-                sdk_test_cmd,
-            )
-        # 2026-07-04 code review: record the pinned interpreter as forensic
-        # evidence on the SDK-path results too (the subprocess/isolated runners
-        # already do — TASK-AB-RESUMEVENV01 AC-003). Only when the pin actually
-        # fired: an unpinned SDK run resolves ``pytest`` via the Bash tool's
-        # PATH, so the probe interpreter would not match the run — honest
-        # ``None`` there.
-        sdk_resolved_interpreter = (
-            self._resolved_interpreter_for(test_cmd)
-            if sdk_test_cmd != test_cmd
-            else None
-        )
-        prompt = (
-            f"Run the following test command and report the output:\n\n"
-            f"```bash\n{sdk_test_cmd}\n```\n\nProvide the full test output."
-        )
-
-        # TASK-HMIG-006.5: Restore sdk_debug preservation for the Coach
-        # test path. Pre-migration (TASK-DIAG-F4A2), the SDK call site
-        # invoked ``_sdk_preserve_prompt`` / ``_sdk_preserve_event``
-        # under ``GUARDKIT_AUTOBUILD_PRESERVE_DEBUG=1`` so incident
-        # analysis of coach test-run failures had a quoted artefact
-        # trail under ``sdk_debug/turn_<n>/coach/test_run/``. The
-        # HMIG-006.3 migration dropped those calls because the harness
-        # substrate seam owns the message stream and no harness-level
-        # hook existed. The preservation is re-introduced here against
-        # the synthesised options-shaped snapshot below so the
-        # diagnostic surface mirrors the pre-migration shape; the
-        # harness dispatch boundary itself (AC-001/AC-002 of HMIG-006.3)
-        # is untouched. Zero overhead when the env var is unset
-        # (``preserve_prompt`` short-circuits and ``preserve_event``
-        # becomes a no-op against ``debug_dir=None``).
-        from guardkit.orchestrator.sdk_debug import (
-            preserve_prompt as _sdk_preserve_prompt,
-            preserve_event as _sdk_preserve_event,
-        )
-
-        try:
-            # Use GUARDKIT_COACH_TEST_MODEL env var if set, otherwise CLI default
-            model = self._get_coach_test_model()
-            worktree_str = str(self.worktree_path)
-            logger.debug(f"Coach harness PYTHONPATH prepend: {worktree_str}")
-
-            # Synthesise the diagnostic options snapshot the
-            # pre-migration ``ClaudeAgentOptions`` would have produced.
-            # The post-migration harness owns its own option assembly;
-            # this record captures Coach's intent (what the substrate
-            # was asked to run with) rather than the substrate's
-            # realisation. ``GUARDKIT_HARNESS`` is included so the
-            # post-mortem can distinguish SDK vs. LangGraph runs.
-            _sdk_options_snapshot = {
-                "cwd": str(self.worktree_path),
-                "allowed_tools": ["Bash"],
-                "permission_mode": "bypassPermissions",
-                "max_turns": 1,
-                "model": model,
-                "harness": os.environ.get("GUARDKIT_HARNESS", DEFAULT_HARNESS),
-                "pythonpath_prepend": worktree_str,
-                "sdk_timeout_seconds": self.test_timeout,
-            }
-            _sdk_debug_dir = _sdk_preserve_prompt(
-                workspace_root=self.worktree_path,
-                task_id=self.task_id or "unknown",
-                turn=self._turn,
-                role="coach_test",
-                prompt=prompt,
-                options=_sdk_options_snapshot,
-            )
-
-            collected_text: List[str] = []
-            bash_output: Optional[str] = None
-            bash_is_error: Optional[bool] = None
-            api_error: Optional[str] = None
-
-            venv_bin = (
-                str(self._venv_python.parent)
-                if self._venv_python is not None
-                else None
-            )
-            harness = select_harness(
-                sdk_timeout_seconds=self.test_timeout,
-                allowed_tools=["Bash"],
-                permission_mode="bypassPermissions",
-                max_turns=1,
-                model=model,
-                cwd=self.worktree_path,
-                env=_sdk_env_overrides(worktree_str, venv_bin),
-                # 19 October 2026: the checker's test run gets the checker's
-                # own shell folders, never the builder's (LangGraph only; the
-                # selector compares the role only with "player" otherwise).
-                harness_role="coach",
-            )
-
-            async with asyncio.timeout(self.test_timeout):
-                # TASK-FIX-LGACLOSE: finalise the harness async generator on
-                # every exit (incl. timeout/cancel) via aclosing() so no
-                # orphaned async_generator_athrow survives interpreter shutdown.
-                # HEAD recorded before and after this shell-capable agent
-                # (build 0D7C, 12 October 2026); evidence only.
-                from guardkit.orchestrator.head_identity import (
-                    observe_invocation,
-                )
-
-                async with aclosing(
-                    observe_invocation(
-                        harness.invoke(
-                            prompt=prompt,
-                            role="coach_test",
-                            tools=["Bash"],
-                            cwd=self.worktree_path,
-                            timeout_seconds=self.test_timeout,
-                        ),
-                        self.worktree_path,
-                        role="coach test runner",
-                        task_id=self.task_id,
-                        turn=self._turn,
-                    )
-                ) as _harness_stream:
-                    async for event in _harness_stream:
-                        # TASK-HMIG-006.5: record every harness event
-                        # the loop consumes. ``preserve_event`` is a
-                        # no-op when ``_sdk_debug_dir`` is None
-                        # (env var unset), so this is zero-cost in
-                        # production.
-                        _sdk_preserve_event(_sdk_debug_dir, event)
-                        if isinstance(event, AssistantMessageEvent):
-                            # API-error short-circuit mirrors the Player
-                            # dispatch in agent_invoker._invoke_with_role.
-                            # Only the SDK harness sets ``event.raw``;
-                            # other substrates have raw=None and this
-                            # check is a no-op there.
-                            if event.raw is not None:
-                                err = check_assistant_message_error(event.raw)
-                                if err:
-                                    api_error = err
-                                    break
-                            collected_text.append(event.text)
-                        elif isinstance(event, ToolResultEvent):
-                            # NOTE (TASK-HMIG-006.3, Architectural review
-                            # Concern 4): the current SDK harness does NOT
-                            # yield ToolResultEvent — sdk_harness.py only
-                            # handles AssistantMessage / ResultMessage /
-                            # ToolUseEvent. On the SDK path bash_is_error
-                            # therefore stays None and the heuristic
-                            # branch below is the effective pass/fail
-                            # determination. This branch is live for any
-                            # future harness that yields ToolResultEvent
-                            # (e.g. a variant that walks UserMessage
-                            # content) and preserves the pre-migration
-                            # tri-state contract:
-                            #   is_error=True  -> bash_is_error=True (tool errored)
-                            #   is_error=False -> bash_is_error=None (heuristic)
-                            # The False->None mapping is intentional:
-                            # is_error=False means "tool ran cleanly" not
-                            # "tests passed", so we let the heuristic
-                            # branch decide from the output text.
-                            content = event.content
-                            if isinstance(content, str):
-                                bash_output = content
-                            else:
-                                bash_output = self._extract_content_text(content)
-                            bash_is_error = True if event.is_error else None
-                        elif isinstance(event, ResultMessageEvent):
-                            break
-
-            duration = time.time() - start_time
-
-            if api_error is not None:
-                logger.error(f"SDK API error during coach test execution: {api_error}")
-                # TASK-FIX-COACHTESTTO: transport-layer failure — the oracle
-                # never produced a verdict. ABSENT, not a fail.
-                return IndependentTestResult.absent(
-                    test_command=test_cmd,
-                    test_output_summary=f"SDK API error: {api_error}",
-                    duration_seconds=duration,
-                    raw_output=f"SDK API error: {api_error}",
-                )
-
-            # Determine pass/fail from bash_is_error and output. Branches
-            # below are unchanged from pre-migration: output assembly is
-            # substrate-agnostic; only the source of bash_is_error /
-            # bash_output / collected_text changed.
-            if bash_is_error is True:
-                output_text = bash_output or "\n".join(collected_text) or "No output"
-                summary = self._summarize_test_output(output_text)
-                logger.debug(
-                    f"[{self.task_id}] _run_tests_via_sdk raw output (first 2000 chars): {output_text[:2000]}"
-                )
-                # TASK-ABFIX-012: a missing host tool ("command not found") makes
-                # this an ABSENT signal (the oracle could not run), not a Player
-                # test failure. No subprocess return code is available on the SDK
-                # path, so match the explicit shell strings.
-                substrate_absent = self._is_host_substrate_gap(None, output_text)
-                if substrate_absent:
-                    logger.warning(
-                        "[TASK-ABFIX-012] SDK independent test oracle hit a "
-                        "host-substrate gap (missing host tool) — absent signal, "
-                        "not a test failure. cmd=%s",
-                        test_cmd,
-                    )
-                return IndependentTestResult.from_run(
-                    tests_passed=False,
-                    test_command=test_cmd,
-                    test_output_summary=summary,
-                    duration_seconds=duration,
-                    output=output_text,
-                    signal_absent=substrate_absent,
-                    resolved_interpreter=sdk_resolved_interpreter,
-                )
-            elif bash_is_error is False:
-                # NOTE (TASK-HMIG-006.3 code-review nit): this branch is
-                # unreachable in the current implementation because the
-                # ToolResultEvent handler above maps ``is_error=False``
-                # to ``bash_is_error=None`` (heuristic path). Retained
-                # unchanged from pre-migration per the implementation
-                # plan; it activates only if a future harness yields
-                # tri-state ``is_error`` semantics (e.g. by emitting
-                # ``bash_is_error = False`` directly here from a custom
-                # branch). Removing it would silently break that future
-                # extension, so the branch stays live but documented.
-                output_text = bash_output or "\n".join(collected_text) or "No output"
-                summary = self._summarize_test_output(output_text)
-                logger.debug(
-                    f"[{self.task_id}] _run_tests_via_sdk raw output (first 2000 chars): {output_text[:2000]}"
-                )
-                return IndependentTestResult.from_run(
-                    tests_passed=True,
-                    test_command=test_cmd,
-                    test_output_summary=summary,
-                    duration_seconds=duration,
-                    output=output_text,
-                    resolved_interpreter=sdk_resolved_interpreter,
-                )
-            else:
-                # GAP-FIX #7: is_error is None — parse output text
-                output_text = bash_output or "\n".join(collected_text) or "No output"
-                summary = self._summarize_test_output(output_text)
-                logger.debug(
-                    f"[{self.task_id}] _run_tests_via_sdk raw output (first 2000 chars): {output_text[:2000]}"
-                )
-                # TASK-ABFIX-012: a host-substrate gap ("command not found") is an
-                # ABSENT signal — short-circuit before the pass/fail heuristic so a
-                # missing host tool is never read as a Player test failure or pass.
-                if self._is_host_substrate_gap(None, output_text):
-                    logger.warning(
-                        "[TASK-ABFIX-012] SDK independent test oracle (heuristic "
-                        "branch) hit a host-substrate gap — absent signal, not a "
-                        "test failure. cmd=%s",
-                        test_cmd,
-                    )
-                    return IndependentTestResult.absent(
-                        test_command=test_cmd,
-                        test_output_summary=summary,
-                        duration_seconds=duration,
-                        raw_output=output_text,
-                    )
-                # TASK-FIX-COACHTRES01: prefer the pytest summary line (real
-                # counts) over the substring scan, which false-positives on a
-                # passing run whose verbose test names / --cov file paths
-                # contain "error"/"failed" (the FEAT-HARV TASK-HARV-006
-                # false-block: "15 passed" mis-read as a failure because a
-                # passing test_..._displays_error and a covered
-                # *_error_messages.py path matched). Only fall back to the
-                # legacy substring heuristic when no summary line is present.
-                summary_verdict = self._verdict_from_pytest_summary(output_text)
-                if summary_verdict is not None:
-                    return IndependentTestResult.from_run(
-                        tests_passed=summary_verdict,
-                        test_command=test_cmd,
-                        test_output_summary=summary,
-                        duration_seconds=duration,
-                        output=output_text,
-                        resolved_interpreter=sdk_resolved_interpreter,
-                    )
-                # Heuristic fallback: check for failure indicators in output
-                lower = output_text.lower()
-                has_failure = any(
-                    indicator in lower
-                    for indicator in ["failed", "error", "errors", "failure"]
-                )
-                has_success = any(
-                    indicator in lower
-                    for indicator in ["passed", "ok", "success"]
-                )
-                tests_passed = has_success and not has_failure
-                return IndependentTestResult.from_run(
-                    tests_passed=tests_passed,
-                    test_command=test_cmd,
-                    test_output_summary=summary,
-                    duration_seconds=duration,
-                    output=output_text,
-                    resolved_interpreter=sdk_resolved_interpreter,
-                )
-
-        except asyncio.TimeoutError:
-            duration = time.time() - start_time
-            logger.error(f"SDK coach test execution timed out after {self.test_timeout}s")
-            # TASK-FIX-COACHTESTTO: the oracle did not complete — ABSENT,
-            # not a real pass/fail verdict.
-            return IndependentTestResult.absent(
-                test_command=test_cmd,
-                test_output_summary=f"SDK test execution timed out after {self.test_timeout}s",
-                duration_seconds=duration,
-                raw_output=f"Timeout after {self.test_timeout}s",
-            )
-        except AgentInvocationError as e:
-            # TASK-HMIG-006.3 D-4: the harness normalises
-            # CLINotFoundError / ProcessError / CLIJSONDecodeError /
-            # MessageParseError into a single AgentInvocationError
-            # (sdk_harness.py). The diagnostic info (exit_code, stderr,
-            # error_class) is preserved inside the exception message
-            # string. ``run_independent_tests``'s generic catch reads
-            # type(e).__name__ for log formatting and falls back to
-            # subprocess, so behavioural parity is preserved; the only
-            # observable change is the logged error_class value.
-            logger.error(
-                f"SDK coach test execution failed "
-                f"(error_class=AgentInvocationError): {e}"
-            )
-            raise
-        except Exception as e:
-            # Catch-all retained for non-harness failures (e.g.
-            # context-manager errors restoring PYTHONPATH). Preserves
-            # the pre-migration log shape.
-            logger.error(
-                f"SDK coach test execution failed "
-                f"(error_class={type(e).__name__}): {e}"
-            )
-            raise
-
-    def _is_custom_api_base(self) -> bool:
-        """Return True when ANTHROPIC_BASE_URL points to a non-Anthropic endpoint (e.g. vLLM)."""
-        base_url = os.environ.get("ANTHROPIC_BASE_URL", "")
-        return bool(base_url) and "api.anthropic.com" not in base_url
-
-    def _is_langgraph_harness(self) -> bool:
-        """Return True when ``GUARDKIT_HARNESS`` selects the LangGraph substrate.
-
-        TASK-FIX-COACHTESTTO. Under the LangGraph harness the SDK-path
-        independent-test run (``_run_tests_via_sdk``) is dispatched as a
-        one-turn LLM agent invocation: the (typically local) coach-test model
-        is asked to call the ``Bash`` tool, run pytest, and report. That whole
-        turn is bounded by ``self.test_timeout`` (300s). With a slow local
-        model the turn never completes within budget and the trust-but-verify
-        leg times out on every task (run-19, FEAT-AOF). The deterministic
-        subprocess path runs the *same* pinned interpreter in the *same*
-        worktree in seconds with no model in the loop, so under LangGraph we
-        force subprocess.
-
-        This is the LangGraph-substrate complement to ``_is_custom_api_base``:
-        the latter disables the SDK path when ``ANTHROPIC_BASE_URL`` points at
-        a non-Anthropic endpoint, but the LangGraph harness configures its
-        model endpoint through the LangGraph/OpenAI-compatible channel rather
-        than ``ANTHROPIC_BASE_URL``, so ``_is_custom_api_base`` does not catch
-        it. See ``docs/state/TASK-FIX-COACHTESTTO/diagnosis.md``.
-        """
-        return (
-            os.environ.get("GUARDKIT_HARNESS", DEFAULT_HARNESS).strip().lower()
-            == "langgraph"
-        )
-
-    def _pytest_interpreter(self) -> str:
-        """Return the interpreter Coach should run pytest under.
-
-        TASK-FIX-COACHPYENV: prefer the resolved bootstrap venv interpreter so
-        independent tests run in the same environment the Player's packages were
-        installed into. Falls back to ``sys.executable`` (the orchestrator
-        interpreter) for non-Python projects / no-venv recovery — never bare
-        ``pytest`` from PATH, which is what produced the run-9 Python-3.14
-        framework-pytest mismatch.
-        """
-        return str(self._venv_python) if self._venv_python is not None else sys.executable
-
-    def _resolved_interpreter_for(self, test_cmd: str) -> Optional[str]:
-        """The interpreter an interpreter-pinned run of ``test_cmd`` uses.
-
-        TASK-AB-RESUMEVENV01 (AC-003): recorded on
-        :class:`IndependentTestResult.resolved_interpreter` as forensic
-        evidence. Only pytest-shaped commands are pinned to
-        ``_pytest_interpreter()`` by the subprocess/isolated runners; a
-        non-pytest command runs via ``shell=True`` with no interpreter pin,
-        so ``None`` (unknown) is the honest value there.
-        """
-        if test_cmd.startswith("pytest"):
-            return self._pytest_interpreter()
-        return None
-
-    def _pin_pytest_command(self, test_cmd: str) -> str:
-        """Rewrite a bare ``pytest …`` command to pin the bootstrap interpreter.
-
-        TASK-FIX-COACHPYENV: the SDK test path hands ``test_cmd`` to a Bash tool,
-        which resolves ``pytest`` via PATH. Rewriting to
-        ``<venv_python> -m pytest …`` makes the Bash subprocess invoke the exact
-        interpreter regardless of PATH ordering. No-op when no venv is resolved
-        or the command is not a bare ``pytest`` invocation.
-        """
-        if self._venv_python is None:
-            # No pinned venv: the Bash tool resolves ``pytest`` via PATH, so the
-            # probe interpreter (sys.executable) would not match the run
-            # interpreter — skip both the pin and the --timeout injection here.
-            return test_cmd
-        # TASK-ABFIX-011: append a gated per-test --timeout to the pinned string.
-        # Only the venv-pinned branches reach here, so the probe interpreter
-        # (self._pytest_interpreter()) matches the interpreter that runs.
-        timeout_suffix = ""
-        timeout_argv = self._pytest_timeout_argv()
-        if timeout_argv:
-            timeout_suffix = " " + " ".join(timeout_argv)
-        if test_cmd.startswith("pytest "):
-            return f"{self._pytest_interpreter()} -m {test_cmd}{timeout_suffix}"
-        if test_cmd == "pytest":
-            return f"{self._pytest_interpreter()} -m pytest{timeout_suffix}"
-        return test_cmd
-
     def _held_back_note(self) -> str:
         """Which settings a project command's environment held back, by name
         only (``project_command_env.minimal_environment_note``); empty when
@@ -2638,12 +1817,6 @@ class CoachValidator:
             return minimal_environment_note(_checker_declared_env(self))
         except OSError:
             return ""
-
-    def _venv_bin_first(self) -> Tuple[str, ...]:
-        """The bootstrap venv's ``bin`` to put first on PATH, when known."""
-        if self._venv_python is None:
-            return ()
-        return (str(Path(self._venv_python).parent),)
 
     def _project_env(
         self,
@@ -2697,145 +1870,6 @@ class CoachValidator:
             adds.update(getattr(self, "_fixture_env", {}) or {})
         adds.update(additions or {})
         return adds
-
-    # ------------------------------------------------------------------
-    # TASK-ABFIX-011: gated per-test pytest-timeout injection
-    # ------------------------------------------------------------------
-    # A single hanging test otherwise consumes the whole Coach subprocess budget
-    # and yields ``tests_run=0`` (no per-test attribution). Injecting
-    # ``--timeout N --timeout-method signal`` marks the *specific* hung test
-    # FAILED while the others still run (``signal`` lets the session continue;
-    # ``thread`` would ``os._exit``-kill it). Injection is TRIPLE-gated so it can
-    # never become the harness-wide false-fail an *unconditional* ``--timeout``
-    # would be (returncode-4 ``unrecognized arguments`` on any project lacking the
-    # plugin — the already-reverted FEAT-FMDR-003 regression, replayed
-    # harness-wide). Since 31 October 2026 only the opt-in SDK test path
-    # injects it (``_pin_pytest_command``); a declared command run by the
-    # subprocess path is never rewritten.
-
-    def _pytest_timeout_injection_enabled(self) -> bool:
-        """Master gate for per-test ``--timeout`` injection (all three must hold).
-
-        1. operator flag — ``GUARDKIT_COACH_PYTEST_TIMEOUT`` not in
-           ``{0, false, off, no}`` (escape hatch; default enabled);
-        2. Python stack — ``self._active_stack_profile is None`` (a non-Python
-           profile means a non-pytest ``whole_suite_command``; never inject a
-           Python-only arg — ``.claude/rules/stack-plugin-architecture.md``);
-        3. plugin resolvable in the pinned interpreter (cached probe).
-        """
-        flag = os.environ.get("GUARDKIT_COACH_PYTEST_TIMEOUT", "").strip().lower()
-        if flag in ("0", "false", "off", "no"):
-            return False
-        if self._active_stack_profile is not None:
-            return False
-        return self._pytest_timeout_available()
-
-    def _pytest_timeout_available(self) -> bool:
-        """Cached: is ``pytest-timeout`` importable in the pinned interpreter?"""
-        if self._pytest_timeout_available_cache is None:
-            self._pytest_timeout_available_cache = self._probe_pytest_timeout()
-        return self._pytest_timeout_available_cache
-
-    def _probe_pytest_timeout(self) -> bool:
-        """Probe whether ``pytest_timeout`` is importable where Coach runs pytest.
-
-        When the pinned interpreter is the orchestrator's own
-        (``self._venv_python is None`` → ``sys.executable``) the check is
-        in-process (``importlib.util.find_spec`` — no subprocess, so it does not
-        perturb the many tests that patch ``subprocess.run``). When a distinct
-        bootstrap venv is pinned, the plugin must be probed *in that interpreter*,
-        so a tiny out-of-process ``find_spec`` is run. Any failure (non-zero exit,
-        timeout, OSError) returns ``False`` — fail toward NO injection, never a
-        spurious ``--timeout``.
-        """
-        import importlib.util
-
-        interpreter = self._pytest_interpreter()
-        if interpreter == sys.executable:
-            return importlib.util.find_spec("pytest_timeout") is not None
-        try:
-            proc = process_group.run_project_command(
-                [
-                    interpreter,
-                    "-c",
-                    "import importlib.util, sys; "
-                    "sys.exit(0 if importlib.util.find_spec('pytest_timeout') "
-                    "else 1)",
-                ],
-                capture_output=True,
-                text=True,
-                timeout=15,
-                env=_checker_env(self),
-            )
-            return proc.returncode == 0
-        except Exception as exc:  # subprocess error / timeout / OSError
-            logger.debug(
-                "pytest-timeout probe failed for %s (%s); not injecting --timeout",
-                interpreter,
-                exc,
-            )
-            return False
-
-    def _per_test_timeout_seconds(self) -> int:
-        """Per-test timeout (seconds). Env override, else the module default."""
-        raw = os.environ.get("GUARDKIT_COACH_PYTEST_TIMEOUT_SECONDS")
-        if raw:
-            try:
-                value = int(raw)
-                if value > 0:
-                    return value
-                logger.warning(
-                    "GUARDKIT_COACH_PYTEST_TIMEOUT_SECONDS=%r is not positive; "
-                    "using default %ss",
-                    raw,
-                    _DEFAULT_COACH_PER_TEST_TIMEOUT_S,
-                )
-            except ValueError:
-                logger.warning(
-                    "GUARDKIT_COACH_PYTEST_TIMEOUT_SECONDS=%r is not an int; "
-                    "using default %ss",
-                    raw,
-                    _DEFAULT_COACH_PER_TEST_TIMEOUT_S,
-                )
-        return _DEFAULT_COACH_PER_TEST_TIMEOUT_S
-
-    def _pytest_timeout_method(self) -> str:
-        """``--timeout-method``: ``signal`` (default) or ``thread``.
-
-        ``signal`` raises inside the hung test and lets the session CONTINUE, so
-        the other tests still run and report verdicts — the per-test attribution
-        the AC requires. ``thread`` dumps tracebacks then ``os._exit``-kills the
-        session (the others never report), so it is not the default. The alarm
-        fires only once a test exceeds the deadline, so a healthy asyncio test
-        (event loop on the main thread) is never spuriously interrupted (empirically
-        validated, constraint 5). Operator override:
-        ``GUARDKIT_COACH_PYTEST_TIMEOUT_METHOD``.
-        """
-        method = (
-            os.environ.get("GUARDKIT_COACH_PYTEST_TIMEOUT_METHOD", "")
-            .strip()
-            .lower()
-        )
-        if method in ("signal", "thread"):
-            return method
-        return "signal"
-
-    def _pytest_timeout_argv(self) -> List[str]:
-        """argv fragment injecting a gated per-test ``--timeout``, or ``[]``.
-
-        Shared by all three pytest construction sites (SDK pin, isolated/parallel
-        subprocess, standard subprocess) so the gate logic cannot drift between
-        them — the recurring "Nth-injection-site" lesson of the absence-of-failure
-        rule family.
-        """
-        if not self._pytest_timeout_injection_enabled():
-            return []
-        return [
-            "--timeout",
-            str(self._per_test_timeout_seconds()),
-            "--timeout-method",
-            self._pytest_timeout_method(),
-        ]
 
     # ---- what the check ran against (repair 7, 2026-10-12) ---------------
     #
@@ -3026,107 +2060,7 @@ class CoachValidator:
                 )
 
         try:
-            # Force subprocess path for infrastructure-dependent tasks (TASK-REV-CB30 R5).
-            # The SDK path runs `pytest` via a Bash tool prompt, which resolves the
-            # pytest binary via PATH.  On machines with multiple Python installations
-            # (e.g. Framework Python + Homebrew Python on macOS), PATH may resolve to
-            # a different Python than the one the bootstrap installed packages into,
-            # causing ModuleNotFoundError at test collection time.
-            # The subprocess path uses sys.executable, bypassing PATH entirely.
-            #
-            # TASK-FIX-COACHTESTTO: also force subprocess under the LangGraph
-            # harness. The SDK path runs pytest through a one-turn LLM agent
-            # invocation; under LangGraph (typically a slow local coach-test
-            # model) that turn blows past self.test_timeout (300s) and the
-            # trust-but-verify leg times out on every task (run-19). The
-            # subprocess path runs the same pinned interpreter in seconds with
-            # no model in the loop. _is_custom_api_base() does not catch this
-            # because LangGraph configures its endpoint outside ANTHROPIC_BASE_URL.
-            # Per-component seam: the SDK path hands the command to a one-turn
-            # LLM with ``cwd=self.worktree_path`` baked into the harness call,
-            # and threading a component directory through the harness is a
-            # wider interface change than this lane earns. A component task
-            # therefore RUNS ON THE SUBPROCESS PATH — deterministic, and the
-            # only path where the component cwd is honoured. Said out loud
-            # below rather than silently producing a root-directory run.
-            component_pinned_subprocess = self._component_toolchain is not None
-            use_sdk = (
-                self._coach_test_execution == "sdk"
-                and not requires_infra
-                and not component_pinned_subprocess
-                and not self._is_custom_api_base()
-                and not self._is_langgraph_harness()
-            )
-            if component_pinned_subprocess and self._coach_test_execution == "sdk":
-                logger.warning(
-                    "Component %r selected: forcing the SUBPROCESS test path. "
-                    "The SDK path runs with the worktree root as cwd and would "
-                    "run %r in the wrong directory.",
-                    self._component,
-                    test_cmd,
-                )
-
-            # SDK-first dispatch (GAP-FIX #9): use asyncio bridge to call async SDK method
-            if use_sdk:
-                logger.info(f"Running independent tests via SDK (environment parity): {test_cmd}")
-                try:
-                    import asyncio
-                    try:
-                        loop = asyncio.get_event_loop()
-                    except RuntimeError:
-                        loop = asyncio.new_event_loop()
-                        asyncio.set_event_loop(loop)
-                    sdk_evidence = self._begin_run_evidence(
-                        EVIDENCE_SDK, test_cmd, self.worktree_path, None, None, env=None
-                    )
-                    try:
-                        result = loop.run_until_complete(self._run_tests_via_sdk(test_cmd))
-                    finally:
-                        self._keep_run_evidence(sdk_evidence)
-                    logger.info(
-                        f"SDK independent tests {'passed' if result.tests_passed else 'failed'} "
-                        f"in {result.duration_seconds:.1f}s"
-                    )
-                    return result
-                except Exception as e:
-                    # TASK-FIX-7A09: Surface the SDK transport failure
-                    # shape instead of the opaque {e}. ProcessError (the
-                    # observed shape in forge-run-3) carries .exit_code
-                    # and .stderr; all exception types carry a class
-                    # name. Structured logging lets the summary-layer
-                    # classifier (TASK-FIX-7A02, TASK-FIX-7A07) route
-                    # transport-level failures in future incidents
-                    # without string-matching the opaque prefix.
-                    error_class = type(e).__name__
-                    exit_code = getattr(e, "exit_code", None)
-                    stderr_val = getattr(e, "stderr", None)
-                    stderr_head = (
-                        stderr_val[:500]
-                        if isinstance(stderr_val, str) and stderr_val
-                        else None
-                    )
-                    parts = [f"error_class={error_class}"]
-                    if exit_code is not None:
-                        parts.append(f"exit_code={exit_code}")
-                    ctx = ", ".join(parts)
-                    msg = (
-                        f"SDK test execution failed ({ctx}), "
-                        f"falling back to subprocess."
-                    )
-                    if stderr_head:
-                        msg += f" stderr: {stderr_head}"
-                    logger.warning(msg)
-                    # Fall through to subprocess path below
-
-            # Subprocess path (default for coach_test_execution="subprocess", SDK fallback,
-            # or infrastructure-dependent tasks forced to subprocess by TASK-REV-CB30 R5)
-            if requires_infra and self._coach_test_execution == "sdk":
-                logger.info(
-                    f"Running independent tests via subprocess (infra-pinned, "
-                    f"sys.executable={sys.executable}): {test_cmd}"
-                )
-            else:
-                logger.info(f"Running independent tests via subprocess: {test_cmd}")
+            logger.info(f"Running independent tests via subprocess: {test_cmd}")
             start_time = time.time()
 
             try:
@@ -3220,9 +2154,6 @@ class CoachValidator:
                         duration_seconds=duration,
                         output=(result.stdout or "") + (result.stderr or ""),
                         signal_absent=signal_absent,
-                        resolved_interpreter=self._resolved_interpreter_for(
-                            test_cmd
-                        ),
                         exit_code=result.returncode,
                     )
 
@@ -3253,7 +2184,6 @@ class CoachValidator:
                     test_output_summary=message,
                     duration_seconds=duration,
                     raw_output=message,
-                    resolved_interpreter=self._resolved_interpreter_for(test_cmd),
                 )
             except Exception as e:
                 duration = time.time() - start_time
@@ -3263,9 +2193,6 @@ class CoachValidator:
                         test_command=test_cmd,
                         test_output_summary=f"Test execution failed: {e}",
                         duration_seconds=duration,
-                        resolved_interpreter=self._resolved_interpreter_for(
-                            test_cmd
-                        ),
                     )
 
         finally:
@@ -3694,32 +2621,6 @@ class CoachValidator:
             "project declares in .guardkit/config.yaml (`toolchain.test`, a "
             "component's `test`, or a `parts:` entry's `test`)."
         )
-
-    def _is_host_substrate_gap(
-        self, returncode: Optional[int], combined_output: str
-    ) -> bool:
-        """Return True when a test run could not execute due to a missing host tool.
-
-        TASK-ABFIX-012. Stack-agnostic: a shell return code of 126 (found but not
-        executable) or 127 (command not found), or one of the explicit
-        ``_HOST_SUBSTRATE_MISSING_PATTERNS`` shell-error strings in the captured
-        output. Deliberately does NOT match a bare "No such file or directory" or
-        ": not found" (a pytest test legitimately asserting FileNotFoundError, or
-        a "key: not found" message, would false-match and mis-route a real code
-        bug to infrastructure → false-green) — only the definitive rc 126/127
-        signal and the unambiguous shell strings, which a normal pytest assertion
-        does not emit.
-
-        A host-substrate gap is an ABSENT signal (the oracle could not run); the
-        caller routes it to ``signal_absent=True`` so it surfaces as feedback
-        bounded by ``max_turns`` — never a Player code failure (the false-red
-        ABFIX-010 prevents) and never a pass
-        (``absence-of-failure-is-not-success.md``).
-        """
-        if returncode in (126, 127):
-            return True
-        low = (combined_output or "").lower()
-        return any(p in low for p in self._HOST_SUBSTRATE_MISSING_PATTERNS)
 
     def _classify_test_failure(
         self,

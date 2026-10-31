@@ -38,7 +38,6 @@ def _make_validator(
         wave_size=wave_size,
         **kwargs,
     )
-    validator._coach_test_execution = "subprocess"
     return validator
 
 

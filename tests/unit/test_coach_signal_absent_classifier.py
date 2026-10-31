@@ -21,7 +21,6 @@ def _make_validator(tmp_path: Path, test_cmd: str = "pytest tests/ -v") -> Coach
     validator = CoachValidator(
         worktree_path=tmp_path, task_id="TASK-AB-PERTASKFG01", test_command=test_cmd
     )
-    validator._coach_test_execution = "subprocess"
     return validator
 
 

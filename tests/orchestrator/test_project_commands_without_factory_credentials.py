@@ -499,16 +499,6 @@ def _capture_pytest_path(p: Project, monkeypatch) -> Recorder:
     return recorder
 
 
-def _capture_timeout_probe(p: Project, monkeypatch) -> Recorder:
-    other = p.out.parent / "tools" / "python"
-    other.symlink_to(sys.executable)
-    recorder = _record_run(monkeypatch)
-    validator = _validator(p, venv_python=str(other))
-    validator._probe_pytest_timeout()
-    return recorder
-
-
-
 def _capture_honesty_verifier(p: Project, monkeypatch) -> Recorder:
     from guardkit.orchestrator.coach_verification import CoachVerifier
 
@@ -558,7 +548,6 @@ def _capture_bdd_probe_for_sweep(p: Project, monkeypatch) -> Recorder:
 CAPTURED_SITES: List[Tuple[str, Callable[..., Recorder]]] = [
     ("1a making the virtual environment", _capture_venv_creation),
     ("5 checker's pytest-path test", _capture_pytest_path),
-    ("13 pytest-timeout probe", _capture_timeout_probe),
     ("25 BDD runs", _capture_bdd_run),
     ("25a pytest-bdd probe via run_bdd_for_task", _capture_bdd_probe_for_task),
     ("25a pytest-bdd probe via run_bdd_authoring_sweep", _capture_bdd_probe_for_sweep),

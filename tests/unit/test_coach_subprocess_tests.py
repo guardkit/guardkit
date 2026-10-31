@@ -17,6 +17,16 @@ import pytest
 from guardkit.orchestrator.quality_gates.coach_validator import CoachValidator
 
 
+@pytest.fixture(autouse=True)
+def _programs_are_found(monkeypatch):
+    """The run itself is mocked, so the lookup of the command's program is
+    too (npm and dotnet need not be installed where the suite runs)."""
+    monkeypatch.setattr(
+        "guardkit.orchestrator.quality_gates.coach_validator.missing_program",
+        lambda *_args: None,
+    )
+
+
 def _make_validator(tmp_path: Path, test_cmd: str = None) -> CoachValidator:
     """Create a minimal CoachValidator for subprocess path testing."""
     validator = CoachValidator(
@@ -24,8 +34,6 @@ def _make_validator(tmp_path: Path, test_cmd: str = None) -> CoachValidator:
         task_id="TASK-BOOT-43DE",
         test_command=test_cmd,
     )
-    # Force subprocess execution mode (not SDK)
-    validator._coach_test_execution = "subprocess"
     return validator
 
 

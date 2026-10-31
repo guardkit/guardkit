@@ -700,7 +700,6 @@ def _coach(wt: Path, cmd: str, wave_size: int):
     validator = CoachValidator(
         worktree_path=str(wt), task_id=_TASK_ID, test_command=cmd, wave_size=wave_size
     )
-    validator._coach_test_execution = "subprocess"
     return validator
 
 

@@ -46,7 +46,6 @@ def make_validator(worktree_path: Optional[Path] = None, **kwargs) -> CoachValid
         worktree_path = Path(tempfile.mkdtemp())
     return CoachValidator(
         worktree_path=str(worktree_path),
-        coach_test_execution="subprocess",
         **kwargs,
     )
 

@@ -88,7 +88,6 @@ class TestRunEvidenceRepoTests:
         validator = CoachValidator(
             str(worktree),
             evidence_repos=[repo],
-            venv_python=str(worktree_python),
         )
         results = validator.run_evidence_repo_tests()
         assert results[0].ran is True
