@@ -848,7 +848,12 @@ def _pattern_parts(
             if not (child / entry.marker).is_file():
                 continue
             cwd = child.name if entry.under == "." else f"{entry.under}/{child.name}"
-            commands = entry.model_dump(exclude={"under", "marker"})
+            # Only what the entry declares is passed on (31 October 2026), so
+            # the part knows which of its limits were declared and which are
+            # GuardKit's defaults (:func:`install_time_limit`).
+            commands = entry.model_dump(
+                exclude={"under", "marker"}, exclude_unset=True
+            )
             found.append(
                 DeclaredPart(
                     name=cwd,
@@ -960,6 +965,21 @@ def full_check_parts(
     return parts
 
 
+def install_time_limit(commands: _ToolchainCommands, otherwise: int) -> int:
+    """How long a part's declared ``install`` may run, in seconds.
+
+    A declared ``install_timeout`` (the root's, a component's or a ``parts:``
+    entry's) is used exactly as declared (31 October 2026): the caller's
+    overall limit, such as ``--verify-timeout``, used to shorten it, so an
+    install that needed 720 of its declared 1800 seconds was stopped at 600
+    and a good feature could not land. With none declared, GuardKit's
+    default is used, bounded by ``otherwise`` as before.
+    """
+    if "install_timeout" in commands.model_fields_set:
+        return commands.install_timeout
+    return max(1, min(commands.install_timeout, otherwise))
+
+
 def ran_marker_problem(commands: Optional[_ToolchainCommands]) -> Optional[str]:
     """Why a part's declared "a test ran" marker can never be met, or ``None``.
 
@@ -1062,5 +1082,6 @@ __all__ = [
     "parts_for_files",
     "full_check_parts",
     "declared_no_tests_ran",
+    "install_time_limit",
     "ran_marker_problem",
 ]

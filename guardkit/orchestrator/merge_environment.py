@@ -59,6 +59,7 @@ from guardkit.orchestrator.toolchain_declaration import (
     CONFIG_RELATIVE_PATH,
     TOOLCHAIN_KEY,
     ToolchainDeclaration,
+    install_time_limit,
     parse_toolchain_block,
 )
 
@@ -459,7 +460,9 @@ class MergeEnvironment:
     """The install and launch block pinned on the target, with the test command.
 
     ``install_argv`` is empty when no install is declared. ``install_timeout``
-    is already capped at the merge's own check time limit.
+    is the declared ``install_timeout`` exactly, or, with none declared,
+    GuardKit's default capped at the merge's own check time limit
+    (``toolchain_declaration.install_time_limit``, 31 October 2026).
     """
 
     install_argv: Tuple[str, ...] = ()
@@ -516,7 +519,9 @@ def pin_merge_environment(
             install_argv = ()
         install_words, _ = judge_words(install_text, through_shell=False)
         words.extend(install_words or ())
-        install_timeout = max(1, min(toolchain.install_timeout, verify_timeout))
+        # A declared install_timeout is used as declared; verify_timeout
+        # bounds only GuardKit's default (31 October 2026).
+        install_timeout = install_time_limit(toolchain, verify_timeout)
 
     return (
         MergeEnvironment(

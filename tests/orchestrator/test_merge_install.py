@@ -1352,6 +1352,130 @@ class TestInstallPathsTheCoachProvedByHand:
         assert standin.ran() == set()
 
 
+class TestDeclaredInstallLimitsAreHonoured:
+    """A declared ``install_timeout`` is used exactly as declared.
+
+    31 October 2026 (Codex's second check of the after-task check redesign):
+    the merge capped every declared install at ``--verify-timeout`` (600
+    seconds by default in Forge), so an install that needed 720 of its
+    declared 1800 seconds was stopped at 600 and a good feature could not
+    land. ``verify_timeout`` now bounds only GuardKit's default, where no
+    limit is declared. Every case runs the real merge on a real repository,
+    with a ``verify_timeout`` shorter than the declared limit.
+    """
+
+    SLOW_START = "#!/bin/sh\nsleep 2\n"
+    HANGS = "#!/bin/sh\nexec sleep 30\n"
+
+    @staticmethod
+    def _part_block(declared_as: str, install_limit: str) -> str:
+        fields = (
+            '      install: "bash scripts/setup.sh"\n'
+            '      test: "true"\n'
+            + (f"      install_timeout: {install_limit}\n" if install_limit else "")
+        )
+        if declared_as == "component":
+            return "  components:\n    app:\n      cwd: apps/app\n" + fields
+        return "  parts:\n    - under: apps\n      marker: part.txt\n" + fields
+
+    def test_a_root_install_longer_than_verify_timeout_completes(
+        self, standin: Standin
+    ):
+        slow_install = INSTALL_SH.replace(
+            "set -e\n", "set -e\nsleep 2\n", 1
+        )
+        standin.init(
+            config=config_text(extra_toolchain="  install_timeout: 30\n"),
+            files={"scripts/install.sh": standin.script(slow_install)},
+        ).branch({"feature.txt": "built\n"})
+
+        report = standin.merge(verify_timeout=1)
+
+        assert report.verify_status == "passed", report.verify_detail
+        assert standin.lines("install-ran") == ["install"]
+        assert standin.lines("check-ran") == ["check"]
+
+    def test_the_root_install_limit_is_the_declared_one(self, standin: Standin):
+        standin.init(
+            config=config_text(extra_toolchain="  install_timeout: 3\n"),
+            files={"scripts/install.sh": self.HANGS},
+        ).branch({"feature.txt": "built\n"})
+
+        report = standin.merge(verify_timeout=1)
+
+        assert report.verify_status == "unverified"
+        assert "ran out of its 3 seconds" in report.verify_detail
+        assert "ran out of its 1 seconds" not in report.verify_detail
+
+    @pytest.mark.parametrize("declared_as", ["component", "part"])
+    def test_a_part_install_longer_than_verify_timeout_completes(
+        self, standin: Standin, declared_as: str
+    ):
+        setup = self.SLOW_START + 'echo setup >> "@MARKERS@/part-install-ran"\n'
+        standin.init(
+            config=config_text(
+                install=None,
+                test=None,
+                extra_toolchain=self._part_block(declared_as, "30"),
+            ),
+            files={
+                "apps/app/part.txt": "a part\n",
+                "apps/app/scripts/setup.sh": standin.script(setup),
+            },
+        ).branch({"feature.txt": "built\n"})
+
+        report = standin.merge(verify_timeout=1)
+
+        assert report.verify_status == "passed", report.verify_detail
+        assert standin.lines("part-install-ran") == ["setup"]
+
+    @pytest.mark.parametrize("declared_as", ["component", "part"])
+    def test_a_part_install_limit_is_the_declared_one(
+        self, standin: Standin, declared_as: str
+    ):
+        standin.init(
+            config=config_text(
+                install=None,
+                test=None,
+                extra_toolchain=self._part_block(declared_as, "3"),
+            ),
+            files={
+                "apps/app/part.txt": "a part\n",
+                "apps/app/scripts/setup.sh": self.HANGS,
+            },
+        ).branch({"feature.txt": "built\n"})
+
+        report = standin.merge(verify_timeout=1)
+
+        assert report.verify_status == "unverified"
+        assert "ran out of its 3 seconds" in report.verify_detail
+        assert "ran out of its 1 seconds" not in report.verify_detail
+
+    @pytest.mark.parametrize("declared_as", ["component", "part"])
+    def test_with_no_declared_limit_verify_timeout_still_bounds_the_default(
+        self, standin: Standin, declared_as: str
+    ):
+        # GuardKit's default (300 seconds) is bounded by verify_timeout as
+        # before; for a ``parts:`` entry this holds only because the part
+        # knows its limit was not declared.
+        standin.init(
+            config=config_text(
+                install=None,
+                test=None,
+                extra_toolchain=self._part_block(declared_as, ""),
+            ),
+            files={
+                "apps/app/part.txt": "a part\n",
+                "apps/app/scripts/setup.sh": self.HANGS,
+            },
+        ).branch({"feature.txt": "built\n"})
+
+        report = standin.merge(verify_timeout=2)
+
+        assert report.verify_status == "unverified"
+        assert "ran out of its 2 seconds" in report.verify_detail
+
+
 class TestJudgeFilesInsideOptionLists:
     @pytest.mark.parametrize("separator", [",", ":"])
     def test_a_changed_script_named_inside_an_option_list_is_found(

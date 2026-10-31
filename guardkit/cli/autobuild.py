@@ -1085,7 +1085,10 @@ def feature(
     "--verify-timeout",
     type=int,
     default=None,
-    help="Seconds before the verification run is killed (default: 600)",
+    help=(
+        "Seconds before the verification run is killed (default: 600). "
+        "A declared test_timeout or install_timeout is used as declared."
+    ),
 )
 @click.pass_context
 @handle_cli_errors
@@ -1511,7 +1514,10 @@ def _display_verification_result(verification) -> None:
     type=int,
     default=600,
     show_default=True,
-    help="Seconds before the post-merge verification run is killed.",
+    help=(
+        "Seconds before the post-merge verification run is killed. "
+        "A declared test_timeout or install_timeout is used as declared."
+    ),
 )
 @click.option(
     "--in-worktree",

@@ -52,6 +52,7 @@ from guardkit.orchestrator.toolchain_declaration import (
     ToolchainDeclaration,
     declared_no_tests_ran,
     full_check_parts,
+    install_time_limit,
     load_toolchain_declaration,
     ran_marker_problem,
     resolve_component_cwd,
@@ -267,7 +268,9 @@ def run_completion_verification(
     :func:`toolchain_declaration.full_check_parts`, found in ``repo_root``
     now, runs its ``test`` once in its own folder, each within its own
     declared ``test_timeout`` (the root's is the top-level one); ``timeout``
-    then bounds only a part's install. A part whose own declaration says no
+    then bounds only a part's install, and only when the part declares no
+    ``install_timeout`` of its own (:func:`toolchain_declaration.install_time_limit`,
+    31 October 2026). A part whose own declaration says no
     tests ran failed (:func:`_said_nothing_ran`). The result is ``failed`` if
     any part failed, otherwise
     ``unverified`` if any part could not run (nothing declared for it, or it
@@ -331,7 +334,7 @@ def run_completion_verification(
         if part.toolchain is not None and part.toolchain.install:
             problem = _install_part(
                 folder, part.toolchain.install,
-                min(part.toolchain.install_timeout, timeout), env,
+                install_time_limit(part.toolchain, timeout), env,
             )
             if problem is not None:
                 results.append((label, VerificationResult(
