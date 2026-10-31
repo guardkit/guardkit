@@ -188,6 +188,38 @@ def resolve_verify_command_with_declaration(
     return text, source, declaration
 
 
+def _install_part(
+    folder: Path, install: str, timeout: int, env: Optional[dict]
+) -> Optional[str]:
+    """Run a part's declared install in its folder (argument list, no
+    shell). ``None`` on success, else why it did not succeed."""
+    import shlex
+
+    try:
+        argv = shlex.split(install)
+    except ValueError as exc:
+        return f"could not be split into arguments ({exc})"
+    if not argv:
+        return "is empty"
+    try:
+        run_env = (
+            dict(env) if env is not None
+            else project_command_environment(folder, load_launch_declaration(folder))
+        )
+        done = process_group.run_project_command(
+            argv, cwd=str(folder), capture_output=True, text=True,
+            timeout=timeout, env=run_env,
+        )
+    except subprocess.TimeoutExpired:
+        return f"ran out of its {timeout} seconds"
+    except OSError as exc:
+        return f"could not start: {exc.strerror or type(exc).__name__}"
+    if done.returncode != 0:
+        tail = ((done.stderr or "") + (done.stdout or "")).strip()[-600:]
+        return f"failed (exit {done.returncode}): {tail or '(no output)'}"
+    return None
+
+
 def _classify(returncode: int) -> Tuple[str, str]:
     if returncode == 0:
         return "passed", "verification command exited 0"
@@ -253,6 +285,19 @@ def run_completion_verification(
                 returncode=None, detail=str(exc), source=source,
             )))
             continue
+        if part.toolchain is not None and part.toolchain.install:
+            problem = _install_part(
+                folder, part.toolchain.install,
+                min(part.toolchain.install_timeout, timeout), env,
+            )
+            if problem is not None:
+                results.append((label, VerificationResult(
+                    status="unverified", command=part.test, cwd=part.cwd,
+                    returncode=None, source=source,
+                    detail=f"the declared install (`{part.toolchain.install}`) "
+                    f"for part {label} {problem}",
+                )))
+                continue
         results.append(
             (label, _run_one(folder, part.test, source, timeout, env, own_process_group))
         )

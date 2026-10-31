@@ -241,16 +241,15 @@ class TestLoadWithComponents:
             assert load_toolchain_declaration(tmp_path) is None
         assert any(r.levelname == "ERROR" for r in caplog.records)
 
-    def test_a_component_install_is_named_as_declared_but_not_run(
+    def test_a_component_install_is_no_longer_called_not_run(
         self, tmp_path, caplog
     ):
-        """SCOPED OUT, LOUDLY: per-component install is not wired this lane;
-        the declared install stays root-only (design §G)."""
+        """31 October 2026: a part's install runs before its tests
+        (``test_part_install.py``), so loading says nothing about it."""
         _write_config(tmp_path, STUDY_TUTOR_SHAPE)
         with caplog.at_level("WARNING"):
             load_toolchain_declaration(tmp_path)
-        messages = [r.getMessage() for r in caplog.records]
-        assert any("DECLARED BUT NOT RUN" in m and "app" in m for m in messages)
+        assert not any("NOT RUN" in r.getMessage() for r in caplog.records)
 
     def test_a_flat_declaration_is_unchanged(self, tmp_path):
         """Back-compat: ``components`` is Optional and defaults to None."""

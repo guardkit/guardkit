@@ -145,12 +145,11 @@ pin is one whole-model ``model_dump`` read back by one ``model_validate``, so a
 nested field round-trips byte-for-byte with ZERO snapshot changes. The Player
 still cannot edit a component's test command mid-build.
 
-**Scoped OUT of this lane, loudly:** a component's ``install:`` is accepted by
-the schema but is NOT consumed. The declared install stays ROOT-ONLY
-(``environment_bootstrap._scan_directory``) so depth-1 subpackage inference in
-every other monorepo in the estate is preserved by construction (design §G);
-:func:`load_toolchain_declaration` logs a WARNING naming any component install
-that will not be run.
+**A part's ``install``** (a component's or a ``parts:`` entry's) runs before
+that part's tests, in its folder: the first time the part is tested in a
+worktree, and again only when the files directly in its folder have changed
+(31 October 2026). A failed install is "the check could not run". The root
+``install`` stays the build's own bootstrap (``environment_bootstrap``).
 """
 
 from __future__ import annotations
@@ -616,7 +615,6 @@ def _declaration_from_text(
             config_path,
         )
         return None
-    _warn_about_unconsumed_component_installs(declaration, config_path)
     return declaration
 
 
@@ -641,39 +639,6 @@ def _raise_for_refused_component_cwd(cause: Any, config_path: Path) -> None:
                 component=component,
                 cwd=written if isinstance(written, str) else None,
             )
-
-
-def _warn_about_unconsumed_component_installs(
-    declaration: ToolchainDeclaration, config_path: Path
-) -> None:
-    """SCOPED OUT, LOUDLY: a component's ``install:`` is NOT run.
-
-    The declared install is resolved by ``ProjectEnvironmentDetector``, which
-    is repo-keyed and per-task-blind (it never sees which component a task
-    selected), and it is deliberately ROOT-ONLY so depth-1 subpackage
-    inference in every other monorepo in the estate stays untouched (design
-    §G, ``environment_bootstrap.py`` ``_scan_directory``). Threading a
-    per-task component through the bootstrap chain is a different change; the
-    verdict-bearing half — command RESOLUTION and its ``cwd`` — is what this
-    seam delivers. A repo that declares a component install must not be left
-    guessing why nothing installed, so say it out loud, once, at load.
-    """
-    if not declaration.components:
-        return
-    named = sorted(
-        name for name, comp in declaration.components.items() if comp.install
-    )
-    if not named:
-        return
-    logger.warning(
-        "`toolchain.components.%s.install` in %s is DECLARED BUT NOT RUN — "
-        "per-component install is scoped OUT of the per-component toolchain "
-        "seam. The declared install stays ROOT-ONLY (`toolchain.install`); a "
-        "component's dependencies are installed by depth-1 manifest inference "
-        "or not at all. The component's `test:` and `cwd:` ARE honoured.",
-        ", ".join(named),
-        config_path,
-    )
 
 
 # =========================================================================

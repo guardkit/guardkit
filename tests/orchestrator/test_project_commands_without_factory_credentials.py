@@ -1106,6 +1106,11 @@ ALLOWED: Dict[Tuple[str, str], str] = {
         "with the helper unless the caller hands in the one it built with the "
         "same helper; every call is checked"
     ),
+    ("orchestrator/completion_verification.py", "_install_part"): (
+        "a part's declared install in the full check: builds its environment "
+        "with the helper unless the caller hands in the one it built with the "
+        "same helper; every call is checked"
+    ),
     ("orchestrator/process_group.py", "run_in_own_group"): (
         "generic runner (a process group of its own); every call is checked"
     ),
@@ -1205,6 +1210,10 @@ GENERIC_RUNNERS: Dict[Tuple[str, str], Dict[str, Any]] = {
     },
     ("orchestrator/completion_verification.py", "_run_one"): {
         "names": {"_run_one"},
+        "scope": {"orchestrator/completion_verification.py"},
+    },
+    ("orchestrator/completion_verification.py", "_install_part"): {
+        "names": {"_install_part"},
         "scope": {"orchestrator/completion_verification.py"},
     },
     ("orchestrator/process_group.py", "run_in_own_group"): {

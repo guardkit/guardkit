@@ -30,10 +30,12 @@ Example:
     ...     print("Coach approved implementation")
 """
 
+import hashlib
 import json
 import logging
 import os
 import re
+import shlex
 import stat
 import subprocess
 import sys
@@ -582,6 +584,29 @@ class IndependentTestResult:
             duration_seconds=duration_seconds,
             signal_absent=True,
         )
+
+
+def _folder_fingerprint(folder: Path) -> str:
+    """A fingerprint of the files directly in ``folder`` (not subfolders):
+    each name with its content, or its link target for a symbolic link."""
+    digest = hashlib.sha256()
+    try:
+        entries = sorted(folder.iterdir(), key=lambda e: e.name)
+    except OSError:
+        return ""
+    for entry in entries:
+        try:
+            if entry.is_symlink():
+                body = ("link:" + os.readlink(entry)).encode("utf-8", "surrogateescape")
+            elif entry.is_file():
+                body = entry.read_bytes()
+            else:
+                continue
+        except OSError:
+            body = b"<unreadable>"
+        digest.update(entry.name.encode("utf-8", "surrogateescape") + b"\0")
+        digest.update(hashlib.sha256(body).digest())
+    return digest.hexdigest()
 
 
 def _part_outcome(result: IndependentTestResult) -> str:
@@ -1432,6 +1457,102 @@ class CoachValidator:
                     reported.add(path.as_posix())
         return sorted(reported), "the builder's report"
 
+    #: Where each part's last install is remembered (the folder's dependency
+    #: files' fingerprint), per worktree, outside the worktree.
+    _PART_INSTALLS_RECORD = "part-installs"
+
+    def _part_installs_path(self) -> Path:
+        return (
+            TaskArtifactPaths.task_private_dir(
+                self._PART_INSTALLS_RECORD, self.worktree_path
+            )
+            / "installs.json"
+        )
+
+    def _install_part_if_due(
+        self, part: DeclaredPart
+    ) -> Optional[IndependentTestResult]:
+        """Run a component's or pattern part's declared ``install`` when due.
+
+        Due the first time the part is tested in this worktree, and again only
+        when its dependency files have changed since: the files directly in
+        the part's folder (no subfolders), fingerprinted by name and content.
+        GuardKit names no file; whatever a project keeps there counts. The
+        install runs in the part's folder as the argument list the text
+        splits into, with the part's ``install_timeout``. The root component
+        is installed by the build's own bootstrap and is not run here.
+
+        Returns ``None`` when nothing was due or the install succeeded, and
+        "the check could not run" (naming the part and the install) when it
+        failed, timed out or could not start (31 October 2026).
+        """
+        toolchain = part.toolchain
+        if toolchain is None or not toolchain.install:
+            return None
+        command = toolchain.install
+
+        def could_not_run(why: str) -> IndependentTestResult:
+            return IndependentTestResult.could_not_run(
+                test_command=command,
+                detail=f"the declared install (`{command}`) for part {part.name} {why}",
+                duration_seconds=0.0,
+                allow_worktree_fallback=False,
+            )
+
+        try:
+            folder = resolve_component_cwd(self.worktree_path, toolchain.cwd)
+        except ValueError as exc:
+            return could_not_run(f"was not run: {exc}")
+        key = f"{self.worktree_path.resolve()}::{toolchain.cwd}"
+        record_path = self._part_installs_path()
+        try:
+            records = json.loads(record_path.read_text(encoding="utf-8"))
+            if not isinstance(records, dict):
+                records = {}
+        except (OSError, ValueError):
+            records = {}
+        if records.get(key) == _folder_fingerprint(folder):
+            return None
+        try:
+            argv = shlex.split(command)
+        except ValueError as exc:
+            return could_not_run(f"could not be split into arguments ({exc})")
+        if not argv:
+            return could_not_run("is empty")
+        logger.info(
+            "Installing part %s before its tests: %s (in %s)",
+            part.name, command, toolchain.cwd,
+        )
+        try:
+            done = process_group.run_project_command(
+                argv,
+                cwd=str(folder),
+                capture_output=True,
+                text=True,
+                timeout=toolchain.install_timeout,
+                env=_checker_declared_env(self),
+            )
+        except subprocess.TimeoutExpired:
+            return could_not_run(
+                f"ran out of its {toolchain.install_timeout} seconds"
+            )
+        except OSError as exc:
+            return could_not_run(
+                f"could not start: {exc.strerror or type(exc).__name__}"
+            )
+        if done.returncode != 0:
+            tail = ((done.stderr or "") + (done.stdout or "")).strip()[-600:]
+            return could_not_run(
+                f"failed (exit {done.returncode}): {tail or '(no output)'}"
+            )
+        records[key] = _folder_fingerprint(folder)
+        try:
+            record_path.parent.mkdir(parents=True, exist_ok=True)
+            record_path.write_text(json.dumps(records, indent=2), encoding="utf-8")
+        except OSError as exc:
+            logger.warning("Could not remember the install of part %s: %s", part.name, exc)
+        return None
+
     def run_changed_parts(
         self,
         task_work_results: Optional[Dict[str, Any]] = None,
@@ -1474,6 +1595,10 @@ class CoachValidator:
         try:
             for part in parts:
                 self._use_part(part)
+                not_installed = self._install_part_if_due(part)
+                if not_installed is not None:
+                    runs.append((part, not_installed))
+                    continue
                 runs.append(
                     (
                         part,
