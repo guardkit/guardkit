@@ -81,7 +81,6 @@ from guardkit.orchestrator.agent_invoker import (
     AgentInvocationResult,
     DEFAULT_SDK_TIMEOUT,
 )
-from guardkit.orchestrator import evidence_repos as evidence_repos_lib
 from guardkit.orchestrator.evidence_repos import EvidenceRepo
 from guardkit.orchestrator.failing_test_feedback import (
     MUST_FIX_MARKER,
@@ -5932,8 +5931,9 @@ class AutoBuildOrchestrator:
         returns a ``CoachEvidenceBundle``; the reviewer (the LLM Coach) is
         invoked on every turn with it and its verdict is advice (27 October
         2026). When gathering raises, the reviewer runs without the bundle.
-        A declared sibling repository's tests that ran and failed send the
-        turn back before the reviewer runs (``_evidence_repo_gate``).
+        A declared sibling repository the task changed is one more part of
+        that check (31 October 2026), so its result is handled exactly as a
+        part's: no separate gate.
         """
         import asyncio
 
@@ -5962,6 +5962,9 @@ class AutoBuildOrchestrator:
             baseline_commit=getattr(
                 getattr(self, "task_work_scope", None), "baseline_commit", None
             ),
+            # Each sibling repository's starting commit: a sibling the task
+            # changed is tested as one more part (31 October 2026).
+            evidence_baselines=self._sibling_baselines(),
         )
 
         # Step 1: gather evidence bundle. Never falls back to validate() on
@@ -6056,20 +6059,6 @@ class AutoBuildOrchestrator:
         )
         if stop is not None:
             return stop
-
-        # TASK-AB-XREPOEV01 (AC-002): run the Coach's independent tests in any
-        # declared sibling repo, attach the results to the evidence bundle (so
-        # they reach coach_turn_N.json and the Coach prompt), and block the
-        # turn deterministically when a declared sibling suite failed or could
-        # not run. A red sibling suite must not be approved over by the LLM
-        # Coach's leniency (the BDDW-002 false-green). Shared with the legacy
-        # path via _evidence_repo_gate so neither Coach implementation can
-        # bypass it.
-        gate_result = self._evidence_repo_gate(
-            validator, task_id, turn, worktree, start_time, bundle=evidence_bundle
-        )
-        if gate_result is not None:
-            return gate_result
 
         # Step 2: invoke LLM Coach via AgentInvoker, threading the bundle.
         # Part C (this PR) extends invoke_coach + _build_coach_prompt to
@@ -6184,6 +6173,19 @@ class AutoBuildOrchestrator:
                 error=f"LLM Coach invocation crashed: {sdk_error}",
             )
 
+    def _sibling_baselines(self) -> Dict[str, Optional[str]]:
+        """Each declared sibling repository's starting commit for this task,
+        by its root, from the task's admitted scope (31 October 2026). Empty
+        when there is no scope: every sibling is then tested."""
+        scope = getattr(self, "task_work_scope", None)
+        try:
+            return {
+                str(repo.root): repo.baseline
+                for repo in tuple(getattr(scope, "repositories", ()) or ())[1:]
+            }
+        except (TypeError, AttributeError):
+            return {}
+
     def _check_could_not_run_stop(
         self,
         evidence_bundle: Optional["CoachEvidenceBundle"],
@@ -6229,55 +6231,6 @@ class AutoBuildOrchestrator:
             report={},
             duration_seconds=time.time() - start_time,
             error=detail,
-        )
-
-    def _evidence_repo_gate(
-        self,
-        validator: "CoachValidator",
-        task_id: str,
-        turn: int,
-        worktree: Worktree,
-        start_time: float,
-        bundle: Optional["CoachEvidenceBundle"] = None,
-    ) -> Optional[AgentInvocationResult]:
-        """Run declared sibling-repo tests (TASK-AB-XREPOEV01 AC-002).
-
-        Runs each declared repo's ``test_command``; attaches the results to
-        ``bundle`` (so they reach ``coach_turn_N.json`` and the Coach prompt);
-        and returns a feedback result when a declared suite ran and failed.
-        Returns None otherwise.
-        """
-        try:
-            results = validator.run_evidence_repo_tests()
-        except Exception as exc:  # noqa: BLE001 — sibling tests must not crash Coach
-            logger.warning(
-                "Evidence-repo test execution failed for %s turn %s: %s "
-                "(continuing without sibling-repo gate).",
-                task_id, turn, exc,
-            )
-            return None
-        if not results:
-            return None
-        if bundle is not None:
-            try:
-                bundle.evidence_repo_tests = [r.to_dict() for r in results]
-            except Exception:  # noqa: BLE001 — attachment is best-effort
-                pass
-        blocking_reason = evidence_repos_lib.evidence_repo_tests_blocking_reason(
-            results
-        )
-        if blocking_reason is None:
-            return None
-        logger.warning(
-            "Sibling-repo tests block %s turn %s:\n%s",
-            task_id, turn, blocking_reason,
-        )
-        return self._emit_synthetic_coach_feedback(
-            task_id=task_id,
-            turn=turn,
-            worktree=worktree,
-            rationale=blocking_reason,
-            start_time=start_time,
         )
 
     def _attach_whole_feature_check(
@@ -6430,67 +6383,6 @@ class AutoBuildOrchestrator:
     # R1 DE-WIRE (Rich 08-14): _bdd_authoring_sweep_gate
     # (TASK-AB-BDDAUTHOR01) removed — the factory no longer executes
     # pytest-bdd glue sweeps on any Coach path.
-
-    def _emit_synthetic_coach_feedback(
-        self,
-        *,
-        task_id: str,
-        turn: int,
-        worktree: Worktree,
-        rationale: str,
-        start_time: float,
-        category: str = "evidence_repo_tests_failed",
-    ) -> AgentInvocationResult:
-        """Write a feedback coach_turn_N.json and return its result.
-
-        Used when a declared sibling repository's tests ran and failed
-        (``_evidence_repo_gate``): the turn goes back to the Player with the
-        failure, and the reviewer is not run.
-        """
-
-        from guardkit.orchestrator.paths import TaskArtifactPaths
-
-        duration = time.time() - start_time
-        decision_path = TaskArtifactPaths.private_artifact_path(
-            task_id, f"coach_turn_{turn}.json", worktree.path
-        )
-        decision_path.parent.mkdir(parents=True, exist_ok=True)
-        synthetic = {
-            "task_id": task_id,
-            "turn": turn,
-            "decision": "feedback",
-            "issues": [
-                {
-                    "severity": "must_fix",
-                    "category": category,
-                    "description": rationale,
-                },
-            ],
-            "rationale": rationale,
-            "coach_primary_synthetic_feedback": True,
-        }
-        try:
-            with open(decision_path, "w") as f:
-                json.dump(synthetic, f, indent=2)
-            logger.info(
-                "Wrote feedback decision to %s (rationale: %s)",
-                decision_path, rationale,
-            )
-        except OSError as write_exc:
-            logger.error(
-                "Failed to write feedback decision to %s: %s",
-                decision_path, write_exc,
-            )
-
-        return AgentInvocationResult(
-            task_id=task_id,
-            turn=turn,
-            agent_type="coach",
-            success=True,
-            report=synthetic,
-            duration_seconds=duration,
-            error=None,
-        )
 
     def _merge_evidence_test_signal_into_report(
         self,

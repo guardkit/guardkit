@@ -2,11 +2,9 @@
 Unit tests for AutoBuild synthetic report observability and enrichment.
 
 Tests logging, flagging, and file-existence promise generation for synthetic
-recovery reports (TASK-ASF-004 + TASK-ASF-006), and the sibling-repository
-send-back report.
+recovery reports (TASK-ASF-004 + TASK-ASF-006).
 """
 
-import json
 import logging
 from pathlib import Path
 from unittest.mock import Mock
@@ -632,59 +630,7 @@ def test_git_analysis_logging_differs_from_scaffolding(
     assert not any("file-existence promises" in m for m in warnings)
 
 
-class TestSyntheticCoachFeedback:
-    """``_emit_synthetic_coach_feedback``: the sibling-repository send-back.
-
-    Used when a declared sibling repository's tests ran and failed; the
-    reviewer is not run and the turn goes back with the failure.
-    """
-
-    _RATIONALE = "sibling suite failed"
-
-    def _emit(self, orchestrator, tmp_path, **kwargs):
-        worktree = Mock()
-        worktree.path = tmp_path
-        return orchestrator._emit_synthetic_coach_feedback(
-            task_id="TASK-CTL-001",
-            turn=2,
-            worktree=worktree,
-            rationale=self._RATIONALE,
-            start_time=0.0,
-            **kwargs,
-        )
-
-    def test_default_report_shape(self, orchestrator, tmp_path):
-        """The whole report, and the same report written to coach_turn_N.json."""
-        result = self._emit(orchestrator, tmp_path)
-
-        expected = {
-            "task_id": "TASK-CTL-001",
-            "turn": 2,
-            "decision": "feedback",
-            "issues": [
-                {
-                    "severity": "must_fix",
-                    "category": "evidence_repo_tests_failed",
-                    "description": self._RATIONALE,
-                }
-            ],
-            "rationale": self._RATIONALE,
-            "coach_primary_synthetic_feedback": True,
-        }
-        assert result.report == expected
-        written = list(tmp_path.rglob("coach_turn_2.json"))
-        assert len(written) == 1
-        assert json.loads(written[0].read_text()) == expected
-
-    def test_decision_is_feedback(self, orchestrator, tmp_path):
-        result = self._emit(orchestrator, tmp_path, category="other")
-        assert result.report["decision"] == "feedback"
-        assert result.report["issues"][0]["severity"] == "must_fix"
-
-    def test_category_override_names_the_real_blocker(
-        self, orchestrator, tmp_path
-    ):
-        result = self._emit(
-            orchestrator, tmp_path, category="direct_mode_gate"
-        )
-        assert result.report["issues"][0]["category"] == "direct_mode_gate"
+# TestSyntheticCoachFeedback covered ``_emit_synthetic_coach_feedback``, whose
+# only caller was the separate sibling-repository gate. Both were removed on
+# 31 October 2026: a sibling the task changed is now a part of the task's
+# check, and its failure is sent back as a part's is.

@@ -27,10 +27,12 @@ a cross-repo contract scattered across files silently rots.
 
 Sibling rules honoured here:
 
-- ``.claude/rules/absence-of-failure-is-not-success.md`` -- an undeclared or
-  un-runnable evidence repo is **absent** signal, never a silent pass. A
-  declared test command that cannot run surfaces as feedback, not approval
-  (see :class:`EvidenceTestResult.ran`).
+- ``.claude/rules/absence-of-failure-is-not-success.md`` -- a sibling the
+  task changed is one more part of the task's check (31 October 2026,
+  ``CoachValidator.run_changed_parts``): its declared ``test_command`` runs
+  as declared, a failure or timeout goes back to the builder, a command that
+  could not run (or none declared) stops the task, and only a pass allows
+  approval. Nothing here runs a test.
 - ``.claude/rules/path-string-mismatch-is-not-dishonesty.md`` -- an
   unresolvable repo-qualified path (unknown repo name) is fail-open, never a
   new false-red. Consumers resolve only declared repos and skip the rest.
@@ -84,9 +86,9 @@ class EvidenceRepo:
         root: Absolute path to the sibling repo's working tree. The
             orchestrator runs ``git`` and the declared ``test_command`` here.
         test_command: Optional per-repo command the Coach runs independently
-            to verify sibling-repo work (AC-002). ``None`` means "no
-            independent test for this repo" -- which is absent signal, NOT a
-            pass (see :class:`EvidenceTestResult`).
+            to verify sibling-repo work (AC-002). ``None`` means nothing is
+            declared: when the task changed this repo, its check could not
+            run, and the task stops (31 October 2026).
         interpreter: An ``interpreter:`` field the declaration carries. No
             longer applied (31 October 2026): the ``test_command`` runs
             exactly as declared, so a repo names its interpreter there. Kept
@@ -118,44 +120,6 @@ class EvidenceRepoChanges:
     def all_qualified(self) -> List[str]:
         """Every qualified path (modified + created), de-duplicated and sorted."""
         return sorted(set(self.modified) | set(self.created))
-
-
-@dataclass
-class EvidenceTestResult:
-    """Result of the Coach independently running a sibling repo's tests (AC-002).
-
-    The ``ran`` / ``passed`` split is load-bearing: a declared test command
-    that could not run (``ran=False``) is **absent** signal and must surface
-    as feedback, never be read as a pass. Only ``ran=True and passed=False``
-    is a genuine failure, and ``ran=True and passed=True`` a genuine pass.
-    See ``.claude/rules/absence-of-failure-is-not-success.md``.
-
-    Attributes:
-        repo_name: The evidence repo's qualifier name.
-        command: The test command that was (or would have been) executed.
-        ran: True only if the command actually executed to completion.
-        passed: True only if it ran AND exited 0.
-        returncode: Process exit code, or None if it never ran.
-        output_summary: Truncated combined stdout/stderr for the evidence bundle.
-    """
-
-    repo_name: str
-    command: Optional[str]
-    ran: bool
-    passed: bool
-    returncode: Optional[int] = None
-    output_summary: str = ""
-
-    def to_dict(self) -> Dict[str, Any]:
-        """JSON-serialisable form for the evidence bundle (coach/player turn)."""
-        return {
-            "repo_name": self.repo_name,
-            "command": self.command,
-            "ran": self.ran,
-            "passed": self.passed,
-            "returncode": self.returncode,
-            "output_summary": self.output_summary,
-        }
 
 
 # ============================================================================
@@ -491,46 +455,10 @@ def qualified_paths_for_changes(
     return sorted(set(modified)), sorted(set(created))
 
 
-# ============================================================================
-# Independent per-repo tests (AC-002)
-# ============================================================================
-
-def evidence_repo_tests_blocking_reason(
-    results: List[EvidenceTestResult],
-) -> Optional[str]:
-    """Decide whether sibling-repo test results should send the turn back.
-
-    Returns a feedback string naming the repositories whose declared test
-    suite ran and failed; None otherwise. A suite that could not run, or a
-    repository with no declared command, sends nothing back.
-    """
-    failed = [r for r in results if r.command and r.ran and not r.passed]
-    if not failed:
-        return None
-    lines = [
-        f"- {r.repo_name}: sibling-repo tests FAILED (exit {r.returncode}) "
-        f"for `{r.command}`"
-        for r in failed
-    ]
-    return (
-        "Sibling-repo (evidence_repos) independent tests did not pass:\n"
-        + "\n".join(lines)
-    )
-
-
-def _truncate(text: str, max_length: int = 4000) -> str:
-    """Truncate test output for the evidence bundle, keeping the tail."""
-    text = text.strip()
-    if len(text) <= max_length:
-        return text
-    return "...[truncated]...\n" + text[-max_length:]
-
-
 __all__ = [
     "QUALIFIER_SEP",
     "EvidenceRepo",
     "EvidenceRepoChanges",
-    "EvidenceTestResult",
     "qualify",
     "is_qualified",
     "split_qualified",
@@ -541,5 +469,4 @@ __all__ = [
     "detect_repo_changes",
     "detect_all_repo_changes",
     "qualified_paths_for_changes",
-    "evidence_repo_tests_blocking_reason",
 ]

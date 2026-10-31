@@ -474,7 +474,6 @@ def _call(orch: AutoBuildOrchestrator, worktree: Worktree) -> AgentInvocationRes
         validator = MagicMock()
         validator.gather_evidence.return_value = _bundle()
         validator_class.return_value = validator
-        orch._evidence_repo_gate = MagicMock(return_value=None)  # type: ignore[method-assign]
         result = orch._invoke_coach_safely(
             task_id="TASK-PD-010", turn=1, requirements="reqs",
             player_report={"files_modified": []}, worktree=worktree,

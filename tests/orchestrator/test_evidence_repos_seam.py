@@ -127,14 +127,23 @@ class TestEvidenceContractThreading:
         src = _inspect.getsource(feature_orchestrator)
         assert "evidence_repos=self._evidence_repos_resolved" in src
 
-    def test_the_coach_path_runs_the_sibling_test_gate(self):
-        # Regression guard (review finding): the Coach path must run the
-        # AC-002 gate, or a declared sibling test_command is silently ignored
-        # (a BDDW-002 false-green re-opens). The legacy Coach path was
-        # removed in the 27 October 2026 cull, so one call site remains.
+    def test_the_coach_path_tests_the_siblings_the_task_changed(self):
+        # Regression guard (review finding): the Coach path must test a
+        # changed sibling, or a declared sibling test_command is silently
+        # ignored (a BDDW-002 false-green re-opens). The separate sibling gate
+        # this used to look for was removed on 31 October 2026: a changed
+        # sibling is now a part of the task's check, so the guard looks for
+        # that, and for the starting commits that decide what changed.
         import inspect as _inspect
 
         from guardkit.orchestrator import autobuild
+        from guardkit.orchestrator.quality_gates.coach_validator import (
+            CoachValidator,
+        )
 
+        assert "self._changed_siblings()" in _inspect.getsource(
+            CoachValidator.run_changed_parts
+        )
         src = _inspect.getsource(autobuild)
-        assert src.count("self._evidence_repo_gate(") >= 1
+        assert "evidence_baselines=" in src
+        assert "evidence_repos=self._evidence_repos,  # TASK-AB-XREPOEV01 (AC-002)" in src

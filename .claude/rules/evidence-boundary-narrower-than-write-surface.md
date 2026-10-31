@@ -171,8 +171,13 @@ rg "evidence boundary narrower|absence-of-failure|path-string-mismatch" .claude/
    `path-string-mismatch-is-not-dishonesty`): a qualified claim naming an
    *undeclared* repo resolves to nothing and is skipped, never a new
    false-red.
-5. **Keep a declared-but-unrunnable sibling test as absent signal**, surfaced
-   as feedback, never a silent pass (per `absence-of-failure-is-not-success`).
+5. **Judge a changed sibling exactly as a part of the task** (31 October
+   2026, replacing "keep a declared-but-unrunnable sibling test as absent
+   signal"): a sibling the task changed is one more part of the task's check
+   (`CoachValidator.run_changed_parts`). Its declared command runs as
+   written; a failure or timeout goes back to the builder, a check that could
+   not run (or nothing declared) stops the task, and only a pass allows
+   approval (per `absence-of-failure-is-not-success`).
 6. **Add a loud cross-repo seam test.** A feature that declares
    `evidence_repos` against an orchestrator that has dropped support must fail
    in CI, not silently degrade to absent-signal. See
@@ -191,8 +196,8 @@ rg -n "cwd=self\.worktree_path" guardkit/orchestrator/agent_invoker.py
 # Widened-boundary fingerprint: per-repo evidence detection threaded in
 rg -n "detect_all_repo_changes|qualified_paths_for_changes" guardkit/orchestrator/
 
-# Both-coach-paths gate fingerprint (the false-green half must gate too)
-rg -n "_evidence_repo_gate|run_evidence_repo_tests" guardkit/orchestrator/
+# Changed-sibling fingerprint (the false-green half must be tested too)
+rg -n "_changed_siblings|_run_sibling_tests|evidence_baselines" guardkit/orchestrator/
 
 # Seam-test fingerprint (fail-loud, not absent-signal)
 rg -n "evidence_repos" tests/orchestrator/test_evidence_repos_seam.py

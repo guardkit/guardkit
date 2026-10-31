@@ -443,42 +443,140 @@ class TestASiblingsExitCodeIsItsVerdict:
 
 
 # ---------------------------------------------------------------------------
-# blocking classifier (AC-002 gate semantics)
+# A sibling the task changed is judged like a part (31 October 2026)
 # ---------------------------------------------------------------------------
+#
+# TestBlockingReason tested ``evidence_repo_tests_blocking_reason``, the
+# separate sibling gate, which was removed: it let a timeout and a check that
+# could not run through to the reviewer and approval
+# (test_declared_but_unrunnable_does_not_block and test_no_command_does_not_block
+# kept exactly that). A sibling the task changed is now one more part of the
+# task's check, combined with its own parts: a failure or a timeout goes back
+# to the builder, a check that could not run stops the task, and only a pass
+# allows approval. A sibling the task did not change runs nothing, as a part
+# the task did not change runs nothing.
 
 
-class TestBlockingReason:
-    def _result(self, **kw):
-        base = dict(
-            repo_name="r", command="pytest", ran=True, passed=True, returncode=0,
-            output_summary="",
+class _Task:
+    """A worktree whose own root declares a passing test, and one sibling
+    repository, both real git repositories with a starting commit."""
+
+    def __init__(self, tmp_path: Path, test_command, *, timeout=None, changed=True):
+        self.worktree = tmp_path / "worktree"
+        _init_repo(self.worktree)
+        (self.worktree / "README.md").write_text("product\n")
+        self.base = _commit_all(self.worktree)
+        self.sibling = tmp_path / "sibling"
+        _init_repo(self.sibling)
+        (self.sibling / "lib.txt").write_text("v1\n")
+        self.sibling_base = _commit_all(self.sibling)
+        if changed:
+            (self.sibling / "lib.txt").write_text("v2\n")
+        self.repo = ev.EvidenceRepo(
+            name="sibling", root=self.sibling.resolve(), test_command=test_command
         )
-        base.update(kw)
-        return ev.EvidenceTestResult(**base)
+        self.timeout = timeout
 
-    def test_all_passing_does_not_block(self):
-        results = [self._result(passed=True)]
-        assert ev.evidence_repo_tests_blocking_reason(results) is None
+    def validator(self, baselines=True, toolchain_test="true"):
+        from guardkit.orchestrator.quality_gates.coach_validator import CoachValidator
+        from guardkit.orchestrator.toolchain_declaration import ToolchainDeclaration
 
-    def test_ran_and_failed_blocks(self):
-        results = [self._result(passed=False, returncode=1)]
-        reason = ev.evidence_repo_tests_blocking_reason(results)
-        assert reason is not None
-        assert "FAILED" in reason
-        assert "r:" in reason
+        return CoachValidator(
+            str(self.worktree),
+            test_timeout=self.timeout,
+            evidence_repos=[self.repo],
+            toolchain=ToolchainDeclaration(test=toolchain_test),
+            baseline_commit=self.base,
+            evidence_baselines=(
+                {str(self.sibling): self.sibling_base} if baselines else None
+            ),
+        )
 
-    def test_declared_but_unrunnable_does_not_block(self):
-        # 27 October 2026 cull: only a suite that ran and failed sends the
-        # turn back; a declared command that could not run does not.
-        results = [self._result(ran=False, passed=False, returncode=None,
-                                 output_summary="boom")]
-        assert ev.evidence_repo_tests_blocking_reason(results) is None
+    def check(self, **kw):
+        return self.validator(**kw).run_changed_parts()
 
-    def test_no_command_does_not_block(self):
-        # A repo with no declared command is out of scope, not a failure.
-        results = [self._result(command=None, ran=False, passed=False,
-                                 returncode=None)]
-        assert ev.evidence_repo_tests_blocking_reason(results) is None
 
-    def test_empty_results_do_not_block(self):
-        assert ev.evidence_repo_tests_blocking_reason([]) is None
+class TestASiblingIsJudgedLikeAPart:
+    def test_a_passing_sibling_allows_approval(self, tmp_path):
+        result = _Task(tmp_path, "true").check()
+        assert result.tests_passed is True
+        assert result.signal_absent is False
+        assert result.parts == [
+            {
+                "part": "sibling repository sibling",
+                "folder": str((tmp_path / "sibling").resolve()),
+                "command": "true",
+                "outcome": "passed",
+                "repository": "sibling",
+            }
+        ]
+
+    def test_a_failing_sibling_goes_back_to_the_builder(self, tmp_path):
+        # Was test_ran_and_failed_blocks: still a failure the builder is sent.
+        result = _Task(tmp_path, "exit 3").check()
+        assert result.tests_passed is False
+        assert result.check_could_not_run is False
+        assert result.failure_receipt() is not None
+        assert result.exit_code == 3
+
+    def test_a_timeout_is_a_failure_sent_to_the_builder(self, tmp_path):
+        # Was "timed out ... ran=False", which sent nothing back.
+        result = _Task(tmp_path, "sleep 10", timeout=1).check()
+        assert result.tests_passed is False
+        assert result.check_could_not_run is False
+        assert result.signal_absent is False
+        assert "timed out" in result.test_output_summary
+        assert "sibling repository sibling" in result.test_output_summary
+        assert result.failure_receipt() is not None
+
+    def test_nothing_declared_stops_the_task(self, tmp_path):
+        # Was test_no_command_does_not_block.
+        result = _Task(tmp_path, None).check()
+        assert result.check_could_not_run is True
+        assert "nothing declared" in result.check_could_not_run_detail
+        assert "sibling" in result.check_could_not_run_detail
+
+    def test_a_program_that_is_not_there_stops_the_task(self, tmp_path):
+        # Was test_declared_but_unrunnable_does_not_block.
+        result = _Task(tmp_path, "no-such-program-7f3a").check()
+        assert result.check_could_not_run is True
+        assert "no-such-program-7f3a" in result.check_could_not_run_detail
+
+    def test_a_failure_anywhere_wins_over_a_sibling_that_could_not_run(
+        self, tmp_path
+    ):
+        task = _Task(tmp_path, None)
+        (task.worktree / "README.md").write_text("changed\n")
+        result = task.check(toolchain_test="exit 1")
+        assert result.tests_passed is False
+        assert result.check_could_not_run is False
+        outcomes = {r["part"]: r["outcome"] for r in result.parts}
+        assert outcomes == {
+            "root": "failed",
+            "sibling repository sibling": "could not run",
+        }
+
+    def test_a_sibling_the_task_did_not_change_runs_nothing(self, tmp_path):
+        # Even one with nothing declared: it is not part of this task.
+        result = _Task(tmp_path, None, changed=False).check()
+        assert result.check_could_not_run is False
+        assert result.tests_passed is False
+        assert result.signal_absent is True
+        assert result.test_command == "skipped"
+
+    def test_a_commit_since_the_start_counts_as_a_change(self, tmp_path):
+        task = _Task(tmp_path, "exit 1", changed=False)
+        (task.sibling / "lib.txt").write_text("v3\n")
+        _commit_all(task.sibling)
+        result = task.check()
+        assert result.failure_receipt() is not None
+
+    def test_an_unknown_starting_commit_is_tested(self, tmp_path):
+        # Without its starting commit the sibling cannot be shown unchanged.
+        result = _Task(tmp_path, "exit 1", changed=False).check(baselines=False)
+        assert result.failure_receipt() is not None
+
+    def test_the_separate_gate_is_gone(self):
+        assert not hasattr(ev, "evidence_repo_tests_blocking_reason")
+        assert not hasattr(ev, "EvidenceTestResult")
+        assert not hasattr(ev, "run_repo_tests")

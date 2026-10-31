@@ -51,7 +51,7 @@ from typing import (
 
 from guardkit.lib.pytest_summary import parse_pytest_summary
 from guardkit.orchestrator import evidence_repos as evidence_repos_lib
-from guardkit.orchestrator.evidence_repos import EvidenceRepo, EvidenceTestResult
+from guardkit.orchestrator.evidence_repos import EvidenceRepo
 from guardkit.orchestrator.launch_declaration import (
     load_launch_declaration,
     load_launch_snapshot,
@@ -412,6 +412,22 @@ class IndependentTestResult:
         )
 
 
+@dataclass(frozen=True)
+class SiblingPart:
+    """A declared sibling repository the task changed, as one part of the
+    task's check (31 October 2026).
+
+    Its result is combined with the task's own parts by
+    :func:`combine_part_results`, so a sibling is judged exactly as a part
+    is: a failure (a timeout included) goes back to the builder, a check that
+    could not run stops the task, and only a pass allows approval.
+    """
+
+    name: str
+    cwd: str
+    repository: str
+
+
 def _folder_fingerprint(folder: Path) -> str:
     """A fingerprint of the files git tracks directly in ``folder`` (not
     subfolders): each name with its content as it is on disk, or its link
@@ -475,6 +491,11 @@ def combine_part_results(
             "folder": part.cwd,
             "command": result.test_command,
             "outcome": _part_outcome(result),
+            **(
+                {"repository": part.repository}
+                if isinstance(part, SiblingPart)
+                else {}
+            ),
         }
         for part, result in runs
     ]
@@ -692,6 +713,7 @@ class CoachValidator:
         feature_check_repair: Optional[Any] = None,  # whole-feature repair round
         toolchain: Optional["ToolchainDeclaration"] = None,  # TS-lane D.1b
         baseline_commit: Optional[str] = None,  # the task's starting commit
+        evidence_baselines: Optional[Dict[str, Optional[str]]] = None,
     ):
         """
         Initialize CoachValidator.
@@ -723,13 +745,11 @@ class CoachValidator:
             failure classification is more lenient for contention-related
             errors; it only shapes the words the builder is sent.
         evidence_repos : Optional[List[EvidenceRepo]]
-            Declared sibling repos whose independent tests the Coach runs
-            (TASK-AB-XREPOEV01 AC-002). When a repo carries a ``test_command``,
-            :meth:`run_evidence_repo_tests` executes it in that repo under the
-            repo's OWN interpreter (TASK-FIX-SIBTESTENV01 — never the guardkit
-            worktree venv); results reach the evidence bundle and a
-            ran-and-failed (or declared-but-unrunnable) suite blocks the turn.
-            Default None -> no sibling-repo test execution.
+            Declared sibling repos (TASK-AB-XREPOEV01 AC-002). A sibling the
+            task changed is one more part of the task's check
+            (:meth:`run_changed_parts`, 31 October 2026): its declared
+            ``test_command`` runs as declared in its root, and its result is
+            combined with the task's own parts. Default None -> no siblings.
         toolchain : Optional[ToolchainDeclaration]
             The repo's declared toolchain block (TS-lane D.1b). ``None``
             (default) loads the PRE-TURN-1 SNAPSHOT for ``task_id`` — never
@@ -741,6 +761,12 @@ class CoachValidator:
             The files changed since it decide which parts' tests run
             (after-task check redesign, 31 October 2026). ``None`` falls back
             to the files the builder's report lists.
+        evidence_baselines : Optional[Dict[str, Optional[str]]]
+            Each sibling repository's starting commit for this task, keyed by
+            its root (``TaskWorkScope.repositories``). A sibling with files
+            changed since it is tested; one whose starting commit is not
+            known, or whose changes git cannot list, is tested too, since it
+            cannot be shown to be unchanged (31 October 2026).
         """
         self.worktree_path = Path(worktree_path)
         self.test_command = test_command
@@ -790,6 +816,10 @@ class CoachValidator:
         # TASK-AB-XREPOEV01 (AC-002): declared sibling repos whose tests the
         # Coach runs independently. Empty -> no sibling test execution.
         self._evidence_repos: List[EvidenceRepo] = list(evidence_repos or [])
+        self._evidence_baselines: Dict[str, Optional[str]] = {
+            str(Path(root).resolve()): commit
+            for root, commit in (evidence_baselines or {}).items()
+        }
         # TASK-AB-COACHRUNPARITY01 (arm b): the feature smoke command (the
         # deliverable's real runtime entry point). When set AND wave_size == 1,
         # gather_evidence runs it and records a RuntimeParityResult so a
@@ -1012,9 +1042,19 @@ class CoachValidator:
                 raw_output_excerpt=(test_result.raw_output or "")[-500:],
             )
 
+        # The sibling repositories' runs are parts of ``independent_tests``
+        # (31 October 2026); their records are repeated here, where readers of
+        # the bundle have always found them.
+        sibling_records = [
+            record
+            for record in (getattr(test_result, "parts", None) or [])
+            if isinstance(record, dict) and record.get("repository")
+        ]
+
         return CoachEvidenceBundle(
             gathering_status=gathering_status,
             gathering_error=gathering_error,
+            evidence_repo_tests=sibling_records,
             independent_tests=test_result,
             independent_test_classification=independent_test_classification,
             task_type=task_type.value,
@@ -1045,22 +1085,25 @@ class CoachValidator:
         self._component_toolchain = toolchain
         self.test_timeout = self._timeout_for_part()
 
-    def _files_changed_since(self, commit: str) -> Optional[List[str]]:
-        """The product files changed in the worktree since ``commit``
-        (committed or not, created, changed or deleted), or ``None`` when git
-        cannot say. Factory records are left out, as the task's own change
-        list leaves them out."""
+    def _files_changed_since(
+        self, commit: str, root: Optional[Path] = None
+    ) -> Optional[List[str]]:
+        """The product files changed in the worktree (or a sibling
+        repository's ``root``) since ``commit`` (committed or not, created,
+        changed or deleted), or ``None`` when git cannot say. Factory records
+        are left out, as the task's own change list leaves them out."""
         from guardkit.orchestrator.task_work_scope import _product
 
+        where = root if root is not None else self.worktree_path
         try:
             diff = run_git(
                 ["diff", "--no-renames", "--name-only", "-z", commit],
-                cwd=self.worktree_path,
+                cwd=where,
                 timeout=60,
             )
             untracked = run_git(
                 ["ls-files", "--others", "--exclude-standard", "-z"],
-                cwd=self.worktree_path,
+                cwd=where,
                 timeout=60,
             )
         except (OSError, subprocess.SubprocessError) as exc:
@@ -1087,8 +1130,12 @@ class CoachValidator:
                     f"{self._baseline_commit[:10]}"
                 )
         reported: set = set()
+        siblings = {repo.name for repo in self._evidence_repos}
         for key in ("files_created", "files_modified", "files_deleted"):
             for name in (task_work_results or {}).get(key) or []:
+                qualified = evidence_repos_lib.split_qualified(str(name))
+                if qualified is not None and qualified[0] in siblings:
+                    continue  # a sibling's file: see _changed_siblings
                 path = Path(str(name))
                 if path.is_absolute():
                     try:
@@ -1217,7 +1264,8 @@ class CoachValidator:
             )
         files, source = self._changed_files(task_work_results)
         parts = parts_for_files(self._toolchain, self.worktree_path, files)
-        if not parts:
+        siblings = self._changed_siblings()
+        if not parts and not siblings:
             logger.info(
                 "%s: the %d changed file(s) (from %s) are in no declared part; "
                 "no tests to run.",
@@ -1230,10 +1278,12 @@ class CoachValidator:
                 ),
             )
         logger.info(
-            "%s: running the tests of %d changed part(s) (%s), from %s.",
+            "%s: running the tests of %d changed part(s) (%s), from %s, and "
+            "of %d changed sibling repositor%s.",
             self.task_id, len(parts), ", ".join(p.name for p in parts), source,
+            len(siblings), "y" if len(siblings) == 1 else "ies",
         )
-        runs: List[Tuple[DeclaredPart, IndependentTestResult]] = []
+        runs: List[Tuple[Any, IndependentTestResult]] = []
         try:
             for part in parts:
                 self._use_part(part)
@@ -1251,9 +1301,51 @@ class CoachValidator:
                         ),
                     )
                 )
+            # A changed sibling repository is one more part, judged the same
+            # way (31 October 2026): it used to be a separate gate that let a
+            # timeout or a check that could not run through to approval.
+            self._use_part(None)
+            for repo in siblings:
+                runs.append(
+                    (
+                        SiblingPart(
+                            name=f"sibling repository {repo.name}",
+                            cwd=str(repo.root),
+                            repository=repo.name,
+                        ),
+                        self._run_sibling_tests(repo),
+                    )
+                )
         finally:
             self._use_part(None)
         return combine_part_results(runs)
+
+    def _changed_siblings(self) -> List[EvidenceRepo]:
+        """The declared sibling repositories this task changed, whose tests
+        run with the task's own parts (31 October 2026).
+
+        A sibling with product files changed since its starting commit is
+        changed. One whose starting commit is not known, or whose changes git
+        cannot list, is tested as well: it cannot be shown to be unchanged.
+        """
+        changed: List[EvidenceRepo] = []
+        for repo in self._evidence_repos:
+            baseline = self._evidence_baselines.get(str(Path(repo.root).resolve()))
+            listed = (
+                self._files_changed_since(baseline, root=Path(repo.root))
+                if baseline
+                else None
+            )
+            if listed is None:
+                logger.info(
+                    "%s: what changed in sibling repository %s is not known; "
+                    "its tests run.",
+                    self.task_id, repo.name,
+                )
+                changed.append(repo)
+            elif listed:
+                changed.append(repo)
+        return changed
 
     def _gather_whole_feature_check(self) -> Optional[Dict[str, Any]]:
         """This Coach turn's run of the whole-feature check, or ``None``.
@@ -1774,51 +1866,18 @@ class CoachValidator:
             logger.error(f"Failed to read task-work results: {e}")
             return {"error": f"Failed to read task-work results: {e}"}
 
-    def run_evidence_repo_tests(self) -> List[EvidenceTestResult]:
-        """Run independent tests in every declared sibling repo (AC-002).
-
-        Each declared repo's ``test_command`` runs exactly as declared, in
-        that repo's root, through :meth:`_run_declared_command`: the same
-        path, environment rules, missing-program look-up and shell as the
-        task's own parts (31 October 2026). Nothing is looked for or put
-        first: no sibling ``.venv`` is probed and no ``python`` or ``pytest``
-        command is rewritten. A repo that needs a particular interpreter
-        names it in its ``test_command``; an ``interpreter:`` field is no
-        longer applied, and a repo that declares one is reported as not run,
-        saying so. Returns one :class:`EvidenceTestResult` per declared repo
-        (empty list when no sibling repos are declared).
-        """
-        if not self._evidence_repos:
-            return []
-        results: List[EvidenceTestResult] = []
-        for repo in self._evidence_repos:
-            run = self._run_sibling_tests(repo)
-            ran = not run.signal_absent
-            results.append(
-                EvidenceTestResult(
-                    repo_name=repo.name,
-                    command=repo.test_command,
-                    ran=ran,
-                    passed=ran and run.tests_passed,
-                    returncode=run.exit_code,
-                    output_summary=evidence_repos_lib._truncate(
-                        run.raw_output or run.test_output_summary or ""
-                    ),
-                )
-            )
-        for r in results:
-            logger.info(
-                "Evidence-repo tests for %s: ran=%s passed=%s rc=%s",
-                r.repo_name,
-                r.ran,
-                r.passed,
-                r.returncode,
-            )
-        return results
-
     def _run_sibling_tests(self, repo: EvidenceRepo) -> IndependentTestResult:
         """One declared sibling repository's tests, through the same path as
-        the task's own parts (:meth:`_run_declared_command`)."""
+        the task's own parts (:meth:`_run_declared_command`), with the root's
+        test time limit.
+
+        Nothing is looked for or put first (31 October 2026): no sibling
+        ``.venv`` is probed and no ``python`` or ``pytest`` command is
+        rewritten. A repository that needs an interpreter names it in its
+        ``test_command``; one that still declares ``interpreter:`` is told it
+        is no longer applied. No declared command is "the check could not
+        run: nothing declared", as for a part.
+        """
         if repo.interpreter:
             detail = (
                 f"sibling repository {repo.name} declares `interpreter: "
