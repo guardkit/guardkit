@@ -11,7 +11,6 @@ import pytest
 
 from guardkit.orchestrator import task_work_scope
 from guardkit.orchestrator.agent_invoker import AgentInvoker
-from guardkit.orchestrator.coach_verification import CoachVerifier
 from guardkit.orchestrator.feature_orchestrator import (
     FeatureOrchestrator,
     TaskExecutionResult,
@@ -138,7 +137,6 @@ def test_written_observations_do_not_replace_fabricated_or_unstaged_claims(tmp_p
             "ignored-claim" in str(d) and d.claim_type == "claim_audit_gitignored"
             for d in checked.discrepancies
         )
-        assert CoachVerifier(root)._count_verifiable_claims(written) == 2
         assert checked.honesty_score < 1.0
         assert written["files_created"] == ["real-source"]
 

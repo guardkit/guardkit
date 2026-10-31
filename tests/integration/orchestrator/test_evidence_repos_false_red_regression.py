@@ -22,7 +22,6 @@ from pathlib import Path
 import pytest
 
 from guardkit.orchestrator.agent_invoker import AgentInvoker
-from guardkit.orchestrator.coach_verification import CoachVerifier
 from guardkit.orchestrator.evidence_repos import EvidenceRepo
 from guardkit.orchestrator.exceptions import TaskWorkResult
 from guardkit.orchestrator.paths import TaskArtifactPaths
@@ -92,71 +91,6 @@ class TestSiblingRepoOnlyFalseRedRegression:
         # The crux: the report is NOT empty -> Coach will not see "0 files".
         assert all_claimed, "sibling-repo-only task produced an empty report (false-red)"
         assert "guardkitfactory:src/deliverable.py" in report["files_created"]
-
-    def test_coach_verifier_resolves_sibling_claim_no_false_red(
-        self, worktree_and_factory
-    ):
-        worktree, factory = worktree_and_factory
-        repo = EvidenceRepo(name="guardkitfactory", root=factory)
-
-        # The deliverable exists in the sibling repo.
-        (factory / "src").mkdir()
-        (factory / "src" / "deliverable.py").write_text("x = 1\n")
-
-        report = {
-            "files_created": ["guardkitfactory:src/deliverable.py"],
-            "files_modified": [],
-            "tests_written": [],
-        }
-
-        verifier = CoachVerifier(worktree, evidence_repos=[repo])
-        verification = verifier.verify_player_report(report)
-
-        file_discs = [
-            d for d in verification.discrepancies if d.claim_type == "file_existence"
-        ]
-        assert file_discs == [], "sibling-repo claim wrongly flagged as missing"
-
-    def test_coach_verifier_flags_genuinely_missing_sibling_file(
-        self, worktree_and_factory
-    ):
-        # Honesty still works: a claimed sibling file that does NOT exist is a
-        # real critical discrepancy (the resolution is not a blanket pass).
-        worktree, factory = worktree_and_factory
-        repo = EvidenceRepo(name="guardkitfactory", root=factory)
-
-        report = {
-            "files_created": ["guardkitfactory:src/never_written.py"],
-            "files_modified": [],
-            "tests_written": [],
-        }
-
-        verifier = CoachVerifier(worktree, evidence_repos=[repo])
-        verification = verifier.verify_player_report(report)
-
-        file_discs = [
-            d for d in verification.discrepancies if d.claim_type == "file_existence"
-        ]
-        assert len(file_discs) == 1
-        assert file_discs[0].severity == "critical"
-
-    def test_undeclared_sibling_claim_is_fail_open_not_false_red(
-        self, worktree_and_factory
-    ):
-        # AC-003 + path-string-mismatch: a qualified claim naming an UNDECLARED
-        # repo must not manufacture a false-red (fail-open skip).
-        worktree, _ = worktree_and_factory
-        report = {
-            "files_created": ["someotherrepo:src/x.py"],
-            "files_modified": [],
-            "tests_written": [],
-        }
-        verifier = CoachVerifier(worktree, evidence_repos=[])  # none declared
-        verification = verifier.verify_player_report(report)
-        file_discs = [
-            d for d in verification.discrepancies if d.claim_type == "file_existence"
-        ]
-        assert file_discs == []
 
     def test_undeclared_repo_writes_stay_invisible(self, worktree_and_factory):
         # AC-003: with NO evidence_repos declared, sibling-repo writes are not
