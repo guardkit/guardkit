@@ -1333,9 +1333,12 @@ class AutoBuildOrchestrator:
             if self._evidence_repos and self._evidence_repos != bound_repos:
                 raise ScopeUnavailable("Caller-supplied sibling footprint differs from the immutable source")
             self._evidence_repos = bound_repos
-        if standalone:
-            self._install_before_first_turn(Path(self._existing_worktree.path))
         with checkout_lease(self._existing_worktree.path, self._evidence_repos) as lease:
+            if standalone:
+                # Inside the lease (1 November 2026): a resume started while
+                # another build still owns this worktree waits here, and does
+                # not install under that build's builder or tests.
+                self._install_before_first_turn(Path(self._existing_worktree.path))
             self.task_work_scope = lease.admit(task_id, str(getattr(self, 'feature_id', '') or ''))
             if self._agent_invoker is not None:
                 self._agent_invoker.task_work_scope = self.task_work_scope
@@ -2980,7 +2983,9 @@ class AutoBuildOrchestrator:
         no such step: until 1 November 2026 its declared install first ran
         from the per-turn check (``_maybe_rerun_declared_install``), after
         the first builder turn, so that turn worked without the project's
-        dependencies. It now runs here, at setup.
+        dependencies. It now runs here, at setup, once this build holds the
+        checkout's writer lease (``checkout_lease``), so it never runs while
+        another build owns the worktree.
 
         The bootstrap's saved record makes a resumed build a skip when
         nothing the install serves has changed, and makes the first turn's

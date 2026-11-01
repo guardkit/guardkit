@@ -22,6 +22,8 @@ from __future__ import annotations
 
 import logging
 import subprocess
+import sys
+import threading
 from pathlib import Path
 from typing import List
 
@@ -114,10 +116,11 @@ def worktrees_seen(monkeypatch: pytest.MonkeyPatch) -> List[Path]:
     return seen
 
 
-def _run_task(caplog: pytest.LogCaptureFixture):
+def _run_task(caplog: pytest.LogCaptureFixture, *extra: str):
     with caplog.at_level(logging.INFO, logger="guardkit"):
         return CliRunner().invoke(
-            cli, ["autobuild", "task", TASK_ID, "--no-checkpoints"], catch_exceptions=False
+            cli, ["autobuild", "task", TASK_ID, "--no-checkpoints", *extra],
+            catch_exceptions=False,
         )
 
 
@@ -168,3 +171,63 @@ def test_a_standalone_task_runs_the_declared_install_before_the_first_turn(
     # The first turn's own check finds it already done for these files.
     again = rerun_declared_install_if_due(worktree)
     assert again is not None and again.skipped and again.success
+
+
+# Holds the checkout's writer lease in another process until a line arrives
+# on stdin, the way a still-running build holds it.
+_HOLD_LEASE = """
+import sys
+from guardkit.orchestrator.task_work_scope import checkout_lease
+with checkout_lease(sys.argv[1]):
+    print("held", flush=True)
+    sys.stdin.readline()
+"""
+
+
+def test_a_resume_installs_only_once_it_holds_the_checkout_lease(
+    repo: Path, worktrees_seen: List[Path], caplog: pytest.LogCaptureFixture
+) -> None:
+    """A ``--resume`` started while another build still owns the worktree
+    waits for the writer lease before it installs (Codex review R1,
+    1 November 2026): it never installs under that build's builder or
+    tests."""
+    first = _run_task(caplog)
+    assert first.exit_code == 0, first.output
+    worktree = worktrees_seen[0]
+    marker = worktree / "installed.txt"
+    # A declared install that is due when the build resumes.
+    (worktree / ".guardkit").mkdir(exist_ok=True)
+    (worktree / ".guardkit" / "config.yaml").write_text(
+        yaml.safe_dump({"toolchain": {"install": "touch installed.txt", "test": "true"}}),
+        encoding="utf-8",
+    )
+
+    holder = subprocess.Popen(
+        [sys.executable, "-c", _HOLD_LEASE, str(worktree)],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True,
+    )
+    try:
+        assert holder.stdout.readline().strip() == "held"
+        seen_while_held: List[bool] = []
+
+        def _release_later() -> None:
+            # Long enough for the resume to reach the lease and wait on it.
+            threading.Event().wait(2.0)
+            seen_while_held.append(marker.exists())
+            holder.stdin.write("release\n")
+            holder.stdin.flush()
+
+        releaser = threading.Thread(target=_release_later)
+        releaser.start()
+        resumed = _run_task(caplog, "--resume")
+        releaser.join(timeout=30)
+    finally:
+        if holder.poll() is None:
+            holder.kill()
+        holder.wait(timeout=30)
+
+    assert resumed.exit_code == 0, resumed.output
+    assert len(worktrees_seen) == 2 and worktrees_seen[1] == worktree
+    # Not installed while the other build held the lease; installed after.
+    assert seen_while_held == [False]
+    assert marker.exists()
