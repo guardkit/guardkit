@@ -358,3 +358,72 @@ class TestAFailedDeclaredInstall:
         with pytest.raises(ToolchainDeclarationError):
             declared_root_install(repo)
         assert install_declared(repo)["success"] is False
+
+
+# ---------------------------------------------------------------------------
+# A feature file's bootstrap_extras is said to be unused, not ignored silently
+# ---------------------------------------------------------------------------
+
+
+def _feature_file(root: Path, extras: list) -> None:
+    features_dir = root / ".guardkit" / "features"
+    features_dir.mkdir(parents=True, exist_ok=True)
+    data = {
+        "id": "FEAT-EXTRAS",
+        "name": "Extras feature",
+        "status": "planned",
+        "tasks": [
+            {
+                "id": "TASK-001",
+                "name": "A task",
+                "file_path": "tasks/backlog/TASK-001.md",
+                "status": "pending",
+            }
+        ],
+        "orchestration": {"parallel_groups": [["TASK-001"]]},
+    }
+    if extras:
+        data["bootstrap_extras"] = extras
+    (features_dir / "FEAT-EXTRAS.yaml").write_text(yaml.safe_dump(data), encoding="utf-8")
+
+
+class TestBootstrapExtrasIsSaidToBeUnused:
+    MESSAGE = (
+        "bootstrap_extras in FEAT-EXTRAS is no longer used: GuardKit installs "
+        "only what .guardkit/config.yaml toolchain declares"
+    )
+
+    def _load_for_a_build(self, root: Path, caplog) -> str:
+        """Run the build's setup phase as far as loading the feature (the
+        validation that follows is told to stop it), and return the log."""
+        from guardkit.orchestrator.feature_loader import (
+            FeatureLoader,
+            FeatureValidationError,
+        )
+
+        orchestrator = FeatureOrchestrator(
+            repo_root=root, skip_validation=True, worktree_manager=MagicMock()
+        )
+        with caplog.at_level("WARNING"), patch.object(
+            FeatureLoader, "validate_feature", return_value=["stop here"]
+        ), pytest.raises(FeatureValidationError):
+            orchestrator._setup_phase("FEAT-EXTRAS", "main")
+        return caplog.text
+
+    def test_a_feature_with_extras_is_told_once_in_plain_words(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        _feature_file(tmp_path, ["dev"])
+
+        text = self._load_for_a_build(tmp_path, caplog)
+
+        assert text.count(self.MESSAGE) == 1
+
+    def test_a_feature_without_extras_says_nothing(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        _feature_file(tmp_path, [])
+
+        text = self._load_for_a_build(tmp_path, caplog)
+
+        assert "bootstrap_extras" not in text

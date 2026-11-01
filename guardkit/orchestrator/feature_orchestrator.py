@@ -363,6 +363,26 @@ LATE_APPROVAL_GRACE_S: int = int(
 # ============================================================================
 
 
+def say_bootstrap_extras_unused(feature: Feature) -> Optional[str]:
+    """Say, once per build, that a feature's ``bootstrap_extras`` does nothing.
+
+    The pinned feature file format still reads ``bootstrap_extras``, but since
+    1 November 2026 GuardKit installs only what the project's
+    ``.guardkit/config.yaml`` toolchain declares, so the field is ignored. It
+    is said in plain words rather than ignored silently. Returns the sentence,
+    or ``None`` when the feature sets no extras.
+    """
+    if not getattr(feature, "bootstrap_extras", None):
+        return None
+    message = (
+        f"bootstrap_extras in {feature.id} is no longer used: GuardKit installs "
+        "only what .guardkit/config.yaml toolchain declares"
+    )
+    logger.warning(message)
+    console.print(f"[yellow]\u26a0[/yellow] {message}")
+    return message
+
+
 class FeatureOrchestrator:
     """
     Orchestrates multi-task feature execution with wave-based dependency ordering.
@@ -781,6 +801,7 @@ class FeatureOrchestrator:
         )
 
         console.print(f"[green]✓[/green] Loaded feature: {feature.name}")
+        say_bootstrap_extras_unused(feature)
         console.print(f"  Tasks: {len(feature.tasks)}")
         console.print(f"  Waves: {len(feature.orchestration.parallel_groups)}")
 
