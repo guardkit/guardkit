@@ -62,12 +62,6 @@
 tests/knowledge/test_performance_optimization.py::test_early_termination_priority_order
 tests/lib/agent_enhancement/test_enhancer_error_messages.py::TestValidationErrorMessage::test_error_includes_original_message
 tests/lib/agent_enhancement/test_enhancer_error_messages.py::TestValidationErrorMessage::test_error_includes_position
-tests/orchestrator/test_design_context_integration.py::test_player_prompt_includes_design_context_when_available
-tests/orchestrator/test_design_context_integration.py::test_player_prompt_includes_design_elements_in_context
-tests/orchestrator/test_design_context_integration.py::test_player_prompt_includes_design_tokens_in_context
-tests/orchestrator/test_design_context_integration.py::test_player_prompt_includes_prohibition_checklist
-tests/orchestrator/test_design_context_integration.py::test_player_prompt_unchanged_when_no_design_context
-tests/orchestrator/test_design_context_integration.py::test_player_prompt_with_design_context_and_feedback
 # ---------------------------------------------------------------------------
 # 2026-08-21 UN-QUARANTINED: tests/seam/test_autobuild_coach.py (all 10)
 # ---------------------------------------------------------------------------
@@ -101,45 +95,23 @@ tests/orchestrator/test_design_context_integration.py::test_player_prompt_with_d
 # STAYS RED (2026-08-21): stale assert_called_once_with(template_dir=...) — the
 # template_init() wrapper legitimately forwards four arguments now. The test's
 # expectation was never updated when the signature grew.
-tests/unit/test_agent_invoker.py::TestInvokeTaskWorkImplement::test_invoke_task_work_implement_mode_passed
-tests/unit/test_agent_invoker_sdk_turn_budget.py::TestCalculateSdkMaxTurns::test_complexity_scaling_at_complexity_1
-tests/unit/test_agent_invoker_session_resume.py::TestInvokeWithRoleCancelledSessionScan::test_captures_session_id_on_cancelled_error
-tests/unit/test_agent_invoker_session_resume.py::TestInvokeWithRoleSessionCapture::test_captures_session_id_from_result_message
-tests/unit/test_agent_invoker_session_resume.py::TestInvokeWithRoleSessionCapture::test_no_resume_kwarg_when_session_id_is_none
-tests/unit/test_agent_invoker_session_resume.py::TestInvokeWithRoleSessionCapture::test_resume_kwarg_passed_to_options
 tests/unit/test_autobuild_prompt_builders.py::TestPromptBuilderIntegration::test_implementation_prompt_loads_real_protocol
 tests/unit/test_autobuild_prompt_builders.py::TestSlimProtocolRouting::test_default_multiplier_uses_full_protocol
 tests/unit/test_autobuild_prompt_builders.py::TestSlimProtocolRouting::test_local_backend_uses_medium_protocol
 tests/unit/test_autobuild_prompt_builders.py::TestSlimProtocolRouting::test_multiplier_exactly_one_uses_full
 tests/unit/test_autobuild_prompt_builders.py::TestSlimProtocolRouting::test_multiplier_just_above_one_uses_medium
-tests/unit/test_coach_subprocess_tests.py::TestPytestUsesSystemExecutable::test_pytest_command_inherits_env
-tests/unit/test_config_error_fast_exit.py::TestExecuteTurnPropagatesConfigError::test_config_error_propagated_to_turn_record
-tests/unit/test_config_error_fast_exit.py::TestExecuteTurnPropagatesConfigError::test_normal_feedback_does_not_set_config_error
 tests/unit/test_docker_available_wiring.py::TestDockerAvailableWiring::test_docker_available_false_in_task_dict
 tests/unit/test_docker_available_wiring.py::TestDockerAvailableWiring::test_docker_available_true_in_task_dict
 tests/unit/test_feature_loader.py::TestSchemaValidationGaps::test_json_schema_comprehensive_validation
-tests/unit/test_generator_close_fix.py::TestGeneratorDrainAfterResultMessage::test_drain_loop_present_in_source
-tests/unit/test_generator_close_fix.py::TestGeneratorDrainAfterResultMessage::test_gen_none_skips_aclose_in_finally
-tests/unit/test_generator_close_fix.py::TestInvokeWithRoleGeneratorClose::test_aclose_timeout_prevents_blocking
-tests/unit/test_generator_close_fix.py::TestInvokeWithRoleGeneratorClose::test_generator_closed_on_exception
-tests/unit/test_generator_close_fix.py::TestInvokeWithRoleGeneratorClose::test_generator_closed_on_normal_exit
-tests/unit/test_generator_close_fix.py::TestInvokeWithRoleGeneratorClose::test_gen_reference_held_explicitly
-tests/unit/test_generator_close_fix.py::TestSdkCleanupHandlerPreserved::test_cleanup_handler_in_invoke_with_role
 tests/unit/test_graphiti_write_path_logging.py::TestOutcomeManagerLogging::test_capture_logs_graphiti_prefix_on_failure
 tests/unit/test_graphiti_write_path_logging.py::TestOutcomeManagerLogging::test_capture_logs_graphiti_prefix_on_success
 tests/unit/test_id_generator.py::test_generate_basic_id
-tests/unit/test_run3_stall_fixes.py::TestHybridMatchingFallback::test_hybrid_fallback_upgrades_file_existence_incomplete
-tests/unit/test_run3_stall_fixes.py::TestHybridMatchingFallback::test_hybrid_upgrades_rejected_criteria
-tests/unit/test_run3_stall_fixes.py::TestHybridMatchingFallback::test_validate_requirements_uses_hybrid
-tests/unit/test_sdk_session_config.py::TestInteractivePathNoRegression::test_invoke_with_role_always_uses_project_setting_sources
-tests/unit/test_sdk_session_config.py::TestTaskWorkImplementConfig::test_max_turns_uses_constant
 tests/unit/test_task_769d_ai_analyzer.py::TestCodebaseAnalyzerWithBridge::test_analyze_with_bridge_failure_falls_back
 tests/unit/test_task_769d_ai_analyzer.py::TestCodebaseAnalyzerWithBridge::test_analyze_with_bridge_success
 tests/unit/test_task_769d_ai_analyzer.py::TestCodebaseAnalyzerWithBridge::test_analyze_without_bridge_falls_back_to_heuristics
 tests/unit/test_task_769d_ai_analyzer.py::TestCodebaseAnalyzerWithBridge::test_analyze_without_stratified_sampling
 tests/unit/test_task_769d_ai_analyzer.py::TestCodebaseAnalyzerWithBridge::test_analyze_with_stratified_sampling
 tests/unit/test_task_769d_ai_analyzer.py::TestCodebaseAnalyzerWithBridge::test_analyze_with_template_context
-tests/unit/test_task_work_interface.py::TestFalsifierNoSdkOnLangGraph::test_langgraph_design_phase_never_calls_sdk
 tests/unit/test_timeout_scaling.py::TestFeatureOrchestratorTimeoutMultiplier::test_4x_multiplier_scales_task_timeout
 tests/unit/test_timeout_scaling.py::TestFeatureOrchestratorTimeoutMultiplier::test_custom_task_timeout_also_scaled
 tests/unit/test_timeout_scaling.py::TestFeatureOrchestratorTimeoutMultiplier::test_default_task_timeout_unchanged

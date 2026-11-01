@@ -27,6 +27,7 @@ from guardkit.orchestrator.exceptions import (
     SDKTimeoutError,
     TaskWorkResult,
 )
+from guardkit.orchestrator.harness.sdk_harness import ClaudeSDKHarness
 from tests.conftest import M0_FLEET_SEAT
 
 
@@ -92,8 +93,22 @@ def _routine_fleet_route(m0_routine_fleet_route):
 
 
 class TestInvokeWithRoleGeneratorClose:
-    """Verify _invoke_with_role explicitly closes query() generator."""
+    """Verify _invoke_with_role explicitly closes query() generator.
 
+    Since TASK-HMIG-006 (eaf6a1d5f, May 2026) _invoke_with_role dispatches
+    through select_harness(); the query() generator and its closing live in
+    ClaudeSDKHarness.invoke (guardkit/orchestrator/harness/sdk_harness.py),
+    so the source checks read that method (1 November 2026).
+    """
+
+    @pytest.fixture(autouse=True)
+    def _force_sdk_harness(self, monkeypatch):
+        # TASK-HMIG-011 cutover (2026-06-16): the default harness is
+        # "langgraph", which would try to reach a model; these SDK-path
+        # tests opt into the SDK harness, as the drain tests below do.
+        monkeypatch.setenv("GUARDKIT_HARNESS", "sdk")
+
+    @pytest.mark.personal_run  # the SDK harness is refused on a factory launch
     @pytest.mark.asyncio
     async def test_generator_closed_on_normal_exit(self, agent_invoker):
         """Generator is explicitly aclose()d after normal ResultMessage break."""
@@ -153,11 +168,12 @@ class TestInvokeWithRoleGeneratorClose:
 
         # Verify source code has gen assignment and aclose
         import inspect
-        source = inspect.getsource(AgentInvoker._invoke_with_role)
+        source = inspect.getsource(ClaudeSDKHarness.invoke)
         assert "gen = query(" in source, "Must hold explicit generator reference"
         assert "await gen.aclose()" in source, "Must call aclose() on generator"
         assert "asyncio.timeout(5)" in source, "Must use 5s timeout for aclose"
 
+    @pytest.mark.personal_run  # the SDK harness is refused on a factory launch
     @pytest.mark.asyncio
     async def test_generator_closed_on_exception(self, agent_invoker):
         """Generator is explicitly aclose()d when exception occurs during iteration."""
@@ -181,7 +197,7 @@ class TestInvokeWithRoleGeneratorClose:
 
         # Verify the finally block contains aclose
         import inspect
-        source = inspect.getsource(AgentInvoker._invoke_with_role)
+        source = inspect.getsource(ClaudeSDKHarness.invoke)
         assert "finally:" in source
         assert "gen is not None" in source
         assert "await gen.aclose()" in source
@@ -190,7 +206,7 @@ class TestInvokeWithRoleGeneratorClose:
     async def test_aclose_timeout_prevents_blocking(self, agent_invoker):
         """5-second timeout on aclose() prevents blocking on unresponsive subprocess."""
         import inspect
-        source = inspect.getsource(AgentInvoker._invoke_with_role)
+        source = inspect.getsource(ClaudeSDKHarness.invoke)
 
         # Verify the timeout structure
         assert "asyncio.timeout(5)" in source, "aclose must have 5s timeout"
@@ -200,7 +216,7 @@ class TestInvokeWithRoleGeneratorClose:
     async def test_gen_reference_held_explicitly(self, agent_invoker):
         """query() return value is stored in explicit variable, not consumed inline."""
         import inspect
-        source = inspect.getsource(AgentInvoker._invoke_with_role)
+        source = inspect.getsource(ClaudeSDKHarness.invoke)
 
         # Must NOT have inline consumption pattern
         assert "async for message in query(" not in source, (
@@ -208,7 +224,9 @@ class TestInvokeWithRoleGeneratorClose:
         )
         # Must have explicit reference
         assert "gen = query(" in source, "Must assign query() to gen variable"
-        assert "async for message in gen:" in source, "Must iterate over held reference"
+        # The held reference is iterated step by step (TASK-FIX-7A03 skips an
+        # unparseable message and carries on), not consumed inline.
+        assert "gen_iter = gen.__aiter__()" in source, "Must iterate over held reference"
 
 
 # ============================================================================
@@ -334,10 +352,15 @@ class TestSdkCleanupHandlerPreserved:
     """Verify _install_sdk_cleanup_handler is still called as defense-in-depth."""
 
     def test_cleanup_handler_in_invoke_with_role(self):
-        """_install_sdk_cleanup_handler still called in _invoke_with_role."""
+        """_install_sdk_cleanup_handler threaded through select_harness.
+
+        As in _invoke_task_work_implement (below): since TASK-HMIG-006 the
+        harness owns the subprocess lifetime and _invoke_with_role hands it
+        the installer as the cleanup_handler_installer argument.
+        """
         import inspect
         source = inspect.getsource(AgentInvoker._invoke_with_role)
-        assert "_install_sdk_cleanup_handler(" in source
+        assert "cleanup_handler_installer=_install_sdk_cleanup_handler" in source
 
     def test_cleanup_handler_in_task_work(self):
         """_install_sdk_cleanup_handler threaded through select_harness.
@@ -374,7 +397,7 @@ class TestGeneratorDrainAfterResultMessage:
     def test_drain_loop_present_in_source(self):
         """Source contains the drain loop after ResultMessage."""
         import inspect
-        source = inspect.getsource(AgentInvoker._invoke_with_role)
+        source = inspect.getsource(ClaudeSDKHarness.invoke)
         # Must drain remaining messages after ResultMessage
         assert "async for _ in gen:" in source, (
             "Must drain generator after ResultMessage to prevent cancel-scope errors"
@@ -387,7 +410,7 @@ class TestGeneratorDrainAfterResultMessage:
     def test_gen_none_skips_aclose_in_finally(self):
         """When gen is set to None by drain, the finally block skips aclose()."""
         import inspect
-        source = inspect.getsource(AgentInvoker._invoke_with_role)
+        source = inspect.getsource(ClaudeSDKHarness.invoke)
         # The finally block must check gen is not None before aclose
         finally_idx = source.find("finally:")
         assert finally_idx != -1

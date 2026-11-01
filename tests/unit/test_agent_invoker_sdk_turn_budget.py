@@ -139,13 +139,22 @@ class TestCalculateSdkMaxTurns:
         )
 
     def test_complexity_scaling_at_complexity_1(self, tmp_path, monkeypatch):
-        """complexity=1 → multiplier 1.1x → 110 turns."""
-        monkeypatch.setattr(mod, "TASK_WORK_SDK_MAX_TURNS", 100)
+        """complexity=1 → multiplier 1.1x.
+
+        Since TASK-ABSR-FLOR the scaled value is floored at
+        SDK_MAX_TURNS_FLOOR (150), so a base of 100 gives 150, not 110; a
+        base of 200 shows the 1.1x scaling itself (220).
+        """
         monkeypatch.setattr(mod, "_SDK_MAX_TURNS_IS_OVERRIDE", False)
         invoker = self._make_invoker(tmp_path)
 
+        monkeypatch.setattr(mod, "TASK_WORK_SDK_MAX_TURNS", 100)
         with self._patch_complexity(1):
-            assert invoker._calculate_sdk_max_turns("TASK-001") == 110
+            assert invoker._calculate_sdk_max_turns("TASK-001") == 150
+
+        monkeypatch.setattr(mod, "TASK_WORK_SDK_MAX_TURNS", 200)
+        with self._patch_complexity(1):
+            assert invoker._calculate_sdk_max_turns("TASK-001") == 220
 
     def test_complexity_scaling_at_complexity_5(self, tmp_path, monkeypatch):
         """complexity=5 → multiplier 1.5x → 150 turns."""

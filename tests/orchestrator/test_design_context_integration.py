@@ -16,6 +16,7 @@ from typing import Any, Dict, List, Optional
 from unittest.mock import MagicMock, Mock, patch
 
 import pytest
+from pathlib import Path
 
 from guardkit.orchestrator.autobuild import DesignContext, TurnRecord
 
@@ -89,6 +90,9 @@ def mock_agent_invoker():
 
     # Create mock with minimal required attributes
     invoker = Mock(spec=AgentInvoker)
+    # An instance attribute (set in __init__, so not on the spec): the
+    # Player prompt names the report file under the worktree.
+    invoker.worktree_path = Path("/tmp/worktrees/TASK-DM-007")
 
     # Make _build_player_prompt and _build_coach_prompt real methods
     # bound to the mock instance

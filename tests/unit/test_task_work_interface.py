@@ -874,6 +874,11 @@ class TestFalsifierNoSdkOnLangGraph:
     stubbed so no real LLM call happens.
     """
 
+    # A person's own run: execute_design_phase's select_harness call passes
+    # no model (TaskWorkInterface has no seat to give it), so on a factory
+    # launch the M0 fence refuses it before the dispatch this test is about;
+    # see the note in TestSDKOptionsForInlineProtocol below (1 November 2026).
+    @pytest.mark.personal_run
     @pytest.mark.asyncio
     async def test_langgraph_design_phase_never_calls_sdk(self, interface, monkeypatch):
         import claude_agent_sdk

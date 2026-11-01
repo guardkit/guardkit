@@ -56,8 +56,10 @@ def _make_sdk_module_mock():
     sdk.CLINotFoundError = type("CLINotFoundError", (Exception,), {})
     sdk.ProcessError = type("ProcessError", (Exception,), {})
     sdk.CLIJSONDecodeError = type("CLIJSONDecodeError", (Exception,), {})
-    sdk.AssistantMessage = MagicMock()
-    sdk.ResultMessage = MagicMock()
+    # Real classes: the SDK harness (TASK-HMIG-006) dispatches on
+    # isinstance(message, AssistantMessage / ResultMessage).
+    sdk.AssistantMessage = type("AssistantMessage", (), {})
+    sdk.ResultMessage = type("ResultMessage", (), {})
     return sdk
 
 
@@ -115,8 +117,18 @@ class TestSetPlayerResumeSession:
 # ============================================================================
 
 
+@pytest.mark.personal_run
 class TestInvokeWithRoleSessionCapture:
     """Tests for session_id capture inside _invoke_with_role."""
+
+    @pytest.fixture(autouse=True)
+    def _force_sdk_harness(self, monkeypatch):
+        # Session resume belongs to the Claude SDK harness. Since the
+        # TASK-HMIG-011 cutover (16 June 2026) the default harness is
+        # "langgraph", and the SDK harness is refused on a factory launch, so
+        # these tests choose it and run as a person's own run (the
+        # personal_run marker), as the SDK drain tests do (1 November 2026).
+        monkeypatch.setenv("GUARDKIT_HARNESS", "sdk")
 
     @pytest.mark.asyncio
     async def test_captures_session_id_from_result_message(self, agent_invoker):
@@ -258,8 +270,18 @@ class TestInvokeWithRoleSessionCapture:
 # ============================================================================
 
 
+@pytest.mark.personal_run
 class TestInvokeWithRoleCancelledSessionScan:
     """Test session_id extraction from accumulated messages on CancelledError."""
+
+    @pytest.fixture(autouse=True)
+    def _force_sdk_harness(self, monkeypatch):
+        # Session resume belongs to the Claude SDK harness. Since the
+        # TASK-HMIG-011 cutover (16 June 2026) the default harness is
+        # "langgraph", and the SDK harness is refused on a factory launch, so
+        # these tests choose it and run as a person's own run (the
+        # personal_run marker), as the SDK drain tests do (1 November 2026).
+        monkeypatch.setenv("GUARDKIT_HARNESS", "sdk")
 
     @pytest.mark.asyncio
     async def test_captures_session_id_on_cancelled_error(self, agent_invoker):
@@ -287,7 +309,7 @@ class TestInvokeWithRoleCancelledSessionScan:
         sdk_mock.query = _query_then_cancel
         # SDK's ResultMessage is a different class from our partial_msg,
         # so isinstance check won't match in the stream loop
-        sdk_mock.ResultMessage = MagicMock
+        sdk_mock.ResultMessage = ResultMessageClass
 
         with (
             patch.dict("sys.modules", {"claude_agent_sdk": sdk_mock}),

@@ -5249,6 +5249,16 @@ The builder's concerns, what it says remains, and the files git saw it create an
                                 if type(msg).__name__ == "ResultMessage":
                                     self._last_session_id = getattr(msg, "session_id", None)
                                     break
+                            else:
+                                # The SDK harness records the session id when
+                                # the ResultMessage arrives, then drains the
+                                # stream before yielding its event; a cancel
+                                # during that drain never reaches the event
+                                # loop above, so the id is read from the
+                                # harness (1 November 2026).
+                                harness_session = getattr(harness, "session_id", None)
+                                if isinstance(harness_session, str) and harness_session:
+                                    self._last_session_id = harness_session
                         call_status = "error"
                         call_error = exc
                         raise

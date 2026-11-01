@@ -1569,6 +1569,9 @@ class TestInvokeTaskWorkImplement:
             assert "Claude Agent SDK import failed" in result.error
             assert "pip install claude-agent-sdk" in result.error
 
+    # A person's own run, as the sibling SDK tests in this class are: the SDK
+    # harness is refused on a factory launch since 587431ee (20 October 2026).
+    @pytest.mark.personal_run
     @pytest.mark.asyncio
     async def test_invoke_task_work_implement_mode_passed(self, invoker, worktree_path):
         """_invoke_task_work_implement passes mode parameter in prompt correctly."""

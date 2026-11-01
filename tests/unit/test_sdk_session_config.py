@@ -773,9 +773,21 @@ class TestInteractivePathNoRegression:
         """
         import inspect
         from guardkit.orchestrator.agent_invoker import AgentInvoker
+        from guardkit.orchestrator.harness.sdk_harness import ClaudeSDKHarness
 
+        # Since TASK-HMIG-006 _invoke_with_role builds its SDK options inside
+        # ClaudeSDKHarness (via select_harness) and passes no setting_sources,
+        # so the harness's default applies; that default is project-only
+        # (TASK-HMIG-006.4). Both halves are checked (1 November 2026).
         source = inspect.getsource(AgentInvoker._invoke_with_role)
-        assert 'setting_sources=["project"]' in source
+        assert "setting_sources=" not in source
+        harness = ClaudeSDKHarness(
+            sdk_timeout_seconds=60,
+            allowed_tools=["Read"],
+            permission_mode="acceptEdits",
+            max_turns=5,
+        )
+        assert harness._setting_sources == ["project"]
 
     def test_invoke_task_work_implement_uses_project_setting_sources(self):
         """Verify source code sets setting_sources=['project'] in _invoke_task_work_implement."""
