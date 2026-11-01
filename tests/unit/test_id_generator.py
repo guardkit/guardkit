@@ -87,7 +87,10 @@ def test_generate_basic_id():
 
     # Hash portion should be uppercase hex
     hash_part = task_id.split('-')[1]
-    assert hash_part.isupper()
+    # Not str.isupper(): that is False for a hash of digits only (about one
+    # in ten 5-character hashes), which is why this test failed now and
+    # then and looked order-dependent (1 November 2026).
+    assert hash_part == hash_part.upper()
     assert all(c in '0123456789ABCDEF' for c in hash_part)
 
 
