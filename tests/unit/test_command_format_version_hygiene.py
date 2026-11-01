@@ -88,18 +88,22 @@ def test_unpinned_spec_carries_format_version(md: Path):
     )
 
 
-@pytest.mark.parametrize("md", _pinned_specs(), ids=lambda p: p.name)
-def test_pinned_template_does_not_carry_format_version(md: Path):
-    """The two pinned templates must NOT carry format_version until phase 2.
+def test_pinned_template_does_not_carry_format_version():
+    """A template still in ``_PINNED`` must NOT carry format_version.
 
     Adding it is a pinned-byte change = an ADR-D re-pin event. If this test
     fails because the field was added, that re-pin MUST also drop the template
     from ``_PINNED`` here in the same commit.
+
+    ``_PINNED`` is empty since both templates gained the field, so this checks
+    nothing today; it is one plain loop rather than a parametrisation so that
+    an empty set is not reported as a skipped test.
     """
-    fm = _frontmatter(md)
-    body = fm if fm is not None else md.read_text(encoding="utf-8")
-    assert "format_version:" not in body, (
-        f"{md.name} is pinned — it must not carry format_version until the "
-        f"ADR-D batched re-pin (PB-10 phase 2). If this is that re-pin, remove "
-        f"{md.name} from _PINNED in this test in the same commit."
-    )
+    for md in _pinned_specs():
+        fm = _frontmatter(md)
+        body = fm if fm is not None else md.read_text(encoding="utf-8")
+        assert "format_version:" not in body, (
+            f"{md.name} is pinned — it must not carry format_version until the "
+            f"ADR-D batched re-pin (PB-10 phase 2). If this is that re-pin, remove "
+            f"{md.name} from _PINNED in this test in the same commit."
+        )

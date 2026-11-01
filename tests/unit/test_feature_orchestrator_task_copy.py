@@ -262,20 +262,6 @@ def test_copy_tasks_to_worktree_no_tasks(
         assert list(dst_dir.glob("*.md")) == []
 
 
-def test_copy_tasks_to_worktree_missing_file_path_raises(
-    orchestrator: FeatureOrchestrator,
-    mock_worktree: Worktree,
-    mock_repo_root: Path,
-) -> None:
-    """
-    Test copy when first task has no file_path raises FeatureValidationError - SKIPPED.
-
-    This test is obsolete because Pydantic now enforces file_path cannot be None
-    during model construction. The validation happens at model creation, not in the copy method.
-    """
-    pytest.skip("Pydantic now enforces file_path is required during model construction")
-
-
 def test_copy_tasks_to_worktree_copy_error_recovery(
     orchestrator: FeatureOrchestrator,
     mock_feature: Feature,
