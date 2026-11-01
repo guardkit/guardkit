@@ -264,6 +264,228 @@ def render_builder_notes(player_report: Dict[str, Any]) -> str:
     return json.dumps(notes, indent=2)
 
 
+# ---------------------------------------------------------------------------
+# The feature's other tasks
+# ---------------------------------------------------------------------------
+
+
+#: How much of the feature's other tasks goes into the look-up prompt, shared
+#: fairly between them; each task's whole document is at the path shown.
+OTHER_TASKS_PROMPT_CHARS = 12_000
+
+#: What stays this turn's work whatever the other tasks plan.
+_OWN_TEST_SENTENCE = (
+    "A test this task's own acceptance criteria require, which the builder could write "
+    "within this task's own files, is still this turn's work."
+)
+
+#: The look-up prompt's rule when the feature's other tasks are shown.
+LATER_TASKS_RULE = (
+    "Work the plan gives to another task of this feature (see \"The feature's other "
+    "tasks\" above) is not a reason to send this turn back: do not report it as a "
+    "finding, and if it matters, mention it as advice on a line that starts `ADVICE`. "
+    + _OWN_TEST_SENTENCE
+)
+
+#: The verdict prompt's rule when the feature's other tasks are shown: the
+#: same rule, for a step that writes findings rather than lines, and that may
+#: otherwise add `NOT_TESTED` from the check result on its own.
+VERDICT_LATER_TASKS_RULE = (
+    "Work the plan gives to another task of this feature (see \"The feature's other "
+    "tasks\" above) is not a reason to send this turn back: do not keep or add a "
+    "finding for it, including `NOT_TESTED` because the project's check does not yet "
+    "reach this task's code (for example it says \"no parts yet\") when another task "
+    "of this feature wires the check in. "
+    + _OWN_TEST_SENTENCE
+)
+
+_TASK_ID = re.compile(r"^TASK-(?P<feature>[A-Za-z0-9]+)-\d+$")
+_HEADING = re.compile(r"^(?P<hashes>#{1,6})\s+(?P<title>.+?)\s*#*\s*$")
+#: The parts of a task document shown: its file lists and its criteria.
+_EXCERPT_HEADINGS = ("files to", "acceptance criteria")
+_CUT_MARK = "\n[cut here: the whole task is at the path above]"
+
+
+@dataclass(frozen=True)
+class OtherTask:
+    """Another task of the feature: its ID, title, document path (relative to
+    the worktree) and the excerpt shown (file lists and criteria)."""
+
+    task_id: str
+    title: str
+    path: str
+    excerpt: str
+
+
+def _split_front_matter(text: str) -> tuple[str, str]:
+    if text.startswith("---"):
+        end = text.find("\n---", 3)
+        if end != -1:
+            return text[3:end], text[end + 4:].lstrip("\n")
+    return "", text
+
+
+def _task_title(front: str, body: str) -> str:
+    match = re.search(r"^title:\s*(.+?)\s*$", front, re.M)
+    if match:
+        return match.group(1).strip("\"'")
+    for line in body.splitlines():
+        heading = _HEADING.match(line)
+        if heading:
+            return heading.group("title")
+    return ""
+
+
+def _task_excerpt(body: str) -> str:
+    """The task's file lists and acceptance criteria, each section to the next
+    heading of its level; the whole body when it has none of them."""
+    parts: List[str] = []
+    level = 0
+    fenced = False
+    for line in body.splitlines():
+        if line.lstrip().startswith("```"):
+            fenced = not fenced
+        heading = None if fenced else _HEADING.match(line)
+        if heading:
+            depth = len(heading.group("hashes"))
+            if level and depth <= level:
+                level = 0
+            title = heading.group("title").strip()
+            if not level and title.lower().startswith(_EXCERPT_HEADINGS):
+                level = depth
+                parts.append(f"**{title}**")
+                continue
+        if level:
+            parts.append(line)
+    excerpt = "\n".join(parts).strip()
+    return re.sub(r"\n{3,}", "\n\n", excerpt) if excerpt else body.strip()
+
+
+def _plan_paths(worktree: Path, feature: str) -> Dict[str, str]:
+    """Each task's document path in the feature's plan, ``{}`` when unread."""
+    try:
+        import yaml
+
+        plan = yaml.safe_load(
+            (worktree / ".guardkit" / "features" / f"FEAT-{feature}.yaml").read_text(
+                encoding="utf-8"
+            )
+        )
+        return {
+            str(task["id"]): str(task["file_path"])
+            for task in plan.get("tasks") or ()
+            if isinstance(task, dict) and task.get("id") and task.get("file_path")
+        }
+    except Exception:  # noqa: BLE001 — the plan only picks between copies
+        return {}
+
+
+def other_tasks(worktree: Path, task_id: str) -> List[OtherTask]:
+    """The feature's other tasks, read from the worktree's ``tasks/**`` as it
+    is now (``TASK-<FEAT>-NNN-*.md``, the feature from the middle of the task
+    ID), in task order, this task left out. A task found in more than one
+    folder is read from the path the feature's plan gives, else the first.
+    Never raises: ``[]`` when there are none or they cannot be read.
+    """
+    match = _TASK_ID.match(task_id or "")
+    if match is None:
+        return []
+    feature = match.group("feature")
+    worktree = Path(worktree)
+    try:
+        named = re.compile(rf"^(TASK-{re.escape(feature)}-\d+)(?:-.*)?\.md$")
+        found: Dict[str, List[Path]] = {}
+        for path in sorted((worktree / "tasks").rglob(f"TASK-{feature}-*.md")):
+            name = named.match(path.name)
+            if name and name.group(1) != task_id and path.is_file():
+                found.setdefault(name.group(1), []).append(path)
+        if not found:
+            return []
+        planned = _plan_paths(worktree, feature)
+        tasks: List[OtherTask] = []
+        for other in sorted(found, key=lambda t: int(t.rsplit("-", 1)[1])):
+            copies = found[other]
+            chosen = next(
+                (p for p in copies if p.relative_to(worktree).as_posix() == planned.get(other)),
+                copies[0],
+            )
+            front, body = _split_front_matter(chosen.read_text(encoding="utf-8"))
+            tasks.append(OtherTask(
+                other, _task_title(front, body), chosen.relative_to(worktree).as_posix(),
+                _task_excerpt(body),
+            ))
+        return tasks
+    except Exception as exc:  # noqa: BLE001 — the review goes on without them
+        logger.warning("[%s] The feature's other tasks could not be read: %s", task_id, exc)
+        return []
+
+
+def _fair_shares(sizes: Sequence[int], total: int) -> List[int]:
+    """Characters for each item: the smallest whole first, the rest split
+    evenly, so no item is cut while a smaller one keeps unused room."""
+    shares = [0] * len(sizes)
+    left = total
+    order = sorted(range(len(sizes)), key=lambda i: sizes[i])
+    for done, index in enumerate(order):
+        shares[index] = min(sizes[index], left // (len(order) - done))
+        left -= shares[index]
+    return shares
+
+
+def _cut(text: str, limit: int) -> str:
+    if len(text) <= limit:
+        return text
+    room = max(0, limit - len(_CUT_MARK))
+    kept = text[:room]
+    newline = kept.rfind("\n")
+    if newline > room // 2:
+        kept = kept[:newline]
+    return kept.rstrip() + _CUT_MARK
+
+
+def render_other_tasks(
+    task_id: str, tasks: Sequence[OtherTask], limit: int = OTHER_TASKS_PROMPT_CHARS
+) -> str:
+    """The look-up prompt's section on the feature's other tasks, at most
+    ``limit`` characters of task text shared fairly; ``""`` when none."""
+    if not tasks:
+        return ""
+    heads = [f"### {t.task_id}: {t.title}\n\n{t.path}\n\n" for t in tasks]
+    blocks = [head + t.excerpt for head, t in zip(heads, tasks)]
+    shares = _fair_shares([len(block) for block in blocks], limit)
+    shown = [_cut(block, max(share, len(head) + len(_CUT_MARK)))
+             for block, head, share in zip(blocks, heads, shares)]
+    match = _TASK_ID.match(task_id or "")
+    feature = f"feature FEAT-{match.group('feature')}" if match else "its feature"
+    cut = any(len(s) < len(b) for s, b in zip(shown, blocks))
+    return (
+        "\n## The feature's other tasks\n\n"
+        f"This task is one of {len(tasks) + 1} in {feature}. The plan gives "
+        "the work below to the feature's other tasks: each one's title, document, the "
+        "files it creates or changes and its acceptance criteria, read from the worktree."
+        + (" Some are cut to fit; read the whole task at its path when a question needs it."
+           if cut else "")
+        + "\n\n"
+        + "\n\n".join(s.rstrip() for s in shown)
+        + "\n"
+    )
+
+
+def other_tasks_section(worktree: Optional[Path], task_id: str) -> str:
+    """The section for this task's review, ``""`` when the feature has no
+    other task in the worktree. Never raises."""
+    if worktree is None:
+        return ""
+    tasks = other_tasks(Path(worktree), task_id)
+    section = render_other_tasks(task_id, tasks)
+    if section:
+        logger.info(
+            "[%s] The review is shown %d other tasks of its feature (%d characters).",
+            task_id, len(tasks), len(section),
+        )
+    return section
+
+
 def _finding_line(finding: Dict[str, Any]) -> str:
     pattern = str(finding.get("pattern") or "").strip()
     location = str(finding.get("location") or "").strip()
@@ -282,9 +504,11 @@ def build_lookup_prompt(
     player_report: Dict[str, Any],
     sent_back: Sequence[Dict[str, Any]] = (),
     document_paths: Sequence[str] = (),
+    other_tasks: str = "",
 ) -> str:
     """The look-up pass's prompt: the task, the change, the check, the
-    builder's notes, and the five questions."""
+    builder's notes, the feature's other tasks (``other_tasks_section``) when
+    given, and the five questions."""
     criteria = ""
     if acceptance_criteria:
         criteria = "\n## Acceptance criteria\n\n" + "\n".join(
@@ -308,6 +532,7 @@ def build_lookup_prompt(
             + "\n".join(f"- {path}" for path in document_paths)
             + "\n"
         )
+    later_tasks_rule = f"\n\n{LATER_TASKS_RULE}" if other_tasks else ""
     return f"""You review one builder turn of a software task before it is accepted. You do not change \
 anything: you look up what the five questions below need, in the change and the code, and report \
 what is wrong, so the builder can fix it once and the person approving the build can see what is left.
@@ -333,10 +558,10 @@ says "no parts yet", or it ran no test, the check tested nothing.
 Its concerns, what it says remains, and the files git saw it create and change:
 
 {render_builder_notes(player_report)}
-{repair}{documents}
+{repair}{documents}{other_tasks}
 ## The five questions
 
-Answer these in order. Each names the finding you report when the answer is no.
+Answer these in order. Each names the finding you report when the answer is no.{later_tasks_rule}
 
 1. **Is every acceptance criterion done?** Find the code that does each one. When none does, \
 report `NOT_IMPLEMENTED`.
@@ -576,12 +801,16 @@ __all__ = [
     "DIFF_PROMPT_CHARS",
     "FINDING_PATTERNS",
     "LEFTOVERS_KEY",
+    "LATER_TASKS_RULE",
     "LOOKUP_TOOLS",
     "MAX_LEFTOVERS",
     "NOTES_RELATIVE_PATH",
+    "OTHER_TASKS_PROMPT_CHARS",
+    "OtherTask",
     "REPAIR_KEY",
     "REPAIR_TURN_ENV",
     "ReviewChange",
+    "VERDICT_LATER_TASKS_RULE",
     "build_lookup_prompt",
     "change_since",
     "diff_path",
@@ -589,7 +818,10 @@ __all__ = [
     "latest_review",
     "leftovers",
     "located_findings",
+    "other_tasks",
+    "other_tasks_section",
     "render_builder_notes",
+    "render_other_tasks",
     "repair_findings_sent",
     "repair_issues",
     "repair_turn_enabled",

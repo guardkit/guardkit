@@ -3272,8 +3272,8 @@ class AgentInvoker:
     ) -> str:
         """The look-up pass's prompt (``build_review.build_lookup_prompt``):
         the task, the change, the project's check, the builder's notes, any
-        findings sent back for repair, the project's document paths, and the
-        five questions."""
+        findings sent back for repair, the project's document paths, the
+        feature's other tasks read from the worktree, and the five questions."""
         from guardkit.orchestrator import build_review
 
         check_section = ""
@@ -3293,6 +3293,9 @@ class AgentInvoker:
             player_report=player_report,
             sent_back=sent_back,
             document_paths=document_paths,
+            other_tasks=build_review.other_tasks_section(
+                getattr(self, "worktree_path", None), task_id
+            ),
         )
 
     def _build_player_prompt(
@@ -3549,6 +3552,8 @@ Follow the report format specified in your agent definition.
         project's check result (``evidence_bundle``), the builder's concerns,
         its "remaining" list and git's file lists, and any memory context.
         In a repair round, the whole-feature check and the round's files.
+        The feature's other tasks and the rule about them, as the look-up
+        pass is given them, when the feature has other tasks.
         Not given any more: the project's documents in full (the look-up pass
         reads the part a question needs), the builder's whole report, the
         "no tools" attribution banner and its paperwork responsibilities, and
@@ -3613,6 +3618,16 @@ five questions. Its findings, one per line with a place in the code:
         # for the reviewer to judge against the failing gate. "" otherwise.
         repair_round_section = self._render_repair_round_section(
             getattr(self, "_repair_review", None)
+        )
+
+        # The feature's other tasks, as the look-up pass is given them, so
+        # this call does not add a finding for work the plan gives to another
+        # task. "" (and no rule) when the feature has no other task.
+        other_tasks = build_review.other_tasks_section(
+            getattr(self, "worktree_path", None), task_id
+        )
+        later_tasks_rule = (
+            f"\n{build_review.VERDICT_LATER_TASKS_RULE}\n" if other_tasks else ""
         )
 
         patterns = ", ".join(f"`{p}`" for p in build_review.FINDING_PATTERNS)
@@ -3692,7 +3707,7 @@ Turn: {turn}
 The builder's concerns, what it says remains, and the files git saw it create and change:
 
 {build_review.render_builder_notes(player_report)}
-{evidence_section}{findings_section}{coach_context_section}{instructions}{decision_format_block}"""
+{evidence_section}{findings_section}{coach_context_section}{other_tasks}{instructions}{later_tasks_rule}{decision_format_block}"""
         # TASK-SELFFIX-003: enforce the overall verdict-prompt budget. The
         # repair-round sections are never trimmed.
         untrimmed = prompt
