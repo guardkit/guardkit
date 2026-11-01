@@ -487,8 +487,15 @@ class TestLeftoversAreEnded:
             proc.stdout.close()
 
     def test_a_quick_command_says_nothing(
-        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture, monkeypatch
     ) -> None:
+        # Another user's process that happens to start during the command is
+        # reported on purpose (it cannot be inspected, so it cannot be told
+        # apart). On a shared machine that made this test fail about one run
+        # in ten. That warning has its own test; here the check is that the
+        # command itself leaves nothing to say, so other users' processes are
+        # set aside (1 November 2026).
+        monkeypatch.setattr(process_group, "_uninspectable_newcomers", lambda leader, since: [])
         with caplog.at_level(logging.WARNING, logger=process_group.__name__):
             proc = _run(tmp_path, "echo hi")
         assert proc.stdout == "hi\n"
