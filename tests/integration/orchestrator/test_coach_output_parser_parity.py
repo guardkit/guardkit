@@ -282,19 +282,9 @@ class TestCoachSF01Coupling:
 
         assert self._would_coachsf01_fire(str(exc_info.value))
 
-    def test_invalid_decision_value_raises_with_coachsf01_substring(self, tmp_path):
-        events: List[HarnessEvent] = [
-            AssistantMessageEvent(
-                text='```json\n{"task_id": "TASK-X", "turn": 1, '
-                     '"decision": "maybe"}\n```'
-            ),
-        ]
-        out = tmp_path / "coach_turn_1.json"
-
-        with pytest.raises(CoachDecisionInvalidError) as exc_info:
-            extract_and_write(events, "TASK-FIX-COACHOUT01", 1, out)
-
-        assert self._would_coachsf01_fire(str(exc_info.value))
+    # A block whose "decision" is not approve/feedback is no longer refused:
+    # the 27 October 2026 cull (628d22ac) removed the parser's required-field
+    # and decision-value checks, since the reviewer's verdict is advice.
 
 
 # --------------------------------------------------------------------------- #

@@ -8,9 +8,9 @@ implementation provided" while 2,100+ lines of on-spec work sat in the
 factory repo.
 
 With ``evidence_repos`` declared, the post-turn diff must merge the sibling
-repo's writes into the Player report as repo-qualified paths, and the Coach
-honesty verifier must resolve those claims against the right repo root
-(no new ghost-path false-red, per path-string-mismatch-is-not-dishonesty).
+repo's writes into the Player report as repo-qualified paths. (The Coach
+honesty verifier that also read those paths was removed by the 27 October
+2026 cull, 628d22ac.)
 """
 
 from __future__ import annotations
@@ -25,6 +25,7 @@ from guardkit.orchestrator.agent_invoker import AgentInvoker
 from guardkit.orchestrator.evidence_repos import EvidenceRepo
 from guardkit.orchestrator.exceptions import TaskWorkResult
 from guardkit.orchestrator.paths import TaskArtifactPaths
+from tests.task_scope_fixtures import admitted_task
 
 
 def _init_repo(path: Path) -> None:
@@ -67,20 +68,23 @@ class TestSiblingRepoOnlyFalseRedRegression:
             evidence_repos=[repo],
             use_task_work_delegation=True,
         )
-
-        # Baseline both repos BEFORE the Player writes anything.
-        invoker._record_baseline()
-
-        # Player writes its deliverable ONLY in the sibling repo (the
-        # FEAT-C332 scenario). The guardkit worktree is untouched.
-        (factory / "src").mkdir()
-        (factory / "src" / "deliverable.py").write_text(
-            "def reqnroll_discover():\n    return 'routing'\n"
-        )
-
         task_id = "TASK-QAWE-001"
-        result = TaskWorkResult(success=True, output={})
-        invoker._create_player_report_from_task_work(task_id, 1, result)
+
+        # The task is admitted (both repos' starting commits are taken then)
+        # BEFORE the Player writes anything; the baseline is the admission's.
+        with admitted_task(worktree, task_id, evidence_repos=[repo]) as (_, scope):
+            invoker.task_work_scope = scope
+            invoker._record_baseline()
+
+            # Player writes its deliverable ONLY in the sibling repo (the
+            # FEAT-C332 scenario). The guardkit worktree is untouched.
+            (factory / "src").mkdir()
+            (factory / "src" / "deliverable.py").write_text(
+                "def reqnroll_discover():\n    return 'routing'\n"
+            )
+
+            result = TaskWorkResult(success=True, output={})
+            invoker._create_player_report_from_task_work(task_id, 1, result)
 
         report_path = TaskArtifactPaths.player_report_path(task_id, 1, worktree)
         report = json.loads(report_path.read_text())
@@ -101,13 +105,15 @@ class TestSiblingRepoOnlyFalseRedRegression:
             evidence_repos=[],  # nothing declared
             use_task_work_delegation=True,
         )
-        invoker._record_baseline()
-        (factory / "leak.py").write_text("secret = 1\n")
-
         task_id = "TASK-NODECL"
-        invoker._create_player_report_from_task_work(
-            task_id, 1, TaskWorkResult(success=True, output={})
-        )
+        with admitted_task(worktree, task_id) as (_, scope):
+            invoker.task_work_scope = scope
+            invoker._record_baseline()
+            (factory / "leak.py").write_text("secret = 1\n")
+
+            invoker._create_player_report_from_task_work(
+                task_id, 1, TaskWorkResult(success=True, output={})
+            )
         report_path = TaskArtifactPaths.player_report_path(task_id, 1, worktree)
         report = json.loads(report_path.read_text())
         all_claimed = report.get("files_created", []) + report.get("files_modified", [])

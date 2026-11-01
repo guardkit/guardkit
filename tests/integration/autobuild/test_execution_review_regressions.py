@@ -1,4 +1,9 @@
-"""Connected R1 regressions: aliases, command lifetime, markers and claims.
+"""Connected R1 regressions: command lifetime, markers and claims.
+
+The writer keeps the builder's claimed files apart from what git observed.
+The checks that used to read those claims (the honesty check, promise
+matching and validate_requirements) were removed by the 27 October 2026
+cull (628d22ac), and their tests with them.
 
 Only temporary Git repositories, deterministic fakes and owned Python children.
 """
@@ -24,63 +29,6 @@ _spec = importlib.util.spec_from_file_location(
 )
 _helpers = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_helpers)
-
-
-@pytest.mark.parametrize(
-    "statuses",
-    [("complete", "partial"), ("partial", "complete"), ("complete", "incomplete")],
-)
-@pytest.mark.parametrize("partial_has_text", [True, False])
-def test_writer_and_validator_keep_natural_alias_noncompletion(
-    tmp_path, statuses, partial_has_text
-):
-    root = _helpers.repository(tmp_path / "repo")
-    criterion = "AC-NAMED-01: implemented"
-    rows = []
-    for status in statuses:
-        row = {"criterion_id": "AC-001", "status": status, "evidence": status}
-        if status == "complete" or partial_has_text:
-            row["criterion_text"] = criterion
-        rows.append(row)
-    with checkout_lease(root) as lease:
-        lease.admit("TASK-ALIASES")
-        invoker = AgentInvoker(worktree_path=root)
-        report = {
-            "task_id": "TASK-ALIASES",
-            "files_created": [],
-            "files_modified": [],
-            "tests_written": [],
-            "requirements_addressed": [criterion],
-            "completion_promises": rows,
-        }
-        invoker._write_player_report_for_direct_mode("TASK-ALIASES", 1, report)
-        invoker._write_direct_mode_results("TASK-ALIASES", report, success=True)
-        validator = CoachValidator(str(root), task_id="TASK-ALIASES")
-        written = validator.read_quality_gate_results("TASK-ALIASES")
-        result = validator.validate_requirements(
-            {"acceptance_criteria": [criterion]}, written, turn=1
-        )
-        assert result.criteria_met == 0
-        assert result.missing == [criterion]
-        assert result.criteria_results[0].completion_status in {"partial", "incomplete"}
-
-
-@pytest.mark.parametrize("reverse", [False, True])
-def test_numeric_text_fallback_cannot_hide_explicit_noncompletion(tmp_path, reverse):
-    validator = CoachValidator(str(tmp_path))
-    rows = [
-        {"criterion_id": "AC-001", "status": "partial"},
-        {
-            "criterion_id": "AC-OTHER",
-            "criterion_text": "AC-1: implemented",
-            "status": "complete",
-        },
-    ]
-    result = validator._match_by_promises(
-        ["AC-1: implemented"], list(reversed(rows)) if reverse else rows
-    )
-    assert result.criteria_met == 0
-    assert result.criteria_results[0].completion_status == "partial"
 
 
 def _task_runner(root, callback):
@@ -109,6 +57,9 @@ def _execute(runner, root, task_id):
 
 
 def test_written_observations_do_not_replace_fabricated_or_unstaged_claims(tmp_path):
+    # The writer keeps what git observed apart from what the builder claimed.
+    # (The honesty check that then read the claims, CoachValidator
+    # ._verify_honesty, was removed by the 27 October 2026 cull, 628d22ac.)
     root = _helpers.repository(tmp_path / "repo")
     with checkout_lease(root) as lease:
         lease.admit("TASK-CLAIM")
@@ -130,15 +81,6 @@ def test_written_observations_do_not_replace_fabricated_or_unstaged_claims(tmp_p
         written = validator.read_quality_gate_results("TASK-CLAIM")
         assert written["files_created"] == ["real-source"]
         assert written["claimed_files_created"] == ["fabricated.py", "ignored-claim"]
-        checked = validator._verify_honesty(written)
-        assert checked.verified is False
-        assert any("fabricated.py" in str(d) for d in checked.discrepancies)
-        assert any(
-            "ignored-claim" in str(d) and d.claim_type == "claim_audit_gitignored"
-            for d in checked.discrepancies
-        )
-        assert checked.honesty_score < 1.0
-        assert written["files_created"] == ["real-source"]
 
 
 @pytest.mark.parametrize("named_scratch", [False, True])
@@ -196,14 +138,6 @@ def test_task_work_report_rewrites_preserve_claims_and_existing_scratch_policy(
         ):
             assert written["files_created"] == ["real-source"]
             assert written["claimed_files_created"] == expected_claims
-            checked = CoachValidator(str(root), task_id="TASK-REWRITE")._verify_honesty(
-                written
-            )
-            assert any("fabricated.py" in str(d) for d in checked.discrepancies)
-            assert (
-                any("scratch.py" in str(d) for d in checked.discrepancies)
-                is named_scratch
-            )
 
 
 @pytest.mark.parametrize("kind", ["created", "modified"])
@@ -230,7 +164,3 @@ def test_raw_report_cannot_hide_fabricated_claim_with_empty_claim_split(tmp_path
         assert written["files_created"] == ["real-source"]
         assert written["files_modified"] == []
         assert written["claimed_files_" + kind] == ["fabricated.py"]
-        assert any(
-            "fabricated.py" in str(d)
-            for d in validator._verify_honesty(written).discrepancies
-        )

@@ -1,4 +1,9 @@
-"""Real report writer -> requirements gate -> persisted feedback contract."""
+"""Real report writer -> persisted feedback contract.
+
+The requirements gate these tests once drove (validate_requirements, promise
+matching and the direct-mode evidence gate) was removed by the 27 October 2026
+cull (628d22ac); its tests went with it.
+"""
 
 import json
 from types import SimpleNamespace
@@ -6,109 +11,10 @@ from unittest.mock import patch
 
 from guardkit.orchestrator.agent_invoker import AgentInvoker
 from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
-from guardkit.orchestrator.quality_gates.coach_validator import CoachValidator
 from guardkit.orchestrator.schemas import (
     CriterionVerification,
     format_verification_summary,
 )
-
-
-def test_partial_survives_real_writer_validator_gate_and_typed_fallback(tmp_path):
-    import subprocess
-
-    subprocess.run(
-        ["git", "init", "-b", "main", str(tmp_path)], check=True, capture_output=True
-    )
-    task = "TASK-PARTIAL"
-    invoker = AgentInvoker(worktree_path=tmp_path)
-    criteria = [f"AC-{i:03d}: criterion {i} implemented" for i in range(1, 7)]
-    report = {
-        "task_id": task,
-        "files_created": [],
-        "files_modified": [],
-        "tests_written": [],
-        "requirements_addressed": criteria,
-        "completion_promises": [
-            {
-                "criterion_id": f"AC-{i:03d}",
-                "status": (
-                    "incomplete" if i == 1 else "partial" if i == 6 else "complete"
-                ),
-                "evidence": "NOT FULLY MET" if i == 6 else "progress",
-            }
-            for i in range(1, 7)
-        ],
-    }
-    invoker._write_player_report_for_direct_mode(task, 4, report)
-    invoker._write_direct_mode_results(task, report, success=True)
-    validator = CoachValidator(str(tmp_path), task_id=task)
-    results = validator.read_quality_gate_results(task)
-    validation = validator.validate_requirements(
-        {"acceptance_criteria": criteria}, results, turn=4
-    )
-    assert validation.criteria_met == 4
-    assert validation.missing == [criteria[0], criteria[5]]
-    assert validation.criteria_results[5].completion_status == "partial"
-    assert "NOT FULLY MET" in validation.criteria_results[5].evidence
-    orch = AutoBuildOrchestrator(
-        repo_root=tmp_path,
-        enable_pre_loop=False,
-        agent_invoker=invoker,
-        enable_context=False,
-    )
-    with patch(
-        "guardkit.orchestrator.quality_gates.coach_validator._run_wiring_analysis",
-        return_value=None,
-    ):
-        result = orch._direct_mode_evidence_gate(
-            validator,
-            task,
-            4,
-            SimpleNamespace(path=tmp_path),
-            0.0,
-            acceptance_criteria=criteria,
-            task_type="feature",
-            player_report=report,
-        )
-    assert result.report["decision"] == "feedback"
-    rows = orch._criteria_verifications_from_report(result.report)
-    typed = [CriterionVerification.from_dict(row) for row in rows]
-    assert [row.result.value for row in typed] == [
-        "rejected",
-        "claimed",
-        "claimed",
-        "claimed",
-        "claimed",
-        "rejected",
-    ]
-    from guardkit.orchestrator.paths import TaskArtifactPaths
-
-    persisted = json.loads(
-        TaskArtifactPaths.private_artifact_path(
-            task, "coach_turn_4.json", tmp_path
-        ).read_text()
-    )
-    assert persisted["decision"] == "feedback"
-
-
-def test_noncompletion_collision_and_text_cannot_launder_progress(tmp_path):
-    validator = CoachValidator(str(tmp_path))
-    criteria = ["AC-001: feature implemented"]
-    for order in [("partial", "complete"), ("complete", "partial")]:
-        result = validator._match_by_promises(
-            criteria,
-            [
-                {
-                    "criterion_id": "AC-001",
-                    "status": status,
-                    "evidence": "still missing",
-                }
-                for status in order
-            ],
-        )
-        merged = validator._hybrid_fallback(result, criteria, criteria)
-        assert merged.criteria_met == 0
-        assert merged.criteria_results[0].promise_present
 
 
 def test_known_and_malformed_typed_states_do_not_change_verification():
@@ -309,31 +215,19 @@ def test_execute_turn_required_read_failure_recovers_scoped_partial_work(tmp_pat
             enable_checkpoints=False,
         )
         orch.task_work_scope = scope
-        validator = CoachValidator(str(tmp_path), task_id=task)
-
         def coach(**kwargs):
-            return orch._direct_mode_evidence_gate(
-                validator,
-                task,
-                1,
-                SimpleNamespace(path=tmp_path),
-                0.0,
-                acceptance_criteria=criteria,
-                task_type="feature",
-                player_report=kwargs.get("player_report"),
+            # The reviewer sends the turn back with nothing of its own to
+            # add: the feedback must still carry the builder's own failure.
+            return AgentInvocationResult(
+                task_id=task,
+                turn=1,
+                agent_type="coach",
+                success=True,
+                report={"decision": "feedback", "issues": [], "rationale": ""},
+                duration_seconds=0.0,
             )
 
-        with (
-            patch(
-                "guardkit.orchestrator.state_tracker.detect_test_results",
-                return_value=None,
-            ),
-            patch(
-                "guardkit.orchestrator.quality_gates.coach_validator._run_wiring_analysis",
-                return_value=None,
-            ),
-            patch.object(orch, "_invoke_coach_safely", side_effect=coach),
-        ):
+        with patch.object(orch, "_invoke_coach_safely", side_effect=coach):
             record = orch._execute_turn(
                 turn=1,
                 task_id=task,
