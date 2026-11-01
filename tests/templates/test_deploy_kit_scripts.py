@@ -15,8 +15,8 @@ candidate ``CANDIDATE=1`` + candidate.env + ``DEPLOY_IDENTITY``; candidate down
 ``RUNNING_IDENTITY=1``; health checks candidate.env (candidate) or nothing
 (after a promote).
 
-The last test runs the kit for real against Docker on this machine, and only
-when ``GUARDKIT_DEPLOY_KIT_REAL=1`` is set.
+The last test runs the kit for real against Docker on this machine whenever
+Docker is available, and skips with "docker is not available" otherwise.
 """
 
 from __future__ import annotations
@@ -936,23 +936,37 @@ def _port_free(port: int) -> bool:
         return sock.connect_ex(("127.0.0.1", port)) != 0
 
 
-@pytest.mark.skipif(
-    os.environ.get("GUARDKIT_DEPLOY_KIT_REAL") != "1",
-    reason="real Docker run; set GUARDKIT_DEPLOY_KIT_REAL=1 to run it",
-)
+def _docker_available() -> bool:
+    """The docker program is installed and its daemon answers."""
+    if shutil.which("docker") is None:
+        return False
+    try:
+        return subprocess.run(["docker", "info"], capture_output=True, timeout=60).returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
 def test_real_candidate_promote_cycle(tmp_path: Path) -> None:
     """Candidate up, health, gate, promote, running identity, candidate down.
 
-    Uses a base image already on the machine (never pulls), unused high ports
-    and its own compose project names, and removes only what it created.
+    Runs whenever Docker is available (1 November 2026; before, only when
+    GUARDKIT_DEPLOY_KIT_REAL=1 was set, so it never ran on GitHub's runner,
+    which has Docker). Uses unused high ports and its own compose project
+    names, and removes only what it created: its containers, its images, and
+    the base image when this test pulled it.
     """
-    if shutil.which("docker") is None:
-        pytest.skip("docker is not installed")
-    if subprocess.run(["docker", "image", "inspect", REAL_IMAGE], capture_output=True).returncode != 0:
-        pytest.skip(f"{REAL_IMAGE} is not on this machine (this test never pulls)")
+    if not _docker_available():
+        pytest.skip("docker is not available")
     for port in (LIVE_PORT, CANDIDATE_PORT):
         if not _port_free(port):
             pytest.skip(f"port {port} is in use")
+    pulled_base = False
+    if subprocess.run(["docker", "image", "inspect", REAL_IMAGE], capture_output=True).returncode != 0:
+        pull = subprocess.run(["docker", "pull", REAL_IMAGE], capture_output=True, text=True, timeout=300)
+        if pull.returncode != 0:
+            pytest.skip(f"{REAL_IMAGE} is not on this machine and could not be pulled: "
+                        f"{pull.stderr.strip()[-300:]}")
+        pulled_base = True
 
     project = tmp_path / "project"
     (project / "web").mkdir(parents=True)
@@ -1070,10 +1084,12 @@ def test_real_candidate_promote_cycle(tmp_path: Path) -> None:
             subprocess.run(["docker", "compose", "--project-name", name, "-f", str(project / "compose.yaml"),
                             "down", "--volumes", "--remove-orphans", "--timeout", "5"],
                            cwd=project, env={**os.environ, "APP_PORT": str(port)}, capture_output=True)
-        # Only this test's own tags; the busybox image keeps its own tag.
+        # Only this test's own tags; the base image goes only when this test pulled it.
         for identity in (IDENTITY, OTHER_IDENTITY):
             for service in ("web", "side"):
                 subprocess.run(["docker", "image", "rm",
                                 f"{REAL_ENV_ID}-deploy-{service}:{identity.replace('@', '-')}"],
                                capture_output=True)
         subprocess.run(["docker", "image", "rm", f"{REAL_ENV_ID}-cand-web"], capture_output=True)
+        if pulled_base:
+            subprocess.run(["docker", "image", "rm", REAL_IMAGE], capture_output=True)
