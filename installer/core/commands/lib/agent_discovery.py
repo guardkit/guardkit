@@ -91,12 +91,12 @@ def _get_agent_locations() -> List[tuple[Path, str, int]]:
     # Find the project root by looking for installer/core/agents
     current = Path(__file__).resolve()
     for parent in current.parents:
-        installer_agents = parent / "installer" / "global" / "agents"
+        installer_agents = parent / "installer" / "core" / "agents"
         if installer_agents.exists():
             locations.append((installer_agents, "global", PRIORITY_GLOBAL))
 
             # 4. Template agents from templates/*/agents/ - LOWEST PRIORITY
-            templates_path = parent / "installer" / "global" / "templates"
+            templates_path = parent / "installer" / "core" / "templates"
             if templates_path.exists():
                 for template_dir in templates_path.iterdir():
                     if template_dir.is_dir():

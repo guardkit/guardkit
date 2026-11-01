@@ -7,6 +7,6 @@ from pathlib import Path
 
 # Add installer/core to Python path (parent of lib)
 # This allows imports like: from lib.settings_generator import X
-lib_parent_path = Path(__file__).parent / "installer" / "global"
+lib_parent_path = Path(__file__).parent / "installer" / "core"
 if str(lib_parent_path) not in sys.path:
     sys.path.insert(0, str(lib_parent_path))

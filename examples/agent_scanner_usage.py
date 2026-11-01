@@ -10,7 +10,7 @@ from pathlib import Path
 import sys
 
 # Add lib to path
-lib_path = Path(__file__).parent.parent / "installer" / "global" / "lib"
+lib_path = Path(__file__).parent.parent / "installer" / "core" / "lib"
 sys.path.insert(0, str(lib_path))
 
 from agent_scanner import MultiSourceAgentScanner

@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 
 # Add agent_enhancement module to path
-lib_path = Path(__file__).parent.parent.parent.parent / 'installer' / 'global' / 'lib' / 'agent_enhancement'
+lib_path = Path(__file__).parent.parent.parent.parent / 'installer' / 'core' / 'lib' / 'agent_enhancement'
 sys.path.insert(0, str(lib_path))
 
 from parser import EnhancementParser

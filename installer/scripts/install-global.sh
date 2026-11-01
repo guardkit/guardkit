@@ -101,20 +101,20 @@ install_global_files() {
     print_info "Installing global methodology and templates..."
     
     # Copy instructions
-    if [ -d "$INSTALLER_DIR/global/instructions" ]; then
-        cp -r "$INSTALLER_DIR/global/instructions/"* "$INSTALL_DIR/instructions/" 2>/dev/null || true
+    if [ -d "$INSTALLER_DIR/core/instructions" ]; then
+        cp -r "$INSTALLER_DIR/core/instructions/"* "$INSTALL_DIR/instructions/" 2>/dev/null || true
         print_success "Installed methodology instructions"
     fi
     
     # Copy ALL templates including maui-appshell, maui-navigationpage and dotnet-microservice
-    if [ -d "$INSTALLER_DIR/global/templates" ]; then
-        cp -r "$INSTALLER_DIR/global/templates/"* "$INSTALL_DIR/templates/" 2>/dev/null || true
+    if [ -d "$INSTALLER_DIR/core/templates" ]; then
+        cp -r "$INSTALLER_DIR/core/templates/"* "$INSTALL_DIR/templates/" 2>/dev/null || true
         print_success "Installed project templates"
     fi
     
     # Copy commands
-    if [ -d "$INSTALLER_DIR/global/commands" ]; then
-        cp -r "$INSTALLER_DIR/global/commands/"* "$INSTALL_DIR/commands/" 2>/dev/null || true
+    if [ -d "$INSTALLER_DIR/core/commands" ]; then
+        cp -r "$INSTALLER_DIR/core/commands/"* "$INSTALL_DIR/commands/" 2>/dev/null || true
         print_success "Installed Claude commands"
     fi
     
@@ -272,8 +272,8 @@ list_templates() {
     
     local templates=()
     
-    if [ -d "$INSTALLER_DIR/global/templates" ]; then
-        for template_dir in "$INSTALLER_DIR/global/templates"/*/; do
+    if [ -d "$INSTALLER_DIR/core/templates" ]; then
+        for template_dir in "$INSTALLER_DIR/core/templates"/*/; do
             if [ -d "$template_dir" ]; then
                 template_name=$(basename "$template_dir")
                 templates+=("$template_name")

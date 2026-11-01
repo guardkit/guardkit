@@ -134,7 +134,7 @@ def validate_all_agents():
     # Get the project root (3 levels up from scripts/)
     script_dir = Path(__file__).parent
     project_root = script_dir.parent
-    agents_dir = project_root / "installer" / "global" / "agents"
+    agents_dir = project_root / "installer" / "core" / "agents"
 
     agents = glob.glob(str(agents_dir / "*.md"))
 

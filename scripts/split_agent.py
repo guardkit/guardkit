@@ -515,11 +515,11 @@ def find_agents(pattern: str) -> List[Path]:
     repo_root = Path(__file__).parent.parent
 
     if pattern == 'all-global':
-        agent_dir = repo_root / 'installer' / 'global' / 'agents'
+        agent_dir = repo_root / 'installer' / 'core' / 'agents'
         return sorted(agent_dir.glob('*.md'))
     elif pattern.startswith('template:'):
         template_name = pattern.split(':', 1)[1]
-        agent_dir = repo_root / 'installer' / 'global' / 'templates' / template_name / 'agents'
+        agent_dir = repo_root / 'installer' / 'core' / 'templates' / template_name / 'agents'
         if not agent_dir.exists():
             return []
         return sorted(agent_dir.glob('*.md'))

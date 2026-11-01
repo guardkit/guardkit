@@ -6,7 +6,7 @@ from pathlib import Path
 import tempfile
 
 # Add lib path
-lib_path = Path(__file__).parent.parent.parent / 'installer' / 'global' / 'commands' / 'lib'
+lib_path = Path(__file__).parent.parent.parent / 'installer' / 'core' / 'commands' / 'lib'
 sys.path.insert(0, str(lib_path))
 
 from agent_validator import AgentValidator, ValidationConfig

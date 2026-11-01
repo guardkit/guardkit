@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 # Add lib path
-lib_path = Path(__file__).parent.parent.parent / 'installer' / 'global' / 'commands' / 'lib'
+lib_path = Path(__file__).parent.parent.parent / 'installer' / 'core' / 'commands' / 'lib'
 sys.path.insert(0, str(lib_path))
 
 from agent_validator.checks.example_density import ExampleDensityChecks
