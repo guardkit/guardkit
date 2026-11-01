@@ -22,6 +22,7 @@ import sys
 _test_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(_test_root))
 
+from tests.task_scope_fixtures import passing_evidence_bundle
 from guardkit.orchestrator.feature_loader import FeatureTask, FeatureLoader, Feature
 from guardkit.orchestrator.autobuild import AutoBuildOrchestrator, OrchestrationResult
 from guardkit.orchestrator.agent_invoker import AgentInvocationResult
@@ -35,11 +36,15 @@ from guardkit.tasks.task_loader import TaskLoader, TaskNotFoundError
 
 
 @pytest.fixture
-def mock_worktree():
+def mock_worktree(tmp_path):
     """Create mock Worktree instance."""
     worktree = Mock(spec=Worktree)
     worktree.task_id = "TASK-INFR-001"
-    worktree.path = Path("/tmp/worktrees/TASK-INFR-001")
+    # The task's checkout is admitted under its writer lease, which reads its
+    # Git identity, so the stand-in worktree is a real checkout (1 November 2026).
+    from tests.task_scope_fixtures import init_checkout
+
+    worktree.path = init_checkout(tmp_path / "worktree")
     worktree.branch_name = "autobuild/TASK-INFR-001"
     worktree.base_branch = "main"
     return worktree
@@ -290,6 +295,7 @@ class TestAutoBuildRequiresInfrastructureLoading:
 
         mock_validator_instance = MagicMock()
         mock_validator_instance.validate.side_effect = Exception("Force SDK fallback")
+        mock_validator_instance.gather_evidence.return_value = passing_evidence_bundle()
         mock_coach_validator.return_value = mock_validator_instance
 
         orchestrator_with_mocks._agent_invoker.invoke_player.return_value = (
@@ -355,6 +361,7 @@ class TestAutoBuildRequiresInfrastructureLoading:
 
         mock_validator_instance = MagicMock()
         mock_validator_instance.validate.side_effect = Exception("Force SDK fallback")
+        mock_validator_instance.gather_evidence.return_value = passing_evidence_bundle()
         mock_coach_validator.return_value = mock_validator_instance
 
         orchestrator_with_mocks._agent_invoker.invoke_player.return_value = (
@@ -413,6 +420,7 @@ class TestAutoBuildRequiresInfrastructureLoading:
 
         mock_validator_instance = MagicMock()
         mock_validator_instance.validate.side_effect = Exception("Force SDK fallback")
+        mock_validator_instance.gather_evidence.return_value = passing_evidence_bundle()
         mock_coach_validator.return_value = mock_validator_instance
 
         orchestrator_with_mocks._agent_invoker.invoke_player.return_value = (
@@ -489,15 +497,16 @@ class TestCoachValidatorReceivesInfrastructure:
             mock_validator_instance = MagicMock()
             mock_validator_class.return_value = mock_validator_instance
 
-            from guardkit.orchestrator.quality_gates.coach_validator import CoachValidationResult
-
-            mock_validation_result = MagicMock(spec=CoachValidationResult)
-            mock_validation_result.to_dict.return_value = {
-                "decision": "approve",
-                "rationale": "Approved",
-            }
-            mock_validator_instance.validate.return_value = mock_validation_result
-            mock_validator_instance.save_decision.return_value = None
+            # CoachValidator.validate() went in the 27 October 2026 cull (628d22ac);
+            # the task dict now reaches gather_evidence(), the evidence pass.
+            mock_validator_instance.gather_evidence.return_value = passing_evidence_bundle()
+            # The reviewer now always runs after the evidence pass (628d22ac);
+            # it approves here.
+            orchestrator_with_mocks._agent_invoker.invoke_coach.return_value = AgentInvocationResult(
+                task_id="TASK-INFR-004", turn=1, agent_type="coach", success=True,
+                report={"decision": "approve", "rationale": "Approved"},
+                duration_seconds=1.0, error=None,
+            )
 
             orchestrator_with_mocks.orchestrate(
                 task_id="TASK-INFR-004",
@@ -505,8 +514,8 @@ class TestCoachValidatorReceivesInfrastructure:
                 acceptance_criteria=["AC-001"],
             )
 
-            mock_validator_instance.validate.assert_called_once()
-            call_kwargs = mock_validator_instance.validate.call_args.kwargs
+            mock_validator_instance.gather_evidence.assert_called_once()
+            call_kwargs = mock_validator_instance.gather_evidence.call_args.kwargs
             task_dict = call_kwargs["task"]
 
             assert "requires_infrastructure" in task_dict
@@ -540,15 +549,16 @@ class TestCoachValidatorReceivesInfrastructure:
             mock_validator_instance = MagicMock()
             mock_validator_class.return_value = mock_validator_instance
 
-            from guardkit.orchestrator.quality_gates.coach_validator import CoachValidationResult
-
-            mock_validation_result = MagicMock(spec=CoachValidationResult)
-            mock_validation_result.to_dict.return_value = {
-                "decision": "approve",
-                "rationale": "OK",
-            }
-            mock_validator_instance.validate.return_value = mock_validation_result
-            mock_validator_instance.save_decision.return_value = None
+            # CoachValidator.validate() went in the 27 October 2026 cull (628d22ac);
+            # the task dict now reaches gather_evidence(), the evidence pass.
+            mock_validator_instance.gather_evidence.return_value = passing_evidence_bundle()
+            # The reviewer now always runs after the evidence pass (628d22ac);
+            # it approves here.
+            orchestrator_with_mocks._agent_invoker.invoke_coach.return_value = AgentInvocationResult(
+                task_id="TASK-INFR-005", turn=1, agent_type="coach", success=True,
+                report={"decision": "approve", "rationale": "Approved"},
+                duration_seconds=1.0, error=None,
+            )
 
             orchestrator_with_mocks.orchestrate(
                 task_id="TASK-INFR-005",
@@ -556,8 +566,8 @@ class TestCoachValidatorReceivesInfrastructure:
                 acceptance_criteria=["AC-001"],
             )
 
-            mock_validator_instance.validate.assert_called_once()
-            call_kwargs = mock_validator_instance.validate.call_args.kwargs
+            mock_validator_instance.gather_evidence.assert_called_once()
+            call_kwargs = mock_validator_instance.gather_evidence.call_args.kwargs
             task_dict = call_kwargs["task"]
 
             assert "requires_infrastructure" in task_dict
@@ -618,6 +628,7 @@ class TestRequiresInfrastructureErrorHandling:
 
         mock_validator_instance = MagicMock()
         mock_validator_instance.validate.side_effect = Exception("Force SDK fallback")
+        mock_validator_instance.gather_evidence.return_value = passing_evidence_bundle()
         mock_coach_validator.return_value = mock_validator_instance
 
         orchestrator_with_mocks._agent_invoker.invoke_player.return_value = (

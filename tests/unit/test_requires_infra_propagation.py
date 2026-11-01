@@ -19,6 +19,7 @@ import sys
 _test_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(_test_root))
 
+from tests.task_scope_fixtures import passing_evidence_bundle
 from guardkit.orchestrator.feature_loader import FeatureTask
 from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
 from guardkit.orchestrator.agent_invoker import AgentInvocationResult
@@ -32,10 +33,14 @@ from guardkit.tasks.task_loader import TaskLoader, TaskNotFoundError
 
 
 @pytest.fixture
-def mock_worktree():
+def mock_worktree(tmp_path):
     worktree = Mock(spec=Worktree)
     worktree.task_id = "TASK-B032-001"
-    worktree.path = Path("/tmp/worktrees/TASK-B032-001")
+    # The task's checkout is admitted under its writer lease, which reads its
+    # Git identity, so the stand-in worktree is a real checkout (1 November 2026).
+    from tests.task_scope_fixtures import init_checkout
+
+    worktree.path = init_checkout(tmp_path / "worktree")
     worktree.branch_name = "autobuild/TASK-B032-001"
     worktree.base_branch = "main"
     return worktree
@@ -158,6 +163,7 @@ class TestOrchestrateAcceptsParameter:
         }
         mock_validator = MagicMock()
         mock_validator.validate.side_effect = Exception("force sdk fallback")
+        mock_validator.gather_evidence.return_value = passing_evidence_bundle()
         mock_coach_validator.return_value = mock_validator
         orchestrator._agent_invoker.invoke_player.return_value = _player_result("TASK-B032-001")
         orchestrator._agent_invoker.invoke_coach.return_value = _coach_approve_result("TASK-B032-001")
@@ -186,6 +192,7 @@ class TestOrchestrateAcceptsParameter:
         }
         mock_validator = MagicMock()
         mock_validator.validate.side_effect = Exception("force sdk fallback")
+        mock_validator.gather_evidence.return_value = passing_evidence_bundle()
         mock_coach_validator.return_value = mock_validator
         orchestrator._agent_invoker.invoke_player.return_value = _player_result("TASK-B032-002")
         orchestrator._agent_invoker.invoke_coach.return_value = _coach_approve_result("TASK-B032-002")
@@ -224,6 +231,7 @@ class TestExplicitParameterPrecedence:
         }
         mock_validator = MagicMock()
         mock_validator.validate.side_effect = Exception("force sdk fallback")
+        mock_validator.gather_evidence.return_value = passing_evidence_bundle()
         mock_coach_validator.return_value = mock_validator
         orchestrator._agent_invoker.invoke_player.return_value = _player_result("TASK-B032-003")
         orchestrator._agent_invoker.invoke_coach.return_value = _coach_approve_result("TASK-B032-003")
@@ -266,6 +274,7 @@ class TestExplicitParameterPrecedence:
         }
         mock_validator = MagicMock()
         mock_validator.validate.side_effect = Exception("force sdk fallback")
+        mock_validator.gather_evidence.return_value = passing_evidence_bundle()
         mock_coach_validator.return_value = mock_validator
         orchestrator._agent_invoker.invoke_player.return_value = _player_result("TASK-B032-004")
         orchestrator._agent_invoker.invoke_coach.return_value = _coach_approve_result("TASK-B032-004")
@@ -316,6 +325,7 @@ class TestFrontmatterFallback:
         }
         mock_validator = MagicMock()
         mock_validator.validate.side_effect = Exception("force sdk fallback")
+        mock_validator.gather_evidence.return_value = passing_evidence_bundle()
         mock_coach_validator.return_value = mock_validator
         orchestrator._agent_invoker.invoke_player.return_value = _player_result("TASK-B032-005")
         orchestrator._agent_invoker.invoke_coach.return_value = _coach_approve_result("TASK-B032-005")
@@ -355,6 +365,7 @@ class TestFrontmatterFallback:
         }
         mock_validator = MagicMock()
         mock_validator.validate.side_effect = Exception("force sdk fallback")
+        mock_validator.gather_evidence.return_value = passing_evidence_bundle()
         mock_coach_validator.return_value = mock_validator
         orchestrator._agent_invoker.invoke_player.return_value = _player_result("TASK-B032-006")
         orchestrator._agent_invoker.invoke_coach.return_value = _coach_approve_result("TASK-B032-006")

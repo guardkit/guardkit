@@ -4,11 +4,11 @@ Unit tests for TASK-FIX-CKPT: Fix checkpoint test extraction and stall ordering.
 Tests cover:
 1. _extract_tests_passed reads quality_gates.tests_passed (primary path)
 2. _extract_tests_passed falls back to top-level tests_passed (backward compat)
-3. Coach approval takes precedence over stall detection
-4. Existing stall detection still works for legitimate stall cases
+3. An approved turn's checkpoint records the nested tests_passed value
 
-Coverage Target: >=85%
-Test Count: 8 tests
+The stall detectors and the pollution rollback were deleted in the 27 October
+2026 cull (628d22ac), and with them the two tests of approval-versus-stall
+ordering (1 November 2026).
 """
 
 import pytest
@@ -21,6 +21,7 @@ import sys
 _test_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(_test_root))
 
+from tests.task_scope_fixtures import passing_evidence_bundle
 from guardkit.orchestrator.autobuild import (
     AutoBuildOrchestrator,
     TurnRecord,
@@ -35,11 +36,15 @@ from guardkit.worktrees import Worktree
 
 
 @pytest.fixture
-def mock_worktree():
+def mock_worktree(tmp_path):
     """Create mock Worktree instance."""
     worktree = Mock(spec=Worktree)
     worktree.task_id = "TASK-FIX-001"
-    worktree.path = Path("/tmp/worktrees/TASK-FIX-001")
+    # The task's checkout is admitted under its writer lease, which reads its
+    # Git identity, so the stand-in worktree is a real checkout (1 November 2026).
+    from tests.task_scope_fixtures import init_checkout
+
+    worktree.path = init_checkout(tmp_path / "worktree")
     worktree.branch_name = "autobuild/TASK-FIX-001"
     worktree.base_branch = "main"
     return worktree
@@ -115,6 +120,7 @@ def mock_coach_validator():
     ) as mock_validator_class:
         mock_instance = MagicMock()
         mock_instance.validate.side_effect = Exception("Force SDK fallback for test")
+        mock_instance.gather_evidence.return_value = passing_evidence_bundle()
         mock_validator_class.return_value = mock_instance
         yield mock_validator_class
 
@@ -339,124 +345,12 @@ class TestExtractTestsPassed:
 
 
 # ============================================================================
-# Bug 2: Approval precedence over stall detection
+# Bug 2: Approved turns record their checkpoint (stall ordering went in 628d22ac)
 # ============================================================================
 
 
 class TestApprovalPrecedenceOverStall:
-    """Test that Coach approval takes precedence over stall detection."""
-
-    def test_approval_returned_despite_stall_conditions(
-        self,
-        mock_worktree,
-        mock_worktree_manager,
-        mock_agent_invoker,
-        mock_progress_display,
-        mock_pre_loop_gates,
-        mock_coach_validator,
-        mock_checkpoint_manager,
-    ):
-        """Coach approval should be returned even when stall conditions are met.
-
-        Scenario: should_rollback fires on turn 2 (after 2 consecutive failures)
-        with no passing checkpoint, BUT Coach approves on turn 2. Since approval
-        is checked before stall detection, it should take precedence.
-
-        Before the fix (old code flow):
-          checkpoint -> stall check -> unrecoverable_stall (approval never checked)
-        After the fix (new code flow):
-          decision check -> approve -> return "approved" (stall never reached)
-        """
-        # should_rollback: False on turn 1 (only 1 failure), True on turn 2 (2 failures)
-        mock_checkpoint_manager.should_rollback.side_effect = [False, True]
-        mock_checkpoint_manager.find_last_passing_checkpoint.return_value = None
-
-        orchestrator = AutoBuildOrchestrator(
-            repo_root=Path.cwd(),
-            max_turns=5,
-            worktree_manager=mock_worktree_manager,
-            agent_invoker=mock_agent_invoker,
-            progress_display=mock_progress_display,
-            pre_loop_gates=mock_pre_loop_gates,
-            enable_checkpoints=True,
-            rollback_on_pollution=True,
-        )
-        orchestrator._checkpoint_manager = mock_checkpoint_manager
-
-        player_result = make_player_result(tests_passed=True)
-
-        # Turn 1: feedback (should_rollback=False, loop continues)
-        # Turn 2: approve (should_rollback would be True, but approval checked first)
-        coach_feedback = make_coach_result_nested(
-            decision="feedback",
-            feedback_text="Fix issues",
-            criteria_results=[{"criterion_id": "c1", "status": "not_started"}],
-        )
-        coach_approve = make_coach_result_nested(decision="approve", tests_passed=True)
-
-        mock_agent_invoker.invoke_player.return_value = player_result
-        mock_agent_invoker.invoke_coach.side_effect = [coach_feedback, coach_approve]
-
-        turn_history, final_decision = orchestrator._loop_phase(
-            task_id="TASK-FIX-001",
-            requirements="Test requirements",
-            acceptance_criteria=["criterion 1"],
-            worktree=mock_worktree,
-        )
-
-        # Approval should take precedence over stall detection
-        assert final_decision == "approved"
-        assert len(turn_history) == 2
-
-    def test_stall_still_triggers_on_feedback(
-        self,
-        mock_worktree,
-        mock_worktree_manager,
-        mock_agent_invoker,
-        mock_progress_display,
-        mock_pre_loop_gates,
-        mock_coach_validator,
-        mock_checkpoint_manager,
-    ):
-        """Stall detection should still work when Coach gives feedback (not approve).
-
-        This verifies we haven't broken existing stall detection for legitimate cases.
-        """
-        # Configure checkpoint manager to trigger stall
-        mock_checkpoint_manager.should_rollback.return_value = True
-        mock_checkpoint_manager.find_last_passing_checkpoint.return_value = None
-
-        orchestrator = AutoBuildOrchestrator(
-            repo_root=Path.cwd(),
-            max_turns=5,
-            worktree_manager=mock_worktree_manager,
-            agent_invoker=mock_agent_invoker,
-            progress_display=mock_progress_display,
-            pre_loop_gates=mock_pre_loop_gates,
-            enable_checkpoints=True,
-            rollback_on_pollution=True,
-        )
-        orchestrator._checkpoint_manager = mock_checkpoint_manager
-
-        player_result = make_player_result(tests_passed=False)
-        coach_feedback = make_coach_result_nested(
-            decision="feedback",
-            feedback_text="Fix type hints",
-            criteria_results=[],
-        )
-
-        mock_agent_invoker.invoke_player.return_value = player_result
-        mock_agent_invoker.invoke_coach.return_value = coach_feedback
-
-        turn_history, final_decision = orchestrator._loop_phase(
-            task_id="TASK-FIX-001",
-            requirements="Test requirements",
-            acceptance_criteria=["criterion 1"],
-            worktree=mock_worktree,
-        )
-
-        # Stall detection should still fire when Coach gives feedback
-        assert final_decision == "unrecoverable_stall"
+    """An approved turn records its checkpoint with the nested tests_passed."""
 
     def test_checkpoint_records_correct_tests_passed_with_nested_format(
         self,
@@ -480,7 +374,6 @@ class TestApprovalPrecedenceOverStall:
             progress_display=mock_progress_display,
             pre_loop_gates=mock_pre_loop_gates,
             enable_checkpoints=True,
-            rollback_on_pollution=True,
         )
         orchestrator._checkpoint_manager = mock_checkpoint_manager
 

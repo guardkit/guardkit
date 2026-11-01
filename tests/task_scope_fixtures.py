@@ -93,3 +93,25 @@ def admitted_task(
     with checkout_lease(root, evidence_repos) as lease:
         scope = lease.admit(task_id, feature_id, round_id)
         yield lease, scope
+
+
+def passing_evidence_bundle():
+    """Evidence whose changed parts' tests ran and passed.
+
+    Since the after-task check redesign (6b0fd7e7, 31 October 2026) the
+    Coach gathers evidence before the reviewer runs and stops the turn when
+    the changed parts' tests did not run. A test that replaces CoachValidator
+    with a mock gives it this, so the turn reaches the reviewer it controls.
+    """
+    from guardkit.orchestrator.quality_gates.coach_evidence import CoachEvidenceBundle
+    from guardkit.orchestrator.quality_gates.coach_validator import IndependentTestResult
+
+    return CoachEvidenceBundle(
+        gathering_status="complete",
+        independent_tests=IndependentTestResult(
+            tests_passed=True,
+            test_command="true",
+            test_output_summary="passed",
+            duration_seconds=0.0,
+        ),
+    )

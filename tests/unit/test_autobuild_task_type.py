@@ -30,6 +30,7 @@ import sys
 _test_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(_test_root))
 
+from tests.task_scope_fixtures import passing_evidence_bundle
 from guardkit.orchestrator.autobuild import AutoBuildOrchestrator, OrchestrationResult
 from guardkit.orchestrator.agent_invoker import AgentInvocationResult
 from guardkit.worktrees import Worktree
@@ -42,11 +43,15 @@ from guardkit.tasks.task_loader import TaskLoader, TaskNotFoundError
 
 
 @pytest.fixture
-def mock_worktree():
+def mock_worktree(tmp_path):
     """Create mock Worktree instance."""
     worktree = Mock(spec=Worktree)
     worktree.task_id = "TASK-TEST-001"
-    worktree.path = Path("/tmp/worktrees/TASK-TEST-001")
+    # The task's checkout is admitted under its writer lease, which reads its
+    # Git identity, so the stand-in worktree is a real checkout (1 November 2026).
+    from tests.task_scope_fixtures import init_checkout
+
+    worktree.path = init_checkout(tmp_path / "worktree")
     worktree.branch_name = "autobuild/TASK-TEST-001"
     worktree.base_branch = "main"
     return worktree
@@ -213,6 +218,7 @@ class TestTaskTypeThreading:
         # Mock CoachValidator to force SDK fallback
         mock_validator_instance = MagicMock()
         mock_validator_instance.validate.side_effect = Exception("Force SDK fallback")
+        mock_validator_instance.gather_evidence.return_value = passing_evidence_bundle()
         mock_coach_validator.return_value = mock_validator_instance
 
         # Mock Player success
@@ -291,6 +297,7 @@ class TestTaskTypeThreading:
         # Mock CoachValidator to force SDK fallback
         mock_validator_instance = MagicMock()
         mock_validator_instance.validate.side_effect = Exception("Force SDK fallback")
+        mock_validator_instance.gather_evidence.return_value = passing_evidence_bundle()
         mock_coach_validator.return_value = mock_validator_instance
 
         # Mock Player success
@@ -395,18 +402,16 @@ class TestCoachValidatorReceivesTaskType:
             mock_validator_instance = MagicMock()
             mock_validator_class.return_value = mock_validator_instance
 
-            # Mock validation result
-            from guardkit.orchestrator.quality_gates.coach_validator import (
-                CoachValidationResult,
+            # CoachValidator.validate() went in the 27 October 2026 cull (628d22ac);
+            # the task dict now reaches gather_evidence(), the evidence pass.
+            mock_validator_instance.gather_evidence.return_value = passing_evidence_bundle()
+            # The reviewer now always runs after the evidence pass (628d22ac);
+            # it approves here.
+            orchestrator_with_mocks._agent_invoker.invoke_coach.return_value = AgentInvocationResult(
+                task_id="TASK-TEST-003", turn=1, agent_type="coach", success=True,
+                report={"decision": "approve", "rationale": "Approved"},
+                duration_seconds=1.0, error=None,
             )
-
-            mock_validation_result = MagicMock(spec=CoachValidationResult)
-            mock_validation_result.to_dict.return_value = {
-                "decision": "approve",
-                "rationale": "Refactor complete",
-            }
-            mock_validator_instance.validate.return_value = mock_validation_result
-            mock_validator_instance.save_decision.return_value = None
 
             # Run orchestration
             result = orchestrator_with_mocks.orchestrate(
@@ -415,9 +420,9 @@ class TestCoachValidatorReceivesTaskType:
                 acceptance_criteria=["AC-001", "AC-002"],
             )
 
-            # Verify CoachValidator.validate() was called with task_type
-            mock_validator_instance.validate.assert_called_once()
-            call_kwargs = mock_validator_instance.validate.call_args.kwargs
+            # Verify CoachValidator.gather_evidence() was called with task_type
+            mock_validator_instance.gather_evidence.assert_called_once()
+            call_kwargs = mock_validator_instance.gather_evidence.call_args.kwargs
 
             # Verify task dict contains task_type
             assert "task" in call_kwargs
@@ -470,17 +475,16 @@ class TestCoachValidatorReceivesTaskType:
             mock_validator_instance = MagicMock()
             mock_validator_class.return_value = mock_validator_instance
 
-            from guardkit.orchestrator.quality_gates.coach_validator import (
-                CoachValidationResult,
+            # CoachValidator.validate() went in the 27 October 2026 cull (628d22ac);
+            # the task dict now reaches gather_evidence(), the evidence pass.
+            mock_validator_instance.gather_evidence.return_value = passing_evidence_bundle()
+            # The reviewer now always runs after the evidence pass (628d22ac);
+            # it approves here.
+            orchestrator_with_mocks._agent_invoker.invoke_coach.return_value = AgentInvocationResult(
+                task_id="TASK-TEST-004", turn=1, agent_type="coach", success=True,
+                report={"decision": "approve", "rationale": "Approved"},
+                duration_seconds=1.0, error=None,
             )
-
-            mock_validation_result = MagicMock(spec=CoachValidationResult)
-            mock_validation_result.to_dict.return_value = {
-                "decision": "approve",
-                "rationale": "Bug fixed",
-            }
-            mock_validator_instance.validate.return_value = mock_validation_result
-            mock_validator_instance.save_decision.return_value = None
 
             # Run orchestration
             result = orchestrator_with_mocks.orchestrate(
@@ -489,9 +493,9 @@ class TestCoachValidatorReceivesTaskType:
                 acceptance_criteria=["AC-001", "AC-002", "AC-003"],
             )
 
-            # Verify CoachValidator.validate() was called
-            mock_validator_instance.validate.assert_called_once()
-            call_kwargs = mock_validator_instance.validate.call_args.kwargs
+            # Verify CoachValidator.gather_evidence() was called
+            mock_validator_instance.gather_evidence.assert_called_once()
+            call_kwargs = mock_validator_instance.gather_evidence.call_args.kwargs
             task_dict = call_kwargs["task"]
 
             # acceptance_criteria is now passed through from orchestrate()
@@ -530,6 +534,7 @@ class TestMissingTaskType:
         # Mock CoachValidator
         mock_validator_instance = MagicMock()
         mock_validator_instance.validate.side_effect = Exception("Force SDK fallback")
+        mock_validator_instance.gather_evidence.return_value = passing_evidence_bundle()
         mock_coach_validator.return_value = mock_validator_instance
 
         # Mock Player success
@@ -609,6 +614,7 @@ class TestErrorHandling:
         # Mock CoachValidator
         mock_validator_instance = MagicMock()
         mock_validator_instance.validate.side_effect = Exception("Force SDK fallback")
+        mock_validator_instance.gather_evidence.return_value = passing_evidence_bundle()
         mock_coach_validator.return_value = mock_validator_instance
 
         # Mock Player success
@@ -680,6 +686,7 @@ class TestErrorHandling:
         # Mock CoachValidator
         mock_validator_instance = MagicMock()
         mock_validator_instance.validate.side_effect = Exception("Force SDK fallback")
+        mock_validator_instance.gather_evidence.return_value = passing_evidence_bundle()
         mock_coach_validator.return_value = mock_validator_instance
 
         # Mock Player success
@@ -723,11 +730,16 @@ class TestErrorHandling:
 
         orchestrator_with_mocks._loop_phase = spy_loop_phase
 
-        # Run orchestration (should not raise)
+        # Run orchestration (should not raise). The task file is passed as
+        # both real callers pass it (guardkit/cli/autobuild.py and the
+        # feature orchestrator); without it, orchestrate() itself loads the
+        # task to find the file before taking the writer lease (913e7ab2),
+        # and that load is not where task_type is read.
         result = orchestrator_with_mocks.orchestrate(
             task_id="TASK-TEST-007",
             requirements="Requirements",
             acceptance_criteria=["AC-001"],
+            task_file_path=Path("/tmp/TASK-TEST-007.md"),
         )
 
         # Verify orchestration succeeded with task_type=None

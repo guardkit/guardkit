@@ -115,6 +115,10 @@ def mock_coach_validator():
         # Make CoachValidator.validate() raise to force SDK fallback
         mock_instance = MagicMock()
         mock_instance.validate.side_effect = Exception("Force SDK fallback for test")
+        # The Coach gathers evidence first since 6b0fd7e7 (31 October 2026).
+        from tests.task_scope_fixtures import passing_evidence_bundle
+
+        mock_instance.gather_evidence.return_value = passing_evidence_bundle()
         mock_validator_class.return_value = mock_instance
         yield mock_validator_class
 
@@ -1194,8 +1198,16 @@ class TestIntegration:
         self,
         orchestrator_with_mocks,
         mock_agent_invoker,
+        mock_worktree,
+        tmp_path,
     ):
         """Test complete orchestration with single-turn approval."""
+        from tests.task_scope_fixtures import init_checkout
+
+        # ``orchestrate`` admits the task's checkout under its writer lease,
+        # which reads its Git identity, so the stand-in worktree is a real
+        # checkout (1 November 2026).
+        mock_worktree.path = init_checkout(tmp_path / "worktree")
         # Mock successful single turn
         mock_agent_invoker.invoke_player.return_value = make_player_result()
         mock_agent_invoker.invoke_coach.return_value = make_coach_result(
@@ -1222,8 +1234,16 @@ class TestIntegration:
         self,
         orchestrator_with_mocks,
         mock_agent_invoker,
+        mock_worktree,
+        tmp_path,
     ):
         """Test complete orchestration with multi-turn feedback loop."""
+        from tests.task_scope_fixtures import init_checkout
+
+        # ``orchestrate`` admits the task's checkout under its writer lease,
+        # which reads its Git identity, so the stand-in worktree is a real
+        # checkout (1 November 2026).
+        mock_worktree.path = init_checkout(tmp_path / "worktree")
         # Mock 3-turn workflow: feedback → feedback → approve
         mock_agent_invoker.invoke_player.side_effect = [
             make_player_result(turn=1),
@@ -1258,8 +1278,16 @@ class TestIntegration:
         self,
         orchestrator_with_mocks,
         mock_agent_invoker,
+        mock_worktree,
+        tmp_path,
     ):
         """Test orchestration exits after max_turns."""
+        from tests.task_scope_fixtures import init_checkout
+
+        # ``orchestrate`` admits the task's checkout under its writer lease,
+        # which reads its Git identity, so the stand-in worktree is a real
+        # checkout (1 November 2026).
+        mock_worktree.path = init_checkout(tmp_path / "worktree")
         # Mock all turns with feedback (never approve)
         # Use unique feedback per turn to avoid stall detection triggering early
         mock_agent_invoker.invoke_player.return_value = make_player_result()
@@ -1354,8 +1382,16 @@ class TestIntegration:
         self,
         orchestrator_with_mocks,
         mock_agent_invoker,
+        mock_worktree,
+        tmp_path,
     ):
         """Test orchestration maintains complete turn history."""
+        from tests.task_scope_fixtures import init_checkout
+
+        # ``orchestrate`` admits the task's checkout under its writer lease,
+        # which reads its Git identity, so the stand-in worktree is a real
+        # checkout (1 November 2026).
+        mock_worktree.path = init_checkout(tmp_path / "worktree")
         # Mock 2-turn workflow with different outcomes
         mock_agent_invoker.invoke_player.side_effect = [
             make_player_result(turn=1, files_created=2),
@@ -1650,8 +1686,15 @@ Requirements here.
         mock_worktree,
         mock_coach_validator,
         mock_pre_loop_gates,
+        tmp_path,
     ):
         """Test orchestrate saves state after each turn."""
+        from tests.task_scope_fixtures import init_checkout
+
+        # ``orchestrate`` admits the task's checkout under its writer lease,
+        # which reads its Git identity, so the stand-in worktree is a real
+        # checkout (1 November 2026).
+        mock_worktree.path = init_checkout(tmp_path / "worktree")
         orchestrator = AutoBuildOrchestrator(
             repo_root=Path("/tmp/test"),
             max_turns=5,
@@ -1960,15 +2003,17 @@ class TestCoachValidatorPathConstruction:
             )
 
             # Verify CoachValidator was instantiated with feature worktree path and task_id
-            mock_validator_class.assert_called_once_with(
-                str(mock_worktree_feature_mode.path),
-                task_id="TASK-INFRA-001",
-                coach_test_execution="sdk",
-                matching_strategy="auto",
-                wave_size=1,
-                turn=1,
-                peer_changed_files=None,  # TASK-FIX-A7B2
-            )
+            # coach_test_execution went in 60bd8ca4 (31 October 2026, the
+            # reviewer's SDK test path removed) and peer_changed_files in the
+            # 27 October cull (628d22ac); the call now also carries the
+            # sibling repositories and check commands, checked elsewhere.
+            mock_validator_class.assert_called_once()
+            assert mock_validator_class.call_args.args == (str(mock_worktree_feature_mode.path),)
+            called = mock_validator_class.call_args.kwargs
+            assert called["task_id"] == "TASK-INFRA-001"
+            assert called["matching_strategy"] == "auto"
+            assert called["wave_size"] == 1
+            assert called["turn"] == 1
             # Should be FEAT-3DEB path, NOT TASK-INFRA-001 path
             call_arg = mock_validator_class.call_args[0][0]
             assert "FEAT-3DEB" in call_arg
@@ -2020,15 +2065,17 @@ class TestCoachValidatorPathConstruction:
             )
 
             # Verify CoachValidator was instantiated with correct path and task_id
-            mock_validator_class.assert_called_once_with(
-                str(mock_worktree_single_task_mode.path),
-                task_id="TASK-001",
-                coach_test_execution="sdk",
-                matching_strategy="auto",
-                wave_size=1,
-                turn=1,
-                peer_changed_files=None,  # TASK-FIX-A7B2
-            )
+            # coach_test_execution went in 60bd8ca4 (31 October 2026, the
+            # reviewer's SDK test path removed) and peer_changed_files in the
+            # 27 October cull (628d22ac); the call now also carries the
+            # sibling repositories and check commands, checked elsewhere.
+            mock_validator_class.assert_called_once()
+            assert mock_validator_class.call_args.args == (str(mock_worktree_single_task_mode.path),)
+            called = mock_validator_class.call_args.kwargs
+            assert called["task_id"] == "TASK-001"
+            assert called["matching_strategy"] == "auto"
+            assert called["wave_size"] == 1
+            assert called["turn"] == 1
             call_arg = mock_validator_class.call_args[0][0]
             assert "TASK-001" in call_arg
 
