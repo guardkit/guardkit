@@ -176,15 +176,12 @@ class TestValidationErrorMessage:
 
     def test_error_includes_position(self):
         """ValidationError should include error position."""
-        from pathlib import Path
-        import sys
-
-        # Import ValidationError from enhancer module
-        _test_dir = Path(__file__).resolve().parent
-        _lib_dir = _test_dir.parent.parent.parent / "installer" / "core" / "lib" / "agent_enhancement"
-        sys.path.insert(0, str(_lib_dir))
-
-        from enhancer import ValidationError
+        # Imported through its package, as the sibling agent_enhancement tests
+        # do. Importing it as a top-level ``enhancer`` (by putting its folder
+        # on sys.path) made it fall back to a bare ``from models import``,
+        # which picked up whichever ``models`` an earlier test had loaded:
+        # these two tests passed alone and failed in the full suite.
+        from installer.core.lib.agent_enhancement.enhancer import ValidationError
 
         error = ValidationError("Invalid JSON at position 1234: Expecting value")
         assert "1234" in str(error)
@@ -192,14 +189,7 @@ class TestValidationErrorMessage:
 
     def test_error_includes_original_message(self):
         """ValidationError should preserve original error message."""
-        from pathlib import Path
-        import sys
-
-        _test_dir = Path(__file__).resolve().parent
-        _lib_dir = _test_dir.parent.parent.parent / "installer" / "core" / "lib" / "agent_enhancement"
-        sys.path.insert(0, str(_lib_dir))
-
-        from enhancer import ValidationError
+        from installer.core.lib.agent_enhancement.enhancer import ValidationError
 
         original_msg = "Expecting property name"
         error = ValidationError(f"Invalid JSON at position 100: {original_msg}")

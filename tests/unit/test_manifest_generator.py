@@ -30,7 +30,18 @@ import importlib.util
 import sys as _sys
 
 def import_module_from_path(module_name, file_path):
-    """Import a module directly from file path."""
+    """Import a module directly from file path.
+
+    A module already imported under the same name is reused, not replaced.
+    Replacing it in sys.modules at collection time gave later test modules a
+    second copy of codebase_analyzer.models: code imported earlier kept the
+    old CodebaseAnalysis class while later imports got the new one, so
+    isinstance() checks in tests/unit/test_task_769d_ai_analyzer.py failed in
+    the full suite and passed alone (1 November 2026).
+    """
+    existing = _sys.modules.get(module_name)
+    if existing is not None:
+        return existing
     spec = importlib.util.spec_from_file_location(module_name, file_path)
     module = importlib.util.module_from_spec(spec)
     _sys.modules[module_name] = module

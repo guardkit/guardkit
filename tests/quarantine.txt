@@ -59,8 +59,6 @@
 # the reason the gate is red, and burning it down will not turn it green.
 # ===========================================================================
 
-tests/lib/agent_enhancement/test_enhancer_error_messages.py::TestValidationErrorMessage::test_error_includes_original_message
-tests/lib/agent_enhancement/test_enhancer_error_messages.py::TestValidationErrorMessage::test_error_includes_position
 # ---------------------------------------------------------------------------
 # 2026-08-21 UN-QUARANTINED: tests/seam/test_autobuild_coach.py (all 10)
 # ---------------------------------------------------------------------------
@@ -94,9 +92,3 @@ tests/lib/agent_enhancement/test_enhancer_error_messages.py::TestValidationError
 # STAYS RED (2026-08-21): stale assert_called_once_with(template_dir=...) — the
 # template_init() wrapper legitimately forwards four arguments now. The test's
 # expectation was never updated when the signature grew.
-tests/unit/test_task_769d_ai_analyzer.py::TestCodebaseAnalyzerWithBridge::test_analyze_with_bridge_failure_falls_back
-tests/unit/test_task_769d_ai_analyzer.py::TestCodebaseAnalyzerWithBridge::test_analyze_with_bridge_success
-tests/unit/test_task_769d_ai_analyzer.py::TestCodebaseAnalyzerWithBridge::test_analyze_without_bridge_falls_back_to_heuristics
-tests/unit/test_task_769d_ai_analyzer.py::TestCodebaseAnalyzerWithBridge::test_analyze_without_stratified_sampling
-tests/unit/test_task_769d_ai_analyzer.py::TestCodebaseAnalyzerWithBridge::test_analyze_with_stratified_sampling
-tests/unit/test_task_769d_ai_analyzer.py::TestCodebaseAnalyzerWithBridge::test_analyze_with_template_context
