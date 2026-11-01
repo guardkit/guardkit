@@ -6,7 +6,7 @@ model: haiku
 model_rationale: "FastAPI implementation follows established patterns (routers, dependencies, middleware). Haiku provides fast, cost-effective implementation following FastAPI best practices."
 
 # Discovery metadata
-stack: [python, fastapi]
+stack: [python]
 phase: implementation
 capabilities:
   - FastAPI router organization and endpoint design

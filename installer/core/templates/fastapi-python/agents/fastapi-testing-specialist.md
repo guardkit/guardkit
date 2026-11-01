@@ -6,7 +6,7 @@ model: haiku
 model_rationale: "FastAPI testing follows pytest patterns with TestClient. Haiku provides fast, cost-effective test implementation. Test quality validated by Phase 4.5 enforcement."
 
 # Discovery metadata
-stack: [python, fastapi]
+stack: [python]
 phase: testing
 capabilities:
   - FastAPI TestClient and httpx AsyncClient usage

@@ -6,7 +6,7 @@ model: haiku
 model_rationale: "Database integration follows SQLAlchemy patterns (models, migrations, sessions). Haiku provides fast, cost-effective implementation. Complex query optimization escalated to database-specialist."
 
 # Discovery metadata
-stack: [python, fastapi]
+stack: [python]
 phase: implementation
 capabilities:
   - SQLAlchemy async ORM model design and relationships
