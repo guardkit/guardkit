@@ -212,7 +212,10 @@ def test_real_feature_task_entry_serializes_aliases(tmp_path):
     assert order[0][1] != order[1][1]
 
 
-def test_real_wave_dispatcher_invoker_audit_checkpoint(tmp_path):
+def test_real_wave_dispatcher_invoker_inventory_checkpoint(tmp_path):
+    """Each admitted task, and each repair of it, sees only its own files and
+    starts from the checkpoint before it. (1 November 2026: the plan audit's
+    block from this test was removed with the plan audit, 27 October.)"""
     import asyncio
     from guardkit.orchestrator.feature_loader import (
         Feature,
@@ -220,11 +223,6 @@ def test_real_wave_dispatcher_invoker_audit_checkpoint(tmp_path):
         FeatureOrchestration,
         FeatureExecution,
     )
-
-    sys.path.insert(
-        0, str(Path(__file__).resolve().parents[3] / "installer/core/commands")
-    )
-    from lib.plan_audit import PlanAuditor, DeclaredFiles
 
     controller = repository(tmp_path / "controller")
     from guardkit.worktrees import WorktreeManager
@@ -276,11 +274,6 @@ def test_real_wave_dispatcher_invoker_audit_checkpoint(tmp_path):
         (root / target).write_text("authored by this task\n")
         extra = f"{task.id}{suffix}.unexpected-format"
         (root / extra).write_text("own undeclared source\n")
-        audit = PlanAuditor(root, task_work_scope=scope).audit_implementation(
-            task.id, declared=DeclaredFiles(to_create=[target], to_modify=[])
-        )
-        block = invoker._plan_audit_block_from_report(audit)
-        assert extra in block["extra_files"]
         # A preceding task's committed paths cannot enter this task's inventory.
         assert invoker._detect_git_changes()["created"] == sorted([target, extra])
         checkpoint = WorktreeCheckpointManager(
@@ -708,7 +701,11 @@ def test_original_failed_task_result_survives_ownership_teardown(tmp_path):
         lease.admit("TASK-NEXT")
 
 
-def test_checkpoint_rollback_and_history_stay_in_the_admitted_scope(tmp_path):
+def test_checkpoint_history_stays_in_the_admitted_scope(tmp_path):
+    """Every checkpoint in the task's history names the admitted scope and its
+    baseline. (1 November 2026: the rollback this test also drove was removed
+    with the pollution rollback, and the separate private history file with
+    it, 27 October; the history is the task's checkpoints.json.)"""
     root = repository(tmp_path / "checkout")
     with checkout_lease(root) as lease:
         scope = lease.admit("TASK-A")
@@ -717,17 +714,13 @@ def test_checkpoint_rollback_and_history_stay_in_the_admitted_scope(tmp_path):
         checkpoint.create_checkpoint(1, True)
         (root / "later").write_text("later checkpoint")
         second = checkpoint.create_checkpoint(2, False)
-        assert checkpoint.rollback_to(1)
-        assert not (root / "later").exists()
-        from guardkit.orchestrator.paths import TaskArtifactPaths
-
-        private = TaskArtifactPaths.private_artifact_path(
-            "TASK-A", "unused", root
-        ).parent
-        histories = list(private.glob("checkpoint-history-*.json"))
-        assert histories
-        history = json.loads(histories[0].read_text())
-        assert history["scope_id"] == scope.scope_id
+        history = json.loads(
+            (root / ".guardkit" / "autobuild" / "TASK-A" / "checkpoints.json").read_text()
+        )
+        assert [c["scope_id"] for c in history["checkpoints"]] == [scope.scope_id] * 2
+        assert {c["baseline_commit"] for c in history["checkpoints"]} == {
+            scope.baseline_commit
+        }
         assert history["checkpoints"][-1]["commit_hash"] == second.commit_hash
 
 
