@@ -98,11 +98,9 @@ tests/orchestrator/test_design_context_integration.py::test_player_prompt_with_d
 # STAYS RED (2026-08-21): the test patches builtins.__import__ with a helper
 # that itself calls __import__, so it recurses into its own patch. Broken test
 # harness, not a product defect — needs rewriting, unrelated to the phase-4 fix.
-tests/test_template_init/test_command.py::TestTemplateInitCommand::test_execute_success
 # STAYS RED (2026-08-21): stale assert_called_once_with(template_dir=...) — the
 # template_init() wrapper legitimately forwards four arguments now. The test's
 # expectation was never updated when the signature grew.
-tests/test_template_init/test_command.py::TestTemplateInitEntryPoint::test_template_init_with_custom_dir
 tests/unit/test_agent_invoker.py::TestInvokeTaskWorkImplement::test_invoke_task_work_implement_mode_passed
 tests/unit/test_agent_invoker_sdk_turn_budget.py::TestCalculateSdkMaxTurns::test_complexity_scaling_at_complexity_1
 tests/unit/test_agent_invoker_session_resume.py::TestInvokeWithRoleCancelledSessionScan::test_captures_session_id_on_cancelled_error
@@ -129,10 +127,6 @@ tests/unit/test_generator_close_fix.py::TestInvokeWithRoleGeneratorClose::test_g
 tests/unit/test_generator_close_fix.py::TestSdkCleanupHandlerPreserved::test_cleanup_handler_in_invoke_with_role
 tests/unit/test_graphiti_write_path_logging.py::TestOutcomeManagerLogging::test_capture_logs_graphiti_prefix_on_failure
 tests/unit/test_graphiti_write_path_logging.py::TestOutcomeManagerLogging::test_capture_logs_graphiti_prefix_on_success
-tests/unit/test_greenfield_qa_session.py::TestConditionalSections::test_backend_framework_triggers_api_questions
-tests/unit/test_greenfield_qa_session.py::TestConditionalSections::test_ui_framework_triggers_section8
-tests/unit/test_greenfield_qa_session.py::TestTemplateInitQASession::test_full_run_cancelled
-tests/unit/test_greenfield_qa_session.py::TestTemplateInitQASession::test_full_run_success
 tests/unit/test_id_generator.py::test_generate_basic_id
 tests/unit/test_run3_stall_fixes.py::TestHybridMatchingFallback::test_hybrid_fallback_upgrades_file_existence_incomplete
 tests/unit/test_run3_stall_fixes.py::TestHybridMatchingFallback::test_hybrid_upgrades_rejected_criteria

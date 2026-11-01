@@ -555,9 +555,10 @@ class TestTemplateInitQASession:
         mock_confirm.return_value = True
 
         session = TemplateInitQASession()
-        answers = session.run()
+        answers, exit_code = session.run()  # run() returns (answers, exit code)
 
         assert answers is not None
+        assert exit_code in (0, 1, 2)  # quality-based, not the cancel or error code
         assert answers.template_name == "full-test"
         assert answers.primary_language == "python"
         assert answers.framework == "fastapi"
@@ -587,9 +588,10 @@ class TestTemplateInitQASession:
         mock_confirm.return_value = False
 
         session = TemplateInitQASession()
-        answers = session.run()
+        answers, exit_code = session.run()  # run() returns (answers, exit code)
 
         assert answers is None
+        assert exit_code == 130  # cancelled
 
 
 @pytest.mark.skipif(not INQUIRER_AVAILABLE, reason="inquirer not installed")
@@ -624,7 +626,7 @@ class TestConditionalSections:
         mock_confirm.return_value = True
 
         session = TemplateInitQASession()
-        answers = session.run()
+        answers, exit_code = session.run()  # run() returns (answers, exit code)
 
         assert answers is not None
         assert answers.framework == "maui"
@@ -657,7 +659,7 @@ class TestConditionalSections:
         mock_confirm.return_value = True
 
         session = TemplateInitQASession()
-        answers = session.run()
+        answers, exit_code = session.run()  # run() returns (answers, exit code)
 
         assert answers is not None
         assert answers.framework == "nestjs"

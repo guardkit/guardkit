@@ -8,8 +8,11 @@ import pytest
 import json
 import tempfile
 import sys
+import builtins
 from pathlib import Path
 from unittest.mock import Mock, patch, MagicMock
+
+_REAL_IMPORT = builtins.__import__
 
 # Add installer path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "installer" / "core" / "commands" / "lib"))
@@ -139,12 +142,17 @@ class TestTemplateInitCommand:
                             assert (template_dir / "agents").exists()
 
     def _mock_imports(self, name, *args, **kwargs):
-        """Helper to mock imports"""
+        """Helper to mock imports.
+
+        Falls through to the import function saved before the patch: calling
+        the bare __import__ here reached the patched one again and recursed
+        until Python gave up (1 November 2026).
+        """
         if name == "template_qa_session":
             mock_module = Mock()
             mock_module.TemplateQASession = Mock
             return mock_module
-        return __import__(name, *args, **kwargs)
+        return _REAL_IMPORT(name, *args, **kwargs)
 
     def test_execute_qa_cancelled(self):
         """Test execution when Q&A is cancelled"""
@@ -388,7 +396,13 @@ class TestTemplateInitEntryPoint:
         result = template_init(template_dir=custom_dir)
 
         assert result is True
-        mock_command_class.assert_called_once_with(template_dir=custom_dir)
+        # The wrapper forwards all four options, with their defaults.
+        mock_command_class.assert_called_once_with(
+            template_dir=custom_dir,
+            no_create_agent_tasks=False,
+            validate=False,
+            output_location='global',
+        )
 
 
 class TestCompleteWorkflow:
