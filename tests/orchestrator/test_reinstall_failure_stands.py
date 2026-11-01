@@ -1,14 +1,16 @@
-"""The dependency reinstall after a turn changes a dependency file.
+"""The declared install after a turn changes a file it serves.
 
 Since the cull of 27 October 2026 a reinstall that fails, or cannot run
-because a declared tool is missing, is logged and the turn goes on: the
+because its program is missing, is logged and the turn goes on: the
 project's own tests then say what they say. Nothing here sends a turn back.
-What each test pins:
+Since 1 November 2026 only a declared root install runs, and whether it is
+due is the bootstrap's own record of the files it serves, not the builder's
+report.
 
-- The reinstall runs only when the turn changed a dependency file, with the
-  changed files and the stacks they belong to. -> ``TestTheReinstallRuns``
-- A failed or raised reinstall never stops the turn and leaves the
-  interpreter alone; a successful one adopts the reinstalled interpreter.
+What each test pins:
+- With no install declared nothing runs; a declared one runs when a file it
+  serves changed, and not otherwise. -> ``TestTheReinstallRuns``
+- A failed or raised reinstall never stops the turn.
   -> ``TestAFailedReinstallIsLogged``
 - Only the program itself counts as a missing install tool.
   -> ``TestMissingInstallProgram``
@@ -18,130 +20,97 @@ What each test pins:
 
 from __future__ import annotations
 
+import shlex
 import subprocess
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
+import yaml
 
 from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
-from guardkit.orchestrator.environment_bootstrap import (
-    BootstrapFailureDetail,
-    BootstrapResult,
-    _missing_program,
-)
+from guardkit.orchestrator.environment_bootstrap import _missing_program
 
 TASK = "TASK-RFS-001"
 
-PYPROJECT = """\
-[project]
-name = "workspace-root"
-version = "0.1.0"
-requires-python = ">=3.11"
-dependencies = ["member-pkg"]
-
-[tool.uv.sources]
-member-pkg = { workspace = true }
-
-[tool.uv.workspace]
-members = ["packages/*"]
-"""
-
-REFRESH = "guardkit.orchestrator.environment_bootstrap.refresh_environment_for_changes"
+RERUN = "guardkit.orchestrator.environment_bootstrap.rerun_declared_install_if_due"
 
 
 def _git(path: Path, *args: str) -> None:
     subprocess.run(["git", *args], cwd=path, check=True, capture_output=True)
 
 
+def _recorder(marker: Path, exit_code: int = 0) -> str:
+    """A declared install (an argument list, no shell) that records a run."""
+    script = (
+        "import sys; "
+        f"open({str(marker)!r}, 'a').write('install\\n'); "
+        f"sys.exit({exit_code})"
+    )
+    return f"{sys.executable} -c {shlex.quote(script)}"
+
+
+def _declare(root: Path, install: str) -> None:
+    (root / ".guardkit").mkdir(exist_ok=True)
+    (root / ".guardkit" / "config.yaml").write_text(
+        yaml.safe_dump({"toolchain": {"install": install, "test": "true"}}),
+        encoding="utf-8",
+    )
+
+
 @pytest.fixture
 def worktree(tmp_path: Path) -> Path:
-    _git(tmp_path, "init", "-q")
-    _git(tmp_path, "config", "user.email", "builder@example.invalid")
-    _git(tmp_path, "config", "user.name", "builder")
-    (tmp_path / "README.md").write_text("# demo\n")
-    _git(tmp_path, "add", "-A")
-    _git(tmp_path, "commit", "-q", "-m", "initial")
-    (tmp_path / "pyproject.toml").write_text(PYPROJECT)
-    return tmp_path
+    root = tmp_path / "wt"
+    root.mkdir()
+    _git(root, "init", "-q")
+    _git(root, "config", "user.email", "builder@example.invalid")
+    _git(root, "config", "user.name", "builder")
+    (root / "README.md").write_text("# demo\n")
+    (root / "deps.txt").write_text("one\n")
+    _git(root, "add", "-A")
+    _git(root, "commit", "-q", "-m", "initial")
+    return root
 
 
 def _bare_orchestrator() -> AutoBuildOrchestrator:
-    orch = AutoBuildOrchestrator.__new__(AutoBuildOrchestrator)
-    orch._venv_python = None
-    return orch
+    return AutoBuildOrchestrator.__new__(AutoBuildOrchestrator)
 
 
-def _player(files_modified=None, files_created=None) -> SimpleNamespace:
-    return SimpleNamespace(
-        report={
-            "files_modified": list(files_modified or []),
-            "files_created": list(files_created or []),
-        }
-    )
-
-
-def _failed_result(path: Path) -> BootstrapResult:
-    return BootstrapResult(
-        success=False,
-        skipped=False,
-        stacks_detected=["python"],
-        manifests_found=["pyproject.toml"],
-        installs_attempted=1,
-        installs_failed=1,
-        error="1/1 install(s) failed",
-        failure_details=[
-            BootstrapFailureDetail(
-                stack="python",
-                manifest_path=str(path / "pyproject.toml"),
-                stderr_excerpt="No matching distribution found for nope",
-                essential=True,
-            )
-        ],
-    )
-
-
-def _ok_result() -> BootstrapResult:
-    return BootstrapResult(
-        success=True,
-        skipped=False,
-        stacks_detected=["python"],
-        manifests_found=["pyproject.toml"],
-    )
+def _runs(marker: Path) -> int:
+    return len(marker.read_text().splitlines()) if marker.exists() else 0
 
 
 # ---------------------------------------------------------------------------
-# The reinstall runs when a dependency file changed
+# The declared install runs when a file it serves changed
 # ---------------------------------------------------------------------------
 
 
 class TestTheReinstallRuns:
-    def test_a_turn_that_changes_no_dependency_file_reinstalls_nothing(
-        self, worktree: Path
-    ) -> None:
-        orch = _bare_orchestrator()
-        with patch(REFRESH) as refresh:
-            assert orch._maybe_refresh_venv_for_manifest_change(
-                _player(files_modified=["src/app.py"]),
-                SimpleNamespace(path=str(worktree)),
-                1,
-            ) is None
-        refresh.assert_not_called()
-
-    def test_a_changed_dependency_file_is_reinstalled_with_its_stack(
-        self, worktree: Path
-    ) -> None:
-        orch = _bare_orchestrator()
-        with patch(REFRESH, return_value=_ok_result()) as refresh:
-            orch._maybe_refresh_venv_for_manifest_change(
-                _player(files_modified=["pyproject.toml", "src/app.py"]),
-                SimpleNamespace(path=str(worktree)),
-                1,
+    def test_with_no_install_declared_nothing_runs(self, worktree: Path) -> None:
+        (worktree / "pyproject.toml").write_text("[project]\nname = 'x'\n")
+        with patch("subprocess.run") as run:
+            _bare_orchestrator()._maybe_rerun_declared_install(
+                SimpleNamespace(path=str(worktree)), 1
             )
-        refresh.assert_called_once()
-        assert "pyproject.toml" in list(refresh.call_args.args[1])
-        assert "python" in (refresh.call_args.kwargs.get("relevant_stacks") or [])
+        run.assert_not_called()
+        assert not (worktree / ".venv").exists()
+
+    def test_a_changed_served_file_reruns_and_an_unchanged_one_does_not(
+        self, worktree: Path, tmp_path: Path
+    ) -> None:
+        marker = tmp_path / "ran.txt"
+        _declare(worktree, _recorder(marker))
+        orch = _bare_orchestrator()
+        wt = SimpleNamespace(path=str(worktree))
+
+        orch._maybe_rerun_declared_install(wt, 1)  # first time: due
+        orch._maybe_rerun_declared_install(wt, 2)  # nothing changed
+        (worktree / "deps.txt").write_text("one\ntwo\n")
+        orch._maybe_rerun_declared_install(wt, 3)  # a served file changed
+
+        assert _runs(marker) == 2
 
 
 # ---------------------------------------------------------------------------
@@ -150,40 +119,23 @@ class TestTheReinstallRuns:
 
 
 class TestAFailedReinstallIsLogged:
-    def test_a_failed_reinstall_returns_nothing_and_keeps_the_interpreter(
-        self, worktree: Path, caplog
+    def test_a_failed_reinstall_is_logged_and_returns_nothing(
+        self, worktree: Path, tmp_path: Path, caplog
     ) -> None:
-        orch = _bare_orchestrator()
-        with patch(REFRESH, return_value=_failed_result(worktree)):
-            assert orch._maybe_refresh_venv_for_manifest_change(
-                _player(files_modified=["pyproject.toml"]),
-                SimpleNamespace(path=str(worktree)),
-                1,
-            ) is None
-        assert orch._venv_python is None
-        assert "No matching distribution found for nope" in caplog.text
+        marker = tmp_path / "ran.txt"
+        _declare(worktree, _recorder(marker, exit_code=3))
+        assert _bare_orchestrator()._maybe_rerun_declared_install(
+            SimpleNamespace(path=str(worktree)), 1
+        ) is None
+        assert _runs(marker) == 1
+        assert "failed" in caplog.text
 
     def test_a_raised_reinstall_returns_nothing(self, worktree: Path, caplog) -> None:
-        orch = _bare_orchestrator()
-        with patch(REFRESH, side_effect=RuntimeError("installer crashed")):
-            assert orch._maybe_refresh_venv_for_manifest_change(
-                _player(files_created=["pyproject.toml"]),
-                SimpleNamespace(path=str(worktree)),
-                1,
+        with patch(RERUN, side_effect=RuntimeError("installer crashed")):
+            assert _bare_orchestrator()._maybe_rerun_declared_install(
+                SimpleNamespace(path=str(worktree)), 1
             ) is None
         assert "installer crashed" in caplog.text
-
-    def test_a_successful_reinstall_adopts_its_interpreter(self, worktree: Path) -> None:
-        orch = _bare_orchestrator()
-        ok = _ok_result()
-        ok.venv_python = str(worktree / ".venv" / "bin" / "python")
-        with patch(REFRESH, return_value=ok):
-            orch._maybe_refresh_venv_for_manifest_change(
-                _player(files_modified=["pyproject.toml"]),
-                SimpleNamespace(path=str(worktree)),
-                1,
-            )
-        assert orch._venv_python == ok.venv_python
 
 
 # ---------------------------------------------------------------------------
@@ -200,12 +152,8 @@ class TestMissingInstallProgram:
         assert _missing_program(PermissionError(13, "denied", "pnpm"), ["pnpm"]) is None
 
     def test_a_missing_path_is_not_a_missing_tool(self, tmp_path: Path) -> None:
-        """The worktree's own interpreter can be rebuilt, and a project
-        script is the project's: neither is a tool missing from the build
-        environment, so both stay ordinary, blocking failures."""
-        venv_python = str(tmp_path / ".venv" / "bin" / "python")
-        missing = FileNotFoundError(2, "No such file or directory", venv_python)
-        assert _missing_program(missing, [venv_python, "-m", "pip"]) is None
+        """A project script is the project's: it is not a tool missing from
+        the build environment, so it stays an ordinary failure."""
         script = FileNotFoundError(2, "No such file or directory", "./scripts/install.sh")
         assert _missing_program(script, ["./scripts/install.sh"]) is None
 

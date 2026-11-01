@@ -56,10 +56,9 @@ from guardkit.orchestrator.feature_validator import (
     ValidationIssue,
 )
 from guardkit.orchestrator.environment_bootstrap import (
-    ProjectEnvironmentDetector,
     EnvironmentBootstrapper,
     BootstrapResult,
-    DetectedManifest,
+    DeclaredInstall,
 )
 from guardkit.orchestrator.paths import TaskArtifactPaths
 from guardkit.orchestrator.progress import ProgressDisplay
@@ -106,10 +105,9 @@ __all__ = [
     "TaskExecutionResult",
     "WaveExecutionResult",
     # Environment bootstrap
-    "ProjectEnvironmentDetector",
     "EnvironmentBootstrapper",
     "BootstrapResult",
-    "DetectedManifest",
+    "DeclaredInstall",
     # Paths
     "TaskArtifactPaths",
     # Protocol

@@ -49,7 +49,7 @@ from typing import List, Tuple
 
 import pytest
 
-from guardkit.orchestrator.environment_bootstrap import (
+from guardkit.orchestrator.uv_sources_links import (
     _create_worktree_uv_sources_symlinks,
     _resolve_uv_sources_symlinks,
 )

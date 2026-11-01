@@ -49,7 +49,6 @@ from guardkit.orchestrator.feature_loader import (
     FeatureNotFoundError,
     FeatureValidationError,
     SmokeGates,
-    derive_bootstrap_extras,
 )
 from guardkit.orchestrator import evidence_repos as evidence_repos_lib
 from guardkit.orchestrator.evidence_repos import EvidenceRepo
@@ -103,13 +102,15 @@ from guardkit.orchestrator.feature_validator import (
     format_preflight_report,
 )
 from guardkit.orchestrator.environment_bootstrap import (
-    ProjectEnvironmentDetector,
-    EnvironmentBootstrapper,
     BootstrapResult,
+    EnvironmentBootstrapper,
+    declared_root_install,
+)
+from guardkit.orchestrator.toolchain_declaration import ToolchainDeclarationError
+from guardkit.orchestrator.uv_sources_links import (
     _create_worktree_uv_sources_symlinks,
     _resolve_uv_sources_symlinks,
 )
-from guardkit.orchestrator.toolchain_declaration import ToolchainDeclarationError
 from guardkit.models.task_types import TaskType, normalise_task_type
 from guardkit.tasks.task_loader import TaskLoader
 from guardkit.orchestrator.parallel_strategy import (
@@ -586,12 +587,6 @@ class FeatureOrchestrator:
         # Wave progress display (initialized during setup phase)
         self._wave_display: Optional[WaveProgressDisplay] = None
 
-        # TASK-FIX-7A05: Python interpreter produced by the most recent
-        # bootstrap (set in :meth:`_bootstrap_environment`). Threaded into
-        # every AutoBuildOrchestrator so Coach's pytest runs against the
-        # same interpreter the Player's install targeted.
-        self._bootstrap_venv_python: Optional[str] = None
-
         logger.info(
             f"FeatureOrchestrator initialized: repo={self.repo_root}, "
             f"max_turns={self.max_turns}, "
@@ -908,16 +903,11 @@ class FeatureOrchestrator:
                         if self.refresh:
                             self._refresh_worktree(worktree, base_branch)
 
-                        # Re-establish the environment on resume: this early
-                        # return bypasses Phase 1.5, leaving
-                        # _bootstrap_venv_python unset — Coach + smoke gates
-                        # then fall back to PATH pytest (system python) and
-                        # spawn-based tests (sys.executable -m ...) fail with
-                        # ModuleNotFoundError. Both calls are idempotent
-                        # (hash-match skip still resolves the venv
-                        # interpreter via _resolve_skip_venv_python).
+                        # Re-run the declared install on resume: this early
+                        # return bypasses Phase 1.5. Idempotent (nothing
+                        # runs when its inputs are unchanged).
                         self._arrange_uv_sources_symlinks(worktree)
-                        self._bootstrap_environment(worktree, feature=feature)
+                        self._bootstrap_environment(worktree)
 
                         return feature, worktree
 
@@ -946,12 +936,10 @@ class FeatureOrchestrator:
                             if self.refresh:
                                 self._refresh_worktree(worktree, base_branch)
 
-                            # Same resume-path environment re-establishment
-                            # as the --resume branch above (idempotent).
+                            # Same resume-path install as the --resume
+                            # branch above (idempotent).
                             self._arrange_uv_sources_symlinks(worktree)
-                            self._bootstrap_environment(
-                                worktree, feature=feature
-                            )
+                            self._bootstrap_environment(worktree)
 
                             return feature, worktree
                     return self._create_new_worktree(feature, feature_id, base_branch)
@@ -1031,7 +1019,7 @@ class FeatureOrchestrator:
         # symlinks before bootstrap. Idempotent on --resume / --fresh.
         self._arrange_uv_sources_symlinks(worktree)
 
-        # Phase 1.5: Bootstrap environment (detect + install dependencies)
+        # Phase 1.5: run the project's declared install, if it declares one
         self._bootstrap_pending = True
 
         # Update feature with worktree path and start time
@@ -1383,37 +1371,21 @@ class FeatureOrchestrator:
                 f"that the target path is readable. See TASK-FIX-AB61."
             ) from exc
 
-    def _bootstrap_environment(
-        self,
-        worktree: Worktree,
-        feature: Optional[Feature] = None,
-    ) -> Optional[BootstrapResult]:
+    def _bootstrap_environment(self, worktree: Worktree) -> Optional[BootstrapResult]:
         """
-        Detect and install project dependencies in the worktree.
+        Run the project's declared root install in the worktree.
 
-        Called after worktree creation (Phase 1.5) and between waves.
-        Failed installs and an interpreter that does not meet a manifest's
-        ``requires-python`` are warnings, never a stop (step 2, 26 October
-        2026): when the project's tests then cannot start, the reviewer is
-        told "The project's tests could not be run: <reason>".
-
-        Parameters
-        ----------
-        worktree : Worktree
-            Shared worktree to scan and install into.
-        feature : Optional[Feature]
-            Feature being bootstrapped. When provided, ``bootstrap_extras``
-            (operator-declared or auto-detected from a pytest smoke gate)
-            are threaded into the Python pyproject install command so
-            test deps live in the worktree's venv. Optional for
-            backward-compatibility with call sites that haven't been
-            updated. (TASK-GK-BS-001)
+        Called after worktree creation (Phase 1.5) and between waves. Only a
+        declared ``toolchain.install`` runs (1 November 2026: installs come
+        only from the project's declaration). With none declared nothing is
+        installed and the log says so once. A failed install is a warning,
+        never a stop (step 2, 26 October 2026): when the project's tests then
+        cannot start, the reviewer is told so.
 
         Returns
         -------
         Optional[BootstrapResult]
-            Bootstrap result, or None when no manifests were found or an
-            unexpected error occurred.
+            The bootstrap's result, or None when an unexpected error occurred.
 
         Raises
         ------
@@ -1421,72 +1393,11 @@ class FeatureOrchestrator:
             When the toolchain declaration cannot be read.
         """
         try:
-            python_extras: tuple[str, ...] = ()
-            if feature is not None:
-                python_extras = tuple(
-                    derive_bootstrap_extras(feature, worktree.path)
-                )
-                if python_extras:
-                    logger.info(
-                        "Bootstrap will install Python extras: %s",
-                        list(python_extras),
-                    )
-            detector = ProjectEnvironmentDetector(
-                worktree.path,
-                python_extras=python_extras,
-            )
-            manifests = detector.detect()
-
-            if not manifests:
-                logger.debug("No dependency manifests found in worktree")
-                return None
-
-            stacks = sorted(set(m.stack for m in manifests))
-            console.print(f"[cyan]\u2699[/cyan] Bootstrapping environment: {', '.join(stacks)}")
-
-            bootstrapper = EnvironmentBootstrapper(worktree.path)
-            result = bootstrapper.bootstrap(manifests)
-
-            if result.skipped and result.success:
-                console.print("[green]\u2713[/green] Environment already bootstrapped (hash match)")
-            elif result.installs_failed == 0:
-                console.print(
-                    f"[green]\u2713[/green] Environment bootstrapped: {', '.join(result.stacks_detected)}"
-                )
-            else:
-                console.print(
-                    f"[yellow]\u26a0[/yellow] Environment bootstrap partial: "
-                    f"{result.installs_attempted - result.installs_failed}/{result.installs_attempted} succeeded"
-                )
-
-            # TASK-FIX-7A05: capture the bootstrap interpreter so downstream
-            # AutoBuildOrchestrator / Coach pytest invocations use it
-            # instead of whatever ``pytest`` is on the shell PATH. Logged at
-            # INFO so the startup / per-wave log clearly states which
-            # interpreter Coach will verify against.
-            if result.venv_python:
-                self._bootstrap_venv_python = result.venv_python
-                console.print(
-                    f"[cyan]⚙[/cyan] Coach will verify using interpreter: "
-                    f"{result.venv_python}"
-                )
-                logger.info(
-                    "Coach pytest interpreter set from bootstrap venv: %s",
-                    result.venv_python,
-                )
-            else:
-                # Non-Python project (or Python project without a venv)
-                # preserves prior PATH-pytest behavior for Coach.
-                logger.debug(
-                    "Bootstrap produced no venv interpreter — Coach will use "
-                    "PATH pytest / sys.executable fallback"
-                )
-
-            return result
+            install = declared_root_install(worktree.path)
+            result = EnvironmentBootstrapper(worktree.path).bootstrap(install)
         except ToolchainDeclarationError as e:
-            # Follow-up fixes 2026-10-13 (3b): an unreadable declaration or a
-            # refused component ``cwd`` would otherwise drop the declaration
-            # and guess the install. Stop the build in every failure mode.
+            # An unreadable declaration or a refused component ``cwd`` would
+            # otherwise be taken as "nothing declared". Stop the build.
             logger.error("Bootstrap hard-fail (toolchain declaration): %s", e)
             console.print(
                 f"[red]\u2717[/red] Bootstrap hard-fail: toolchain declaration\n{e}"
@@ -1496,6 +1407,20 @@ class FeatureOrchestrator:
             logger.warning(f"Environment bootstrap failed: {e}")
             console.print(f"[yellow]\u26a0[/yellow] Environment bootstrap failed: {e}")
             return None
+
+        if not result.declared:
+            # Said once per build, not again at every wave.
+            if not getattr(self, "_said_no_install_declared", False):
+                self._said_no_install_declared = True
+                logger.info("Environment: %s", result.summary)
+                console.print(f"[cyan]\u2699[/cyan] Environment: {result.summary}")
+        elif result.success:
+            logger.info("Environment: %s", result.summary)
+            console.print(f"[green]\u2713[/green] Environment: {result.summary}")
+        else:
+            logger.warning("Environment: %s", result.summary)
+            console.print(f"[yellow]\u26a0[/yellow] Environment: {result.summary}")
+        return result
 
     def _create_stub_implementation_plan(
         self,
@@ -1805,8 +1730,8 @@ The detailed specifications are in the task markdown file.
         for wave_number, task_ids in enumerate(
             feature.orchestration.parallel_groups, 1
         ):
-            # Inter-wave bootstrap: re-detect and install new dependencies
-            # (e.g., Wave 1 may have created pyproject.toml that Wave 2 needs)
+            # Inter-wave bootstrap: run the declared install again when a
+            # file it serves changed in the last wave
             if wave_number > 1:
                 self._bootstrap_pending = True
 
@@ -3736,7 +3661,7 @@ The detailed specifications are in the task markdown file.
                     # Cleared first: an install that fails is reported once
                     # for the wave, not again for every later task.
                     self._bootstrap_pending = False
-                    self._bootstrap_environment(worktree, feature=feature)
+                    self._bootstrap_environment(worktree)
                 self._update_task_started(feature, task.id)
                 kwargs['shares_working_copy'] = False
                 if admitted:
@@ -3978,7 +3903,6 @@ The detailed specifications are in the task markdown file.
                 shares_working_copy=shares_working_copy,
                 emitter=self._emitter,  # Forward emitter to task orchestrator (TASK-INST-013)
                 progress_logger=progress_logger,  # TASK-FIX-OBS2: Per-task progress logging
-                venv_python=self._bootstrap_venv_python,  # TASK-FIX-7A05
                 # TASK-FIX-LGFM: thread --model down to LangGraph harness via
                 # AgentInvoker. Without this, model=None reaches LangGraphHarness
                 # and DeepAgents falls back to Anthropic (auth error under llama-swap).

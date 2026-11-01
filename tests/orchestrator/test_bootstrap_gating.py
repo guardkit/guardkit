@@ -1,28 +1,22 @@
-"""Bootstrap failures and interpreter mismatches are advice, never a stop.
+"""Bootstrap failures are advice, never a stop.
 
 Step 2 (26 October 2026): the bootstrap hard-fail gate
 (``bootstrap_failure_mode``, TASK-FIX-7A04) and its requires-python smart
-default (TASK-ABSR-A1B2) are removed. An install that fails, or an interpreter
-that does not meet a manifest's ``requires-python``, is a warning and the
-build goes on; when the project's tests then cannot start, the reviewer is
-told so. What still stops the bootstrap: a toolchain declaration that cannot
-be read (and, until toolchain_declaration.py changes, a refused component
-``cwd``). A declared input that cannot be read is hashed as "unreadable" (cull,
-27 October 2026).
+default (TASK-ABSR-A1B2) are removed. A declared install that fails is a
+warning and the build goes on; when the project's tests then cannot start,
+the reviewer is told so. What still stops the bootstrap: a toolchain
+declaration that cannot be read (and, until toolchain_declaration.py changes,
+a refused component ``cwd``). Since 1 November 2026 only a declared install
+runs: no declaration means nothing is installed.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from guardkit.orchestrator.environment_bootstrap import (
-    BootstrapFailureDetail,
-    BootstrapResult,
-)
 from guardkit.orchestrator.feature_orchestrator import (
     FeatureOrchestrationError,
     FeatureOrchestrator,
@@ -32,31 +26,6 @@ from guardkit.orchestrator.feature_orchestrator import (
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-
-def _make_result(
-    *,
-    installs_attempted: int,
-    installs_failed: int,
-    stacks_detected: List[str],
-    failure_details: List[BootstrapFailureDetail] | None = None,
-    skipped: bool = False,
-) -> BootstrapResult:
-    """Build a BootstrapResult with just enough fields for gate tests."""
-    return BootstrapResult(
-        success=installs_failed == 0,
-        skipped=skipped,
-        stacks_detected=list(stacks_detected),
-        manifests_found=[],
-        installs_attempted=installs_attempted,
-        installs_failed=installs_failed,
-        error=(
-            f"{installs_failed}/{installs_attempted} install(s) failed"
-            if installs_failed
-            else None
-        ),
-        failure_details=list(failure_details or []),
-    )
 
 
 def _build_orchestrator(tmp_path: Path) -> FeatureOrchestrator:
@@ -71,79 +40,30 @@ def _build_orchestrator(tmp_path: Path) -> FeatureOrchestrator:
     )
 
 
-# ---------------------------------------------------------------------------
-# End-to-end: _bootstrap_environment wires the gate through a mocked bootstrapper
-# ---------------------------------------------------------------------------
-
-
-class _FakeManifest:
-    """
-    Minimal DetectedManifest stand-in.
-
-    Exposes the three surface points the pre-check + gate need: ``stack``
-    (detector branch), ``path`` (used in mismatch records and debug logs),
-    and ``get_requires_python()`` (pre-check — ``None`` = no constraint
-    declared, making the pre-check a silent no-op).
-    """
-
-    def __init__(
-        self,
-        stack: str,
-        requires_python: "str | None" = None,
-        path: "Path | None" = None,
-    ) -> None:
-        self.stack = stack
-        self._requires_python = requires_python
-        self.path = path or Path(f"/tmp/fake-{stack}-manifest")
-
-    def get_requires_python(self) -> "str | None":
-        return self._requires_python
-
-
 class _FakeWorktree:
     def __init__(self, path: Path) -> None:
         self.path = path
 
-def _all_installs_failed(tmp_path: Path) -> BootstrapResult:
-    return _make_result(
-        installs_attempted=1,
-        installs_failed=1,
-        stacks_detected=["python"],
-        failure_details=[
-            BootstrapFailureDetail(
-                stack="python",
-                manifest_path=str(tmp_path / "pyproject.toml"),
-                stderr_excerpt="ERROR: externally-managed-environment",
-                is_pep668=True,
-                requires_python=">=3.13",
-                essential=True,
-            )
-        ],
-    )
 
-
-def test_bootstrap_environment_with_every_install_failed_goes_on(
+def test_a_failed_declared_install_goes_on(
     tmp_path: Path, capsys: pytest.CaptureFixture
 ) -> None:
-    """Every essential install failing is a warning; the result is returned
+    """A declared install that fails is a warning; the result is returned
     and the build goes on (step 2; formerly a stop in block mode)."""
+    import yaml
+
     orchestrator = _build_orchestrator(tmp_path)
-    fake_result = _all_installs_failed(tmp_path)
+    worktree = tmp_path / "worktree"
+    (worktree / ".guardkit").mkdir(parents=True)
+    (worktree / ".guardkit" / "config.yaml").write_text(
+        yaml.safe_dump({"toolchain": {"install": "false", "test": "true"}}),
+        encoding="utf-8",
+    )
 
-    with patch(
-        "guardkit.orchestrator.feature_orchestrator.ProjectEnvironmentDetector"
-    ) as det_cls, patch(
-        "guardkit.orchestrator.feature_orchestrator.EnvironmentBootstrapper"
-    ) as boot_cls:
-        det_cls.return_value.detect.return_value = [
-            _FakeManifest("python", requires_python=">=3.13")
-        ]
-        boot_cls.return_value.bootstrap.return_value = fake_result
+    got = orchestrator._bootstrap_environment(_FakeWorktree(worktree))
 
-        got = orchestrator._bootstrap_environment(_FakeWorktree(tmp_path))
-
-    assert got is fake_result
-    assert "Environment bootstrap partial: 0/1 succeeded" in capsys.readouterr().out
+    assert got is not None and got.declared is True and got.success is False
+    assert "the declared install `false` failed" in capsys.readouterr().out
 
 
 # ---------------------------------------------------------------------------
@@ -273,11 +193,12 @@ def test_an_inaccessible_declaration_directory_stops_the_bootstrap(
     assert not any(list(c.args[0]) == ["npm", "ci"] for c in run.call_args_list)
 
 
-def test_a_missing_declaration_directory_bootstraps_as_today(
-    tmp_path: Path
+def test_a_missing_declaration_directory_installs_nothing(
+    tmp_path: Path, capsys: pytest.CaptureFixture
 ) -> None:
-    """Control: no ``.guardkit`` at all means "not declared"; the install is
-    inferred from the lockfile as before."""
+    """No ``.guardkit`` at all means "not declared": nothing is installed,
+    though the worktree holds a lockfile (1 November 2026: no install is
+    inferred from a project's files)."""
     import shutil
 
     orchestrator = _build_orchestrator(tmp_path)
@@ -287,8 +208,9 @@ def test_a_missing_declaration_directory_bootstraps_as_today(
     with patch("subprocess.run", _no_installs()) as run:
         result = orchestrator._bootstrap_environment(_FakeWorktree(worktree))
 
-    assert result is not None and result.success is True
-    assert any(list(c.args[0]) == ["npm", "ci"] for c in run.call_args_list)
+    assert result is not None and result.success is True and result.declared is False
+    run.assert_not_called()
+    assert "no install declared; nothing installed" in capsys.readouterr().out
 
 
 # ---------------------------------------------------------------------------

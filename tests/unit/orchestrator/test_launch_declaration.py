@@ -510,14 +510,9 @@ class TestFeatureCheck:
         assert "launch_root=self.repo_root" in source
 
 
-def _declared_manifest(eb, worktree):
-    return eb.DetectedManifest(
-        stack="custom",
-        path=worktree / ".guardkit" / "config.yaml",
-        is_lock_file=False,
-        install_command=["tool", "install"],
-        declared=True,
-        install_cwd=worktree,
+def _declared_install(eb, worktree):
+    return eb.DeclaredInstall(
+        text="tool install", argv=("tool", "install"), cwd=worktree, timeout=300
     )
 
 
@@ -543,10 +538,8 @@ class TestInstallBootstrap:
         seen = self._record(monkeypatch, eb)
         bootstrapper = eb.EnvironmentBootstrapper(worktree)
 
-        assert bootstrapper._run_install(_declared_manifest(eb, worktree)) is True
+        assert bootstrapper._run_install(_declared_install(eb, worktree)) is True
         assert seen["env"]["TOOL_CACHE"].endswith("guardkit-scratch/toolchain/TOOL_CACHE")
-        assert bootstrapper._run_single_command(["tool", "add"], worktree) is True
-        assert "TOOL_CACHE" in seen["env"]
 
     def test_a_player_edit_of_the_worktree_config_changes_nothing(
         self, repo, monkeypatch
@@ -561,8 +554,8 @@ class TestInstallBootstrap:
         _write_config(worktree, {"settings": ["SOME_PROXY"], "scratch": ["OTHER"]})
         seen = self._record(monkeypatch, eb)
 
-        assert eb.EnvironmentBootstrapper(worktree)._run_single_command(
-            ["tool", "add"], worktree
+        assert eb.EnvironmentBootstrapper(worktree)._run_install(
+            _declared_install(eb, worktree)
         )
         assert "TOOL_CACHE" in seen["env"]
         assert "OTHER" not in seen["env"]
@@ -581,22 +574,8 @@ class TestInstallBootstrap:
         bootstrapper = eb.EnvironmentBootstrapper(worktree)
         plain = project_command_environment(worktree, None)
 
-        assert bootstrapper._run_single_command(["tool", "add"], worktree) is True
+        assert bootstrapper._run_install(_declared_install(eb, worktree)) is True
         assert seen["env"] == plain
-        assert bootstrapper._run_install(_declared_manifest(eb, worktree)) is True
-        assert seen["env"] == plain
-        # A Python install keeps its isolated env, byte for byte.
-        venv = worktree / ".venv"
-        bootstrapper._venv_python = venv / "bin" / "python"
-        python = eb.DetectedManifest(
-            stack="python",
-            path=worktree / "pyproject.toml",
-            is_lock_file=False,
-            install_command=[eb.sys.executable, "-m", "pip", "install", "-e", "."],
-        )
-        assert bootstrapper._run_install(python) is True
-        assert seen["env"] == bootstrapper._isolated_env(venv)
-
 
     def test_a_malformed_block_fails_the_install_plainly(self, repo, monkeypatch):
         from guardkit.orchestrator import environment_bootstrap as eb
@@ -608,7 +587,7 @@ class TestInstallBootstrap:
         )
         bootstrapper = eb.EnvironmentBootstrapper(worktree)
 
-        assert bootstrapper._run_install(_declared_manifest(eb, worktree)) is False
+        assert bootstrapper._run_install(_declared_install(eb, worktree)) is False
         assert "`launch:` block" in bootstrapper._last_failure_stderr
 
 

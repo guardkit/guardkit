@@ -957,7 +957,6 @@ class AutoBuildOrchestrator:
         shares_working_copy: bool = False,
         emitter: Optional[Any] = None,
         progress_logger: Optional[Any] = None,
-        venv_python: Optional[str] = None,
         model: Optional[str] = None,  # TASK-FIX-MODELPLUMB
         coach_model: Optional[str] = None,  # TASK-FIX-COACHBUDG01: per-role Coach override
         evidence_repos: Optional[List[EvidenceRepo]] = None,  # TASK-AB-XREPOEV01
@@ -1105,10 +1104,6 @@ class AutoBuildOrchestrator:
         # leaving two outcomes that look like two unrelated builds.
         self._last_captured_terminal: Optional[str] = None
         self._existing_worktree = existing_worktree  # For feature mode (TASK-FBC-001)
-        # TASK-FIX-7A05: Python interpreter Coach uses for pytest. Sourced
-        # from BootstrapResult.venv_python in the feature orchestrator so
-        # Coach verifies against the same interpreter the bootstrap built.
-        self._venv_python: Optional[str] = venv_python
         # TASK-FIX-MODELPLUMB: CLI --model threaded through to AgentInvoker
         # then used as default when invoke_coach / _invoke_with_role /
         # specialist invocations don't specify their own model. Load-bearing
@@ -1970,7 +1965,6 @@ class AutoBuildOrchestrator:
                         use_task_work_delegation=True,
                         cancellation_event=self._cancellation_event,  # TASK-FIX-ASPF-004
                         timeout_multiplier=self.timeout_multiplier,  # TASK-FIX-VL05
-                        venv_python=self._venv_python,  # TASK-FIX-7A05
                         model_name=self._model_name,  # TASK-FIX-MODELPLUMB
                         coach_model_name=self._coach_model_name,  # TASK-FIX-COACHBUDG01
                         evidence_repos=self._evidence_repos,  # TASK-AB-XREPOEV01
@@ -2009,7 +2003,6 @@ class AutoBuildOrchestrator:
                     sdk_timeout_is_override=self._sdk_timeout_is_override,
                     use_task_work_delegation=True,
                     cancellation_event=self._cancellation_event,  # TASK-FIX-ASPF-004
-                    venv_python=self._venv_python,  # TASK-FIX-7A05
                     model_name=self._model_name,  # TASK-FIX-MODELPLUMB
                     coach_model_name=self._coach_model_name,  # TASK-FIX-COACHBUDG01
                     evidence_repos=self._evidence_repos,  # TASK-AB-XREPOEV01
@@ -2971,69 +2964,35 @@ class AutoBuildOrchestrator:
             logger.warning(f"Max turns ({self.max_turns}) exceeded for {task_id}")
             return turn_history, "max_turns_exceeded"
 
-    def _maybe_refresh_venv_for_manifest_change(
-        self, player_result: Any, worktree: Any, turn: int
-    ) -> None:
-        """Reinstall the worktree's dependencies when this turn changed a manifest.
+    def _maybe_rerun_declared_install(self, worktree: Any, turn: int) -> None:
+        """Run the project's declared root install again before the Coach's
+        check when a file it serves changed this turn.
 
-        TASK-AB-COACHVENV01: the reinstall runs before the Coach's independent
-        test run, so the project's tests run against the dependencies the turn
-        declared. A failed reinstall is logged; the turn goes on, and the
-        project's tests say what they say.
+        Only a declared ``toolchain.install`` runs (1 November 2026); with
+        none declared nothing happens. Whether it is due is the bootstrap's
+        own record of the files it serves (``rerun_declared_install_if_due``),
+        not the builder's report. A failed install is logged and the turn
+        goes on: the project's tests then say what they say.
         """
         from guardkit.orchestrator.environment_bootstrap import (
-            changed_dependency_manifests,
-            refresh_environment_for_changes,
-            stacks_for_changed_manifests,
+            rerun_declared_install_if_due,
         )
 
-        if worktree is None or player_result is None:
+        if worktree is None:
             return
-        report = getattr(player_result, "report", None) or {}
-        changed = list(report.get("files_modified", []) or []) + list(
-            report.get("files_created", []) or []
-        )
-        manifests_changed = changed_dependency_manifests(
-            changed, Path(worktree.path)
-        )
-        if not manifests_changed:
-            return
-        logger.info(
-            "Turn %d modified dependency manifest(s) %s — refreshing worktree "
-            "venv before Coach verification (TASK-AB-COACHVENV01)",
-            turn,
-            manifests_changed,
-        )
         try:
-            result = refresh_environment_for_changes(
-                Path(worktree.path),
-                changed,
-                relevant_stacks=stacks_for_changed_manifests(changed) or None,
-            )
+            result = rerun_declared_install_if_due(Path(worktree.path))
         except Exception as exc:  # noqa: BLE001 - logged; the turn goes on
             logger.warning(
-                "Worktree venv refresh failed for turn %d: %s", turn, exc,
+                "The declared install could not be checked for turn %d: %s", turn, exc,
             )
             return
-        if result is None:
+        if result is None or (result.skipped and result.success):
             return
-        if not result.success:
-            logger.warning(
-                "Worktree venv refresh for turn %d did not succeed: %s",
-                turn,
-                "; ".join(
-                    f"{d.stack} ({Path(d.manifest_path).name}): {d.stderr_excerpt}"
-                    for d in result.failure_details
-                ) or (result.error or "unknown install error"),
-            )
-            return
-        if result.venv_python:
-            self._venv_python = result.venv_python
-        logger.info(
-            "Worktree venv refreshed for turn %d (stacks: %s)",
-            turn,
-            ", ".join(result.stacks_detected),
-        )
+        if result.success:
+            logger.info("Turn %d: %s", turn, result.summary)
+        else:
+            logger.warning("Turn %d: %s", turn, result.summary)
 
     def _set_progress_files_measure(self, measure: Optional[Any]) -> None:
         """Install or clear the progress log's files-changed measurement."""
@@ -3480,11 +3439,11 @@ class AutoBuildOrchestrator:
                 files_changed_this_turn=files_changed_this_turn,
             )
 
-        # TASK-AB-COACHVENV01: when THIS turn modified a dependency manifest,
-        # reinstall into the worktree venv BEFORE the Coach's independent test
-        # run, so the project's tests run against the dependencies the turn
-        # declared. A failed reinstall is logged; the turn goes on.
-        self._maybe_refresh_venv_for_manifest_change(player_result, worktree, turn)
+        # When this turn changed a file the declared root install serves, run
+        # it again BEFORE the Coach's check, so the project's tests run
+        # against the dependencies the turn declared. A failed install is
+        # logged; the turn goes on.
+        self._maybe_rerun_declared_install(worktree, turn)
 
         self._progress_display.start_turn(turn, "Coach Validation")
 
@@ -6970,7 +6929,6 @@ class AutoBuildOrchestrator:
                     sdk_timeout_is_override=self._sdk_timeout_is_override,
                     use_task_work_delegation=True,
                     cancellation_event=self._cancellation_event,  # TASK-FIX-ASPF-004
-                    venv_python=self._venv_python,  # TASK-FIX-7A05
                     model_name=self._model_name,  # TASK-FIX-MODELPLUMB
                     coach_model_name=self._coach_model_name,  # TASK-FIX-COACHBUDG01
                     evidence_repos=self._evidence_repos,  # TASK-AB-XREPOEV01

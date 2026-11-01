@@ -25,14 +25,11 @@ looks like configuration is load-bearing:
   ``/task-work`` design phase; the leg's dispositions (below) declare them
   absent rather than pretending they ran.
 * ``skip_arch_review=True`` — a fix task is a *fix*, not an architecture.
-* ``venv_python=`` — the worktree's own interpreter, resolved (or provisioned)
-  BEFORE the orchestrator exists (Part N of the rewrite-on-refusal spec,
-  2026-09-07, rules 58-60). A feature build bootstraps its worktree once and
-  hands the interpreter to every turn; a repair's work leg runs on an existing
-  worktree with the pre-loop off and, before this, never bootstrapped — so on
-  a Python repository the Coach could resolve no interpreter and the leg died
-  before any code changed (journey one, FEAT-39F6). See
-  :func:`provision_interpreter`.
+* The project's declared root install runs BEFORE the orchestrator exists
+  (:func:`install_declared`), because a repair's work leg runs on an existing
+  worktree with the pre-loop off and nothing else would install it. Only a
+  declared ``toolchain.install`` runs (1 November 2026); with none declared
+  nothing is installed and no interpreter is looked for.
 
 Exit semantics belong to the CLI (:mod:`guardkit.cli.task_work`); this module
 returns a typed outcome and never calls :func:`sys.exit`. It never raises.
@@ -43,8 +40,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-import shlex
-import sys
 import threading
 import time
 from dataclasses import dataclass, field
@@ -95,19 +90,6 @@ DEFAULT_MAX_TURNS = 2
 
 #: ``final_decision`` value that means the Coach approved.
 APPROVED_DECISION = "approved"
-
-#: Where the leg's interpreter came from, as the receipt names it (rule 59).
-#: ``worktree`` — found under the worktree at one of the two locations the
-#: Coach verifier probes; ``bootstrapped`` — the leg ran the environment
-#: bootstrap and this is what it produced; ``explicit`` — handed in by the
-#: caller. A non-Python worktree has no interpreter entry at all.
-INTERPRETER_SOURCES: Tuple[str, ...] = ("worktree", "bootstrapped", "explicit")
-
-#: The bootstrapper's own record of what it did last, at its documented home
-#: (``EnvironmentBootstrapper``: "State is persisted in
-#: ``<root>/.guardkit/bootstrap_state.json``"). Read, never written, here.
-BOOTSTRAP_STATE_RELPATH = Path(".guardkit") / "bootstrap_state.json"
-
 
 # ---------------------------------------------------------------------------
 # §c.2 dispositions — every checkpoint of the attended /task-work, named
@@ -260,13 +242,8 @@ class WorkLegOutcome:
     leg_budget_seconds: int = DEFAULT_LEG_BUDGET_SECONDS
     budget_expired: bool = False
     error: Optional[str] = None
-    # Part N (rule 59): ``{"path": ..., "source": ...}`` when the leg had an
-    # interpreter, else None (a non-Python worktree, or a provisioning
-    # failure — the failure sentence is in ``error``).
-    interpreter: Optional[Dict[str, str]] = None
-    # What the environment bootstrap did when the leg ran it; None when it
-    # did not run (an interpreter was already present, or the worktree is
-    # not a Python project).
+    # What the leg's declared install did (:func:`install_declared`); None
+    # when the leg stopped before it.
     bootstrap: Optional[Dict[str, Any]] = None
 
     @property
@@ -399,293 +376,46 @@ def build_outer_worktree(task_id: str, repo_root: Path, branch: str):
 
 
 # ---------------------------------------------------------------------------
-# Part N — the worktree's interpreter, resolved or provisioned before the
-# orchestrator exists (rewrite-on-refusal spec 2026-09-07, rules 58-60)
+# The project's declared install, run before the orchestrator exists
 # ---------------------------------------------------------------------------
 
 
-@dataclass
-class InterpreterProvision:
-    """What the leg found, or made, as the worktree's Python interpreter.
+def install_declared(worktree_root: Path) -> Dict[str, Any]:
+    """Run the project's declared root install for the leg, when it is due.
 
-    ``path``/``source`` are the receipt's ``interpreter`` entry (rule 59).
-    ``bootstrap`` is the environment bootstrap's own account when the leg ran
-    it. ``error`` is the leg's failure sentence when the interpreter could not
-    be provisioned — plain words naming the command that failed, never the
-    Coach's "no worktree venv interpreter resolved" text for a repository the
-    bootstrap could have provisioned.
-    """
-
-    path: Optional[str] = None
-    source: Optional[str] = None
-    bootstrap: Optional[Dict[str, Any]] = None
-    error: Optional[str] = None
-
-    def as_receipt_entry(self) -> Optional[Dict[str, str]]:
-        if self.path is None or self.source is None:
-            return None
-        return {"path": self.path, "source": self.source}
-
-
-def python_project_markers_present(worktree_root: Path) -> List[str]:
-    """The root-level files that make the Coach verifier call this a Python
-    project — its own list, imported, not restated. A match here means the
-    Coach would HARD-ABORT without a worktree interpreter, so it is exactly
-    the condition under which the leg must provision one."""
-    from guardkit.orchestrator.coach_verification import (  # noqa: PLC0415
-        _PYTHON_PROJECT_MARKERS,
-    )
-
-    return [
-        marker
-        for marker in _PYTHON_PROJECT_MARKERS
-        if (Path(worktree_root) / marker).exists()
-    ]
-
-
-def read_bootstrap_state(worktree_root: Path) -> Dict[str, Any]:
-    """The bootstrapper's saved record (``success``, ``timestamp``, ...), or
-    ``{}`` when there is none or it cannot be read. Read-only."""
-    path = Path(worktree_root) / BOOTSTRAP_STATE_RELPATH
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
-    return data if isinstance(data, dict) else {}
-
-
-def _install_commands_for(manifest: Any, venv_python: Optional[str]) -> List[str]:
-    """The command(s) the bootstrap runs for one manifest, rendered as it runs
-    them: the full-project install when the project is complete, else the
-    per-dependency commands, with the bootstrapper's own remap of
-    ``sys.executable`` to the worktree venv (``_run_install``) applied."""
-    try:
-        if manifest.is_project_complete():
-            commands = [list(manifest.install_command)]
-        else:
-            commands = [list(c) for c in (manifest.get_dependency_install_commands() or [])]
-    except Exception:  # noqa: BLE001 — naming a command must never raise
-        commands = [list(getattr(manifest, "install_command", []) or [])]
-    rendered: List[str] = []
-    for cmd in commands:
-        if cmd and venv_python and str(cmd[0]) == sys.executable:
-            cmd[0] = str(venv_python)
-        if cmd:
-            rendered.append(shlex.join(str(part) for part in cmd))
-    return rendered
-
-
-def _install_cwd_for(manifest: Any) -> str:
-    """Where the bootstrap runs that manifest's command (``_run_install``)."""
-    cwd = getattr(manifest, "install_cwd", None) or manifest.path.parent
-    return str(cwd)
-
-
-def bootstrap_worktree(worktree_root: Path) -> InterpreterProvision:
-    """Run the environment bootstrap on the worktree, exactly as the feature
-    orchestrator runs it, and hand back the interpreter it produced.
-
-    The call is ``FeatureOrchestrator._bootstrap_environment``'s, mirrored:
-    ``ProjectEnvironmentDetector(root, python_extras=()).detect()`` then
-    ``EnvironmentBootstrapper(root).bootstrap(manifests)``. No feature is
-    loaded here, so no extras are derived — a locked project (``uv.lock``)
-    ignores extras anyway (``uv sync --frozen`` reads them from the lock).
-    The bootstrapper's own saved state makes a second call a skip, so the
-    second and third legs of a cycle reuse the first leg's environment.
-
-    Never raises. Every failure is a plain sentence naming what was run.
+    Only a declared ``toolchain.install`` runs (1 November 2026: installs
+    come only from the project's declaration). With none declared nothing is
+    installed, nothing is looked for, and the block says so. The bootstrap's
+    own saved record makes a second leg in the same worktree a skip. Returns
+    the receipt's ``bootstrap`` block. Never raises.
     """
     from guardkit.orchestrator.environment_bootstrap import (  # noqa: PLC0415
-        EnvironmentBootstrapper,
-        ProjectEnvironmentDetector,
-        probe_worktree_venv,
+        bootstrap_worktree,
     )
 
     root = Path(worktree_root)
-    prefix = f"the work leg could not provision a Python interpreter for {root}: "
-
     try:
-        manifests = ProjectEnvironmentDetector(root, python_extras=()).detect()
-    except Exception as exc:  # noqa: BLE001
-        return InterpreterProvision(
-            error=prefix
-            + "the environment bootstrap could not read the project's manifests "
-            + f"({type(exc).__name__}: {exc})"
-        )
-
-    if not manifests:
-        markers = ", ".join(python_project_markers_present(root)) or "a Python marker"
-        return InterpreterProvision(
-            error=prefix
-            + f"the worktree carries {markers} but the environment bootstrap "
-            "found no manifest it can install from (it reads pyproject.toml, "
-            "poetry.lock and requirements.txt, at the root and one level down)"
-        )
-
-    def _planned_commands(venv_python: Optional[str]) -> List[str]:
-        planned: List[str] = []
-        for manifest in manifests:
-            planned.extend(_install_commands_for(manifest, venv_python))
-        return planned
-
-    bootstrapper = EnvironmentBootstrapper(root)
-    try:
-        result = bootstrapper.bootstrap(manifests)
-    except Exception as exc:  # noqa: BLE001
-        commands = _planned_commands(None)
-        return InterpreterProvision(
-            error=prefix
-            + f"the environment bootstrap raised {type(exc).__name__}: {exc}"
-            + (
-                "; the command(s) it runs for this worktree: "
-                + "; ".join(f"`{c}`" for c in commands)
-                if commands
-                else ""
-            )
-        )
-
-    venv_python = result.venv_python
-    commands = _planned_commands(venv_python)
-    failures: List[Dict[str, Any]] = []
-    by_path = {str(m.path): m for m in manifests}
-    for detail in result.failure_details or ():
-        if not getattr(detail, "essential", True):
-            continue
-        manifest = by_path.get(str(detail.manifest_path))
-        failures.append(
-            {
-                "manifest": str(detail.manifest_path),
-                "commands": (
-                    _install_commands_for(manifest, venv_python) if manifest else []
-                ),
-                "cwd": _install_cwd_for(manifest) if manifest else None,
-                "stderr_excerpt": detail.stderr_excerpt,
-            }
-        )
-    block: Dict[str, Any] = {
-        "ran": True,
-        "skipped": bool(result.skipped),
-        "success": bool(result.success),
-        "stacks_detected": list(result.stacks_detected),
-        "manifests_found": list(result.manifests_found),
-        "commands": commands,
-        "installs_attempted": result.installs_attempted,
-        "installs_failed": result.installs_failed,
-        "duration_seconds": round(result.duration_seconds, 3),
-        "state_file": str(root / BOOTSTRAP_STATE_RELPATH),
-        "failures": failures,
+        result = bootstrap_worktree(root)
+    except Exception as exc:  # noqa: BLE001 — the leg goes on and says why
+        return {
+            "declared": None,
+            "ran": False,
+            "success": False,
+            "error": (
+                "the project's declared install could not be read or run "
+                f"({type(exc).__name__}: {exc})"
+            ),
+        }
+    return {
+        "declared": result.declared,
+        "command": result.command,
+        "ran": result.installs_attempted > 0,
+        "skipped": result.skipped,
+        "success": result.success,
+        "summary": result.summary,
         "error": result.error,
+        "duration_seconds": round(result.duration_seconds, 3),
     }
-
-    if result.skipped:
-        saved = read_bootstrap_state(root)
-        if saved.get("success", True) is False:
-            # The bootstrapper's own record says its last attempt failed and
-            # it is inside its retry cooldown, so it ran nothing this time. A
-            # venv it left behind is not an environment; say so, name what
-            # it would have run, and stop.
-            when = saved.get("timestamp") or "an earlier attempt"
-            return InterpreterProvision(
-                bootstrap=block,
-                error=prefix
-                + f"the environment bootstrap's last attempt ({when}) failed and "
-                "it is still inside its retry cooldown, so it did not run "
-                + "; ".join(f"`{c}`" for c in commands)
-                + " again",
-            )
-
-    if not result.success:
-        sentences: List[str] = []
-        for failure in failures:
-            named = "; ".join(f"`{c}`" for c in failure["commands"]) or "its install command"
-            sentence = f"the environment bootstrap ran {named} in {failure['cwd']} and it failed"
-            excerpt = (failure.get("stderr_excerpt") or "").strip()
-            if excerpt:
-                sentence += f": {excerpt[-500:]}"
-            sentences.append(sentence)
-        if not sentences:
-            sentences.append(
-                f"the environment bootstrap failed ({result.error or 'no detail recorded'})"
-            )
-        return InterpreterProvision(bootstrap=block, error=prefix + "; ".join(sentences))
-
-    path = venv_python or probe_worktree_venv(root)
-    if not path or not Path(path).exists():
-        ran = "; ".join(f"`{c}`" for c in commands) or "nothing to install"
-        return InterpreterProvision(
-            bootstrap=block,
-            error=prefix
-            + f"the environment bootstrap finished ({ran}) but left no interpreter at "
-            f"{root / '.venv' / 'bin' / 'python'} or "
-            f"{root / '.guardkit' / 'venv' / 'bin' / 'python'}",
-        )
-    return InterpreterProvision(path=str(path), source="bootstrapped", bootstrap=block)
-
-
-def provision_interpreter(
-    worktree_root: Path, *, explicit: Optional[str] = None
-) -> InterpreterProvision:
-    """Resolve the worktree's interpreter the way the Coach verifier does, and
-    bootstrap the worktree when it has to (rule 58). Never raises.
-
-    Order: an explicit path that exists on disk; then the two locations the
-    Coach verifier probes (``<worktree>/.venv/bin/python``, then the legacy
-    ``<worktree>/.guardkit/venv/bin/python``) — the verifier's own
-    ``probe_worktree_venv``, not a copy; then, for a Python project with no
-    interpreter, the environment bootstrap. A non-Python worktree is left
-    exactly as it was, with no interpreter and no bootstrap.
-
-    One guard on the probed path: when the bootstrapper's own saved record
-    says its last attempt failed, the ``.venv`` it left behind is not trusted
-    — the Coach would otherwise approve "with environment flag" on a broken
-    environment — and the bootstrap is run again (it retries after its
-    cooldown, and a skip inside the cooldown is the leg's failure).
-    """
-    from guardkit.orchestrator.environment_bootstrap import (  # noqa: PLC0415
-        probe_worktree_venv,
-    )
-
-    root = Path(worktree_root)
-    try:
-        if explicit:
-            candidate = Path(explicit)
-            if candidate.exists():
-                return InterpreterProvision(path=str(candidate), source="explicit")
-            logger.warning(
-                "work leg: explicit interpreter %s does not exist — falling "
-                "through to the worktree probe",
-                candidate,
-            )
-
-        probed = probe_worktree_venv(root)
-        markers = python_project_markers_present(root)
-        if probed is not None:
-            if markers and read_bootstrap_state(root).get("success", True) is False:
-                logger.warning(
-                    "work leg: %s exists but the bootstrap's own record says its "
-                    "last attempt failed — running the environment bootstrap again",
-                    probed,
-                )
-                return bootstrap_worktree(root)
-            return InterpreterProvision(path=str(probed), source="worktree")
-
-        if not markers:
-            return InterpreterProvision()
-
-        logger.info(
-            "work leg: no worktree interpreter at %s (Python project: %s) — "
-            "running the environment bootstrap",
-            root,
-            ", ".join(markers),
-        )
-        return bootstrap_worktree(root)
-    except Exception as exc:  # noqa: BLE001 — provisioning must never traceback out
-        return InterpreterProvision(
-            error=(
-                f"the work leg could not provision a Python interpreter for {root}: "
-                f"{type(exc).__name__}: {exc}"
-            )
-        )
 
 
 # ---------------------------------------------------------------------------
@@ -934,9 +664,7 @@ def build_receipt(
         "final_decision": outcome.final_decision,
         "worktree_path": outcome.worktree_path,
         "branch": outcome.branch,
-        # Part N (rule 59): the interpreter the orchestrator was given, and
-        # where it came from; the bootstrap's own account when the leg ran it.
-        "interpreter": outcome.interpreter,
+        # What the project's declared install did before the orchestrator ran.
         "bootstrap": outcome.bootstrap,
         "requirements_source": outcome.requirements_source,
         "commit": outcome.commit,
@@ -1015,13 +743,8 @@ def _build_orchestrator(
     leg_budget: int,
     timeout_event: threading.Event,
     model: Optional[str],
-    venv_python: Optional[str] = None,
 ):
     """Construct the orchestrator with the §2c configuration, verbatim.
-
-    ``venv_python`` is the worktree's interpreter from
-    :func:`provision_interpreter` (Part N): the orchestrator hands it to the
-    Coach exactly as the feature orchestrator hands over its bootstrap's.
 
     Imported lazily so ``guardkit --help`` does not pay for the orchestrator's
     import graph.
@@ -1041,7 +764,6 @@ def _build_orchestrator(
         timeout_event=timeout_event,
         skip_arch_review=True,
         model=model,
-        venv_python=venv_python,
     )
 
 
@@ -1059,28 +781,22 @@ def run_work_leg(
     leg_budget: int = DEFAULT_LEG_BUDGET_SECONDS,
     orchestrator_factory: Optional[Any] = None,
     git_executor: Optional[Any] = None,
-    venv_python: Optional[str] = None,
 ) -> WorkLegOutcome:
     """Run the headless work leg end to end. Never raises; never exits.
 
     ``orchestrator_factory`` and ``git_executor`` are seams for tests only —
-    production passes neither. ``venv_python`` is an explicit interpreter for
-    the worktree (receipt source ``explicit``); production passes none and the
-    leg resolves or provisions one itself (Part N).
+    production passes neither.
     """
     started = time.monotonic()
     seat = os.environ.get("OPENAI_BASE_URL")
     payloads = load_context_payloads(context, repo_root=repo_root)
     fix_task_info = _load_fix_task_payload(fix_task)
-    provision: Optional[InterpreterProvision] = None
+    install: Optional[Dict[str, Any]] = None
 
     def _outcome(status: str, exit_code: int, **kwargs: Any) -> WorkLegOutcome:
         kwargs.setdefault("context_payloads", payloads)
         kwargs.setdefault("fix_task", fix_task_info)
-        kwargs.setdefault(
-            "interpreter", provision.as_receipt_entry() if provision else None
-        )
-        kwargs.setdefault("bootstrap", provision.bootstrap if provision else None)
+        kwargs.setdefault("bootstrap", install)
         return WorkLegOutcome(
             task_id=task_id,
             status=status,
@@ -1130,23 +846,14 @@ def run_work_leg(
             requirements_source=provenance,
         )
 
-    # --- Part N. The interpreter, before the orchestrator exists. -----------
-    # Resolved the way the Coach verifier resolves it; bootstrapped when the
-    # worktree is a Python project with no interpreter (rule 58). A failure
-    # here does not stop the leg. The log carries what the project's own
-    # install said when it ran and failed.
-    provision = provision_interpreter(repo_root, explicit=venv_python)
-    if provision.error:
-        logger.warning(
-            "work leg: the project's tests could not be run: %s",
-            provision.error,
-        )
-    if provision.path:
-        logger.info(
-            "work leg: Coach will verify using interpreter %s (%s)",
-            provision.path,
-            provision.source,
-        )
+    # --- The project's declared install, before the orchestrator exists. ---
+    # Only a declared install runs; a failure does not stop the leg, and the
+    # log carries what the install said.
+    install = install_declared(repo_root)
+    if install.get("success"):
+        logger.info("work leg: %s", install.get("summary"))
+    else:
+        logger.warning("work leg: %s", install.get("error"))
 
     # --- §2c. Delegate. -----------------------------------------------------
     timeout_event = threading.Event()
@@ -1166,7 +873,6 @@ def run_work_leg(
             leg_budget=leg_budget,
             timeout_event=timeout_event,
             model=model,
-            venv_python=provision.path,
         )
         from guardkit.orchestrator.task_work_scope import (  # noqa: PLC0415
             adopt_prepared_checkout,
@@ -1292,26 +998,20 @@ def run_work_leg(
 
 __all__ = [
     "APPROVED_DECISION",
-    "BOOTSTRAP_STATE_RELPATH",
     "DEFAULT_LEG_BUDGET_SECONDS",
     "DEFAULT_MAX_TURNS",
     "DEFAULT_SDK_TIMEOUT_SECONDS",
     "EMPTY_ARTEFACTS_NOTE",
-    "INTERPRETER_SOURCES",
-    "InterpreterProvision",
     "PHASE_6_RELOCATION",
     "PHASES_NOT_RUN",
     "WorkLegOutcome",
-    "bootstrap_worktree",
     "build_outer_worktree",
     "build_receipt",
     "commit_outer_tree",
     "detect_head_branch",
     "extract_markdown_section",
     "lift_gate_blocks",
-    "provision_interpreter",
-    "python_project_markers_present",
-    "read_bootstrap_state",
+    "install_declared",
     "receipt_path_for",
     "residual_findings",
     "run_work_leg",

@@ -246,61 +246,18 @@ def test_a_work_folder_that_is_not_a_git_checkout_runs_nothing(tmp_path: Path) -
 
 def _run_install(p: Project) -> Dict[str, str]:
     from guardkit.orchestrator.environment_bootstrap import (
-        DetectedManifest,
+        DeclaredInstall,
         EnvironmentBootstrapper,
     )
 
-    manifest = DetectedManifest(
-        path=p.repo / ".guardkit" / "config.yaml",
-        stack="generic",
-        is_lock_file=False,
-        install_command=["sh", str(p.dump_sh), "install"],
-        declared=True,
-        install_cwd=p.repo,
+    install = DeclaredInstall(
+        text=f"sh {p.dump_sh} install",
+        argv=("sh", str(p.dump_sh), "install"),
+        cwd=p.repo,
+        timeout=300,
     )
-    assert EnvironmentBootstrapper(p.repo)._run_install(manifest)
+    assert EnvironmentBootstrapper(p.repo)._run_install(install)
     return p.read("install")
-
-
-def _run_install_retry(p: Project) -> Dict[str, str]:
-    """Row 2: the PEP 668 retry, for real, into a venv made for it."""
-    from guardkit.orchestrator.environment_bootstrap import (
-        DetectedManifest,
-        EnvironmentBootstrapper,
-    )
-
-    script = p.out.parent / "tools" / "pep668.py"
-    script.write_text(
-        textwrap.dedent(
-            f"""\
-            import os, sys
-            if sys.prefix == sys.base_prefix:
-                sys.stderr.write("error: externally-managed-environment\\n")
-                sys.exit(1)
-            exec(open({str(p.dump_py)!r}).read().replace("sys.argv[1] if len(sys.argv) > 1 else \\"python\\"", "'install-retry'"))
-            """
-        ),
-        encoding="utf-8",
-    )
-    manifest = DetectedManifest(
-        path=p.repo / ".guardkit" / "config.yaml",
-        stack="python",
-        is_lock_file=False,
-        install_command=[sys.executable, str(script)],
-        declared=True,
-        install_cwd=p.repo,
-    )
-    assert EnvironmentBootstrapper(p.repo)._run_install(manifest)
-    return p.read("install-retry")
-
-
-def _run_single_dependency(p: Project) -> Dict[str, str]:
-    from guardkit.orchestrator.environment_bootstrap import EnvironmentBootstrapper
-
-    assert EnvironmentBootstrapper(p.repo)._run_single_command(
-        ["sh", str(p.dump_sh), "dependency"], p.repo
-    )
-    return p.read("dependency")
 
 
 def _validator(p: Project, **kw: Any):
@@ -452,8 +409,6 @@ def _run_qa_seed(p: Project) -> Dict[str, str]:
 #: The generic sites, run for real: (row, label, driver).
 GENERIC_SITES: List[Tuple[str, Callable[..., Dict[str, str]]]] = [
     ("1 builder's install", _run_install),
-    ("2 install retry (PEP 668)", _run_install_retry),
-    ("3 single dependency install", _run_single_dependency),
     ("4 checker's declared test", _run_checker_test),
     ("8 runtime-parity smoke", _run_runtime_parity),
     ("11 oracle command from YAML", _run_yaml_oracle),
@@ -484,17 +439,6 @@ def test_every_project_command_path_hides_factory_credentials(
 
 
 # ---- Python-only sites: the env= passed is captured ------------------------
-
-
-def _capture_venv_creation(p: Project, monkeypatch) -> Recorder:
-    from guardkit.orchestrator.environment_bootstrap import EnvironmentBootstrapper
-
-    recorder = _record_run(monkeypatch)
-    bs = EnvironmentBootstrapper(p.repo)
-    bs._ensure_venv()
-    bs._ensure_uv_venv(p.repo, None)
-    bs._ensure_worktree_venv(p.repo / "elsewhere")
-    return recorder
 
 
 def _capture_pytest_path(p: Project, monkeypatch) -> Recorder:
@@ -541,7 +485,6 @@ def _capture_bdd_probe_for_sweep(p: Project, monkeypatch) -> Recorder:
 
 #: The Python-only sites, checked by capturing env=: (row, driver).
 CAPTURED_SITES: List[Tuple[str, Callable[..., Recorder]]] = [
-    ("1a making the virtual environment", _capture_venv_creation),
     ("5 checker's pytest-path test", _capture_pytest_path),
     ("25 BDD runs", _capture_bdd_run),
     ("25a pytest-bdd probe via run_bdd_for_task", _capture_bdd_probe_for_task),
@@ -594,7 +537,6 @@ def test_the_install_and_the_checker_share_one_scratch_folder(
 
 
 def test_additions_still_arrive(project: Project, monkeypatch: pytest.MonkeyPatch) -> None:
-    from guardkit.orchestrator.environment_bootstrap import EnvironmentBootstrapper
     from guardkit.orchestrator.feature_check import run_feature_check_command
 
     feature = {
@@ -615,12 +557,6 @@ def test_additions_still_arrive(project: Project, monkeypatch: pytest.MonkeyPatc
     validator._fixture_env["DATABASE_URL"] = "postgresql://127.0.0.1:5999/test"
     validator.run_independent_tests()
     assert project.read("fixture-url")["DATABASE_URL"] == "postgresql://127.0.0.1:5999/test"
-
-    venv = project.repo / ".venv"
-    env = EnvironmentBootstrapper(project.repo)._isolated_env(venv)
-    assert env["VIRTUAL_ENV"] == str(venv)
-    assert env["PATH"].split(os.pathsep)[0] == str(venv / "bin")
-    _assert_no_sentinel(env, "the install retry")
 
 
 # ---------------------------------------------------------------------------
@@ -951,17 +887,15 @@ def _background_script(project: Project, label: str) -> Tuple[Path, Path]:
 @pytest.mark.skipif(not Path("/proc/self/stat").exists(), reason="needs /proc")
 def test_a_timed_out_install_leaves_nothing_running(project: Project) -> None:
     from guardkit.orchestrator.environment_bootstrap import (
-        DetectedManifest,
+        DeclaredInstall,
         EnvironmentBootstrapper,
     )
 
     script, pid = _background_script(project, "install")
-    manifest = DetectedManifest(
-        path=project.repo / ".guardkit" / "config.yaml", stack="generic",
-        is_lock_file=False, install_command=[str(script)], declared=True,
-        install_cwd=project.repo, install_timeout=1,
+    install = DeclaredInstall(
+        text=str(script), argv=(str(script),), cwd=project.repo, timeout=1
     )
-    assert EnvironmentBootstrapper(project.repo)._run_install(manifest) is False
+    assert EnvironmentBootstrapper(project.repo)._run_install(install) is False
     _nothing_left(pid)
 
 
