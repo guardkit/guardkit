@@ -1302,6 +1302,9 @@ class AutoBuildOrchestrator:
 
     def orchestrate(self, task_id, requirements, acceptance_criteria, base_branch="main", **kwargs):
         from guardkit.orchestrator.task_work_scope import checkout_lease, ScopeUnavailable
+        # A standalone task build makes (or resumes) its own worktree here; a
+        # feature build and the work leg hand theirs in.
+        standalone = self._existing_worktree is None
         if self._existing_worktree is None:
             saved = self._worktree_manager.worktrees_dir / task_id
             if self.resume and saved.exists():
@@ -1330,6 +1333,8 @@ class AutoBuildOrchestrator:
             if self._evidence_repos and self._evidence_repos != bound_repos:
                 raise ScopeUnavailable("Caller-supplied sibling footprint differs from the immutable source")
             self._evidence_repos = bound_repos
+        if standalone:
+            self._say_when_no_install_declared(Path(self._existing_worktree.path))
         with checkout_lease(self._existing_worktree.path, self._evidence_repos) as lease:
             self.task_work_scope = lease.admit(task_id, str(getattr(self, 'feature_id', '') or ''))
             if self._agent_invoker is not None:
@@ -2963,6 +2968,31 @@ class AutoBuildOrchestrator:
             # Reached max turns without approval
             logger.warning(f"Max turns ({self.max_turns}) exceeded for {task_id}")
             return turn_history, "max_turns_exceeded"
+
+    def _say_when_no_install_declared(self, root: Path) -> None:
+        """Say once, at setup, that a standalone task build installs nothing
+        because the project declares no root install.
+
+        A feature build and the work leg say it once per build themselves
+        (``FeatureOrchestrator._bootstrap_environment`` and
+        ``work_runner.install_declared``). A standalone ``guardkit autobuild
+        task`` makes its own worktree and has no such step, and the per-turn
+        check (``_maybe_rerun_declared_install``) stays quiet when nothing is
+        declared, so without this it never said so. A declaration that cannot
+        be read is left to the per-turn check, which logs it.
+        """
+        from guardkit.orchestrator.environment_bootstrap import (
+            NO_INSTALL_DECLARED,
+            declared_root_install,
+        )
+
+        try:
+            if declared_root_install(root) is not None:
+                return
+        except Exception as exc:  # noqa: BLE001 - the per-turn check reports it
+            logger.debug("install declaration not read at setup: %s", exc)
+            return
+        logger.info("Environment: %s", NO_INSTALL_DECLARED)
 
     def _maybe_rerun_declared_install(self, worktree: Any, turn: int) -> None:
         """Run the project's declared root install again before the Coach's
