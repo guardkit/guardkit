@@ -13,6 +13,7 @@ lib_path = Path(__file__).parent.parent.parent.parent / 'installer' / 'core' / '
 sys.path.insert(0, str(lib_path))
 
 from parser import EnhancementParser
+from boundary_utils import _extract_subsection
 
 
 class TestParserValidationErrors:
@@ -123,8 +124,7 @@ class TestParserValidationErrors:
             parser.parse(response)
 
     def test_extract_subsection_start_marker_not_found(self):
-        """Test _extract_subsection when start marker not found (line 227)."""
-        parser = EnhancementParser()
+        """The extraction moved to boundary_utils._extract_subsection (TASK-STND-8B4C); a missing start marker gives ""."""
 
         content = """## Boundaries
 
@@ -136,12 +136,11 @@ class TestParserValidationErrors:
 """
 
         # Try to extract a section that doesn't exist
-        result = parser._extract_subsection(content, "### DOES_NOT_EXIST", "### NEVER")
+        result = _extract_subsection(content, "### DOES_NOT_EXIST", "### NEVER")
         assert result == ""
 
     def test_extract_subsection_no_end_marker(self):
-        """Test _extract_subsection when end marker is None (line 237)."""
-        parser = EnhancementParser()
+        """boundary_utils._extract_subsection with no end marker reads to the end."""
 
         content = """## Boundaries
 
@@ -159,13 +158,12 @@ class TestParserValidationErrors:
 """
 
         # Extract ASK section to end (no end marker)
-        result = parser._extract_subsection(content, "### ASK", None)
+        result = _extract_subsection(content, "### ASK", None)
         assert "⚠️ Scenario 1" in result
         assert "⚠️ Scenario 2" in result
 
     def test_extract_subsection_end_marker_not_found(self):
-        """Test _extract_subsection when end marker not found (line 237)."""
-        parser = EnhancementParser()
+        """boundary_utils._extract_subsection with an end marker that is absent reads to the end."""
 
         content = """## Boundaries
 
@@ -175,7 +173,7 @@ class TestParserValidationErrors:
 """
 
         # Try to extract with end marker that doesn't exist
-        result = parser._extract_subsection(content, "### ALWAYS", "### NEVER")
+        result = _extract_subsection(content, "### ALWAYS", "### NEVER")
         # Should return from ALWAYS to end of content
         assert "✅ Rule 1" in result
         assert "✅ Rule 2" in result
