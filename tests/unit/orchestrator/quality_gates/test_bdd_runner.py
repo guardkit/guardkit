@@ -965,28 +965,6 @@ class TestAbsentFeatureCollectionIsNeutral:
         assert result is not None
         assert result.scenarios_failed >= 1
 
-    @pytest.mark.skip(reason="R1 de-wire (Rich 08-14): CoachValidator._check_bdd_results removed with the Coach bdd_results gate; R2 deletes at graduation")
-    def test_neutral_result_leaves_coach_gate_inactive(
-        self, worktree: Path, monkeypatch, tmp_path: Path
-    ):
-        # END-TO-END: a neutral (None) BDD verdict means agent_invoker omits
-        # the bdd_results key (autobuild.py: `if bdd_results is not None`), so
-        # Coach's _check_bdd_results sees no gate and returns no blocking
-        # issues. The absent input never contributes a failure to the tally.
-        stderr = "ERROR: not found: /worktree/features/login.feature\n"
-        assert self._run(worktree, monkeypatch, returncode=4, stderr=stderr) is None
-
-        from guardkit.orchestrator.quality_gates.coach_validator import (
-            CoachValidator,
-        )
-
-        # Key absent, exactly as the agent_invoker would leave it.
-        task_work_results: dict = {}
-        validator = CoachValidator(worktree_path=str(tmp_path))
-        blocking, non_blocking = validator._check_bdd_results(task_work_results)
-        assert blocking == []
-        assert non_blocking == []
-
 
 class TestGenuineScenarioFailureStillFails:
     def test_failing_scenario_with_feature_present_reports_failed(
@@ -1007,122 +985,10 @@ class TestGenuineScenarioFailureStillFails:
         assert result.scenarios_failed >= 1
 
 
-# ---------------------------------------------------------------------------
-# Coach-rejection end-to-end (TASK-FIX-F584)
-#
-# The primary motivation for the runner-error fix is that Coach's approval
-# rule is ``bdd_results.scenarios_failed == 0`` — so the fix is only useful
-# if a runner-error BDDResult actually causes Coach to reject. This test
-# exercises the hand-off: runner produces a synthetic failure, result is
-# serialised via to_dict() (as the agent_invoker does when writing
-# task_work_results.json), and Coach's `_check_bdd_results` must classify
-# it as a blocking issue.
-#
-# Graphiti-captured approval rule (from guardkit/orchestrator/quality_gates/
-# bdd_runner.py module docstring and coach_validator.py line 3573):
-#
-#   "scenarios_failed > 0 → blocking must_fix issue (Coach rejects)."
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.skip(reason="R1 de-wire (Rich 08-14): CoachValidator._check_bdd_results removed with the Coach bdd_results gate; R2 deletes at graduation")
-class TestCoachRejectsRunnerError:
-    def test_coach_rejects_synthetic_runner_error_result(
-        self, worktree: Path, monkeypatch, tmp_path: Path
-    ):
-        # AC (TASK-FIX-F584): end-to-end that the post-fix BDDResult
-        # (with scenarios_failed > 0 on runner error) causes Coach's
-        # approval validator to reject.
-        _write_feature(worktree, "login.feature", _PASS_FEATURE)
-        monkeypatch.setattr(bdd_runner, "has_pytest_bdd", lambda **_: True)
-        # Use a GENUINE runner error (exit 3 internal error) as the trigger.
-        # The exit-4 "not found" case is now neutral (TASK-AB-BDDNEUTRAL01) and
-        # would no longer produce a blocking BDDResult, but the end-to-end
-        # Coach-rejection contract still holds for real runner errors.
-        monkeypatch.setattr(
-            bdd_runner,
-            "_invoke_pytest_bdd",
-            _Patcher("", returncode=3, stderr="INTERNALERROR> Traceback ..."),
-        )
-
-        # 1. Runner produces a BDDResult with runner-error synthetic failure.
-        bdd_result = run_bdd_for_task("TASK-001", worktree)
-        assert isinstance(bdd_result, BDDResult)
-        assert bdd_result.scenarios_failed > 0  # cites Graphiti rule above
-
-        # 2. Serialise as the agent_invoker would before Coach consumes.
-        task_work_results = {"bdd_results": bdd_result.to_dict()}
-
-        # 3. Coach's _check_bdd_results must classify as blocking.
-        from guardkit.orchestrator.quality_gates.coach_validator import (
-            CoachValidator,
-        )
-
-        validator = CoachValidator(worktree_path=str(tmp_path))
-        blocking, non_blocking = validator._check_bdd_results(task_work_results)
-
-        # Blocking issue must be emitted — this is the direct counter to
-        # Outcome D (silent false approval on runner error).
-        assert len(blocking) == 1
-        issue = blocking[0]
-        assert issue["severity"] == "must_fix"
-        assert issue["category"] == "bdd_failure"
-        assert issue["scenarios_failed"] == bdd_result.scenarios_failed
-        # The synthetic failure scenario name should surface in the
-        # examples, so Coach feedback names the runner error explicitly
-        # rather than saying "scenario assertion failed".
-        assert any(
-            "pytest_runner_error" in example
-            for example in issue["failure_examples"]
-        )
-
-    def test_synthetic_blocker_routes_through_coach_validator(
-        self, worktree: Path, monkeypatch, tmp_path: Path
-    ):
-        # AC (TASK-FIX-BDDM-1): end-to-end that the synthetic
-        # pytest-bdd-not-importable BDDResult reaches Coach as a
-        # bdd_failure blocking issue (must_fix). Without this routing,
-        # the new synthetic blocker would be technically constructed
-        # but not actually block — same silent-bypass class as the
-        # original bug.
-        _write_feature(worktree, "login.feature", _PASS_FEATURE)
-        monkeypatch.setattr(bdd_runner, "has_pytest_bdd", lambda **_: False)
-        # Patch the subprocess seam too, so an accidental code path
-        # that tries to invoke pytest would surface as an obvious test
-        # error rather than silently passing.
-        invoker = _Patcher(_PASSED_JUNIT)
-        monkeypatch.setattr(bdd_runner, "_invoke_pytest_bdd", invoker)
-
-        # 1. Runner produces synthetic BDDResult (the patched code path).
-        bdd_result = run_bdd_for_task("TASK-001", worktree)
-        assert isinstance(bdd_result, BDDResult)
-        assert bdd_result.scenarios_failed == 1
-        assert invoker.calls == []  # pytest-bdd absent → never invoked
-
-        # 2. Serialise as the agent_invoker would before Coach consumes
-        # task_work_results.json.
-        task_work_results = {"bdd_results": bdd_result.to_dict()}
-
-        # 3. Coach's _check_bdd_results must classify as blocking.
-        from guardkit.orchestrator.quality_gates.coach_validator import (
-            CoachValidator,
-        )
-
-        validator = CoachValidator(worktree_path=str(tmp_path))
-        blocking, _non_blocking = validator._check_bdd_results(task_work_results)
-
-        assert len(blocking) == 1
-        issue = blocking[0]
-        assert issue["severity"] == "must_fix"
-        assert issue["category"] == "bdd_failure"
-        assert issue["scenarios_failed"] == 1
-        # The synthetic-blocker scenario name surfaces in the examples
-        # so Coach feedback says "pytest_bdd_not_importable" rather
-        # than the generic "scenario assertion failed".
-        assert any(
-            "pytest_bdd_not_importable" in example
-            for example in issue["failure_examples"]
-        )
+# The Coach-rejection end-to-end tests (TASK-FIX-F584) and the Coach-feedback
+# reason test are gone: CoachValidator._check_bdd_results and the Coach
+# bdd_results gate were removed in the R1 de-wire (Rich, 14 August 2026), and
+# these tests had been skipped since, waiting to be deleted.
 
 
 # ---------------------------------------------------------------------------
@@ -1375,58 +1241,3 @@ class TestCollectionErrorReason:
         assert "AssertionError" in failures[0].reason
         # No traceback-frame string injected for the failure path.
         assert "  at " not in failures[0].reason
-
-
-class TestCoachFeedbackEmbedsReason:
-    @pytest.mark.skip(reason="R1 de-wire (Rich 08-14): CoachValidator._check_bdd_results removed with the Coach bdd_results gate; R2 deletes at graduation")
-    def test_check_bdd_results_description_contains_per_failure_reason(
-        self, tmp_path: Path
-    ):
-        # AC7 (TASK-AB-003): the Coach feedback summariser must surface the
-        # per-failure `reason` strings in the issue `description` (which is
-        # the only field the Player feedback renderer reads — see
-        # AgentInvoker._format_feedback_for_player).
-        from guardkit.orchestrator.quality_gates.coach_validator import (
-            CoachValidator,
-        )
-
-        bdd_results_dict = {
-            "scenarios_passed": 0,
-            "scenarios_failed": 1,
-            "scenarios_pending": 0,
-            "failures": [{
-                "feature_file": "features/fg-001/fg-001.feature",
-                "scenario_name": "User logs in",
-                "failing_step": "collection failure",
-                "reason": (
-                    "collection failure: ModuleNotFoundError: "
-                    "No module named 'common'\n"
-                    "  at features/fg-001/test_fg-001.py:41 "
-                    "(from common.jarvis_client import JarvisClient)"
-                ),
-            }],
-            "pending": [],
-            "feature_files": ["features/fg-001/fg-001.feature"],
-            "tag": "@task:TASK-FG-002",
-        }
-        task_work_results = {"bdd_results": bdd_results_dict}
-
-        validator = CoachValidator(worktree_path=str(tmp_path))
-        blocking, _non_blocking = validator._check_bdd_results(
-            task_work_results
-        )
-
-        assert len(blocking) == 1
-        issue = blocking[0]
-        assert issue["category"] == "bdd_failure"
-        assert issue["severity"] == "must_fix"
-
-        # The Player only sees `description` — so the missing-module string
-        # MUST appear there, not just in the `failure_examples` aux list.
-        description = issue["description"]
-        assert "ModuleNotFoundError" in description
-        assert "No module named 'common'" in description
-        # And the generic header must remain so the high-level signal is
-        # still readable.
-        assert "BDD oracle" in description
-        assert "scenario(s) failed" in description

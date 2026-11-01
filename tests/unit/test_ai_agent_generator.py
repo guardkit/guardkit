@@ -226,44 +226,6 @@ class TestAIAgentGenerator:
         assert len(gaps) == 1
         assert gaps[0].name == "missing-specialist"
 
-    def test_capability_covered_by_tags(self):
-        """Test capability coverage checking by tags"""
-        # Create an inventory with an agent that has matching tags and description keywords
-        mvvm_agent = AgentDefinition(
-            name="mvvm-specialist",
-            description="MVVM pattern specialist",  # Contains "mvvm" keyword
-            tools=["Read", "Write"],
-            tags=["mvvm", "patterns"],
-            source="global",
-            source_path=Path("mvvm.md"),
-            priority=1,
-            full_definition="# MVVM"
-        )
-
-        inventory = AgentInventory(
-            custom_agents=[],
-            template_agents=[],
-            global_agents=[mvvm_agent]
-        )
-
-        need = CapabilityNeed(
-            name="mvvm-viewmodel-specialist",
-            description="MVVM ViewModel patterns",
-            reason="For testing",
-            technologies=["mvvm"],  # Matches mvvm-specialist's tags
-            example_files=[],
-            priority=5
-        )
-
-        generator = AIAgentGenerator(inventory=inventory)
-        # _capability_covered method no longer exists - skipping test
-        pytest.skip("_capability_covered method no longer exists in production code")
-
-    def test_capability_not_covered(self, mock_inventory):
-        """Test capability not covered"""
-        # _capability_covered method no longer exists - skipping test
-        pytest.skip("_capability_covered method no longer exists in production code")
-
     def test_build_generation_prompt(self, mock_inventory, mock_analysis, temp_dir):
         """Test building AI generation prompt"""
         gap = CapabilityNeed(

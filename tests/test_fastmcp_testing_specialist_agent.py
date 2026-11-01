@@ -5,8 +5,8 @@ RED PHASE: These tests validate the acceptance criteria for the
 fastmcp-testing-specialist agent files.
 
 Files to validate:
-1. installer/core/templates/fastmcp-python/agents/fastmcp-testing-specialist.md (core)
-2. installer/core/templates/fastmcp-python/agents/fastmcp-testing-specialist-ext.md (extended)
+1. installer/core/templates/fastmcp-python/.claude/agents/fastmcp-testing-specialist.md (core)
+2. installer/core/templates/fastmcp-python/.claude/agents/fastmcp-testing-specialist-ext.md (extended)
 """
 
 import pytest
@@ -15,7 +15,7 @@ from pathlib import Path
 
 # Base paths
 WORKTREE_ROOT = Path(__file__).parent.parent
-AGENT_DIR = WORKTREE_ROOT / "installer" / "core" / "templates" / "fastmcp-python" / "agents"
+AGENT_DIR = WORKTREE_ROOT / "installer" / "core" / "templates" / "fastmcp-python" / ".claude" / "agents"
 CORE_AGENT = AGENT_DIR / "fastmcp-testing-specialist.md"
 EXT_AGENT = AGENT_DIR / "fastmcp-testing-specialist-ext.md"
 
@@ -38,8 +38,6 @@ class TestCoreFrontmatter:
     @pytest.fixture
     def core_content(self):
         """Load core agent content."""
-        if not CORE_AGENT.exists():
-            pytest.skip("Core agent file does not exist")
         return CORE_AGENT.read_text()
 
     @pytest.fixture
@@ -104,8 +102,6 @@ class TestCoreContentSections:
     @pytest.fixture
     def core_content(self):
         """Load core agent content."""
-        if not CORE_AGENT.exists():
-            pytest.skip("Core agent file does not exist")
         return CORE_AGENT.read_text()
 
     def test_has_role_section(self, core_content):
@@ -163,26 +159,8 @@ class TestCoreContentSections:
         assert 'database' in content_lower or 'integration test' in content_lower, \
             "ASK: Missing 'Integration test database setup'"
 
-    def test_has_capabilities_section(self, core_content):
-        """Core agent must have Capabilities section with required items."""
-        assert '## Capabilities' in core_content or '## Capability' in core_content, \
-            "Missing '## Capabilities' section"
-
-        content_lower = core_content.lower()
-
-        # Required capabilities
-        capabilities = [
-            ('pytest-asyncio', 'unit testing with pytest-asyncio'),
-            ('json-rpc', 'protocol testing with json-rpc'),
-            ('streaming', 'streaming tool testing'),
-            ('parameter', 'parameter conversion testing'),
-            ('discovery', 'tool discovery testing'),
-            ('error', 'error response testing'),
-        ]
-
-        for keyword, desc in capabilities:
-            assert keyword in content_lower, \
-                f"Capabilities: Missing capability related to '{desc}'"
+    # No "Capabilities" section test: that section was removed from the agent
+    # on purpose when its size was reduced (6dc1d0c24, 7 February 2026).
 
 
 class TestExtendedContent:
@@ -191,8 +169,6 @@ class TestExtendedContent:
     @pytest.fixture
     def ext_content(self):
         """Load extended agent content."""
-        if not EXT_AGENT.exists():
-            pytest.skip("Extended agent file does not exist")
         return EXT_AGENT.read_text()
 
     def test_has_protocol_testing_script(self, ext_content):
@@ -256,15 +232,11 @@ class TestAgentIntegration:
     @pytest.fixture
     def core_content(self):
         """Load core agent content."""
-        if not CORE_AGENT.exists():
-            pytest.skip("Core agent file does not exist")
         return CORE_AGENT.read_text()
 
     @pytest.fixture
     def ext_content(self):
         """Load extended agent content."""
-        if not EXT_AGENT.exists():
-            pytest.skip("Extended agent file does not exist")
         return EXT_AGENT.read_text()
 
     def test_extended_references_core(self, ext_content):
@@ -293,15 +265,11 @@ class TestContentQuality:
     @pytest.fixture
     def core_content(self):
         """Load core agent content."""
-        if not CORE_AGENT.exists():
-            pytest.skip("Core agent file does not exist")
         return CORE_AGENT.read_text()
 
     @pytest.fixture
     def ext_content(self):
         """Load extended agent content."""
-        if not EXT_AGENT.exists():
-            pytest.skip("Extended agent file does not exist")
         return EXT_AGENT.read_text()
 
     def test_no_placeholder_content(self, core_content, ext_content):
