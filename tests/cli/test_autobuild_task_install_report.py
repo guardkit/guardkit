@@ -7,6 +7,11 @@ neither of those steps, and the per-turn install check stays quiet when
 nothing is declared, so the standalone command never said it (Codex review of
 the change, finding R2). It now says it once, during setup.
 
+A declared install ran, in a standalone build, only from the per-turn check,
+after the first builder turn, while a feature build runs it before the agents
+start. Since 1 November 2026 the standalone build runs it at setup, before the
+first turn.
+
 These tests drive the real command through click on a real git repository:
 the worktree, the task file and the declaration are real. Only the
 Player/Coach loop (``_orchestrate_owned``) is replaced, because it needs a
@@ -26,7 +31,10 @@ from click.testing import CliRunner
 
 from guardkit.cli.main import cli
 from guardkit.orchestrator.autobuild import AutoBuildOrchestrator, OrchestrationResult
-from guardkit.orchestrator.environment_bootstrap import NO_INSTALL_DECLARED
+from guardkit.orchestrator.environment_bootstrap import (
+    NO_INSTALL_DECLARED,
+    rerun_declared_install_if_due,
+)
 
 TASK_ID = "TASK-NI-001"
 
@@ -68,23 +76,31 @@ def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return root
 
 
-def _declare_install(root: Path) -> None:
+def _declare_install(root: Path, install: str = "true") -> None:
     (root / ".guardkit").mkdir(exist_ok=True)
     (root / ".guardkit" / "config.yaml").write_text(
-        yaml.safe_dump({"toolchain": {"install": "true", "test": "true"}}),
+        yaml.safe_dump({"toolchain": {"install": install, "test": "true"}}),
         encoding="utf-8",
     )
     _git(root, "add", "-A")
     _git(root, "commit", "-q", "-m", "declare an install")
 
 
+installed_before_first_turn: List[bool] = []
+
+
 @pytest.fixture
 def worktrees_seen(monkeypatch: pytest.MonkeyPatch) -> List[Path]:
-    """Replace the Player/Coach loop with an approval; record its worktree."""
+    """Replace the Player/Coach loop with an approval; record its worktree,
+    and whether the declared install's marker was there when it started."""
     seen: List[Path] = []
+    installed_before_first_turn.clear()
 
     def _approved(self, task_id, requirements, acceptance_criteria, base_branch, **kwargs):
-        seen.append(Path(self._existing_worktree.path))
+        worktree = Path(self._existing_worktree.path)
+        seen.append(worktree)
+        # What the first turn would find: did the declared install run yet?
+        installed_before_first_turn.append((worktree / "installed.txt").exists())
         return OrchestrationResult(
             task_id=task_id,
             success=True,
@@ -132,3 +148,23 @@ def test_a_standalone_task_with_a_declared_install_does_not_say_it(
     assert result.exit_code == 0, result.output
     assert len(worktrees_seen) == 1
     assert _said(caplog) == []
+
+
+def test_a_standalone_task_runs_the_declared_install_before_the_first_turn(
+    repo: Path, worktrees_seen: List[Path], caplog: pytest.LogCaptureFixture
+) -> None:
+    _declare_install(repo, install="touch installed.txt")
+
+    result = _run_task(caplog)
+
+    assert result.exit_code == 0, result.output
+    assert len(worktrees_seen) == 1
+    worktree = worktrees_seen[0]
+    # The install ran in the build's worktree, before the first turn began.
+    assert installed_before_first_turn == [True]
+    assert not (repo / "installed.txt").exists()
+    messages = [r.getMessage() for r in caplog.records]
+    assert "Environment: the declared install `touch installed.txt` ran and succeeded" in messages
+    # The first turn's own check finds it already done for these files.
+    again = rerun_declared_install_if_due(worktree)
+    assert again is not None and again.skipped and again.success

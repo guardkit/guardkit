@@ -1334,7 +1334,7 @@ class AutoBuildOrchestrator:
                 raise ScopeUnavailable("Caller-supplied sibling footprint differs from the immutable source")
             self._evidence_repos = bound_repos
         if standalone:
-            self._say_when_no_install_declared(Path(self._existing_worktree.path))
+            self._install_before_first_turn(Path(self._existing_worktree.path))
         with checkout_lease(self._existing_worktree.path, self._evidence_repos) as lease:
             self.task_work_scope = lease.admit(task_id, str(getattr(self, 'feature_id', '') or ''))
             if self._agent_invoker is not None:
@@ -2969,30 +2969,46 @@ class AutoBuildOrchestrator:
             logger.warning(f"Max turns ({self.max_turns}) exceeded for {task_id}")
             return turn_history, "max_turns_exceeded"
 
-    def _say_when_no_install_declared(self, root: Path) -> None:
-        """Say once, at setup, that a standalone task build installs nothing
-        because the project declares no root install.
+    def _install_before_first_turn(self, root: Path) -> None:
+        """Run the project's declared root install in a standalone task
+        build's worktree before the first turn.
 
-        A feature build and the work leg say it once per build themselves
-        (``FeatureOrchestrator._bootstrap_environment`` and
-        ``work_runner.install_declared``). A standalone ``guardkit autobuild
-        task`` makes its own worktree and has no such step, and the per-turn
-        check (``_maybe_rerun_declared_install``) stays quiet when nothing is
-        declared, so without this it never said so. A declaration that cannot
-        be read is left to the per-turn check, which logs it.
+        A feature build runs it after making its worktree, before the agents
+        start (``FeatureOrchestrator._bootstrap_environment``), and the work
+        leg runs it before its work (``work_runner.install_declared``). A
+        standalone ``guardkit autobuild task`` makes its own worktree and had
+        no such step: until 1 November 2026 its declared install first ran
+        from the per-turn check (``_maybe_rerun_declared_install``), after
+        the first builder turn, so that turn worked without the project's
+        dependencies. It now runs here, at setup.
+
+        The bootstrap's saved record makes a resumed build a skip when
+        nothing the install serves has changed, and makes the first turn's
+        per-turn check a skip unless that turn changed such a file. With
+        nothing declared, the log says "no install declared; nothing
+        installed" once. A failed install is a warning, not a stop, as in a
+        feature build: the after-task check then says the project's tests
+        could not run. A declaration that cannot be read is logged here and
+        again by the per-turn check.
         """
         from guardkit.orchestrator.environment_bootstrap import (
-            NO_INSTALL_DECLARED,
+            EnvironmentBootstrapper,
             declared_root_install,
         )
 
         try:
-            if declared_root_install(root) is not None:
-                return
-        except Exception as exc:  # noqa: BLE001 - the per-turn check reports it
-            logger.debug("install declaration not read at setup: %s", exc)
+            install = declared_root_install(root)
+            result = EnvironmentBootstrapper(root).bootstrap(install)
+        except Exception as exc:  # noqa: BLE001 - logged; the build goes on
+            logger.warning(
+                "The declared install could not be read or run before the first turn: %s",
+                exc,
+            )
             return
-        logger.info("Environment: %s", NO_INSTALL_DECLARED)
+        if result.success:
+            logger.info("Environment: %s", result.summary)
+        else:
+            logger.warning("Environment: %s", result.summary)
 
     def _maybe_rerun_declared_install(self, worktree: Any, turn: int) -> None:
         """Run the project's declared root install again before the Coach's
