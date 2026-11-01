@@ -775,6 +775,10 @@ class TestFeatureOrchestratorBudgetPropagation:
         fo._emitter = Mock()
         fo._wave_display = None
         fo._worktree_manager = Mock()
+        fo._evidence_repos_resolved = []  # set in __init__, which this test skips
+        fo._update_task_started = Mock()  # feature-file bookkeeping, not under test here
+        fo.coach_model = None
+        fo.model = None
 
         task = FeatureTask(
             id="TASK-T-001",
@@ -806,7 +810,12 @@ class TestFeatureOrchestratorBudgetPropagation:
                 "acceptance_criteria": ["criterion 1"],
                 "file_path": tmp_path / "TASK-T-001.md",
             }
-            with patch("guardkit.orchestrator.feature_orchestrator.AutoBuildOrchestrator") as MockABO:
+            # The checkout's writer lease needs a real git checkout; this test is
+            # about the time budget, so the lease is a stand-in.
+            lease_cm = MagicMock()
+            lease_cm.__enter__.return_value = Mock()
+            with patch("guardkit.orchestrator.task_work_scope.checkout_lease", return_value=lease_cm), \
+                    patch("guardkit.orchestrator.feature_orchestrator.AutoBuildOrchestrator") as MockABO:
                 mock_abo_instance = Mock()
                 mock_abo_instance.orchestrate.return_value = mock_orchestrate_result
                 MockABO.return_value = mock_abo_instance
@@ -815,6 +824,7 @@ class TestFeatureOrchestratorBudgetPropagation:
 
                 feature = Mock(spec=Feature)
                 feature.id = "FEAT-TEST"
+                feature.behavioural_oracle = None
 
                 # Call with time_budget_seconds
                 result = fo._execute_task(
