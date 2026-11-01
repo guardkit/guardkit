@@ -259,9 +259,14 @@ class TestDeclaredExecution:
         root, worktree = repo
         (worktree / "package.json").touch()
         v = _validator_with_declaration(root, worktree, {"test": "npm test"})
+        # The runner is replaced, so the real program need not be installed
+        # here: the missing-program look-up is told `npm` exists.
         with patch.dict(os.environ, {"GK_TS_LANE_PROBE": "1"}), patch(
             "subprocess.run"
-        ) as mock_run:
+        ) as mock_run, patch(
+            "guardkit.orchestrator.quality_gates.coach_validator.missing_program",
+            return_value=None,
+        ):
             mock_run.return_value = MagicMock(returncode=0, stdout="5 passed", stderr="")
             v.run_independent_tests()
         kwargs = mock_run.call_args.kwargs

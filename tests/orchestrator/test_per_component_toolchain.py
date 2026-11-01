@@ -327,7 +327,12 @@ class TestBackCompat:
         (worktree / "package.json").touch()
         v = _validator(root, worktree, {"test": "npm test"})
         assert v._detect_test_command() == "npm test"
-        with patch("subprocess.run") as mock_run:
+        # The runner is replaced, so the real program need not be installed
+        # here: the missing-program look-up is told `npm` exists.
+        with patch("subprocess.run") as mock_run, patch(
+            "guardkit.orchestrator.quality_gates.coach_validator.missing_program",
+            return_value=None,
+        ):
             mock_run.return_value = MagicMock(returncode=0, stdout="ok", stderr="")
             v.run_independent_tests()
         assert mock_run.call_args.kwargs["cwd"] == str(worktree)
