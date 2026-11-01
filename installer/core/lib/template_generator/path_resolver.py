@@ -386,6 +386,18 @@ class TemplatePathResolver:
         for strategy in self.strategies:
             path = strategy.classify(example_file, analysis)
             if path:
+                # The default layer classifier (AILayerClassifier) never
+                # returns None: when nothing matches it settles on the
+                # 'other' layer, so the "all strategies fail" branch below
+                # stopped being reached and a file placed in templates/other/
+                # was reported as classified, with no warning and a 0%
+                # fallback rate. get_fallback_rate() is defined as the share
+                # of files in templates/other/, so count it here, keeping
+                # the path the classifier chose (1 November 2026).
+                if path.startswith("templates/other/"):
+                    self.warnings.append(f"Could not classify: {example_file.path}")
+                    self.classification_stats['Fallback'] += 1
+                    return path
                 strategy_name = strategy.__class__.__name__
                 self.classification_stats[strategy_name] += 1
                 return path

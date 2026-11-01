@@ -331,29 +331,46 @@ class TestTemplatePathResolver:
     """Test suite for TemplatePathResolver (orchestrator)."""
 
     def test_resolve_with_layer_classification(self, example_file_repository_with_layer, sample_analysis):
-        """Test that resolver uses LayerClassificationStrategy when layer available."""
+        """Test that resolver uses the AI-provided layer when available.
+
+        LayerClassificationStrategy was renamed AIProvidedLayerStrategy in
+        TASK-FIX-40B4 (cedd45b40); the old name is an alias, and the
+        statistics use the class's real name.
+        """
         resolver = TemplatePathResolver()
         result = resolver.resolve(example_file_repository_with_layer, sample_analysis)
 
         assert result == "templates/application/repositories/UserRepository.cs.template"
-        assert resolver.classification_stats["LayerClassificationStrategy"] == 1
+        assert resolver.classification_stats["AIProvidedLayerStrategy"] == 1
         assert resolver.total_files == 1
 
-    def test_resolve_with_pattern_fallback(self, example_file_repository_no_layer, sample_analysis):
-        """Test that resolver falls back to PatternClassificationStrategy."""
+    def test_resolve_without_layer_uses_layer_classifier(self, example_file_repository_no_layer, sample_analysis):
+        """Without a layer, the layer classifier (TASK-FIX-40B4) places the file.
+
+        Since cedd45b40 LayerClassificationOrchestratorStrategy sits before
+        PatternClassificationStrategy; its folder heuristics put a file under
+        Data/ in the data-access layer.
+        """
         resolver = TemplatePathResolver()
         result = resolver.resolve(example_file_repository_no_layer, sample_analysis)
 
-        assert result == "templates/application/repositories/ProductRepository.cs.template"
-        assert resolver.classification_stats["PatternClassificationStrategy"] == 1
+        assert result == "templates/data-access/repositories/ProductRepository.cs.template"
+        assert resolver.classification_stats["LayerClassificationOrchestratorStrategy"] == 1
         assert resolver.total_files == 1
 
-    def test_resolve_with_complete_fallback(self, example_file_unknown_pattern, sample_analysis):
-        """Test complete fallback to templates/other/."""
-        resolver = TemplatePathResolver()
-        result = resolver.resolve(example_file_unknown_pattern, sample_analysis)
+    def test_resolve_with_complete_fallback(self, sample_analysis):
+        """A file nothing recognises lands in templates/other/ and is reported.
 
-        assert result == "templates/other/StringHelper.cs.template"
+        The layer classifier now settles on the 'other' layer itself and keeps
+        the parent folder as the pattern folder; the resolver still counts it
+        as a fallback and warns. (The old fixture, Utilities/StringHelper.cs,
+        is now recognised as infrastructure by its folder and suffix.)
+        """
+        resolver = TemplatePathResolver()
+        unknown = ExampleFile(path="src/Random.cs", purpose="Test", layer=None)
+        result = resolver.resolve(unknown, sample_analysis)
+
+        assert result == "templates/other/src/Random.cs.template"
         assert resolver.classification_stats["Fallback"] == 1
         assert len(resolver.warnings) == 1
         assert "Could not classify" in resolver.warnings[0]
@@ -362,24 +379,25 @@ class TestTemplatePathResolver:
         """Test chain of responsibility with multiple files."""
         resolver = TemplatePathResolver()
 
-        # File 1: Has layer (should use LayerClassificationStrategy)
+        # File 1: Has layer (should use AIProvidedLayerStrategy)
         file1 = ExampleFile(path="src/UserRepository.cs", purpose="Test", layer="application")
         result1 = resolver.resolve(file1, sample_analysis)
         assert "application/repositories" in result1
 
-        # File 2: No layer but has pattern (should use PatternClassificationStrategy)
+        # File 2: No layer but a known suffix (the layer classifier, TASK-FIX-40B4)
         file2 = ExampleFile(path="src/OrderService.cs", purpose="Test", layer=None)
         result2 = resolver.resolve(file2, sample_analysis)
-        assert "application/services" in result2
+        assert result2 == "templates/services/services/OrderService.cs.template"
 
-        # File 3: No layer, no pattern (should fallback)
-        file3 = ExampleFile(path="src/Helper.cs", purpose="Test", layer=None)
+        # File 3: No layer, nothing recognisable (should fallback)
+        file3 = ExampleFile(path="src/Random.cs", purpose="Test", layer=None)
         result3 = resolver.resolve(file3, sample_analysis)
-        assert "other/Helper.cs.template" in result3
+        assert result3.startswith("templates/other/")
+        assert result3.endswith("/Random.cs.template")
 
         # Verify statistics
-        assert resolver.classification_stats["LayerClassificationStrategy"] == 1
-        assert resolver.classification_stats["PatternClassificationStrategy"] == 1
+        assert resolver.classification_stats["AIProvidedLayerStrategy"] == 1
+        assert resolver.classification_stats["LayerClassificationOrchestratorStrategy"] == 1
         assert resolver.classification_stats["Fallback"] == 1
         assert resolver.total_files == 3
 
@@ -396,7 +414,7 @@ class TestTemplatePathResolver:
         summary = resolver.get_classification_summary()
 
         assert "Template Classification Summary:" in summary
-        assert "LayerClassificationStrategy: 2 files (100.0%)" in summary
+        assert "AIProvidedLayerStrategy: 2 files (100.0%)" in summary
 
     def test_get_classification_summary_with_warning(self, sample_analysis):
         """Test classification summary with high fallback rate warning."""
@@ -409,7 +427,7 @@ class TestTemplatePathResolver:
             resolver.resolve(file, sample_analysis)
 
         for i in range(3):
-            file = ExampleFile(path=f"src/Helper{i}.cs", purpose="Test", layer=None)
+            file = ExampleFile(path=f"src/Random{i}.cs", purpose="Test", layer=None)
             resolver.resolve(file, sample_analysis)
 
         summary = resolver.get_classification_summary()
@@ -427,7 +445,7 @@ class TestTemplatePathResolver:
             file = ExampleFile(path=f"src/Test{i}Repository.cs", purpose="Test", layer="application")
             resolver.resolve(file, sample_analysis)
 
-        file = ExampleFile(path="src/Helper.cs", purpose="Test", layer=None)
+        file = ExampleFile(path="src/Random.cs", purpose="Test", layer=None)
         resolver.resolve(file, sample_analysis)
 
         fallback_rate = resolver.get_fallback_rate()
@@ -444,14 +462,14 @@ class TestTemplatePathResolver:
         resolver = TemplatePathResolver()
 
         # Process files that will fallback
-        file1 = ExampleFile(path="src/Helper1.cs", purpose="Test", layer=None)
-        file2 = ExampleFile(path="src/Helper2.cs", purpose="Test", layer=None)
+        file1 = ExampleFile(path="src/Random1.cs", purpose="Test", layer=None)
+        file2 = ExampleFile(path="src/Random2.cs", purpose="Test", layer=None)
         resolver.resolve(file1, sample_analysis)
         resolver.resolve(file2, sample_analysis)
 
         assert len(resolver.warnings) == 2
-        assert "Could not classify: src/Helper1.cs" in resolver.warnings
-        assert "Could not classify: src/Helper2.cs" in resolver.warnings
+        assert "Could not classify: src/Random1.cs" in resolver.warnings
+        assert "Could not classify: src/Random2.cs" in resolver.warnings
 
     def test_ambiguous_pattern_first_match(self, sample_analysis):
         """Test that ambiguous patterns use last suffix match."""
@@ -502,7 +520,7 @@ class TestIntegration:
         assert fallback_rate == 0.0
 
         # Verify statistics
-        assert resolver.classification_stats["LayerClassificationStrategy"] == 8
+        assert resolver.classification_stats["AIProvidedLayerStrategy"] == 8
         assert resolver.total_files == 8
 
     def test_mixed_quality_project(self, sample_analysis):
@@ -512,22 +530,22 @@ class TestIntegration:
         files = [
             # Good: Has layer info
             ExampleFile(path="Services/UserService.cs", purpose="User service", layer="application"),
-            # OK: No layer but has pattern
+            # OK: No layer but a recognisable folder (layer classifier)
             ExampleFile(path="Data/OrderRepository.cs", purpose="Order repo", layer=None),
-            # Poor: No layer, no pattern
-            ExampleFile(path="Utilities/StringHelper.cs", purpose="Helper", layer=None),
+            # Poor: No layer, nothing recognisable
+            ExampleFile(path="Misc/Random.cs", purpose="Odd one out", layer=None),
         ]
 
         results = [resolver.resolve(f, sample_analysis) for f in files]
 
         # Verify expected paths
         assert results[0] == "templates/application/services/UserService.cs.template"
-        assert results[1] == "templates/application/repositories/OrderRepository.cs.template"
-        assert results[2] == "templates/other/StringHelper.cs.template"
+        assert results[1] == "templates/data-access/repositories/OrderRepository.cs.template"
+        assert results[2] == "templates/other/misc/Random.cs.template"
 
         # Verify statistics
-        assert resolver.classification_stats["LayerClassificationStrategy"] == 1
-        assert resolver.classification_stats["PatternClassificationStrategy"] == 1
+        assert resolver.classification_stats["AIProvidedLayerStrategy"] == 1
+        assert resolver.classification_stats["LayerClassificationOrchestratorStrategy"] == 1
         assert resolver.classification_stats["Fallback"] == 1
 
         # Fallback rate should be 33.3%
