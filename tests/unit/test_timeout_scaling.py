@@ -195,7 +195,12 @@ class TestAgentInvokerTimeoutMultiplier:
 
 
 class TestFeatureOrchestratorTimeoutMultiplier:
-    """Tests for FeatureOrchestrator scaling task_timeout by multiplier."""
+    """Tests for FeatureOrchestrator scaling task_timeout by multiplier.
+
+    Since TASK-ABSR-FLOR (b4a6e0649, April 2026) task_timeout is floored at
+    3000 s (GUARDKIT_AUTOBUILD_TASK_TIMEOUT_FLOOR) before the multiplier, so
+    the 2400 s default becomes 3000 s (expectations updated 1 November 2026).
+    """
 
     @pytest.fixture
     def temp_repo(self, tmp_path):
@@ -219,11 +224,11 @@ class TestFeatureOrchestratorTimeoutMultiplier:
             worktree_manager=mock_worktree_manager,
             timeout_multiplier=1.0,
         )
-        assert orch.task_timeout == 2400
+        assert orch.task_timeout == 3000  # the 2400 default, floored
         assert orch.timeout_multiplier == 1.0
 
     def test_4x_multiplier_scales_task_timeout(self, temp_repo, mock_worktree_manager, monkeypatch):
-        """4x multiplier scales task_timeout from 2400 to 9600."""
+        """4x multiplier scales the floored task_timeout from 3000 to 12000."""
         monkeypatch.delenv("ANTHROPIC_BASE_URL", raising=False)
         monkeypatch.delenv("GUARDKIT_TIMEOUT_MULTIPLIER", raising=False)
 
@@ -234,7 +239,7 @@ class TestFeatureOrchestratorTimeoutMultiplier:
             worktree_manager=mock_worktree_manager,
             timeout_multiplier=4.0,
         )
-        assert orch.task_timeout == 9600  # 2400 * 4
+        assert orch.task_timeout == 12000  # 3000 (floored 2400) * 4
         assert orch.timeout_multiplier == 4.0
 
     def test_custom_task_timeout_also_scaled(self, temp_repo, mock_worktree_manager, monkeypatch):
@@ -247,10 +252,10 @@ class TestFeatureOrchestratorTimeoutMultiplier:
         orch = FeatureOrchestrator(
             repo_root=temp_repo,
             worktree_manager=mock_worktree_manager,
-            task_timeout=1800,
+            task_timeout=3600,
             timeout_multiplier=2.0,
         )
-        assert orch.task_timeout == 3600  # 1800 * 2
+        assert orch.task_timeout == 7200  # 3600 (above the floor) * 2
 
     def test_localhost_auto_detects_multiplier(self, temp_repo, mock_worktree_manager, monkeypatch):
         """FeatureOrchestrator auto-detects 4x multiplier for localhost."""
@@ -264,4 +269,4 @@ class TestFeatureOrchestratorTimeoutMultiplier:
             worktree_manager=mock_worktree_manager,
         )
         assert orch.timeout_multiplier == 4.0
-        assert orch.task_timeout == 9600  # 2400 * 4
+        assert orch.task_timeout == 12000  # 3000 (floored 2400) * 4

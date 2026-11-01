@@ -127,8 +127,10 @@ class TestOutcomeManagerLogging:
                     summary="Done",
                 )
 
+        # Worded "published to the broker" since 4f5c1e31 (7 August 2026):
+        # a publish is all the capture can see, not a landed write.
         assert any(
-            "[Memory] Captured task outcome" in r.message
+            "[Memory] Published task outcome" in r.message
             for r in caplog.records
         )
 
@@ -151,8 +153,9 @@ class TestOutcomeManagerLogging:
                     summary="Done",
                 )
 
+        # Worded "Failed to publish" since 4f5c1e31 (7 August 2026).
         assert any(
-            "[Memory] Failed to store outcome" in r.message
+            "[Memory] Failed to publish outcome" in r.message
             for r in caplog.records
         )
 

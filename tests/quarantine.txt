@@ -59,7 +59,6 @@
 # the reason the gate is red, and burning it down will not turn it green.
 # ===========================================================================
 
-tests/knowledge/test_performance_optimization.py::test_early_termination_priority_order
 tests/lib/agent_enhancement/test_enhancer_error_messages.py::TestValidationErrorMessage::test_error_includes_original_message
 tests/lib/agent_enhancement/test_enhancer_error_messages.py::TestValidationErrorMessage::test_error_includes_position
 # ---------------------------------------------------------------------------
@@ -95,24 +94,9 @@ tests/lib/agent_enhancement/test_enhancer_error_messages.py::TestValidationError
 # STAYS RED (2026-08-21): stale assert_called_once_with(template_dir=...) — the
 # template_init() wrapper legitimately forwards four arguments now. The test's
 # expectation was never updated when the signature grew.
-tests/unit/test_autobuild_prompt_builders.py::TestPromptBuilderIntegration::test_implementation_prompt_loads_real_protocol
-tests/unit/test_autobuild_prompt_builders.py::TestSlimProtocolRouting::test_default_multiplier_uses_full_protocol
-tests/unit/test_autobuild_prompt_builders.py::TestSlimProtocolRouting::test_local_backend_uses_medium_protocol
-tests/unit/test_autobuild_prompt_builders.py::TestSlimProtocolRouting::test_multiplier_exactly_one_uses_full
-tests/unit/test_autobuild_prompt_builders.py::TestSlimProtocolRouting::test_multiplier_just_above_one_uses_medium
-tests/unit/test_docker_available_wiring.py::TestDockerAvailableWiring::test_docker_available_false_in_task_dict
-tests/unit/test_docker_available_wiring.py::TestDockerAvailableWiring::test_docker_available_true_in_task_dict
-tests/unit/test_feature_loader.py::TestSchemaValidationGaps::test_json_schema_comprehensive_validation
-tests/unit/test_graphiti_write_path_logging.py::TestOutcomeManagerLogging::test_capture_logs_graphiti_prefix_on_failure
-tests/unit/test_graphiti_write_path_logging.py::TestOutcomeManagerLogging::test_capture_logs_graphiti_prefix_on_success
-tests/unit/test_id_generator.py::test_generate_basic_id
 tests/unit/test_task_769d_ai_analyzer.py::TestCodebaseAnalyzerWithBridge::test_analyze_with_bridge_failure_falls_back
 tests/unit/test_task_769d_ai_analyzer.py::TestCodebaseAnalyzerWithBridge::test_analyze_with_bridge_success
 tests/unit/test_task_769d_ai_analyzer.py::TestCodebaseAnalyzerWithBridge::test_analyze_without_bridge_falls_back_to_heuristics
 tests/unit/test_task_769d_ai_analyzer.py::TestCodebaseAnalyzerWithBridge::test_analyze_without_stratified_sampling
 tests/unit/test_task_769d_ai_analyzer.py::TestCodebaseAnalyzerWithBridge::test_analyze_with_stratified_sampling
 tests/unit/test_task_769d_ai_analyzer.py::TestCodebaseAnalyzerWithBridge::test_analyze_with_template_context
-tests/unit/test_timeout_scaling.py::TestFeatureOrchestratorTimeoutMultiplier::test_4x_multiplier_scales_task_timeout
-tests/unit/test_timeout_scaling.py::TestFeatureOrchestratorTimeoutMultiplier::test_custom_task_timeout_also_scaled
-tests/unit/test_timeout_scaling.py::TestFeatureOrchestratorTimeoutMultiplier::test_default_task_timeout_unchanged
-tests/unit/test_timeout_scaling.py::TestFeatureOrchestratorTimeoutMultiplier::test_localhost_auto_detects_multiplier

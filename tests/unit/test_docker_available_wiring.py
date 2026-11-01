@@ -1,7 +1,9 @@
 """Unit tests for _docker_available wiring in _invoke_coach_safely().
 
-Verifies that the task dict passed to CoachValidator.validate() contains the
-correct _docker_available value based on validator._is_docker_available().
+Verifies that the task dict passed to CoachValidator.gather_evidence() contains
+the correct _docker_available value based on validator._is_docker_available().
+(CoachValidator.validate() went in the 27 October 2026 cull, 628d22ac; the
+task dict now reaches the evidence pass. Updated 1 November 2026.)
 
 Fixes TASK-BOOT-6D85: without this key, task.get("_docker_available", True)
 always returns True, so conditional approval (no-docker path) could never fire.
@@ -12,6 +14,7 @@ from unittest.mock import Mock, MagicMock, AsyncMock, patch
 import pytest
 
 from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
+from tests.task_scope_fixtures import passing_evidence_bundle
 
 
 def _make_orchestrator(tmp_path: Path) -> AutoBuildOrchestrator:
@@ -39,7 +42,7 @@ def _mock_worktree(tmp_path: Path) -> Mock:
 
 
 class TestDockerAvailableWiring:
-    """_docker_available must be present in the task dict passed to validate()."""
+    """_docker_available must be present in the task dict passed to gather_evidence()."""
 
     def test_docker_available_false_in_task_dict(self, tmp_path):
         """When Docker is unavailable, task dict contains _docker_available=False."""
@@ -48,18 +51,16 @@ class TestDockerAvailableWiring:
 
         captured_task_dict = {}
 
-        def fake_validate(task_id, turn, task, skip_arch_review=False, context=None):
+        def fake_gather(task_id, turn, task, skip_arch_review=False, context=None):
             captured_task_dict.update(task)
-            result = Mock()
-            result.to_dict.return_value = {}
-            return result
+            return passing_evidence_bundle()
 
         with patch(
             "guardkit.orchestrator.autobuild.CoachValidator"
         ) as MockValidator:
             instance = MockValidator.return_value
             instance._is_docker_available.return_value = False
-            instance.validate.side_effect = fake_validate
+            instance.gather_evidence.side_effect = fake_gather
             instance.save_decision = Mock()
 
             # Stub _load_coach_config to avoid file I/O
@@ -87,18 +88,16 @@ class TestDockerAvailableWiring:
 
         captured_task_dict = {}
 
-        def fake_validate(task_id, turn, task, skip_arch_review=False, context=None):
+        def fake_gather(task_id, turn, task, skip_arch_review=False, context=None):
             captured_task_dict.update(task)
-            result = Mock()
-            result.to_dict.return_value = {}
-            return result
+            return passing_evidence_bundle()
 
         with patch(
             "guardkit.orchestrator.autobuild.CoachValidator"
         ) as MockValidator:
             instance = MockValidator.return_value
             instance._is_docker_available.return_value = True
-            instance.validate.side_effect = fake_validate
+            instance.gather_evidence.side_effect = fake_gather
             instance.save_decision = Mock()
 
             orchestrator._load_coach_config = Mock(
@@ -121,17 +120,15 @@ class TestDockerAvailableWiring:
         orchestrator = _make_orchestrator(tmp_path)
         worktree = _mock_worktree(tmp_path)
 
-        def fake_validate(task_id, turn, task, skip_arch_review=False, context=None):
-            result = Mock()
-            result.to_dict.return_value = {}
-            return result
+        def fake_gather(task_id, turn, task, skip_arch_review=False, context=None):
+            return passing_evidence_bundle()
 
         with patch(
             "guardkit.orchestrator.autobuild.CoachValidator"
         ) as MockValidator:
             instance = MockValidator.return_value
             instance._is_docker_available.return_value = False
-            instance.validate.side_effect = fake_validate
+            instance.gather_evidence.side_effect = fake_gather
             instance.save_decision = Mock()
 
             orchestrator._load_coach_config = Mock(

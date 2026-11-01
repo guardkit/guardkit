@@ -1666,7 +1666,7 @@ class TestSchemaValidationGaps:
 
         Validates:
         - Schema is valid JSON Schema
-        - Contains Literal enum values for status and implementation_mode
+        - Has no allowed-value lists or ranges (removed in the 27 October 2026 cull)
         - Has proper field definitions
         - Includes descriptions
         """
@@ -1684,22 +1684,23 @@ class TestSchemaValidationGaps:
         assert "id" in task_schema["required"]
         # file_path has a default (Path("")) so it's not in required
 
-        # Check status field has Literal enum values
+        # The 27 October 2026 cull (28833865, GKT-033) removed the
+        # allowed-value lists and ranges on purpose: a value the planner
+        # wrote is kept as it is. The schema says so (updated 1 November 2026).
         status_schema = task_schema["properties"]["status"]
-        assert "enum" in status_schema
-        expected_statuses = ["pending", "in_progress", "completed", "failed", "skipped"]
-        assert set(status_schema["enum"]) == set(expected_statuses)
+        assert status_schema["type"] == "string"
+        assert "enum" not in status_schema
+        assert status_schema["default"] == "pending"
 
-        # Check implementation_mode field has Literal enum values
         mode_schema = task_schema["properties"]["implementation_mode"]
-        assert "enum" in mode_schema
-        expected_modes = ["direct", "task-work", "manual"]
-        assert set(mode_schema["enum"]) == set(expected_modes)
+        assert mode_schema["type"] == "string"
+        assert "enum" not in mode_schema
+        assert mode_schema["default"] == "task-work"
 
-        # Check complexity has constraints
         complexity_schema = task_schema["properties"]["complexity"]
-        assert complexity_schema.get("minimum") == 1
-        assert complexity_schema.get("maximum") == 10
+        assert complexity_schema["type"] == "integer"
+        assert "minimum" not in complexity_schema
+        assert "maximum" not in complexity_schema
 
         # Validate FeatureOrchestration schema
         assert orch_schema["type"] == "object"
@@ -1712,13 +1713,14 @@ class TestSchemaValidationGaps:
         # Validate Feature schema
         assert feature_schema["type"] == "object"
         assert "id" in feature_schema["required"]
-        assert "name" in feature_schema["required"]
+        # name defaults to "" since the cull (28833865): only the id is needed
+        assert "name" not in feature_schema["required"]
 
-        # Check feature status enum
+        # Feature status: a plain string since the cull, like the task's
         feature_status_schema = feature_schema["properties"]["status"]
-        assert "enum" in feature_status_schema
-        expected_feature_statuses = ["planned", "in_progress", "completed", "failed", "paused"]
-        assert set(feature_status_schema["enum"]) == set(expected_feature_statuses)
+        assert feature_status_schema["type"] == "string"
+        assert "enum" not in feature_status_schema
+        assert feature_status_schema["default"] == "planned"
 
 
 # ============================================================================

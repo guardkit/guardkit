@@ -586,8 +586,9 @@ async def test_early_termination_priority_order(mock_graphiti, complex_task):
     retriever = JobContextRetriever(mock_graphiti)
     context = await retriever.retrieve(complex_task, TaskPhase.IMPLEMENT, early_termination=True)
 
-    # Define expected priority order (high to low)
-    high_priority = ["feature_specs", "task_outcomes", "patterns_python"]
+    # Define expected priority order (high to low). The pattern group is one
+    # shared "patterns" group since eebbea11f (March 2026), not patterns_<stack>.
+    high_priority = ["feature_specs", "task_outcomes", "patterns"]
     low_priority = ["domain_knowledge"]
 
     # Verify high-priority categories were queried

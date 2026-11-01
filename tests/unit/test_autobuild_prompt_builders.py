@@ -453,8 +453,11 @@ class TestSlimProtocolRouting:
         prompt = invoker._build_autobuild_implementation_prompt(
             task_id="TASK-001", requirements="Test"
         )
-        # Full protocol has detailed SOLID descriptions
-        assert "Single Responsibility" in prompt
+        # The SOLID code-review section left the execution protocols when
+        # Phases 4 and 5 moved to the orchestrator (f62047b3e, FEAT-AB59,
+        # April 2026); each protocol is told apart by its own title.
+        assert "# AutoBuild Execution Protocol\n" in prompt
+        assert "### File Count Constraints" in prompt  # only in the full protocol
 
     def test_local_backend_uses_medium_protocol(self, worktree_path):
         """When timeout_multiplier>1.0 (local backend), use medium protocol (TASK-VR6-MP01)."""
@@ -462,8 +465,12 @@ class TestSlimProtocolRouting:
         prompt = invoker._build_autobuild_implementation_prompt(
             task_id="TASK-001", requirements="Test"
         )
-        # Medium protocol includes SOLID descriptions (unlike slim)
-        assert "Single Responsibility" in prompt
+        # The SOLID code-review section left the execution protocols when
+        # Phases 4 and 5 moved to the orchestrator (f62047b3e, FEAT-AB59,
+        # April 2026); each protocol is told apart by its own title.
+        assert "# AutoBuild Execution Protocol (Medium)" in prompt
+        # Medium keeps the stack patterns the slim protocol drops
+        assert "### Stack-Specific Implementation Patterns" in prompt
         # And still has essential quality gates
         assert "Phase 3" in prompt
         assert "Phase 4" in prompt
@@ -530,7 +537,11 @@ class TestSlimProtocolRouting:
         prompt = invoker._build_autobuild_implementation_prompt(
             task_id="TASK-001", requirements="Test"
         )
-        assert "Single Responsibility" in prompt
+        # The SOLID code-review section left the execution protocols when
+        # Phases 4 and 5 moved to the orchestrator (f62047b3e, FEAT-AB59,
+        # April 2026); each protocol is told apart by its own title.
+        assert "# AutoBuild Execution Protocol\n" in prompt
+        assert "(Medium)" not in prompt
 
     def test_multiplier_just_above_one_uses_medium(self, worktree_path):
         """Boundary: multiplier=1.1 uses medium protocol (TASK-VR6-MP01)."""
@@ -538,8 +549,10 @@ class TestSlimProtocolRouting:
         prompt = invoker._build_autobuild_implementation_prompt(
             task_id="TASK-001", requirements="Test"
         )
-        # Medium protocol includes SOLID descriptions
-        assert "Single Responsibility" in prompt
+        # The SOLID code-review section left the execution protocols when
+        # Phases 4 and 5 moved to the orchestrator (f62047b3e, FEAT-AB59,
+        # April 2026); each protocol is told apart by its own title.
+        assert "# AutoBuild Execution Protocol (Medium)" in prompt
 
 
 # ============================================================================
@@ -821,7 +834,8 @@ class TestPromptBuilderIntegration:
 
         # Should contain content from actual protocol file
         assert "Phase 3: Implementation" in prompt
-        assert "Phase 4: Testing" in prompt
+        # Phases 4 and 5 are the orchestrator's since f62047b3e (FEAT-AB59)
+        assert "Phases 4 and 5: Owned by the AutoBuildOrchestrator" in prompt
         assert "PLAYER_REPORT_SCHEMA" in prompt
         assert len(prompt) > 1000  # Real protocol is substantial
 
