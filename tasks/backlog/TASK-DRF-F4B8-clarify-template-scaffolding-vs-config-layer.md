@@ -26,9 +26,9 @@ superseded_reason: "TASK-REV-A5F8 analysed all three original options (document 
 >
 > Original supersession notes preserved below for historical context:
 >
-> - [TASK-PAT-1A5E](template-pattern-layer/TASK-PAT-1A5E-wire-template-patterns-into-autobuild-player.md) — the architectural fix (implemented as FEAT-TPL-PLAYER)
-> - [TASK-DOC-C3D7](template-pattern-layer/TASK-DOC-C3D7-document-two-layer-template-model.md) — documentation (completed by TASK-TPL-007)
-> - [TASK-REN-B9F2](template-pattern-layer/TASK-REN-B9F2-rename-templates-to-patterns.md) — optional rename (closed: consumer exists, no rename needed)
+> - [TASK-PAT-1A5E](../completed/template-pattern-layer/TASK-PAT-1A5E-wire-template-patterns-into-autobuild-player.md) — the architectural fix (implemented as FEAT-TPL-PLAYER)
+> - [TASK-DOC-C3D7](../completed/template-pattern-layer/TASK-DOC-C3D7-document-two-layer-template-model.md) — documentation (completed by TASK-TPL-007)
+> - [TASK-REN-B9F2](../completed/template-pattern-layer/TASK-REN-B9F2-rename-templates-to-patterns.md) — optional rename (closed: consumer exists, no rename needed)
 >
 > The original F4B8 text below is preserved for historical context only.
 

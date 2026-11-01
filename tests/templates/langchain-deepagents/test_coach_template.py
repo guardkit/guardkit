@@ -171,15 +171,31 @@ class TestPlaceholders:
         assert "{{ProjectName}}" in template_content
 
     def test_no_hardcoded_deepagents_import(self, template_content):
-        """Must not have hardcoded 'from deepagents' imports."""
+        """The project's own modules are imported through {{ProjectName}}.
+
+        `deepagents` is two things here: the name of the source project's
+        package, which must never be hardcoded, and a real library the
+        template depends on (manifest.json: "deepagents->=0.4.11"). Since
+        dbc47bc51 (18 April 2026) the coach imports that library's backends
+        and middleware on purpose, so those imports are allowed; any other
+        `from deepagents...` import names a project module and must use the
+        placeholder (1 November 2026).
+        """
+        library_modules = ("deepagents.backends", "deepagents.middleware")
         lines = template_content.splitlines()
         for line in lines:
-            if line.strip().startswith("from") and "deepagents" in line:
-                if "{{ProjectName}}" not in line:
-                    pytest.fail(
-                        f"Hardcoded 'deepagents' import found: {line.strip()}\n"
-                        "Use {{ProjectName}} placeholder instead"
-                    )
+            stripped = line.strip()
+            if stripped.startswith("from") and "deepagents" in stripped:
+                if "{{ProjectName}}" in stripped:
+                    continue
+                module = stripped.split()[1]
+                if module == "deepagents" or module.startswith(library_modules):
+                    continue
+                pytest.fail(
+                    f"Hardcoded 'deepagents' import found: {stripped}\n"
+                    "Use {{ProjectName}} placeholder instead"
+                )
+        assert "from {{ProjectName}}.coach_prompts import" in template_content
 
 
 # ===================================================================

@@ -115,7 +115,12 @@ class TestAutoBuildInstrumentationGuideFilePaths:
 
 
 class TestTaskFileReferences:
-    """Verify relative markdown links in task files resolve."""
+    """Verify relative markdown links in task files resolve.
+
+    The template-pattern-layer tasks moved from tasks/backlog/ to
+    tasks/completed/ in 2f24feca1 (19 April 2026); the paths below follow
+    them (1 November 2026).
+    """
 
     def test_f4b8a_points_at_feature_spec(self) -> None:
         """F4B8a (TASK-DRF-F4B8) references FEAT-TPL-PLAYER spec."""
@@ -134,7 +139,7 @@ class TestTaskFileReferences:
     def test_f4b8b_closed_with_rationale(self) -> None:
         """F4B8b (TASK-REN-B9F2) is closed with 'consumer exists' rationale."""
         task_path = (
-            _WORKTREE / "tasks" / "backlog" / "template-pattern-layer"
+            _WORKTREE / "tasks" / "completed" / "template-pattern-layer"
             / "TASK-REN-B9F2-rename-templates-to-patterns.md"
         )
         content = task_path.read_text(encoding="utf-8")
@@ -148,7 +153,7 @@ class TestTaskFileReferences:
     def test_doc_c3d7_completed(self) -> None:
         """TASK-DOC-C3D7 is marked as completed by TASK-TPL-007."""
         task_path = (
-            _WORKTREE / "tasks" / "backlog" / "template-pattern-layer"
+            _WORKTREE / "tasks" / "completed" / "template-pattern-layer"
             / "TASK-DOC-C3D7-document-two-layer-template-model.md"
         )
         content = task_path.read_text(encoding="utf-8")
@@ -188,7 +193,7 @@ class TestTaskFileReferences:
     def test_doc_c3d7_guide_link_resolves(self) -> None:
         """TASK-DOC-C3D7's link to the instrumentation guide resolves."""
         task_dir = (
-            _WORKTREE / "tasks" / "backlog" / "template-pattern-layer"
+            _WORKTREE / "tasks" / "completed" / "template-pattern-layer"
         )
         # The link from TASK-DOC-C3D7: ../../../docs/guides/autobuild-instrumentation-guide.md
         guide_path = (task_dir / "../../../docs/guides/autobuild-instrumentation-guide.md").resolve()

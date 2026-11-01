@@ -348,11 +348,17 @@ class TestAgentQuality:
             assert has_never, f"{agent_file} missing NEVER boundaries section"
 
     def test_agents_have_code_examples(self):
-        """Verify agent files include code examples."""
+        """Verify each agent's code examples are present.
+
+        Since 6dc1d0c24 (7 February 2026, the agent size reduction) the code
+        examples live in each agent's extended file, which the core file
+        points to with `cat agents/<name>-ext.md`; the core file keeps only
+        boundaries and pointers. Checked there (1 November 2026).
+        """
         agents_dir = TEMPLATE_ROOT / "agents"
         agent_files = [
-            "mcp-typescript-specialist.md",
-            "mcp-testing-specialist.md"
+            "mcp-typescript-specialist-ext.md",
+            "mcp-testing-specialist-ext.md"
         ]
 
         for agent_file in agent_files:

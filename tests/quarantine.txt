@@ -59,30 +59,6 @@
 # the reason the gate is red, and burning it down will not turn it green.
 # ===========================================================================
 
-tests/docs/test_gr005_completion.py::TestAcceptanceCriteria::test_ac001_cli_usage_in_claude_md
-tests/docs/test_gr005_completion.py::TestAcceptanceCriteria::test_ac002_all_query_commands_documented_with_examples
-tests/docs/test_gr005_completion.py::TestAcceptanceCriteria::test_ac003_turn_state_capture_documented
-tests/docs/test_gr005_completion.py::TestAcceptanceCriteria::test_ac004_troubleshooting_for_query_issues
-tests/docs/test_gr005_completion.py::TestCommandDetails::test_list_command_documented
-tests/docs/test_gr005_completion.py::TestCommandDetails::test_search_command_documented
-tests/docs/test_gr005_completion.py::TestCommandDetails::test_show_command_documented
-tests/docs/test_gr005_completion.py::TestCommandDetails::test_status_command_documented
-tests/docs/test_gr005_completion.py::TestCrossReferences::test_feat_gr005_reference
-tests/docs/test_gr005_completion.py::TestKnowledgeGroups::test_knowledge_groups_documented
-tests/docs/test_gr005_completion.py::TestTroubleshooting::test_all_troubleshooting_scenarios_covered
-tests/docs/test_gr005_completion.py::TestTroubleshooting::test_troubleshooting_provides_solutions
-tests/docs/test_gr005_completion.py::TestTurnStateDocumentation::test_turn_state_benefits_documented
-tests/docs/test_gr005_completion.py::TestTurnStateDocumentation::test_turn_state_schema_complete
-tests/docs/test_graphiti_gr005_documentation.py::test_claude_md_documents_all_commands
-tests/docs/test_graphiti_gr005_documentation.py::test_claude_md_documents_knowledge_groups
-tests/docs/test_graphiti_gr005_documentation.py::test_claude_md_has_command_examples
-tests/docs/test_graphiti_gr005_documentation.py::test_claude_md_has_query_commands_section
-tests/docs/test_graphiti_gr005_documentation.py::test_claude_md_has_troubleshooting_section
-tests/docs/test_graphiti_gr005_documentation.py::test_claude_md_has_turn_state_tracking_section
-tests/docs/test_graphiti_gr005_documentation.py::test_documentation_cross_references_are_valid
-tests/docs/test_graphiti_gr005_documentation.py::test_knowledge_groups_match_implementation
-tests/docs/test_graphiti_gr005_documentation.py::test_troubleshooting_provides_actionable_solutions
-tests/docs/test_graphiti_gr005_documentation.py::test_turn_state_schema_documentation_is_complete
 tests/knowledge/test_performance_optimization.py::test_early_termination_priority_order
 tests/lib/agent_enhancement/test_enhancer_error_messages.py::TestValidationErrorMessage::test_error_includes_original_message
 tests/lib/agent_enhancement/test_enhancer_error_messages.py::TestValidationErrorMessage::test_error_includes_position
@@ -129,8 +105,6 @@ tests/orchestrator/test_design_context_integration.py::test_player_prompt_with_d
 # were mutation-checked — neutering _check_zero_test_anomaly and unthreading
 # the acceptance criteria each turns them red.
 # ---------------------------------------------------------------------------
-tests/templates/langchain-deepagents/test_coach_template.py::TestPlaceholders::test_no_hardcoded_deepagents_import
-tests/templates/test_mcp_typescript_template.py::TestAgentQuality::test_agents_have_code_examples
 # STAYS RED (2026-08-21): the test patches builtins.__import__ with a helper
 # that itself calls __import__, so it recurses into its own patch. Broken test
 # harness, not a product defect — needs rewriting, unrelated to the phase-4 fix.
@@ -181,9 +155,6 @@ tests/unit/test_checkpoint_extraction_and_ordering.py::TestApprovalPrecedenceOve
 tests/unit/test_coach_subprocess_tests.py::TestPytestUsesSystemExecutable::test_pytest_command_inherits_env
 tests/unit/test_config_error_fast_exit.py::TestExecuteTurnPropagatesConfigError::test_config_error_propagated_to_turn_record
 tests/unit/test_config_error_fast_exit.py::TestExecuteTurnPropagatesConfigError::test_normal_feedback_does_not_set_config_error
-tests/unit/test_doc_file_paths.py::TestTaskFileReferences::test_doc_c3d7_completed
-tests/unit/test_doc_file_paths.py::TestTaskFileReferences::test_f4b8a_subtask_links_resolve
-tests/unit/test_doc_file_paths.py::TestTaskFileReferences::test_f4b8b_closed_with_rationale
 tests/unit/test_docker_available_wiring.py::TestDockerAvailableWiring::test_docker_available_false_in_task_dict
 tests/unit/test_docker_available_wiring.py::TestDockerAvailableWiring::test_docker_available_true_in_task_dict
 tests/unit/test_feature_loader.py::TestSchemaValidationGaps::test_json_schema_comprehensive_validation
