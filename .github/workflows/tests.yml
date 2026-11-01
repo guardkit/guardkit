@@ -126,11 +126,13 @@ jobs:
       #     (34 newly collected where a module-level importorskip lifted;
       #      31 already-collected tests whose per-test skipif lifted.)
       #   * 18 more tests in tests/orchestrator/harness/test_xrepo_contract_seam.py
-      #     now COLLECT but still skip in this job: tests/knowledge/conftest.py
-      #     registers a collection hook that skips every `integration`-marked
-      #     test unless `--run-integration` is passed. Those 18 do run in
-      #     seam-tests.yml, which invokes that file by path and so never loads
-      #     that conftest. Not a regression; named so nobody re-derives it.
+      #     then collected but still skipped in this job, because a collection
+      #     hook in tests/knowledge/conftest.py skipped every
+      #     `integration`-marked test unless `--run-integration` was passed.
+      #     That blanket skip was removed on 1 November 2026: integration
+      #     tests (tests/integration/ and every `integration`-marked test) now
+      #     run here, and the few that need something this runner lacks skip
+      #     on their own, naming it.
       #   * FAILURE IDENTITIES ARE UNCHANGED — zero new failures, zero
       #     disappeared. This step does not turn the gate red.
       #   * COST: the checkout is a 861 KB public repo; the editable install

@@ -24,10 +24,10 @@ exit code.
 
 ``_execute_wave`` is stubbed throughout, so no model is ever called.
 
-WHERE THIS FILE LIVES, AND WHY: ``tests/orchestrator/`` is collected by the
-command CI actually runs. Everything under ``tests/integration/`` is marked
-``integration`` and skipped unless ``--run-integration`` is passed, so a proof
-there would be silently skipped.
+WHERE THIS FILE LIVES: ``tests/orchestrator/``, which the command CI runs
+collects. (Until 1 November 2026 everything under ``tests/integration/`` was
+skipped unless ``--run-integration`` was passed; that blanket skip is gone and
+those tests run in the normal suite too.)
 """
 
 from __future__ import annotations

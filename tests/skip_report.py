@@ -82,7 +82,8 @@ for a case that does not happen here.
    fixture, an opt-in command-line flag that was not passed, a sibling checkout
    that is not on this machine, an optional import inside a test.
    Measured here: 1,034 tests across 21 distinct reasons. The largest single
-   reason is 933 tests behind the ``--run-integration`` flag.
+   reason was 933 tests behind the ``--run-integration`` flag; that blanket
+   skip was removed on 1 November 2026, so those tests now run.
 
 A NOTE ON HOW FRAGILE THAT CLASSIFICATION IS, said honestly
 ------------------------------------------------------------
