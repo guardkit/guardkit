@@ -52,7 +52,10 @@ from guardkit.orchestrator.exceptions import (
     TaskStateError,
     PlanNotFoundError,
 )
+from guardkit.orchestrator.quality_gates.coach_evidence import CoachEvidenceBundle
+from guardkit.orchestrator.quality_gates.coach_validator import IndependentTestResult
 from guardkit.tasks.state_bridge import TaskStateBridge
+from tests.task_scope_fixtures import admitted_task, git, init_checkout
 
 
 # ============================================================================
@@ -63,13 +66,19 @@ from guardkit.tasks.state_bridge import TaskStateBridge
 @pytest.fixture
 def mock_worktree(tmp_path):
     """
-    Create a mock worktree structure with task file and plan.
+    Create a worktree with a task file and plan, admitted as the task's checkout.
+
+    The Player's turn starts from the task's admitted scope: ``invoke_player``
+    records the scope's starting commit (``_record_baseline``) and refuses to
+    run without one (ScopeUnavailable). So, as in a real build, the worktree
+    is a real Git checkout holding the task files, and TASK-TEST-001 is
+    admitted for the whole test. An AgentInvoker made inside the test picks
+    the admitted scope up from the checkout's lease.
 
     Returns:
         Path: Path to worktree root
     """
-    worktree = tmp_path / "worktree"
-    worktree.mkdir()
+    worktree = init_checkout(tmp_path / "worktree")
 
     # Create task directories
     task_dir = worktree / "tasks" / "design_approved"
@@ -139,7 +148,13 @@ This plan covers the implementation of feature X.
     autobuild_dir = worktree / ".guardkit" / "autobuild" / "TASK-TEST-001"
     autobuild_dir.mkdir(parents=True)
 
-    return worktree
+    # The task files are the checkout's starting point.
+    git(worktree, "add", "-A")
+    git(worktree, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
+        "commit", "-q", "-m", "task fixture")
+
+    with admitted_task(worktree, "TASK-TEST-001", register=True):
+        yield worktree
 
 
 @pytest.fixture
@@ -184,24 +199,37 @@ def runner():
     return CliRunner()
 
 
+def _passing_evidence() -> CoachEvidenceBundle:
+    """The Coach's evidence for a turn whose changed parts' tests ran and passed."""
+    return CoachEvidenceBundle(
+        gathering_status="complete",
+        independent_tests=IndependentTestResult(
+            tests_passed=True,
+            test_command="true",
+            test_output_summary="passed",
+            duration_seconds=0.0,
+        ),
+    )
+
+
 @pytest.fixture
 def mock_coach_validator():
     """
     Patch CoachValidator so the test's invoker decides the Coach turn.
 
-    Since 51ac051b5 (21 May 2026, TASK-HMIG-008R) the LLM Coach is primary:
-    by default the orchestrator asks the validator only for evidence
-    (``gather_evidence``, a MagicMock here, so nothing real is gathered) and
-    always asks the invoker's ``invoke_coach`` for the decision. On the
-    ``GUARDKIT_COACH_LEGACY=1`` revert ``validate()`` is tried first, and its
-    exception sends the turn to the same invoker.
+    The Coach turn asks the validator for the project's checks
+    (``gather_evidence``) and then always asks the invoker's ``invoke_coach``
+    for the decision. The cull (628d22ac, 27 October 2026) removed
+    ``validate()`` and its ``GUARDKIT_COACH_LEGACY`` revert, and since 31
+    October 2026 a turn whose evidence records no test result stops as a
+    Coach failure. Here the evidence says the changed parts' tests ran and
+    passed, so the turn reaches the invoker.
     """
     with patch(
         "guardkit.orchestrator.autobuild.CoachValidator"
     ) as mock_validator_class:
-        # Make CoachValidator.validate() raise to force SDK fallback
         mock_instance = MagicMock()
-        mock_instance.validate.side_effect = Exception("Force SDK fallback for test")
+        mock_instance.gather_evidence.return_value = _passing_evidence()
         mock_validator_class.return_value = mock_instance
         yield mock_validator_class
 

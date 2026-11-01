@@ -13,8 +13,9 @@ Tests:
 1. FeatureOrchestrator._execute_task() passes requires_infrastructure to
    AutoBuildOrchestrator.orchestrate() (validates R1/TASK-BOOT-B032)
 2. AutoBuildOrchestrator._invoke_coach_safely() puts requires_infrastructure
-   in the task dict passed to CoachValidator.gather_evidence() (the default,
-   LLM-Coach-primary path) and to CoachValidator.validate() (the legacy path)
+   in the task dict passed to CoachValidator.gather_evidence() (the Coach
+   turn's only path since the cull, 628d22ac, removed CoachValidator.validate
+   and its GUARDKIT_COACH_LEGACY revert)
 3. CoachValidator.run_independent_tests() receives the value and enters the
    Docker lifecycle guard when requires_infrastructure is truthy
 4. AutoBuildOrchestrator.orchestrate() falls back to frontmatter when the
@@ -31,6 +32,8 @@ from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
 from guardkit.orchestrator.feature_loader import FeatureTask
 from guardkit.orchestrator.feature_orchestrator import FeatureOrchestrator
 from guardkit.orchestrator.quality_gates.coach_validator import CoachValidator
+from guardkit.worktrees import Worktree
+from tests.task_scope_fixtures import init_checkout
 
 
 # ---------------------------------------------------------------------------
@@ -58,6 +61,33 @@ def _make_mock_worktree(tmp_path: Path) -> Mock:
     worktree = Mock()
     worktree.path = tmp_path
     return worktree
+
+
+def _make_checkout_orchestrator(tmp_path: Path, task_id: str) -> AutoBuildOrchestrator:
+    """An orchestrator whose task worktree is a real Git checkout.
+
+    orchestrate() runs the task as the checkout's one writer: it takes the
+    checkout lease and admits the task scope, which read the checkout's Git
+    identity, so the worktree it is handed must be a real checkout.
+    """
+    checkout = init_checkout(tmp_path / "checkout")
+    worktree_manager = Mock()
+    worktree_manager.worktrees_dir = tmp_path / "worktrees"
+    worktree_manager.create.return_value = Worktree(
+        task_id=task_id,
+        branch_name=f"autobuild/{task_id}",
+        path=checkout,
+        base_branch="main",
+    )
+    return AutoBuildOrchestrator(
+        repo_root=tmp_path,
+        max_turns=3,
+        enable_context=False,
+        enable_pre_loop=False,
+        worktree_manager=worktree_manager,
+        agent_invoker=Mock(),
+        progress_display=Mock(),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -184,29 +214,19 @@ class TestFeatureOrchestratorPassesRequiresInfrastructure:
 class TestAutoBuiltPutsRequiresInfrastructureInCoachTaskDict:
     """_invoke_coach_safely() must include requires_infrastructure in task dict.
 
-    Since 51ac051b5 (21 May 2026, TASK-HMIG-008R) the LLM Coach is primary:
-    by default the Coach's task dict goes to ``CoachValidator.gather_evidence``
-    and ``validate()`` runs only on the operator's ``GUARDKIT_COACH_LEGACY=1``
-    revert. The key has to reach the validator on both paths.
+    The Coach's task dict goes to ``CoachValidator.gather_evidence``. The
+    legacy ``validate()`` path (``GUARDKIT_COACH_LEGACY=1``) was removed by the
+    cull (628d22ac, 27 October 2026), so its case was deleted.
     """
 
-    @pytest.mark.parametrize(
-        "legacy, method",
-        [(False, "gather_evidence"), (True, "validate")],
-        ids=["primary-gather_evidence", "legacy-validate"],
-    )
     def test_requires_infrastructure_present_in_task_dict_passed_to_validate(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, legacy: bool, method: str
+        self, tmp_path: Path
     ) -> None:
         """
         Verify _invoke_coach_safely(requires_infrastructure=[...]) propagates
         the value to the validator's task dict (``task={"requires_infrastructure": [...]}``).
         """
-        if legacy:
-            monkeypatch.setenv("GUARDKIT_COACH_LEGACY", "1")
-        else:
-            monkeypatch.delenv("GUARDKIT_COACH_LEGACY", raising=False)
-
+        method = "gather_evidence"
         orchestrator = _make_autobuild_orchestrator(tmp_path)
         worktree = _make_mock_worktree(tmp_path)
 
@@ -217,19 +237,12 @@ class TestAutoBuiltPutsRequiresInfrastructureInCoachTaskDict:
             # Stop the turn here: what follows is the LLM Coach, not under test.
             raise RuntimeError("captured the task dict")
 
-        def fake_validate(task_id, turn, task, skip_arch_review=False, context=None):
-            captured["validate"] = dict(task)
-            result = Mock()
-            result.to_dict.return_value = {}
-            return result
-
         with patch(
             "guardkit.orchestrator.autobuild.CoachValidator"
         ) as MockValidator:
             instance = MockValidator.return_value
             instance._is_docker_available.return_value = True
             instance.gather_evidence.side_effect = fake_gather_evidence
-            instance.validate.side_effect = fake_validate
             instance.save_decision = Mock()
 
             orchestrator._load_coach_config = Mock(
@@ -332,7 +345,7 @@ class TestFrontmatterFallbackInOrchestrate:
         This covers the single-task mode where FeatureOrchestrator is not involved
         and requires_infrastructure comes only from the task markdown frontmatter.
         """
-        orchestrator = _make_autobuild_orchestrator(tmp_path)
+        orchestrator = _make_checkout_orchestrator(tmp_path, "TASK-INTEG-004")
         mock_worktree = _make_mock_worktree(tmp_path)
 
         captured_loop_ri: List[Optional[List[str]]] = []
@@ -377,7 +390,7 @@ class TestFrontmatterFallbackInOrchestrate:
         When orchestrate() is called with an explicit requires_infrastructure,
         it must take precedence over the frontmatter value.
         """
-        orchestrator = _make_autobuild_orchestrator(tmp_path)
+        orchestrator = _make_checkout_orchestrator(tmp_path, "TASK-INTEG-005")
         mock_worktree = _make_mock_worktree(tmp_path)
 
         explicit_service = ["explicit-service"]

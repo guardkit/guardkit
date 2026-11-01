@@ -22,7 +22,7 @@ import pytest
 import sys
 import yaml
 from pathlib import Path
-from unittest.mock import Mock, AsyncMock, patch
+from unittest.mock import Mock, AsyncMock, MagicMock, patch
 from typing import Dict, Any
 
 # Add guardkit to path
@@ -35,6 +35,12 @@ from guardkit.orchestrator.autobuild import (
     OrchestrationResult,
 )
 from guardkit.orchestrator.agent_invoker import AgentInvocationResult
+from guardkit.orchestrator.quality_gates.coach_evidence import CoachEvidenceBundle
+from guardkit.orchestrator.quality_gates.coach_validator import (
+    CoachValidator,
+    IndependentTestResult,
+)
+from guardkit.orchestrator.quality_gates.pre_loop import PreLoopResult
 
 # Import worktree components
 from guardkit.worktrees import WorktreeManager
@@ -43,6 +49,60 @@ from guardkit.worktrees import WorktreeManager
 # ============================================================================
 # Test Fixtures
 # ============================================================================
+
+
+def _pre_loop_gates(max_turns: int) -> MagicMock:
+    """Pre-loop quality gates that pass without a model.
+
+    The real pre-loop runs the design phase through a model harness; these
+    tests mock every model call (the AgentInvoker below), so the pre-loop is
+    mocked too. Its plan keeps the test's own turn limit, because orchestrate()
+    adopts the pre-loop's recommended max_turns.
+    """
+    gates = MagicMock()
+
+    async def execute(*args, **kwargs):
+        return PreLoopResult(
+            plan={"steps": ["Implement the task"]},
+            plan_path=None,
+            complexity=3,
+            max_turns=max_turns,
+            checkpoint_passed=True,
+            architectural_score=85,
+            clarifications={},
+        )
+
+    gates.execute = execute
+    return gates
+
+
+def _passing_evidence() -> CoachEvidenceBundle:
+    """The Coach's evidence for a turn whose changed parts' tests ran and passed.
+
+    Since the cull (628d22ac, 27 October 2026) every Coach turn calls
+    ``CoachValidator.gather_evidence`` (the project's own checks) and then the
+    reviewer (``invoke_coach``, mocked here). The mocked Player writes no
+    files, so there is nothing for the real check to run; this bundle stands
+    in for a check that ran and passed.
+    """
+    return CoachEvidenceBundle(
+        gathering_status="complete",
+        independent_tests=IndependentTestResult(
+            tests_passed=True,
+            test_command="true",
+            test_output_summary="passed",
+            duration_seconds=0.0,
+        ),
+    )
+
+
+@pytest.fixture(autouse=True)
+def _checks_pass():
+    """Every Coach turn's project check ran and passed (see _passing_evidence)."""
+    with patch.object(
+        CoachValidator, "gather_evidence", return_value=_passing_evidence()
+    ):
+        yield
 
 
 @pytest.fixture
@@ -485,6 +545,7 @@ class TestSimpleTaskWorkflow:
         orchestrator = AutoBuildOrchestrator(
             repo_root=test_repo_root,
             max_turns=5,
+            pre_loop_gates=_pre_loop_gates(5),
             agent_invoker=mock_agent_invoker_simple,
         )
 
@@ -534,6 +595,7 @@ class TestIterativeTaskWorkflow:
         orchestrator = AutoBuildOrchestrator(
             repo_root=test_repo_root,
             max_turns=5,
+            pre_loop_gates=_pre_loop_gates(5),
             agent_invoker=mock_agent_invoker_iteration,
         )
 
@@ -596,6 +658,7 @@ class TestMaxTurnsExhaustion:
         orchestrator = AutoBuildOrchestrator(
             repo_root=test_repo_root,
             max_turns=3,  # Low limit to test exhaustion
+            pre_loop_gates=_pre_loop_gates(3),
             agent_invoker=mock_agent_invoker_max_turns,
         )
 
@@ -637,6 +700,7 @@ class TestErrorHandling:
         orchestrator = AutoBuildOrchestrator(
             repo_root=test_repo_root,
             max_turns=5,
+            pre_loop_gates=_pre_loop_gates(5),
             agent_invoker=mock_agent_invoker_player_error,
         )
 

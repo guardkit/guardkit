@@ -756,6 +756,7 @@ async def test_loader_delivers_complete_oversized_architecture_record(
         def __init__(self):
             self.outcome = None
             self.architecture = None
+            self.kind = None
 
         def reset_circuit_breaker(self):
             return None
@@ -765,7 +766,15 @@ async def test_loader_delivers_complete_oversized_architecture_record(
                 return [{"score": 0.9} for _ in range(3)]
             if group_ids == ["task_outcomes"]:
                 return [self.outcome]
+            # Since 4f7e01ba (31 October 2026) the architecture category runs
+            # two searches: decision records alone ("project_decisions"),
+            # then documents ("project_architecture"). Like the real store,
+            # the decisions group's read finds both kinds of record and the
+            # architecture group's read finds documents only; the retriever
+            # keeps a document only from the documents search.
             if "project_decisions" in group_ids:
+                return [self.architecture]
+            if "project_architecture" in group_ids and self.kind == "document":
                 return [self.architecture]
             return []
 
@@ -811,6 +820,7 @@ async def test_loader_delivers_complete_oversized_architecture_record(
     rendered = _record_as_text(architecture)
     assert retriever._estimate_tokens(rendered) == record_tokens
     memory.architecture = architecture
+    memory.kind = record_kind
 
     task = loader._build_task_dict(
         task_id="TASK-LOADER-BUDGET",

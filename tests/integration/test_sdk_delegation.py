@@ -59,6 +59,7 @@ from guardkit.orchestrator.exceptions import (
     SDKTimeoutError,
     TaskWorkResult,
 )
+from tests.task_scope_fixtures import admitted_task, git, init_checkout
 
 
 # ============================================================================
@@ -129,13 +130,20 @@ def _routine_seat(monkeypatch: pytest.MonkeyPatch, m0_routine_fleet_route: str) 
 @pytest.fixture
 def mock_worktree(tmp_path):
     """
-    Create a mock worktree structure for SDK delegation testing.
+    Create a worktree for SDK delegation testing, admitted as the task's checkout.
+
+    The Player's turn starts from the task's admitted scope: ``invoke_player``
+    records the scope's starting commit (``_record_baseline``) and refuses to
+    run without one (ScopeUnavailable), and task_work_results.json takes its
+    file lists from the scope's observed changes. So, as in a real build, the
+    worktree is a real Git checkout holding the task files, and TASK-SDK-001
+    is admitted for the whole test; an AgentInvoker made inside the test picks
+    the scope up from the checkout's lease.
 
     Returns:
         Path: Path to worktree root
     """
-    worktree = tmp_path / "worktree"
-    worktree.mkdir()
+    worktree = init_checkout(tmp_path / "worktree")
 
     # Create task directories
     task_dir = worktree / "tasks" / "design_approved"
@@ -204,7 +212,13 @@ SDK delegation implementation plan.
     autobuild_dir = worktree / ".guardkit" / "autobuild" / "TASK-SDK-001"
     autobuild_dir.mkdir(parents=True)
 
-    return worktree
+    # The task files are the checkout's starting point.
+    git(worktree, "add", "-A")
+    git(worktree, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
+        "commit", "-q", "-m", "task fixture")
+
+    with admitted_task(worktree, "TASK-SDK-001", register=True):
+        yield worktree
 
 
 @pytest.fixture
@@ -745,7 +759,14 @@ class TestCoachValidation:
         assert "all_passed" in qg
 
     def test_results_file_deduplicates_files(self, agent_invoker, mock_worktree):
-        """Results file deduplicates file lists."""
+        """Results file deduplicates the reported file lists.
+
+        Since the task-scope work the results file keeps the Player's reported
+        lists as ``claimed_files_modified`` / ``claimed_files_created`` and
+        sets ``files_modified`` / ``files_created`` from the admitted scope's
+        observed changes (``_apply_scope_inventory``), so the reported lists'
+        de-duplication is read from the claimed lists.
+        """
         result_data = {
             "files_modified": ["src/a.py", "src/a.py", "src/b.py"],
             "files_created": ["tests/test_a.py", "tests/test_a.py"],
@@ -756,8 +777,8 @@ class TestCoachValidation:
         with open(results_path) as f:
             results = json.load(f)
 
-        assert len(results["files_modified"]) == 2
-        assert len(results["files_created"]) == 1
+        assert len(results["claimed_files_modified"]) == 2
+        assert len(results["claimed_files_created"]) == 1
 
 
 # ============================================================================

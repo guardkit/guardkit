@@ -37,7 +37,11 @@ from guardkit.orchestrator.agent_invoker import (
     AgentInvocationResult,
     DEFAULT_SDK_TIMEOUT,
 )
-from guardkit.orchestrator.quality_gates.coach_validator import CoachValidator
+from guardkit.orchestrator.quality_gates.coach_evidence import CoachEvidenceBundle
+from guardkit.orchestrator.quality_gates.coach_validator import (
+    CoachValidator,
+    IndependentTestResult,
+)
 from guardkit.worktrees import Worktree
 
 
@@ -68,6 +72,26 @@ def _stub_sdk_timeout(invoker) -> None:
     # awaited via asyncio.ensure_future. A plain Mock returns a non-awaitable
     # and the specialist watchdog raises TypeError.
     invoker._invoke_with_role = AsyncMock()
+
+
+def _passing_evidence() -> CoachEvidenceBundle:
+    """The Coach's evidence for a turn whose changed parts' tests ran and passed.
+
+    Since the cull (628d22ac, 27 October 2026) the Coach turn always calls
+    ``CoachValidator.gather_evidence`` and then the reviewer
+    (``invoke_coach``); a turn with no recorded test result stops as a Coach
+    failure (31 October 2026). Patching ``gather_evidence`` with this bundle
+    lets each turn reach ``invoke_coach`` without running a project's checks.
+    """
+    return CoachEvidenceBundle(
+        gathering_status="complete",
+        independent_tests=IndependentTestResult(
+            tests_passed=True,
+            test_command="true",
+            test_output_summary="passed",
+            duration_seconds=0.0,
+        ),
+    )
 
 
 # ============================================================================
@@ -209,8 +233,9 @@ class TestTimeoutBudgetIntegration:
             enable_context=False,
         )
         # Directly test _loop_phase with a time budget
-        # Patch CoachValidator.validate to force SDK fallback (invoke_coach mock)
-        with patch.object(CoachValidator, 'validate', side_effect=Exception("force SDK fallback")):
+        # The Coach turn gathers the evidence (patched: the tests passed),
+        # then calls the reviewer (the invoke_coach mock).
+        with patch.object(CoachValidator, 'gather_evidence', return_value=_passing_evidence()):
             turn_history, decision = orchestrator._loop_phase(
                 task_id="TASK-BUDGET-001",
                 requirements="Implement feature",
@@ -309,8 +334,9 @@ class TestTimeoutBudgetIntegration:
         # Budget: enough for 1 turn (MIN + 0.5s) but not for 2
         # Player sleeps 1.0s, so after turn 1 remaining < MIN → budget exhausted
         budget = float(MIN_TURN_BUDGET_SECONDS + 0.5)
-        # Patch CoachValidator.validate to force SDK fallback (invoke_coach mock)
-        with patch.object(CoachValidator, 'validate', side_effect=Exception("force SDK fallback")):
+        # The Coach turn gathers the evidence (patched: the tests passed),
+        # then calls the reviewer (the invoke_coach mock).
+        with patch.object(CoachValidator, 'gather_evidence', return_value=_passing_evidence()):
             turn_history, decision = orchestrator._loop_phase(
                 task_id="TASK-BUDGET-001",
                 requirements="Implement feature",
@@ -375,8 +401,9 @@ class TestCoachGracePeriodIntegration:
             cancellation_event=cancel_event,
         )
 
-        # Patch CoachValidator.validate to force SDK fallback (invoke_coach mock)
-        with patch.object(CoachValidator, 'validate', side_effect=Exception("force SDK fallback")):
+        # The Coach turn gathers the evidence (patched: the tests passed),
+        # then calls the reviewer (the invoke_coach mock).
+        with patch.object(CoachValidator, 'gather_evidence', return_value=_passing_evidence()):
             turn_history, decision = orchestrator._loop_phase(
                 task_id="TASK-BUDGET-001",
                 requirements="Implement feature",
