@@ -13,9 +13,7 @@ import pytest
 # Importing these four hook functions by name makes them attributes of THIS
 # conftest module, which is how pytest discovers hooks. They record every skip
 # in the session and print a plain-language summary at the very end of the run.
-# They REPORT ONLY: nothing in tests/skip_report.py touches the exit code, and
-# nothing there interferes with the quarantine below — it reads the reports the
-# quarantine's own skips produce, and counts them under their own heading.
+# They REPORT ONLY: nothing in tests/skip_report.py touches the exit code.
 from tests.skip_report import (  # noqa: F401  (imported for the hooks alone)
     pytest_collectreport,
     pytest_runtest_logreport,
@@ -46,34 +44,12 @@ if commands_lib_str not in sys.path:
 
 
 # ---------------------------------------------------------------------------
-# Quarantine: pre-existing red tests, skipped so the CI gate can be green and
-# start catching NEW regressions (TASK-INFRA-CIGREEN). Every quarantined node
-# is listed with a bucket reason in tests/quarantine.txt and tracked for
-# burn-down in docs/state/TASK-INFRA-CIGREEN/triage.md. This is a documented,
-# explicit skip — NOT a silent pass. Set GUARDKIT_NO_QUARANTINE=1 to run the
-# full (red) suite, e.g. while burning the list down.
+# No quarantine (1 November 2026). tests/quarantine.txt used to list known-red
+# tests that this file skipped in every run (TASK-INFRA-CIGREEN). Every entry
+# was fixed, or deleted where the behaviour it checked was removed on purpose,
+# so the list and the skip are gone: every collected test runs, and a test that
+# cannot run on GitHub's runner skips on its own, naming what is missing.
 # ---------------------------------------------------------------------------
-_QUARANTINE_FILE = Path(__file__).parent / "quarantine.txt"
-
-
-def _load_quarantine():
-    exact = set()
-    modules = set()
-    if not _QUARANTINE_FILE.exists():
-        return exact, modules
-    for raw in _QUARANTINE_FILE.read_text(encoding="utf-8").splitlines():
-        line = raw.strip()
-        if not line or line.startswith("#"):
-            continue
-        if "::" in line:
-            exact.add(line)
-        else:
-            # A bare module path quarantines every test it collects.
-            modules.add(line)
-    return exact, modules
-
-
-_QUARANTINE_EXACT, _QUARANTINE_MODULES = _load_quarantine()
 
 
 def pytest_configure(config):
@@ -101,33 +77,6 @@ def pytest_configure(config):
         "sdk harness, the by-hand memory rule). Every other test runs as a "
         "factory launch. It never lifts the network and claude guard.",
     )
-
-
-def pytest_collection_modifyitems(config, items):
-    """Skip quarantined nodes unless GUARDKIT_NO_QUARANTINE is set."""
-    if os.environ.get("GUARDKIT_NO_QUARANTINE"):
-        return
-    if not _QUARANTINE_EXACT and not _QUARANTINE_MODULES:
-        return
-    reason = (
-        "quarantined pre-existing failure — see tests/quarantine.txt "
-        "(TASK-INFRA-CIGREEN)"
-    )
-    marker = pytest.mark.skip(reason=reason)
-    skipped = 0
-    for item in items:
-        nodeid = item.nodeid
-        module = nodeid.split("::", 1)[0]
-        if nodeid in _QUARANTINE_EXACT or module in _QUARANTINE_MODULES:
-            item.add_marker(marker)
-            skipped += 1
-    if skipped:
-        terminal = config.pluginmanager.get_plugin("terminalreporter")
-        if terminal is not None:
-            terminal.write_line(
-                f"[quarantine] skipped {skipped} pre-existing red test(s) "
-                f"(GUARDKIT_NO_QUARANTINE=1 to run them)"
-            )
 
 
 # ---------------------------------------------------------------------------

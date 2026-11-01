@@ -11,10 +11,11 @@
 #   When this gate was introduced the suite had 518 PRE-EXISTING failures under
 #   Python 3.12 (foreign-machine paths, missing template scaffolds, stale mocks,
 #   optional-dep gaps — full triage in docs/state/TASK-INFRA-CIGREEN/triage.md).
-#   Those are skipped via the explicit, documented quarantine in
-#   tests/quarantine.txt (applied by tests/conftest.py). Everything ELSE —
-#   including every new or newly-fixed test — is gated. The quarantine is
-#   burned down by a follow-up task; removing a line re-arms the gate for it.
+#   Those were skipped via a documented quarantine list (tests/quarantine.txt,
+#   applied by tests/conftest.py) while they were burned down. On 1 November
+#   2026 the last entries were fixed, or deleted where the behaviour they
+#   checked had been removed on purpose, and the list and its skip were
+#   removed: every collected test is gated.
 #
 # What this job installs, and why it is not just `.[dev]` (2026-08-23)
 #   The job checks out the sibling repo guardkit/guardkitfactory and installs
@@ -201,7 +202,7 @@ jobs:
           git config --global user.email "ci@guardkit.invalid"
           git config --global user.name "guardkit CI"
 
-      - name: Run test suite (quarantine applied via tests/conftest.py)
+      - name: Run test suite
         # `-o addopts=""` clears the repo's default --cov flags (this gate is
         # pass/fail, not coverage). --timeout bounds any single hang.
         run: |

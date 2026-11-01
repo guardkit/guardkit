@@ -189,46 +189,8 @@ class TestTheTextRulesAreStillTrue:
             f"whole-file skips under 'by decision' instead. Got: {message!r}"
         )
 
-    def test_the_quarantine_still_names_the_file_this_report_looks_for(
-        self, isolated_report
-    ):
-        """Ask guardkit's own quarantine hook what reason it attaches."""
-        from tests import conftest as guardkit_conftest
-
-        quarantined_nodeids = sorted(guardkit_conftest._QUARANTINE_EXACT)
-        if not quarantined_nodeids:
-            pytest.skip("tests/quarantine.txt has no exact entries to check")
-
-        class _Item:
-            def __init__(self, nodeid):
-                self.nodeid = nodeid
-                self.markers = []
-
-            def add_marker(self, marker):
-                self.markers.append(marker)
-
-        class _PluginManager:
-            def get_plugin(self, name):
-                return None
-
-        class _Config:
-            pluginmanager = _PluginManager()
-
-        item = _Item(quarantined_nodeids[0])
-        previous = os.environ.pop("GUARDKIT_NO_QUARANTINE", None)
-        try:
-            guardkit_conftest.pytest_collection_modifyitems(_Config(), [item])
-        finally:
-            if previous is not None:
-                os.environ["GUARDKIT_NO_QUARANTINE"] = previous
-
-        assert item.markers, "the quarantine hook did not skip a quarantined node"
-        reason = item.markers[0].kwargs["reason"]
-        assert isolated_report.QUARANTINE_MARKER in reason, (
-            "the quarantine reason no longer names "
-            f"{isolated_report.QUARANTINE_MARKER!r}, so tests/skip_report.py "
-            f"would file 345 quarantined tests under 'ordinary'. Got: {reason!r}"
-        )
+    # The pin on tests/conftest.py's quarantine hook went with the hook
+    # (1 November 2026): the quarantine list was emptied and its skip removed.
 
 
 # ---------------------------------------------------------------------------
