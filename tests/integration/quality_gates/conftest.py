@@ -5,19 +5,21 @@ This module provides parametrized fixtures for testing different complexity
 scenarios with the AutoBuild quality gates system.
 
 Fixtures:
-    - task_scenario: Parametrized task scenarios (simple, medium, complex)
+    - task_scenario: Parametrized task scenarios (simple, medium, complex).
+      A test module that is about one scenario selects it with
+      ``pytest.mark.parametrize("task_scenario", ["simple"], indirect=True)``,
+      so the other scenarios are never generated for it.
     - mock_orchestrator: Fully mocked AutoBuildOrchestrator
     - mock_pre_loop_gates: Mocked PreLoopQualityGates
-    - mock_task_work_results: Simulated task-work quality gate results
+    - mock_coach_validator: Mocked CoachValidator whose evidence says the
+      project's own tests ran (passing unless a test says otherwise)
 
 Architecture:
     - Uses pytest parametrize for scenario-based testing
     - Mocks all external dependencies (worktrees, agents, file I/O)
-    - Provides realistic task-work result data structures
 """
 
 import pytest
-import json
 import os
 import subprocess
 from pathlib import Path
@@ -34,6 +36,8 @@ from guardkit.orchestrator.autobuild import (
 )
 from guardkit.orchestrator.agent_invoker import AgentInvocationResult
 from guardkit.orchestrator.quality_gates import PreLoopQualityGates
+from guardkit.orchestrator.quality_gates.coach_evidence import CoachEvidenceBundle
+from guardkit.orchestrator.quality_gates.coach_validator import IndependentTestResult
 from guardkit.worktrees import Worktree
 
 
@@ -75,40 +79,32 @@ def _git_init_seeded(path: Path, branch: str = "main") -> None:
 # ============================================================================
 
 
-@pytest.fixture(
-    params=[
-        pytest.param(
-            {
-                "complexity": 2,
-                "files": 2,
-                "loc": 50,
-                "max_turns": 3,
-                "description": "Simple CRUD endpoint",
-            },
-            id="simple",
-        ),
-        pytest.param(
-            {
-                "complexity": 5,
-                "files": 5,
-                "loc": 250,
-                "max_turns": 5,
-                "description": "Medium authentication service",
-            },
-            id="medium",
-        ),
-        pytest.param(
-            {
-                "complexity": 8,
-                "files": 10,
-                "loc": 500,
-                "max_turns": 7,
-                "description": "Complex state machine with parallel execution",
-            },
-            id="complex",
-        ),
-    ]
-)
+SCENARIOS = {
+    "simple": {
+        "complexity": 2,
+        "files": 2,
+        "loc": 50,
+        "max_turns": 3,
+        "description": "Simple CRUD endpoint",
+    },
+    "medium": {
+        "complexity": 5,
+        "files": 5,
+        "loc": 250,
+        "max_turns": 5,
+        "description": "Medium authentication service",
+    },
+    "complex": {
+        "complexity": 8,
+        "files": 10,
+        "loc": 500,
+        "max_turns": 7,
+        "description": "Complex state machine with parallel execution",
+    },
+}
+
+
+@pytest.fixture(params=list(SCENARIOS), ids=list(SCENARIOS))
 def task_scenario(request, tmp_path):
     """
     Parametrized fixture providing task scenarios of varying complexity.
@@ -118,10 +114,13 @@ def task_scenario(request, tmp_path):
         - medium (complexity 5): 5 files, 250 LOC, 5 max turns
         - complex (complexity 8): 10 files, 500 LOC, 7 max turns
 
+    The parameter is the scenario's name; a module about one scenario
+    narrows it with an indirect parametrize (see the module docstring).
+
     Returns:
         Dict[str, Any]: Task scenario with complexity, files, LOC, max_turns
     """
-    scenario = request.param
+    scenario = SCENARIOS[request.param]
     task_id = f"TASK-QG-{scenario['complexity']:02d}"
 
     # Create task file structure
@@ -285,74 +284,59 @@ def mock_pre_loop_gates(task_scenario):
     return gates
 
 
-@pytest.fixture
-def mock_task_work_results(task_scenario, mock_worktree):
-    """
-    Create simulated task-work quality gate results.
-
-    Simulates the results files that would be created by task-work during
-    implementation, including test results, coverage, and architectural scores.
-    """
-    results_dir = mock_worktree.path / ".guardkit" / "autobuild" / task_scenario["task_id"]
-    results_dir.mkdir(parents=True, exist_ok=True)
-
-    # Generate realistic results based on complexity
-    complexity = task_scenario["complexity"]
-
-    task_work_results = {
-        "task_id": task_scenario["task_id"],
-        "phase_4_5_tests": {
-            "status": "passed",
-            "tests_total": 10 + complexity * 2,
-            "tests_passed": 10 + complexity * 2,
-            "tests_failed": 0,
-            "coverage": {
-                "lines": 85 + (complexity if complexity <= 5 else 5),
-                "branches": 80,
-                "functions": 90,
-            },
-        },
-        "phase_5_review": {
-            "code_quality_score": 88,
-            "maintainability": "good",
-        },
-        "phase_5_5_plan_audit": {
-            "files_match": True,
-            "loc_variance_percent": 5,
-            "scope_creep_detected": False,
-        },
-        "files_created": [f"src/file{i}.py" for i in range(task_scenario["files"])],
-        "files_modified": [],
-        "architectural_score": 85 if complexity <= 6 else 92,
-    }
-
-    # Write results to file
-    results_file = results_dir / "task_work_results.json"
-    results_file.write_text(json.dumps(task_work_results, indent=2))
-
-    return task_work_results
-
-
 # ============================================================================
 # Mock Coach Validator
 # ============================================================================
 
 
+def make_evidence_bundle(tests_passed: bool = True) -> CoachEvidenceBundle:
+    """A complete evidence bundle whose changed parts' tests ran.
+
+    ``tests_passed`` says whether the project's own tests passed. A bundle
+    with no test result, or one whose check could not run, stops the turn as
+    a Coach failure (31 October 2026), so the check here always ran.
+    """
+    return CoachEvidenceBundle(
+        gathering_status="complete",
+        task_type="feature",
+        profile_name="feature",
+        independent_tests=IndependentTestResult(
+            tests_passed=tests_passed,
+            test_command="true" if tests_passed else "false",
+            test_output_summary="passed" if tests_passed else "3 tests failed",
+            duration_seconds=0.0,
+        ),
+    )
+
+
+
 @pytest.fixture
-def mock_coach_validator(task_scenario, mock_task_work_results):
+def mock_coach_validator(task_scenario):
     """
     Mock CoachValidator, so the project's checks are not run.
 
     The orchestrator asks this validator only for evidence
-    (``gather_evidence``, which here returns a MagicMock, keeping the run
-    hermetic); the turn's decision is the one the test's ``invoke_coach``
-    mock returns.
+    (``gather_evidence``), and stops the turn when the bundle says the
+    project's check could not run (31 October 2026). Here the bundle says the
+    changed parts' tests ran and passed, keeping the run hermetic; the turn's
+    decision is the one the test's ``invoke_coach`` mock returns.
+
+    A test whose project tests fail on some turns sets
+    ``mock_coach_validator.return_value.gather_evidence.side_effect`` to
+    :func:`evidence_for_turns` with one entry per turn.
     """
     with patch("guardkit.orchestrator.autobuild.CoachValidator") as mock_validator_class:
         mock_instance = MagicMock()
+        mock_instance.gather_evidence.return_value = make_evidence_bundle()
         mock_validator_class.return_value = mock_instance
 
         yield mock_validator_class
+
+
+def evidence_for_turns(*tests_passed: bool) -> list:
+    """One evidence bundle per turn, in order: whether the project's own
+    tests passed on that turn."""
+    return [make_evidence_bundle(tests_passed=passed) for passed in tests_passed]
 
 
 # ============================================================================

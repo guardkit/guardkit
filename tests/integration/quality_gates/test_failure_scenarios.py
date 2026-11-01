@@ -5,10 +5,9 @@ These tests verify that the quality gates system properly handles
 and reports failures at various stages of the workflow.
 
 Test Coverage:
-    - Test failure auto-fix loops (Phase 4.5)
-    - Scope creep detection (Phase 5.5)
-    - Low architectural scores blocking execution
+    - The project's own failing tests sending a turn back
     - Checkpoint rejection handling
+    - Player and Coach errors
     - Max turns exceeded scenarios
 
 Coverage Target: >=85%
@@ -18,14 +17,12 @@ import itertools
 
 import pytest
 
-from guardkit.orchestrator.quality_gates import (
-    QualityGateBlocked,
-    CheckpointRejectedError,
-)
+from guardkit.orchestrator.quality_gates import CheckpointRejectedError
 
 from .conftest import (
     make_player_result,
     make_coach_result,
+    evidence_for_turns,
     assert_worktree_preserved,
 )
 
@@ -44,12 +41,13 @@ class TestTestFailureScenarios:
         task_scenario,
         mock_orchestrator,
         mock_agent_invoker,
+        mock_coach_validator,
     ):
         """
         Test that failing tests trigger Coach feedback for fixes.
 
-        When Player reports test failures, Coach should provide
-        specific feedback to address the failures.
+        When the project's own tests, run by GuardKit after the turn, fail,
+        the Coach sends the turn back with the failures to fix.
 
         Scenario:
             - Turn 1: Tests fail, Coach provides feedback
@@ -60,14 +58,17 @@ class TestTestFailureScenarios:
             - Feedback mentions test failures
             - Turn 2 decision = "approve"
         """
-        # Mock Turn 1: Player with failing tests
+        # The project's own tests fail after turn 1 and pass after turn 2.
+        mock_coach_validator.return_value.gather_evidence.side_effect = (
+            evidence_for_turns(False, True)
+        )
+
+        # Mock Turn 1: Player's implementation, whose tests fail
         player_result_1 = make_player_result(
             task_id=task_scenario["task_id"],
             turn=1,
             files_created=task_scenario["files"],
         )
-        # Override to simulate test failure
-        player_result_1.report["tests_passed"] = False
 
         coach_result_1 = make_coach_result(
             task_id=task_scenario["task_id"],
@@ -126,6 +127,7 @@ class TestTestFailureScenarios:
         task_scenario,
         mock_orchestrator,
         mock_agent_invoker,
+        mock_coach_validator,
     ):
         """
         Test that persistent test failures eventually block the task.
@@ -143,28 +145,17 @@ class TestTestFailureScenarios:
             - Final decision = "max_turns_exceeded"
             - Error mentions test failures
         """
-        # Mock all turns with test failures.
-        #
-        # TASK-AB-NOCHANGE01: the simulated Player writes a real file on every
-        # turn. This test's premise is a build that keeps ATTEMPTING the fix
-        # and keeps failing its tests — the attempts are the whole point — and
-        # the loop now measures with git whether a turn changed anything in
-        # the worktree. A mocked Player that only *claims* files_created is
-        # exactly the fiction the no-file-changes stop exists to catch, so
-        # without a real edit per turn the build correctly stops at turn 3 as
-        # a stall and never reaches the turn budget this test is about.
-        #
-        # The reviewer also names a DIFFERENT failing test each turn. One
-        # identical complaint repeated for three turns with no criteria
-        # passing is the separate, older feedback-stall stop (added
-        # 2026-02-05, after this test was written); a build that honestly
-        # exhausts its turn budget is one where what the reviewer is asking
-        # for keeps moving.
+        # Mock all turns with test failures: the project's own tests fail
+        # after every turn. The simulated Player writes a real file on every
+        # turn (it keeps ATTEMPTING the fix), and the reviewer names a
+        # different failing test each turn.
+        mock_coach_validator.return_value.gather_evidence.side_effect = (
+            evidence_for_turns(*[False] * task_scenario["max_turns"])
+        )
         player_result = make_player_result(
             task_id=task_scenario["task_id"],
             turn=1,
         )
-        player_result.report["tests_passed"] = False
 
         _worktree_dir = task_scenario["worktree_dir"]
         _player_turns = itertools.count(1)
@@ -216,259 +207,6 @@ class TestTestFailureScenarios:
         assert result.total_turns == task_scenario["max_turns"]
 
         # Verify worktree preserved for debugging
-        assert_worktree_preserved(result)
-
-    @pytest.mark.integration
-    def test_low_coverage_triggers_feedback(
-        self,
-        task_scenario,
-        mock_orchestrator,
-        mock_agent_invoker,
-        mock_task_work_results,
-    ):
-        """
-        Test that low test coverage triggers Coach feedback.
-
-        Coverage below thresholds should result in feedback
-        requesting additional tests.
-
-        Scenario:
-            - Turn 1: Coverage 70% (below 80% threshold)
-            - Coach requests more tests
-            - Turn 2: Coverage 85%, approved
-
-        Assertions:
-            - Turn 1 decision = "feedback"
-            - Feedback mentions coverage
-            - Turn 2 decision = "approve"
-        """
-        # Modify task-work results to simulate low coverage
-        mock_task_work_results["phase_4_5_tests"]["coverage"]["lines"] = 70
-
-        # Mock Turn 1: Low coverage
-        mock_agent_invoker.invoke_player.side_effect = [
-            make_player_result(task_id=task_scenario["task_id"], turn=1),
-            make_player_result(task_id=task_scenario["task_id"], turn=2),
-        ]
-
-        mock_agent_invoker.invoke_coach.side_effect = [
-            make_coach_result(
-                task_id=task_scenario["task_id"],
-                turn=1,
-                decision="feedback",
-                issues=[
-                    {
-                        "type": "coverage",
-                        "description": "Line coverage 70% below threshold (80%)",
-                        "suggestion": "Add tests for uncovered branches",
-                    }
-                ],
-            ),
-            make_coach_result(
-                task_id=task_scenario["task_id"],
-                turn=2,
-                decision="approve",
-            ),
-        ]
-
-        # Execute orchestration
-        result = mock_orchestrator.orchestrate(
-            task_id=task_scenario["task_id"],
-            requirements="Implement feature",
-            acceptance_criteria=["Coverage >= 80%"],
-            task_file_path=task_scenario["task_file"],
-        )
-
-        # Verify coverage feedback cycle
-        assert result.total_turns == 2
-        assert result.turn_history[0].decision == "feedback"
-        assert "coverage" in result.turn_history[0].feedback.lower()
-
-
-# ============================================================================
-# Scope Creep Tests (Phase 5.5)
-# ============================================================================
-
-
-class TestScopeCreepDetection:
-    """Test scope creep detection in Phase 5.5 plan audit."""
-
-    @pytest.mark.integration
-    def test_scope_creep_detected_triggers_feedback(
-        self,
-        task_scenario,
-        mock_orchestrator,
-        mock_agent_invoker,
-        mock_task_work_results,
-    ):
-        """
-        Test that scope creep detection triggers Coach feedback.
-
-        When implementation deviates significantly from plan
-        (file count mismatch, excessive LOC variance), Coach
-        should flag scope creep.
-
-        Scenario:
-            - Plan: 5 files, 250 LOC
-            - Implementation: 8 files, 400 LOC
-            - Scope creep detected
-
-        Assertions:
-            - Coach provides feedback about scope creep
-            - Requests plan update or justification
-        """
-        # Modify task-work results to simulate scope creep
-        mock_task_work_results["phase_5_5_plan_audit"]["scope_creep_detected"] = True
-        mock_task_work_results["phase_5_5_plan_audit"]["loc_variance_percent"] = 60
-
-        # Mock Player and Coach
-        mock_agent_invoker.invoke_player.side_effect = [
-            make_player_result(task_id=task_scenario["task_id"], turn=1),
-            make_player_result(task_id=task_scenario["task_id"], turn=2),
-        ]
-
-        mock_agent_invoker.invoke_coach.side_effect = [
-            make_coach_result(
-                task_id=task_scenario["task_id"],
-                turn=1,
-                decision="feedback",
-                issues=[
-                    {
-                        "type": "scope_creep",
-                        "severity": "major",
-                        "description": "Implementation 60% larger than planned",
-                        "suggestion": "Update plan or reduce scope",
-                    }
-                ],
-            ),
-            make_coach_result(
-                task_id=task_scenario["task_id"],
-                turn=2,
-                decision="approve",
-            ),
-        ]
-
-        # Execute orchestration
-        result = mock_orchestrator.orchestrate(
-            task_id=task_scenario["task_id"],
-            requirements="Implement feature",
-            acceptance_criteria=["Match implementation plan"],
-            task_file_path=task_scenario["task_file"],
-        )
-
-        # Verify scope creep feedback
-        assert result.total_turns == 2
-        assert result.turn_history[0].decision == "feedback"
-        assert "scope" in result.turn_history[0].feedback.lower() or "60" in result.turn_history[0].feedback
-
-    @pytest.mark.integration
-    def test_acceptable_variance_passes(
-        self,
-        task_scenario,
-        mock_orchestrator,
-        mock_agent_invoker,
-        mock_task_work_results,
-    ):
-        """
-        Test that acceptable LOC variance (within ±20%) passes audit.
-
-        Small deviations from plan should be acceptable.
-
-        Assertions:
-            - LOC variance 5% passes
-            - No scope creep detected
-            - Coach approves
-        """
-        # Ensure task-work results show acceptable variance
-        assert mock_task_work_results["phase_5_5_plan_audit"]["loc_variance_percent"] == 5
-        assert mock_task_work_results["phase_5_5_plan_audit"]["scope_creep_detected"] is False
-
-        # Mock Player and Coach
-        mock_agent_invoker.invoke_player.return_value = make_player_result(
-            task_id=task_scenario["task_id"],
-            turn=1,
-        )
-
-        mock_agent_invoker.invoke_coach.return_value = make_coach_result(
-            task_id=task_scenario["task_id"],
-            turn=1,
-            decision="approve",
-        )
-
-        # Execute orchestration
-        result = mock_orchestrator.orchestrate(
-            task_id=task_scenario["task_id"],
-            requirements="Implement feature",
-            acceptance_criteria=["Match plan within variance"],
-            task_file_path=task_scenario["task_file"],
-        )
-
-        # Verify passed without scope creep feedback
-        assert result.success is True
-        assert result.final_decision == "approved"
-
-
-# ============================================================================
-# Architectural Review Failures (Phase 2.5B)
-# ============================================================================
-
-
-class TestArchitecturalReviewFailures:
-    """Test failures in architectural review quality gate."""
-
-    @pytest.mark.integration
-    def test_low_architectural_score_blocks_execution(
-        self,
-        task_scenario,
-        mock_orchestrator,
-        mock_pre_loop_gates,
-    ):
-        """
-        Test that low architectural scores block task execution.
-
-        If SOLID/DRY/YAGNI score is below threshold (< 60),
-        pre-loop should block and prevent Player-Coach loop.
-
-        Scenario:
-            - Architectural score: 45 (below 60 threshold)
-            - Pre-loop raises QualityGateBlocked
-            - Task blocked before implementation
-
-        Assertions:
-            - Orchestration exits early
-            - Final decision = "pre_loop_blocked"
-            - Error mentions architectural review failure
-        """
-
-        # Configure pre-loop to raise QualityGateBlocked.
-        #
-        # The keywords here are the ones QualityGateBlocked actually takes:
-        # reason, gate_name, details. It has never accepted score=/threshold=/
-        # message=, so this call raised TypeError inside the test body and the
-        # orchestrator was never reached — the test has been red since it was
-        # written. The score and threshold now travel in `details`, which is
-        # where the exception carries structured context.
-        mock_pre_loop_gates.execute.side_effect = QualityGateBlocked(
-            reason="SOLID/DRY/YAGNI score 45/100 below threshold (60)",
-            gate_name="architectural_review",
-            details={"score": 45, "threshold": 60},
-        )
-
-        # Execute orchestration (should fail in pre-loop)
-        result = mock_orchestrator.orchestrate(
-            task_id=task_scenario["task_id"],
-            requirements="Implement feature",
-            acceptance_criteria=["Pass architectural review"],
-            task_file_path=task_scenario["task_file"],
-        )
-
-        # Verify pre-loop blocked
-        assert result.success is False
-        assert result.final_decision == "pre_loop_blocked"
-        assert result.total_turns == 0  # No turns executed
-        assert "architectural" in result.error.lower() or "score" in result.error.lower()
-
-        # Verify worktree preserved for review
         assert_worktree_preserved(result)
 
 
@@ -662,6 +400,7 @@ class TestMaxTurnsExceeded:
         task_scenario,
         mock_orchestrator,
         mock_agent_invoker,
+        mock_coach_validator,
     ):
         """
         Test that reaching max_turns preserves worktree for inspection.
@@ -675,21 +414,15 @@ class TestMaxTurnsExceeded:
             - All turns recorded in history
             - Error message helpful
         """
-        # Mock all turns with feedback (never approve).
-        #
-        # TASK-AB-NOCHANGE01: the simulated Player writes a real file on every
-        # turn. This test asserts the worktree is preserved "with all
-        # implementation work intact", so there has to BE implementation work:
-        # the loop now measures with git whether a turn changed anything, and
-        # a Player that only claims files_created leaves the worktree empty.
-        # Three empty turns is the no-file-changes stall, not a build that ran
-        # out of turns.
-        #
-        # The reviewer also raises a DIFFERENT point each turn. One identical
-        # complaint repeated for three turns with no criteria passing is the
-        # separate, older feedback-stall stop (added 2026-02-05, after this
-        # test was written), which would also end the build before the turn
-        # budget ran out.
+        # Mock all turns with feedback (never approve): the project's own
+        # tests fail after every turn (the reviewer's verdict alone is
+        # advice), naming a different failing test each time. The simulated
+        # Player writes a real file on every turn: this test asserts the
+        # worktree is preserved "with all implementation work intact", so
+        # there has to BE implementation work.
+        mock_coach_validator.return_value.gather_evidence.side_effect = (
+            evidence_for_turns(*[False] * task_scenario["max_turns"])
+        )
         _player_result = make_player_result(
             task_id=task_scenario["task_id"],
             turn=1,
@@ -713,13 +446,14 @@ class TestMaxTurnsExceeded:
                 decision="feedback",
                 issues=[
                     {
-                        "type": "missing_test",
-                        "severity": "medium",
+                        "type": "test_failure",
+                        "severity": "must_fix",
                         "description": (
-                            f"Edge case group {turn} is still uncovered"
+                            f"The project's tests failed: edge case group "
+                            f"{turn} still fails"
                         ),
                         "suggestion": (
-                            f"Add tests for edge case group {turn}"
+                            f"Fix edge case group {turn}"
                         ),
                     }
                 ],

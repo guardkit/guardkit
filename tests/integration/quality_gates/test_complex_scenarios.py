@@ -7,7 +7,6 @@ and support extended feedback loops for iterative refinement.
 Test Coverage:
     - Human checkpoint triggering (Phase 2.8)
     - Extended feedback loops (3+ turns)
-    - High architectural review thresholds
     - Complex quality gate orchestration
 
 Coverage Target: >=85%
@@ -18,7 +17,12 @@ import pytest
 from .conftest import (
     make_player_result,
     make_coach_result,
+    evidence_for_turns,
 )
+
+# Every test here is about the complex scenario, so only that scenario is
+# generated (the shared fixture also offers the other two).
+pytestmark = pytest.mark.parametrize("task_scenario", ["complex"], indirect=True)
 
 
 # ============================================================================
@@ -55,9 +59,6 @@ class TestComplexTaskScenarios:
             - checkpoint_passed = True
             - Implementation proceeds after approval
         """
-        # Skip if not complex scenario
-        if task_scenario["complexity"] != 8:
-            pytest.skip("Test requires complex scenario")
 
         # Mock Player and Coach
         mock_agent_invoker.invoke_player.return_value = make_player_result(
@@ -100,40 +101,34 @@ class TestComplexTaskScenarios:
         task_scenario,
         mock_orchestrator,
         mock_agent_invoker,
+        mock_coach_validator,
     ):
         """
         Test complex task requiring 4+ turns for completion.
 
-        Complex tasks often need multiple feedback cycles to address:
-        - Architecture concerns
-        - Edge case coverage
-        - Performance considerations
-        - Error handling
+        The reviewer's verdict is advice: its located findings get one repair
+        turn per task, and after that only real failures (here the project's
+        own tests) send a turn back.
 
         Scenario:
-            - Turn 1: Architecture feedback
-            - Turn 2: Edge case feedback
-            - Turn 3: Performance feedback
-            - Turn 4: Approved
+            - Turn 1: the reviewer's located finding on coupling (the one
+              repair turn)
+            - Turn 2: the project's parallel-execution test fails
+            - Turn 3: the project's lock-contention test fails
+            - Turn 4: tests pass, approved
 
         Assertions:
             - Total turns = 4
             - Different feedback each turn
             - Final decision = "approved"
         """
-        # Skip if not complex scenario
-        if task_scenario["complexity"] != 8:
-            pytest.skip("Test requires complex scenario")
 
-        # Mock 4-turn workflow.
-        #
-        # TASK-AB-NOCHANGE01: the simulated Player writes a file on each turn.
-        # This test's premise is a build that IS making progress — three
-        # different pieces of feedback and then an approval — and the loop now
-        # measures, with git, whether anything actually changed. A mocked
-        # Player that writes nothing is the signature of the failure that stop
-        # exists to catch, so without a real edit per turn the build correctly
-        # ends after three silent turns and never reaches turn 4.
+        # Mock 4-turn workflow. The project's own tests: pass, fail, fail,
+        # pass. The simulated Player writes a file on each turn: this test's
+        # premise is a build that IS making progress.
+        mock_coach_validator.return_value.gather_evidence.side_effect = (
+            evidence_for_turns(True, False, False, True)
+        )
         _player_results = iter(
             [
                 make_player_result(task_id=task_scenario["task_id"], turn=i)
@@ -160,8 +155,13 @@ class TestComplexTaskScenarios:
                 decision="feedback",
                 issues=[
                     {
-                        "type": "architecture",
-                        "description": "State machine coupling too tight",
+                        "type": "review_finding",
+                        "severity": "major",
+                        "location": "src/state_machine.py:57",
+                        "description": (
+                            "State machine coupling too tight at "
+                            "src/state_machine.py:57"
+                        ),
                         "suggestion": "Extract state interface",
                     }
                 ],
@@ -172,9 +172,13 @@ class TestComplexTaskScenarios:
                 decision="feedback",
                 issues=[
                     {
-                        "type": "testing",
-                        "description": "Parallel execution not tested",
-                        "suggestion": "Add concurrency tests",
+                        "type": "test_failure",
+                        "severity": "must_fix",
+                        "description": (
+                            "The project's tests failed: "
+                            "test_parallel_execution fails"
+                        ),
+                        "suggestion": "Fix the parallel execution path",
                     }
                 ],
             ),
@@ -184,8 +188,12 @@ class TestComplexTaskScenarios:
                 decision="feedback",
                 issues=[
                     {
-                        "type": "performance",
-                        "description": "Lock contention detected",
+                        "type": "test_failure",
+                        "severity": "must_fix",
+                        "description": (
+                            "The project's tests failed: "
+                            "test_lock_contention times out"
+                        ),
                         "suggestion": "Use lock-free data structures",
                     }
                 ],
@@ -215,51 +223,6 @@ class TestComplexTaskScenarios:
         assert "lock" in result.turn_history[2].feedback.lower()
 
     @pytest.mark.integration
-    def test_complex_task_high_architectural_score(
-        self,
-        task_scenario,
-        mock_orchestrator,
-        mock_agent_invoker,
-        mock_pre_loop_gates,
-    ):
-        """
-        Test complex tasks require higher architectural review scores.
-
-        Complex tasks should achieve architectural scores >= 90
-        to proceed, ensuring design quality before implementation.
-
-        Assertions:
-            - Architectural score >= 90
-            - Higher SOLID/DRY/YAGNI standards
-            - Comprehensive architectural review
-        """
-        # Skip if not complex scenario
-        if task_scenario["complexity"] != 8:
-            pytest.skip("Test requires complex scenario")
-
-        # Mock Player and Coach
-        mock_agent_invoker.invoke_player.return_value = make_player_result(
-            task_id=task_scenario["task_id"],
-            turn=1,
-        )
-        mock_agent_invoker.invoke_coach.return_value = make_coach_result(
-            task_id=task_scenario["task_id"],
-            turn=1,
-            decision="approve",
-        )
-
-        # Execute orchestration
-        result = mock_orchestrator.orchestrate(
-            task_id=task_scenario["task_id"],
-            requirements="Implement complex state machine",
-            acceptance_criteria=["State transitions"],
-            task_file_path=task_scenario["task_file"],
-        )
-
-        # Verify high architectural score
-        assert result.pre_loop_result["architectural_score"] >= 90
-
-    @pytest.mark.integration
     def test_complex_task_max_turns_increased(
         self,
         task_scenario,
@@ -277,9 +240,6 @@ class TestComplexTaskScenarios:
             - Orchestrator respects dynamic max_turns
             - Adequate iterations allowed
         """
-        # Skip if not complex scenario
-        if task_scenario["complexity"] != 8:
-            pytest.skip("Test requires complex scenario")
 
         # Mock Player and Coach
         mock_agent_invoker.invoke_player.return_value = make_player_result(
@@ -302,58 +262,6 @@ class TestComplexTaskScenarios:
 
         # Verify max_turns increased for complex task
         assert result.pre_loop_result["max_turns"] == 7
-
-    @pytest.mark.integration
-    def test_complex_task_comprehensive_testing(
-        self,
-        task_scenario,
-        mock_orchestrator,
-        mock_agent_invoker,
-        mock_task_work_results,
-    ):
-        """
-        Test complex tasks require comprehensive testing coverage.
-
-        Complex tasks should achieve:
-        - Line coverage >= 90%
-        - Branch coverage >= 85%
-        - Unit + integration + edge case tests
-
-        Assertions:
-            - Coverage thresholds higher than simple/medium
-            - Comprehensive test suite required
-            - Edge cases covered
-        """
-        # Skip if not complex scenario
-        if task_scenario["complexity"] != 8:
-            pytest.skip("Test requires complex scenario")
-
-        # Verify comprehensive coverage in task-work results
-        coverage = mock_task_work_results["phase_4_5_tests"]["coverage"]
-        assert coverage["lines"] >= 90, "Complex tasks need high line coverage"
-
-        # Mock Player and Coach
-        mock_agent_invoker.invoke_player.return_value = make_player_result(
-            task_id=task_scenario["task_id"],
-            turn=1,
-        )
-        mock_agent_invoker.invoke_coach.return_value = make_coach_result(
-            task_id=task_scenario["task_id"],
-            turn=1,
-            decision="approve",
-        )
-
-        # Execute orchestration
-        result = mock_orchestrator.orchestrate(
-            task_id=task_scenario["task_id"],
-            requirements="Implement complex state machine",
-            acceptance_criteria=["State transitions"],
-            task_file_path=task_scenario["task_file"],
-        )
-
-        # Verify orchestration succeeded with high quality
-        assert result.success is True
-
 
 # ============================================================================
 # Checkpoint Scenarios
@@ -382,9 +290,6 @@ class TestComplexTaskCheckpoints:
             - Implementation loop executed
             - Final decision = "approved"
         """
-        # Skip if not complex scenario
-        if task_scenario["complexity"] != 8:
-            pytest.skip("Test requires complex scenario")
 
         # Pre-loop gates will return checkpoint_passed = True (simulated approval)
 
@@ -439,9 +344,6 @@ class TestComplexTaskScaling:
             - Quality gates pass
             - Extended feedback loop completes
         """
-        # Skip if not complex scenario
-        if task_scenario["complexity"] != 8:
-            pytest.skip("Test requires complex scenario")
 
         # Mock Player with many files
         player_result = make_player_result(
@@ -483,13 +385,9 @@ class TestComplexTaskScaling:
         without performance degradation.
 
         Assertions:
-            - Estimated LOC = 500+
-            - Plan audit handles large variance
+            - Estimated LOC = 500+ (the plan reaches the result)
             - Orchestration completes successfully
         """
-        # Skip if not complex scenario
-        if task_scenario["complexity"] != 8:
-            pytest.skip("Test requires complex scenario")
 
         # Mock Player and Coach
         mock_agent_invoker.invoke_player.return_value = make_player_result(

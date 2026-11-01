@@ -6,9 +6,8 @@ feedback loops while still completing efficiently.
 
 Test Coverage:
     - Feedback loop execution (2-3 turns)
-    - Architectural review with standard thresholds
     - Turn history tracking
-    - Quality gate enforcement
+    - Max turns exceeded
 
 Coverage Target: >=85%
 """
@@ -20,9 +19,14 @@ import pytest
 from .conftest import (
     make_player_result,
     make_coach_result,
+    evidence_for_turns,
     assert_quality_gates_passed,
     assert_worktree_preserved,
 )
+
+# Every test here is about the medium scenario, so only that scenario is
+# generated (the shared fixture also offers the other two).
+pytestmark = pytest.mark.parametrize("task_scenario", ["medium"], indirect=True)
 
 
 # ============================================================================
@@ -62,9 +66,6 @@ class TestMediumTaskScenarios:
             - Turn 2 decision = "approve"
             - Final decision = "approved"
         """
-        # Skip if not medium scenario
-        if task_scenario["complexity"] != 5:
-            pytest.skip("Test requires medium scenario")
 
         # Mock Turn 1: Player implements, Coach provides feedback
         player_result_1 = make_player_result(
@@ -77,11 +78,17 @@ class TestMediumTaskScenarios:
             task_id=task_scenario["task_id"],
             turn=1,
             decision="feedback",
+            # The reviewer's one repair turn for a located finding
+            # (AgentInvoker._apply_review_repair_turn).
             issues=[
                 {
-                    "type": "missing_requirement",
-                    "severity": "medium",
-                    "description": "Token refresh not implemented",
+                    "type": "review_finding",
+                    "severity": "major",
+                    "location": "src/auth/tokens.py:40",
+                    "description": (
+                        "missing case at src/auth/tokens.py:40: Token refresh "
+                        "not implemented"
+                    ),
                     "suggestion": "Add token refresh logic to handle expiration",
                 }
             ],
@@ -140,14 +147,20 @@ class TestMediumTaskScenarios:
         task_scenario,
         mock_orchestrator,
         mock_agent_invoker,
+        mock_coach_validator,
     ):
         """
         Test medium task requiring multiple feedback cycles.
 
+        The reviewer's verdict is advice: its located findings get one repair
+        turn per task, and after that only real failures (here the project's
+        own tests) send a turn back.
+
         Scenario:
-            - Turn 1: Initial implementation, feedback on architecture
-            - Turn 2: Architecture improved, feedback on edge cases
-            - Turn 3: Edge cases covered, approved
+            - Turn 1: Initial implementation, the reviewer's located finding
+              on coupling (the one repair turn)
+            - Turn 2: Coupling fixed, the project's edge-case test fails
+            - Turn 3: Edge cases covered, tests pass, approved
 
         Assertions:
             - Total turns = 3
@@ -155,11 +168,12 @@ class TestMediumTaskScenarios:
             - Different feedback each turn
             - Final decision = "approved"
         """
-        # Skip if not medium scenario
-        if task_scenario["complexity"] != 5:
-            pytest.skip("Test requires medium scenario")
 
-        # Mock Turn 1: Feedback on architecture
+        # The project's own tests: pass, fail, pass.
+        mock_coach_validator.return_value.gather_evidence.side_effect = (
+            evidence_for_turns(True, False, True)
+        )
+
         mock_agent_invoker.invoke_player.side_effect = [
             make_player_result(task_id=task_scenario["task_id"], turn=1),
             make_player_result(task_id=task_scenario["task_id"], turn=2),
@@ -173,8 +187,12 @@ class TestMediumTaskScenarios:
                 decision="feedback",
                 issues=[
                     {
-                        "type": "architecture",
-                        "description": "Tight coupling detected",
+                        "type": "review_finding",
+                        "severity": "major",
+                        "location": "src/auth/service.py:18",
+                        "description": (
+                            "Tight coupling detected at src/auth/service.py:18"
+                        ),
                         "suggestion": "Extract interface for dependency injection",
                     }
                 ],
@@ -185,9 +203,13 @@ class TestMediumTaskScenarios:
                 decision="feedback",
                 issues=[
                     {
-                        "type": "testing",
-                        "description": "Edge case coverage incomplete",
-                        "suggestion": "Add tests for concurrent access",
+                        "type": "test_failure",
+                        "severity": "must_fix",
+                        "description": (
+                            "The project's tests failed: the edge case "
+                            "test_concurrent_access fails"
+                        ),
+                        "suggestion": "Handle concurrent access",
                     }
                 ],
             ),
@@ -220,55 +242,6 @@ class TestMediumTaskScenarios:
         assert result.final_decision == "approved"
 
     @pytest.mark.integration
-    def test_medium_task_architectural_review(
-        self,
-        task_scenario,
-        mock_orchestrator,
-        mock_agent_invoker,
-        mock_pre_loop_gates,
-    ):
-        """
-        Test architectural review for medium complexity task.
-
-        Medium tasks should undergo standard architectural review
-        with reasonable SOLID/DRY/YAGNI thresholds.
-
-        Assertions:
-            - Architectural review executed in pre-loop
-            - Score >= 85 (standard threshold)
-            - Review influences implementation plan
-        """
-        # Skip if not medium scenario
-        if task_scenario["complexity"] != 5:
-            pytest.skip("Test requires medium scenario")
-
-        # Mock Player and Coach
-        mock_agent_invoker.invoke_player.return_value = make_player_result(
-            task_id=task_scenario["task_id"],
-            turn=1,
-        )
-        mock_agent_invoker.invoke_coach.return_value = make_coach_result(
-            task_id=task_scenario["task_id"],
-            turn=1,
-            decision="approve",
-        )
-
-        # Execute orchestration
-        result = mock_orchestrator.orchestrate(
-            task_id=task_scenario["task_id"],
-            requirements="Implement authentication service",
-            acceptance_criteria=["OAuth2 support"],
-            task_file_path=task_scenario["task_file"],
-        )
-
-        # Verify pre-loop gates executed
-        mock_pre_loop_gates.execute.assert_called_once()
-
-        # Verify architectural review results
-        assert result.pre_loop_result["architectural_score"] >= 85
-        assert result.pre_loop_result["complexity"] == 5
-
-    @pytest.mark.integration
     def test_medium_task_turn_history_tracking(
         self,
         task_scenario,
@@ -290,9 +263,6 @@ class TestMediumTaskScenarios:
             - Feedback properly tracked across turns
             - Timestamps in correct order
         """
-        # Skip if not medium scenario
-        if task_scenario["complexity"] != 5:
-            pytest.skip("Test requires medium scenario")
 
         # Mock 2-turn workflow
         mock_agent_invoker.invoke_player.side_effect = [
@@ -363,9 +333,6 @@ class TestMediumTaskScenarios:
             - Task completes within max_turns
             - Orchestrator respects dynamic max_turns
         """
-        # Skip if not medium scenario
-        if task_scenario["complexity"] != 5:
-            pytest.skip("Test requires medium scenario")
 
         # Mock Player and Coach
         mock_agent_invoker.invoke_player.return_value = make_player_result(
@@ -394,127 +361,6 @@ class TestMediumTaskScenarios:
 
 
 # ============================================================================
-# Quality Gate Tests for Medium Tasks
-# ============================================================================
-
-
-class TestMediumTaskQualityGates:
-    """Test quality gate enforcement for medium tasks."""
-
-    @pytest.mark.integration
-    def test_medium_task_test_coverage_enforcement(
-        self,
-        task_scenario,
-        mock_orchestrator,
-        mock_agent_invoker,
-        mock_task_work_results,
-    ):
-        """
-        Test that test coverage quality gates are enforced.
-
-        Medium tasks should achieve:
-        - Line coverage >= 85%
-        - Branch coverage >= 80%
-        - All tests passing
-
-        Assertions:
-            - task_work_results contains coverage data
-            - Coverage meets thresholds
-            - Coach validates coverage via task-work results
-        """
-        # Skip if not medium scenario
-        if task_scenario["complexity"] != 5:
-            pytest.skip("Test requires medium scenario")
-
-        # Verify task-work results structure
-        assert "phase_4_5_tests" in mock_task_work_results
-        coverage = mock_task_work_results["phase_4_5_tests"]["coverage"]
-
-        # Verify coverage thresholds
-        assert coverage["lines"] >= 85, "Line coverage should be >= 85%"
-        assert coverage["branches"] >= 80, "Branch coverage should be >= 80%"
-
-        # Mock Player and Coach (Coach validates via task-work results)
-        mock_agent_invoker.invoke_player.return_value = make_player_result(
-            task_id=task_scenario["task_id"],
-            turn=1,
-        )
-        mock_agent_invoker.invoke_coach.return_value = make_coach_result(
-            task_id=task_scenario["task_id"],
-            turn=1,
-            decision="approve",
-        )
-
-        # Execute orchestration
-        result = mock_orchestrator.orchestrate(
-            task_id=task_scenario["task_id"],
-            requirements="Implement authentication service",
-            acceptance_criteria=["OAuth2 support"],
-            task_file_path=task_scenario["task_file"],
-        )
-
-        # Verify orchestration succeeded with quality gates
-        assert result.success is True
-        assert result.final_decision == "approved"
-
-    @pytest.mark.integration
-    def test_medium_task_plan_audit(
-        self,
-        task_scenario,
-        mock_orchestrator,
-        mock_agent_invoker,
-        mock_task_work_results,
-    ):
-        """
-        Test plan audit quality gate for medium tasks.
-
-        Phase 5.5 plan audit should verify:
-        - Implementation matches plan
-        - No scope creep detected
-        - LOC variance within acceptable range (±20%)
-
-        Assertions:
-            - task_work_results contains plan audit data
-            - Files match plan
-            - LOC variance acceptable
-            - No scope creep
-        """
-        # Skip if not medium scenario
-        if task_scenario["complexity"] != 5:
-            pytest.skip("Test requires medium scenario")
-
-        # Verify plan audit results
-        assert "phase_5_5_plan_audit" in mock_task_work_results
-        plan_audit = mock_task_work_results["phase_5_5_plan_audit"]
-
-        assert plan_audit["files_match"] is True
-        assert plan_audit["loc_variance_percent"] <= 20
-        assert plan_audit["scope_creep_detected"] is False
-
-        # Mock Player and Coach
-        mock_agent_invoker.invoke_player.return_value = make_player_result(
-            task_id=task_scenario["task_id"],
-            turn=1,
-        )
-        mock_agent_invoker.invoke_coach.return_value = make_coach_result(
-            task_id=task_scenario["task_id"],
-            turn=1,
-            decision="approve",
-        )
-
-        # Execute orchestration
-        result = mock_orchestrator.orchestrate(
-            task_id=task_scenario["task_id"],
-            requirements="Implement authentication service",
-            acceptance_criteria=["OAuth2 support"],
-            task_file_path=task_scenario["task_file"],
-        )
-
-        # Verify orchestration succeeded
-        assert result.success is True
-
-
-# ============================================================================
 # Edge Cases for Medium Tasks
 # ============================================================================
 
@@ -528,12 +374,14 @@ class TestMediumTaskEdgeCases:
         task_scenario,
         mock_orchestrator,
         mock_agent_invoker,
+        mock_coach_validator,
     ):
         """
         Test medium task that reaches max_turns without approval.
 
         Scenario:
-            - All 5 turns result in feedback
+            - The project's own tests fail on all 5 turns, so every turn
+              is sent back (the reviewer's verdict alone is advice)
             - Task never approved
             - Expected outcome: max_turns_exceeded
 
@@ -543,25 +391,14 @@ class TestMediumTaskEdgeCases:
             - Total turns = 5
             - Worktree preserved for inspection
         """
-        # Skip if not medium scenario
-        if task_scenario["complexity"] != 5:
-            pytest.skip("Test requires medium scenario")
 
-        # Mock all turns with feedback (never approve).
-        #
-        # TASK-AB-NOCHANGE01: the simulated Player writes a real file on every
-        # turn. This test's premise is five turns of real work that never
-        # earns approval, and the loop now measures with git whether a turn
-        # changed anything in the worktree. A mocked Player that only *claims*
-        # files_created leaves the worktree untouched, which is the fiction
-        # the no-file-changes stop exists to catch: the build would correctly
-        # end at turn 3 as a stall instead of running the five turns this test
-        # is about.
-        #
-        # The reviewer also raises a DIFFERENT point each turn. One identical
-        # complaint repeated for three turns with no criteria passing is the
-        # separate, older feedback-stall stop (added 2026-02-05, after this
-        # test was written), which would likewise end the build early.
+        # Mock all turns with feedback (never approve): the project's own
+        # tests fail every turn, naming a different failing test each time,
+        # and the simulated Player writes a real file on every turn (five
+        # turns of real work that never earns approval).
+        mock_coach_validator.return_value.gather_evidence.side_effect = (
+            evidence_for_turns(*[False] * task_scenario["max_turns"])
+        )
         _player_result = make_player_result(
             task_id=task_scenario["task_id"],
             turn=1,
@@ -585,10 +422,11 @@ class TestMediumTaskEdgeCases:
                 decision="feedback",
                 issues=[
                     {
-                        "type": "ongoing",
+                        "type": "test_failure",
+                        "severity": "must_fix",
                         "description": (
-                            f"Issue group {turn} persists after the turn-"
-                            f"{turn} changes"
+                            f"The project's tests failed: test_auth_case_{turn} "
+                            f"still fails after the turn-{turn} changes"
                         ),
                         "suggestion": "Continue improvements",
                     }
@@ -636,9 +474,6 @@ class TestMediumTaskEdgeCases:
             - Quality gates pass
             - 2-3 turn completion
         """
-        # Skip if not medium scenario
-        if task_scenario["complexity"] != 5:
-            pytest.skip("Test requires medium scenario")
 
         # Mock Player with moderate files
         player_result = make_player_result(

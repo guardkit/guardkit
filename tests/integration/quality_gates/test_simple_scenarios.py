@@ -22,6 +22,10 @@ from .conftest import (
     assert_worktree_preserved,
 )
 
+# Every test here is about the simple scenario, so only that scenario is
+# generated (the shared fixture also offers the other two).
+pytestmark = pytest.mark.parametrize("task_scenario", ["simple"], indirect=True)
+
 
 # ============================================================================
 # Simple Scenario Tests (Complexity 1-3)
@@ -58,9 +62,6 @@ class TestSimpleTaskScenarios:
             - Final decision = "approved"
             - Worktree preserved
         """
-        # Skip if not simple scenario
-        if task_scenario["complexity"] != 2:
-            pytest.skip("Test requires simple scenario")
 
         # Mock Player implements successfully
         mock_agent_invoker.invoke_player.return_value = make_player_result(
@@ -117,9 +118,6 @@ class TestSimpleTaskScenarios:
             - Max turns = 3 (based on complexity)
             - Checkpoint auto-approved (no human intervention)
         """
-        # Skip if not simple scenario
-        if task_scenario["complexity"] != 2:
-            pytest.skip("Test requires simple scenario")
 
         # Mock Player and Coach
         mock_agent_invoker.invoke_player.return_value = make_player_result(
@@ -171,9 +169,6 @@ class TestSimpleTaskScenarios:
             - preserve_on_failure called (despite success)
             - Worktree not auto-merged
         """
-        # Skip if not simple scenario
-        if task_scenario["complexity"] != 2:
-            pytest.skip("Test requires simple scenario")
 
         # Mock Player and Coach
         mock_agent_invoker.invoke_player.return_value = make_player_result(
@@ -222,9 +217,6 @@ class TestSimpleTaskScenarios:
             - Decision = "approve"
             - Feedback = None (approved on first turn)
         """
-        # Skip if not simple scenario
-        if task_scenario["complexity"] != 2:
-            pytest.skip("Test requires simple scenario")
 
         # Mock Player and Coach
         player_result = make_player_result(
@@ -283,9 +275,6 @@ class TestSimpleTaskScenarios:
             - complete_turn called for Player and Coach
             - render_summary called with final status
         """
-        # Skip if not simple scenario
-        if task_scenario["complexity"] != 2:
-            pytest.skip("Test requires simple scenario")
 
         # Mock Player and Coach
         mock_agent_invoker.invoke_player.return_value = make_player_result(
@@ -335,9 +324,6 @@ class TestSimpleTaskScenarios:
             - Orchestrator updates max_turns based on pre-loop
             - Simple task completes well within max_turns
         """
-        # Skip if not simple scenario
-        if task_scenario["complexity"] != 2:
-            pytest.skip("Test requires simple scenario")
 
         # Mock Player and Coach
         mock_agent_invoker.invoke_player.return_value = make_player_result(
@@ -395,17 +381,27 @@ class TestSimpleTaskEdgeCases:
             - Both turns recorded in history
             - Final decision = "approved"
         """
-        # Skip if not simple scenario
-        if task_scenario["complexity"] != 2:
-            pytest.skip("Test requires simple scenario")
 
         # The Coach turn's outcome for both turns: feedback, then approve.
+        # The reviewer's verdict is advice; the one way its findings send a
+        # turn back is the single repair turn for located findings
+        # (AgentInvoker._apply_review_repair_turn), which is the feedback here.
         mock_agent_invoker.invoke_coach.side_effect = [
             make_coach_result(
                 task_id=task_scenario["task_id"],
                 turn=1,
                 decision="feedback",
-                issues=[{"type": "coverage", "description": "Add more tests"}],
+                issues=[
+                    {
+                        "type": "review_finding",
+                        "severity": "major",
+                        "location": "src/new0.py:12",
+                        "description": (
+                            "missing case at src/new0.py:12: the empty "
+                            "input is not handled"
+                        ),
+                    }
+                ],
             ),
             make_coach_result(
                 task_id=task_scenario["task_id"],
@@ -414,14 +410,9 @@ class TestSimpleTaskEdgeCases:
             ),
         ]
 
-        # Mock Player for both turns.
-        #
-        # TASK-AB-NOCHANGE01: the simulated Player writes a real file on each
-        # turn. The premise is a build that implements, takes one round of
-        # feedback and then addresses it, and the loop now measures with git
-        # whether a turn changed anything in the worktree — a Player that only
-        # claims files_created leaves it empty, which is the fiction the
-        # no-file-changes stop exists to catch.
+        # Mock Player for both turns. The simulated Player writes a real file
+        # on each turn: the premise is a build that implements, takes one
+        # round of feedback and then addresses it.
         _player_results = iter(
             [
                 make_player_result(task_id=task_scenario["task_id"], turn=1),
@@ -472,9 +463,6 @@ class TestSimpleTaskEdgeCases:
             - Quality gates pass
             - Single turn approval
         """
-        # Skip if not simple scenario
-        if task_scenario["complexity"] != 2:
-            pytest.skip("Test requires simple scenario")
 
         # Mock Player with minimal files
         player_result = make_player_result(

@@ -6,19 +6,22 @@ actual code implementation tasks (not scaffolding). It uses FEAT-CODE-TEST
 which implements a calculator service with SOLID principles.
 
 Test Coverage:
-- Happy path: Well-structured code passes quality gates
-- Failure scenarios: Poor structure and missing tests fail gates
-- Coach validation: Correct decisions based on gate results
-- Report generation: Player and Coach reports are created correctly
+- The FEAT-CODE-TEST fixture exists and loads through the real FeatureLoader
+- AutoBuild creates the feature's shared worktree
+- The quality gate testing documentation exists
+
+The tests that asserted the Coach report's per-gate record (tests, coverage,
+architecture review, plan audit) were removed with that record on 27 October
+2026 (628d22ac): the reviewer's verdict is advice and only the project's own
+failing checks send a turn back.
 """
 
-import json
 import os
 import subprocess
 import shutil
 import sys
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 import pytest
 
 
@@ -26,44 +29,18 @@ import pytest
 # RUN GUARDS
 # =============================================================================
 #
-# Two tests below do not exercise guardkit in-process: they SHELL OUT to a real
-# AutoBuild run and then assert on what it produced.
+# test_autobuild_creates_worktree SHELLS OUT to a real AutoBuild run and then
+# asserts on what it produced. It needs nothing beyond this interpreter: the
+# shared worktree is created in AutoBuild's setup phase, before any model is
+# invoked, so it runs seatless (the model endpoint deliberately unreachable)
+# and is NOT guarded.
 #
-# What each one actually needs was measured, not assumed:
-#
-#   test_autobuild_creates_worktree  — needs nothing beyond this interpreter.
-#       The shared worktree is created in AutoBuild's setup phase, before any
-#       model is invoked. With the seat deliberately made unreachable the run
-#       still creates the worktree and the test passes in about two seconds.
-#       So it is NOT guarded.
-#
-#   test_quality_gates_evaluated     — needs a working model seat. It asserts a
-#       Player report exists, and the Player only writes player_turn_N.json if
-#       it actually runs; with no reachable seat the M0 fence stops the Player
-#       and no report is written. The Coach report is produced either way
-#       (synthetic feedback), so the Coach half of this test is not what needs
-#       the seat.
-#
-# Opt in to the seat-dependent test deliberately:
-#
-#     GUARDKIT_LIVE_AUTOBUILD_TESTS=1 pytest tests/integration/test_quality_gate_validation.py
-#
-# Do NOT satisfy the guard by loosening the assertions.
-#
-# History worth keeping: before 2026-08-14 both tests failed for a reason that
-# had nothing to do with seats. The checked-in fixture had drifted from the
-# schema FeatureLoader reads (`feature_id` instead of `id`, task `file` instead
-# of `file_path`, a `status` value outside the allowed set, no `orchestration`
+# History worth keeping: before 2026-08-14 it failed for a reason that had
+# nothing to do with seats. The checked-in fixture had drifted from the schema
+# FeatureLoader reads (`feature_id` instead of `id`, task `file` instead of
+# `file_path`, a `status` value outside the allowed set, no `orchestration`
 # block, and no `task_type` in the task file's frontmatter), so every run died
-# at parse time. Guarding those failures behind an env var would have hidden a
-# plain fixture bug; the fixture was repaired instead.
-
-_LIVE_SEAT_ENABLED = os.environ.get("GUARDKIT_LIVE_AUTOBUILD_TESTS") == "1"
-_LIVE_SEAT_SKIP_REASON = (
-    "needs a working model seat: the Player must really run and write "
-    "player_turn_N.json, and with no reachable seat the M0 fence stops it. "
-    "Set GUARDKIT_LIVE_AUTOBUILD_TESTS=1 (with a seat configured) to opt in"
-)
+# at parse time. The fixture was repaired instead of guarding the failure.
 
 
 # =============================================================================
@@ -231,113 +208,6 @@ def run_autobuild_feature(
     }
 
 
-def parse_coach_report(report_path: Path) -> Dict[str, Any]:
-    """
-    Parse a Coach validation report JSON file.
-
-    Args:
-        report_path: Path to coach_turn_N.json file
-
-    Returns:
-        Parsed JSON as dictionary
-    """
-    with open(report_path, "r") as f:
-        return json.load(f)
-
-
-def parse_player_report(report_path: Path) -> Dict[str, Any]:
-    """
-    Parse a Player implementation report JSON file.
-
-    Args:
-        report_path: Path to player_turn_N.json file
-
-    Returns:
-        Parsed JSON as dictionary
-    """
-    with open(report_path, "r") as f:
-        return json.load(f)
-
-
-def get_latest_turn_reports(
-    repo_dir: Path,
-    task_id: str
-) -> tuple[Optional[Dict], Optional[Dict]]:
-    """
-    Get the latest Player and Coach reports for a task.
-
-    Args:
-        repo_dir: Repository directory
-        task_id: Task ID (e.g., "TASK-QGV-001")
-
-    Returns:
-        Tuple of (player_report, coach_report) or (None, None) if not found
-
-    Note:
-        Turn artefacts do not all land in one directory any more. Coach reports
-        are written to the repo root's .guardkit/autobuild-private/<task_id>/,
-        and the Player writes its report inside the shared worktree. The old
-        single-directory lookup (.guardkit/autobuild/<task_id>/) silently found
-        nothing. All known locations are searched here so a missing report
-        means the run really did not produce one.
-    """
-    search_dirs = [
-        repo_dir / ".guardkit" / "autobuild" / task_id,
-        repo_dir / ".guardkit" / "autobuild-private" / task_id,
-    ]
-
-    worktrees_root = repo_dir / ".guardkit" / "worktrees"
-    if worktrees_root.is_dir():
-        for worktree in sorted(worktrees_root.iterdir()):
-            search_dirs.append(worktree / ".guardkit" / "autobuild" / task_id)
-            search_dirs.append(
-                worktree / ".guardkit" / "autobuild-private" / task_id
-            )
-
-    def _latest(pattern: str) -> Optional[Path]:
-        matches: list[Path] = []
-        for directory in search_dirs:
-            if directory.is_dir():
-                matches.extend(directory.glob(pattern))
-        if not matches:
-            return None
-        return sorted(matches, key=lambda p: p.name)[-1]
-
-    player_path = _latest("player_turn_*.json")
-    player_report = parse_player_report(player_path) if player_path else None
-
-    coach_path = _latest("coach_turn_*.json")
-    coach_report = parse_coach_report(coach_path) if coach_path else None
-
-    return player_report, coach_report
-
-
-def check_quality_gates(coach_report: Dict[str, Any]) -> Dict[str, bool]:
-    """
-    Extract quality gate results from Coach report.
-
-    Args:
-        coach_report: Parsed Coach report JSON
-
-    Returns:
-        Dictionary with gate status:
-        - tests_passed: bool
-        - coverage_met: bool
-        - arch_review_passed: bool
-        - plan_audit_passed: bool
-        - all_gates_passed: bool
-    """
-    quality_gates = coach_report.get("quality_gates", {})
-
-    return {
-        "tests_passed": quality_gates.get("tests_passed", False),
-        "coverage_met": quality_gates.get("coverage_met", False),
-        "arch_review_passed": quality_gates.get("arch_review_passed", False),
-        "plan_audit_passed": quality_gates.get("plan_audit_passed", False),
-        "all_gates_passed": quality_gates.get("all_gates_passed", False)
-    }
-
-
 # =============================================================================
 # TESTS
 # =============================================================================
@@ -437,103 +307,6 @@ def test_autobuild_creates_worktree(temp_test_repo: Path):
         f"Worktree not created at {worktree_dir}\nStdout: {result['stdout']}\nStderr: {result['stderr']}"
 
 
-@pytest.mark.integration
-@pytest.mark.slow
-@pytest.mark.live
-@pytest.mark.skipif(
-    not _LIVE_SEAT_ENABLED,
-    reason=_LIVE_SEAT_SKIP_REASON,
-)
-def test_quality_gates_evaluated(temp_test_repo: Path):
-    """
-    Test that quality gates are evaluated during AutoBuild.
-
-    This test validates that:
-    1. Coach reports are generated
-    2. Quality gates are evaluated (tests, coverage, arch review, plan audit)
-    3. Gate results are recorded in Coach reports
-    """
-    # Run AutoBuild (may not complete, but should generate reports)
-    result = run_autobuild_feature(
-        temp_test_repo,
-        "FEAT-CODE-TEST",
-        max_turns=2,
-        timeout=600  # 10 minutes
-    )
-
-    # Get Coach reports
-    player_report, coach_report = get_latest_turn_reports(
-        temp_test_repo,
-        "TASK-QGV-001"
-    )
-
-    # Verify reports exist
-    assert player_report is not None, \
-        f"No Player report found\nStdout: {result['stdout']}\nStderr: {result['stderr']}"
-    assert coach_report is not None, \
-        f"No Coach report found\nStdout: {result['stdout']}\nStderr: {result['stderr']}"
-
-    # Verify quality gates were evaluated
-    gates = check_quality_gates(coach_report)
-
-    # All gate fields should be present (even if False)
-    assert "tests_passed" in gates, "tests_passed gate not evaluated"
-    assert "coverage_met" in gates, "coverage_met gate not evaluated"
-    assert "arch_review_passed" in gates, "arch_review_passed gate not evaluated"
-    assert "plan_audit_passed" in gates, "plan_audit_passed gate not evaluated"
-
-
-@pytest.mark.integration
-@pytest.mark.slow
-@pytest.mark.skip(reason="Full AutoBuild test - requires long execution time and may be flaky")
-def test_quality_gates_pass_for_good_code(temp_test_repo: Path):
-    """
-    Test that well-structured code passes quality gates.
-
-    This test validates the happy path:
-    1. Calculator service implements SOLID principles
-    2. Architectural review score ≥60
-    3. Test coverage ≥80%
-    4. All tests passing
-    5. Coach approves implementation
-
-    Note: This test is skipped by default due to long execution time.
-    Run with: pytest -m "not skip" to include this test.
-    """
-    # Run AutoBuild with sufficient turns for implementation
-    result = run_autobuild_feature(
-        temp_test_repo,
-        "FEAT-CODE-TEST",
-        max_turns=5,
-        timeout=1200  # 20 minutes
-    )
-
-    # Verify AutoBuild succeeded
-    assert result["success"], \
-        f"AutoBuild failed\nStdout: {result['stdout']}\nStderr: {result['stderr']}"
-
-    # Get final Coach report
-    player_report, coach_report = get_latest_turn_reports(
-        temp_test_repo,
-        "TASK-QGV-001"
-    )
-
-    assert coach_report is not None, "No Coach report found"
-
-    # Verify quality gates passed
-    gates = check_quality_gates(coach_report)
-
-    assert gates["tests_passed"], "Tests did not pass"
-    assert gates["coverage_met"], "Coverage threshold not met"
-    assert gates["arch_review_passed"], "Architectural review failed"
-    assert gates["plan_audit_passed"], "Plan audit failed"
-    assert gates["all_gates_passed"], "Not all gates passed"
-
-    # Verify Coach decision was approval
-    assert coach_report.get("decision") == "approved", \
-        f"Coach did not approve: {coach_report.get('decision')}"
-
-
 # =============================================================================
 # DOCUMENTATION TESTS
 # =============================================================================
@@ -542,59 +315,14 @@ def test_quality_gate_testing_documentation_exists():
     """Verify quality gate testing documentation exists."""
     docs_path = Path(__file__).parent.parent.parent / "docs" / "testing" / "quality-gate-testing.md"
 
-    # Note: Documentation will be created as part of TASK-FBSDK-024
-    # This test will fail initially and pass once documentation is added
-    if docs_path.exists():
-        # Verify key sections exist
-        content = docs_path.read_text()
-        assert "## Overview" in content
-        assert "## Test Features" in content or "FEAT-CODE-TEST" in content
-        assert "## Running Tests" in content or "## Execution" in content
-    else:
-        pytest.skip("Documentation not yet created (expected in TASK-FBSDK-024)")
+    # The documentation was added by TASK-FBSDK-024 and is part of this repo.
+    assert docs_path.exists(), f"Quality gate testing documentation missing: {docs_path}"
 
-
-# =============================================================================
-# UTILITY FUNCTIONS (for manual testing/debugging)
-# =============================================================================
-
-def debug_autobuild_failure(repo_dir: Path, task_id: str):
-    """
-    Debug helper to inspect AutoBuild failure.
-
-    Usage:
-        pytest tests/integration/test_quality_gate_validation.py -k test_quality_gates_evaluated -v -s
-        # Then in debugger or interactive shell:
-        debug_autobuild_failure(temp_test_repo, "TASK-QGV-001")
-    """
-    autobuild_dir = repo_dir / ".guardkit" / "autobuild" / task_id
-
-    if not autobuild_dir.exists():
-        print(f"No autobuild directory found at {autobuild_dir}")
-        return
-
-    print(f"\n=== AutoBuild Reports for {task_id} ===\n")
-
-    # List all reports
-    player_reports = sorted(autobuild_dir.glob("player_turn_*.json"))
-    coach_reports = sorted(autobuild_dir.glob("coach_turn_*.json"))
-
-    print(f"Player reports: {len(player_reports)}")
-    for report in player_reports:
-        print(f"  - {report.name}")
-
-    print(f"\nCoach reports: {len(coach_reports)}")
-    for report in coach_reports:
-        data = parse_coach_report(report)
-        gates = check_quality_gates(data)
-        decision = data.get("decision", "unknown")
-        print(f"  - {report.name}: decision={decision}, gates={gates}")
-
-    # Print latest Coach feedback
-    if coach_reports:
-        latest_coach = parse_coach_report(coach_reports[-1])
-        print(f"\n=== Latest Coach Feedback ===")
-        print(json.dumps(latest_coach.get("feedback", {}), indent=2))
+    # Verify key sections exist
+    content = docs_path.read_text()
+    assert "## Overview" in content
+    assert "## Test Features" in content or "FEAT-CODE-TEST" in content
+    assert "## Running Tests" in content or "## Execution" in content
 
 
 if __name__ == "__main__":
