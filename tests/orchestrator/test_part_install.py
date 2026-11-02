@@ -313,3 +313,29 @@ class TestEveryInstallComesBeforeAnyTest:
         assert _ran(marker) == ["install"]
         assert result.check_could_not_run is True
         assert "exit 3" in result.check_could_not_run_detail
+
+    def test_a_declared_part_not_yet_created_does_not_stop_the_root_check(
+        self, repo: Path, tmp_path: Path
+    ):
+        """A component a later task creates has no folder yet, so nothing to
+        install: the root check still runs (check of 8d3544b4, finding R1)."""
+        marker = tmp_path / "ran.txt"
+        toolchain = parse_toolchain_block({
+            "test": _recorder(marker, "root"),
+            "components": {"api": {
+                "cwd": "apps/api",
+                "install": _recorder(marker, "install"),
+                "test": _recorder(marker, "test"),
+            }},
+        })
+        validator = CoachValidator(
+            str(repo), task_id="TASK-INST-003", toolchain=toolchain,
+            baseline_commit=_git(repo, "rev-parse", "HEAD"),
+        )
+        (repo / "scripts").mkdir()
+        (repo / "scripts" / "check.sh").write_text("echo check\n")
+
+        result = validator.run_changed_parts()
+
+        assert result.tests_passed is True, result.test_output_summary
+        assert _ran(marker) == ["root"]

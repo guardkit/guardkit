@@ -1311,8 +1311,18 @@ class CoachValidator:
             to_install = parts
             if any(p.name == ROOT_PART for p in parts):
                 to_install = full_check_parts(self._toolchain, self.worktree_path)
+            changed = {p.cwd for p in parts}
             not_installed: Dict[str, IndependentTestResult] = {}
             for part in to_install:
+                if part.cwd not in changed:
+                    # A declared part a later task creates has nothing to
+                    # install yet.
+                    try:
+                        folder = resolve_component_cwd(self.worktree_path, part.cwd)
+                    except ValueError:
+                        continue
+                    if not folder.is_dir():
+                        continue
                 self._use_part(part)
                 problem = self._install_part_if_due(part)
                 if problem is not None:
