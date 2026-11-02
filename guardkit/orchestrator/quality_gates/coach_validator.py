@@ -67,7 +67,9 @@ from guardkit.orchestrator.toolchain_declaration import (
     ComponentToolchain,
     DeclaredPart,
     ToolchainDeclaration,
+    ROOT_PART,
     declared_no_tests_ran,
+    full_check_parts,
     parts_for_files,
     ran_marker_problem,
     resolve_component_cwd,
@@ -1303,11 +1305,25 @@ class CoachValidator:
         )
         runs: List[Tuple[Any, IndependentTestResult]] = []
         try:
+            # Every install that is due runs before any test (2 November
+            # 2026). The root check may call into any part, so when it runs,
+            # every declared part is installed first, not only those changed.
+            to_install = parts
+            if any(p.name == ROOT_PART for p in parts):
+                to_install = full_check_parts(self._toolchain, self.worktree_path)
+            not_installed: Dict[str, IndependentTestResult] = {}
+            for part in to_install:
+                self._use_part(part)
+                problem = self._install_part_if_due(part)
+                if problem is not None:
+                    not_installed[part.cwd] = problem
             for part in parts:
                 self._use_part(part)
-                not_installed = self._install_part_if_due(part)
-                if not_installed is not None:
-                    runs.append((part, not_installed))
+                problem = not_installed.get(part.cwd)
+                if problem is None and part.name == ROOT_PART and not_installed:
+                    problem = next(iter(not_installed.values()))
+                if problem is not None:
+                    runs.append((part, problem))
                     continue
                 runs.append(
                     (

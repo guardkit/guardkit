@@ -222,3 +222,94 @@ class TestTheMergeInstallsEachPart:
         assert result.status == "unverified"
         assert "the declared install" in result.detail and "exit 2" in result.detail
         assert _ran(marker) == ["install"]
+
+
+class TestEveryInstallComesBeforeAnyTest:
+    """2 November 2026, sixth run, TypeScript A (FEAT-689D): the merge ran the
+    root check (``scripts/check.sh``, which lints the part) before the part's
+    install, so the check found no linter (exit 127) while the part's own
+    install and tests then passed. Every install now runs before any test,
+    and a root check makes every part's install due, not only changed ones.
+    """
+
+    @staticmethod
+    def _declaration(marker: Path, install_exit: int = 0):
+        return {
+            "test": _recorder(marker, "root"),
+            "parts": [{
+                "under": "apps", "marker": "part.yaml",
+                "install": _recorder(marker, "install", install_exit),
+                "test": _recorder(marker, "test"),
+            }],
+        }
+
+    def _validator(self, repo: Path, marker: Path, install_exit: int = 0):
+        return CoachValidator(
+            str(repo), task_id="TASK-INST-002",
+            toolchain=parse_toolchain_block(self._declaration(marker, install_exit)),
+            baseline_commit=_git(repo, "rev-parse", "HEAD"),
+        )
+
+    def test_the_merge_installs_the_parts_before_the_root_check(
+        self, repo: Path, tmp_path: Path
+    ):
+        marker = tmp_path / "ran.txt"
+        declaration = parse_toolchain_block(self._declaration(marker))
+        command, source, decl = resolve_verify_command_with_declaration(repo, declaration)
+
+        result = run_completion_verification(repo, command, source, declaration=decl)
+
+        assert result.status == "passed", result.detail
+        assert _ran(marker) == ["install", "root", "test"]
+
+    def test_at_merge_a_failed_part_install_leaves_the_root_check_unrun(
+        self, repo: Path, tmp_path: Path
+    ):
+        marker = tmp_path / "ran.txt"
+        declaration = parse_toolchain_block(self._declaration(marker, install_exit=2))
+        command, source, decl = resolve_verify_command_with_declaration(repo, declaration)
+
+        result = run_completion_verification(repo, command, source, declaration=decl)
+
+        assert result.status == "unverified"
+        assert "the root check was not run" in result.detail
+        assert "exit 2" in result.detail
+        assert _ran(marker) == ["install"]
+
+    def test_a_task_changing_only_the_root_installs_the_parts_first(
+        self, repo: Path, tmp_path: Path
+    ):
+        marker = tmp_path / "ran.txt"
+        (repo / "scripts").mkdir()
+        (repo / "scripts" / "check.sh").write_text("npm --prefix apps/web run lint\n")
+
+        result = self._validator(repo, marker).run_changed_parts()
+
+        assert result.tests_passed is True, result.test_output_summary
+        assert _ran(marker) == ["install", "root"]
+
+    def test_a_task_changing_the_root_and_a_part_installs_before_both(
+        self, repo: Path, tmp_path: Path
+    ):
+        marker = tmp_path / "ran.txt"
+        (repo / "scripts").mkdir()
+        (repo / "scripts" / "check.sh").write_text("npm --prefix apps/web run lint\n")
+        (repo / "apps" / "web" / "src" / "a.ts").write_text("export const a = 2;\n")
+
+        result = self._validator(repo, marker).run_changed_parts()
+
+        assert result.tests_passed is True, result.test_output_summary
+        assert _ran(marker) == ["install", "root", "test"]
+
+    def test_a_task_whose_part_install_fails_runs_no_root_check(
+        self, repo: Path, tmp_path: Path
+    ):
+        marker = tmp_path / "ran.txt"
+        (repo / "scripts").mkdir()
+        (repo / "scripts" / "check.sh").write_text("npm --prefix apps/web run lint\n")
+
+        result = self._validator(repo, marker, install_exit=3).run_changed_parts()
+
+        assert _ran(marker) == ["install"]
+        assert result.check_could_not_run is True
+        assert "exit 3" in result.check_could_not_run_detail

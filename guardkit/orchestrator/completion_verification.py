@@ -49,6 +49,7 @@ from guardkit.orchestrator.project_command_env import (
 
 from guardkit.orchestrator.toolchain_declaration import (
     ComponentToolchain,
+    DeclaredPart,
     ToolchainDeclaration,
     declared_no_tests_ran,
     full_check_parts,
@@ -247,6 +248,10 @@ def _install_part(
     return None
 
 
+def _part_label(part: DeclaredPart) -> str:
+    return part.name if part.cwd == "." else f"{part.name} (in {part.cwd})"
+
+
 def _classify(returncode: int) -> Tuple[str, str]:
     if returncode == 0:
         return "passed", "verification command exited 0"
@@ -270,7 +275,9 @@ def run_completion_verification(
     declared ``test_timeout`` (the root's is the top-level one); ``timeout``
     then bounds only a part's install, and only when the part declares no
     ``install_timeout`` of its own (:func:`toolchain_declaration.install_time_limit`,
-    31 October 2026). A part whose own declaration says no
+    31 October 2026). Every part's install runs before any part's test (2
+    November 2026); a part whose install failed, and the root, are then not
+    tested and could not run. A part whose own declaration says no
     tests ran failed (:func:`_said_nothing_ran`). The result is ``failed`` if
     any part failed, otherwise
     ``unverified`` if any part could not run (nothing declared for it, or it
@@ -314,9 +321,30 @@ def run_completion_verification(
                 detail=f"verification command could not start: {exc}",
                 source=source,
             )
+    # Every declared install runs before any test (2 November 2026): the
+    # root check may call into any part, so a part installed only after the
+    # root check ran left that check without the part's programs (exit 127).
+    not_installed: Dict[str, str] = {}
+    for part in parts:
+        if part.toolchain is None or not part.toolchain.install:
+            continue
+        label = _part_label(part)
+        try:
+            folder = resolve_component_cwd(Path(repo_root), part.cwd)
+        except ValueError:
+            continue  # reported below, where the part's test would run
+        problem = _install_part(
+            folder, part.toolchain.install,
+            install_time_limit(part.toolchain, timeout), env,
+        )
+        if problem is not None:
+            not_installed[label] = (
+                f"the declared install (`{part.toolchain.install}`) "
+                f"for part {label} {problem}"
+            )
     results: List[Tuple[str, VerificationResult]] = []
     for part in parts:
-        label = part.name if part.cwd == "." else f"{part.name} (in {part.cwd})"
+        label = _part_label(part)
         if not part.test:
             results.append((label, VerificationResult(
                 status="unverified", command="", cwd=part.cwd, returncode=None,
@@ -331,19 +359,17 @@ def run_completion_verification(
                 returncode=None, detail=str(exc), source=source,
             )))
             continue
-        if part.toolchain is not None and part.toolchain.install:
-            problem = _install_part(
-                folder, part.toolchain.install,
-                install_time_limit(part.toolchain, timeout), env,
+        if label in not_installed or (part.toolchain is None and not_installed):
+            # A part whose install failed is not tested; nor is the root,
+            # whose check would then fail for the missing install, not the work.
+            detail = not_installed.get(label) or (
+                "the root check was not run: " + "; ".join(not_installed.values())
             )
-            if problem is not None:
-                results.append((label, VerificationResult(
-                    status="unverified", command=part.test, cwd=part.cwd,
-                    returncode=None, source=source,
-                    detail=f"the declared install (`{part.toolchain.install}`) "
-                    f"for part {label} {problem}",
-                )))
-                continue
+            results.append((label, VerificationResult(
+                status="unverified", command=part.test, cwd=part.cwd,
+                returncode=None, source=source, detail=detail,
+            )))
+            continue
         commands = part.toolchain if part.toolchain is not None else declaration
         problem = ran_marker_problem(commands)
         if problem is not None:
