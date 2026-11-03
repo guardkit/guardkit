@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -373,7 +374,11 @@ class TestSilenceWhenThereIsNothingToSay:
         control = _run_pytest(tmp_path, with_report=False)
         assert proc.returncode == control.returncode == 0
         assert "WHAT DID NOT RUN" not in proc.stdout
-        assert proc.stdout.rstrip().endswith(control.stdout.rstrip().splitlines()[-1])
+        # Nothing is printed after pytest's own summary line. The two runs'
+        # summary lines differ only in their timing ("in 0.01s"), so that is
+        # taken off before they are compared.
+        untimed = lambda out: re.sub(r" in [0-9.]+s", "", out.rstrip().splitlines()[-1])  # noqa: E731
+        assert untimed(proc.stdout) == untimed(control.stdout)
 
 
 class TestTheOffSwitch:
