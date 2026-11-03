@@ -35,6 +35,15 @@
 - reason: <one line>
 -->
 
+### 2026-11-03 — `SmokeGates.exit5_is_hard_fail` removed (guardkit/orchestrator/feature_loader.py)
+- specialist-agent re-pin commit / contract §0 note: none needed; no pinned template bytes
+  change, and specialist-agent reads `FeatureLoader`, `Feature` and `FeatureTask`, never this field.
+- G2b re-freeze: Rich, 3 November 2026 12:17 UTC, agreeing to remove it: "Agree with your
+  recommendations pleas proceed" (ai-transition `docs/designs/fix-at-source-decision-2026-11-01.md`, decision 4).
+- reason: since 31 October the field changed nothing (only `expected_exit` passes) and its
+  docstring described a pytest-only soft pass. Older feature files that name it still load,
+  because unknown keys are ignored.
+
 ### 2026-10-31 — touched and restored, no net byte change (guardkit/orchestrator/feature_loader.py)
 - specialist-agent re-pin commit / contract §0 note: none needed; the file's bytes at
   60266ffb equal those at 394d80e5.
