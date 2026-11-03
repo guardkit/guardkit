@@ -4311,6 +4311,33 @@ The detailed specifications are in the task markdown file.
             )
             return None
 
+    def _last_look(self, feature: Feature, worktree: Worktree):
+        """The last look at the build reviewer's notes, for
+        ``write_feature_notes``: the reviewer, with a task review's model and
+        time, over the feature's change since its starting commit."""
+
+        def look(notes):
+            from guardkit.orchestrator.agent_invoker import AgentInvoker
+            from guardkit.orchestrator.seam_checks import resolve_feature_base
+
+            invoker = AgentInvoker(
+                worktree_path=Path(worktree.path),
+                sdk_timeout_seconds=self.sdk_timeout or DEFAULT_SDK_TIMEOUT,
+                sdk_timeout_is_override=self.sdk_timeout is not None,
+                timeout_multiplier=self.timeout_multiplier,
+                model_name=self.model,
+                coach_model_name=self.coach_model,
+                evidence_repos=getattr(self, "_evidence_repos_resolved", None),
+                emitter=self._emitter,
+            )
+            return asyncio.run(invoker.invoke_last_look(
+                feature_id=feature.id,
+                base=resolve_feature_base(Path(worktree.path), feature.id),
+                notes=notes,
+            ))
+
+        return look
+
     def _finalize_phase(
         self,
         feature: Feature,
@@ -4371,8 +4398,10 @@ The detailed specifications are in the task markdown file.
         # is never failed by it.
         self._write_code_checks_summary(feature, worktree)
         # What each task's final review left (the build reviewer design of 29
-        # October 2026), at most ten, beside it for the merge card. Never
-        # raises, and a build is never failed by it.
+        # October 2026), at most ten, beside it for the merge card. When every
+        # task completed, one last look checks them against the finished code
+        # first (Rich, 3 November 2026, decision 5). Never raises, and a build
+        # is never failed by it.
         from guardkit.orchestrator.build_review import write_feature_notes
 
         write_feature_notes(
@@ -4380,6 +4409,7 @@ The detailed specifications are in the task markdown file.
             [str(getattr(task, "id", "") or "") for task in getattr(feature, "tasks", None) or []
              if getattr(task, "id", None)],
             Path(worktree.path),
+            last_look=self._last_look(feature, worktree) if final_status == "completed" else None,
         )
 
         # When the whole-feature check failed during the wave phase, the

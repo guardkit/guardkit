@@ -2952,10 +2952,7 @@ class AgentInvoker:
 
             # TASK-FIX-COACHOUT01 Shape A: extract the structured verdict from
             # Coach's response text and persist coach_turn_N.json from the
-            # orchestrator side.
-            from guardkit.orchestrator.coach_output_parser import (
-                extract_and_write as _coach_extract_and_write,
-            )
+            # orchestrator side (``_review_verdict``).
             from guardkit.orchestrator.paths import TaskArtifactPaths
 
             # TASK-SBHO-002: coach verdict goes to the orchestrator-private
@@ -2973,74 +2970,9 @@ class AgentInvoker:
                 # typed HarnessEvent stream comes back for
                 # coach_output_parser; the orchestrator writes
                 # coach_turn_N.json itself, the reviewer never writes.
-                # Load the GBNF verdict grammar; degrade to prompt-only (still
-                # toolless) if the packaged grammar can't be read so a
-                # packaging glitch never hard-fails the Coach.
-                # Contract-aware: resolves GUARDKIT_COACH_CONTRACT > config >
-                # default and selects the matching grammar file (TASK-CMIR-003).
-                grammar: Optional[str] = None
-                try:
-                    from guardkit.orchestrator.coach_grammar import (
-                        load_coach_verdict_grammar,
-                    )
-
-                    grammar = load_coach_verdict_grammar(
-                        contract=None,  # resolve at call site
-                    )
-                except Exception as exc:  # noqa: BLE001 — degrade, never hard-fail
-                    logger.warning(
-                        "TASK-ARCH-COACHSPLIT: failed to load Coach verdict "
-                        "grammar (%s); running TOOLLESS synthesis WITHOUT a "
-                        "grammar constraint (prompt-only). The verdict schema "
-                        "is then only prompt-enforced, not grammar-guaranteed.",
-                        exc,
-                    )
-
-                # allowed_tools=[] makes the harness toolless on EVERY
-                # substrate (the SDK harness reads its tool surface from the
-                # constructor allowed_tools, which select_harness threads from
-                # here). synthesis=True dispatches through invoke_synthesis.
-                async def _verdict() -> Dict[str, Any]:
-                    result_tuple = await self._invoke_with_role(
-                        prompt=prompt,
-                        agent_type="coach",
-                        allowed_tools=[],
-                        permission_mode="bypassPermissions",
-                        task_id=task_id,
-                        turn=turn,
-                        return_events=True,
-                        synthesis=True,
-                        grammar=grammar,
-                    )
-                    assert result_tuple is not None, (
-                        "_invoke_with_role(return_events=True) must return a tuple "
-                        "on success; got None"
-                    )
-                    _, harness_events = result_tuple
-
-                    _coach_extract_and_write(
-                        harness_events=harness_events,
-                        task_id=task_id,
-                        turn=turn,
-                        output_path=coach_output_path,
-                    )
-                    return self._load_agent_report_from(
-                        task_id, turn, "coach", coach_output_path
-                    )
-
-                # One more try when the call answered but gave no readable
-                # verdict: on TypeScript C (3 November 2026) the verdict call
-                # spent its whole output allowance thinking and wrote nothing,
-                # once in about 240. A call that failed is not asked again.
-                try:
-                    decision = await _verdict()
-                except (CoachDecisionNotFoundError, CoachDecisionInvalidError) as exc:
-                    logger.warning(
-                        "[%s] Turn %s: the reviewer gave no readable verdict "
-                        "(%s); asking it once more.",
-                        task_id, turn, exc,
-                    )
-                    decision = await _verdict()
+                decision = await self._review_verdict(
+                    prompt, task_id, turn, coach_output_path
+                )
             except asyncio.CancelledError:
                 raise
             except Exception as exc:  # noqa: BLE001 — the reviewer is advice
@@ -3183,6 +3115,151 @@ class AgentInvoker:
             # TASK-ABFIX-004: Restore original timeout after invocation
             self.sdk_timeout_seconds = original_timeout
 
+    async def invoke_last_look(
+        self,
+        *,
+        feature_id: str,
+        base: Optional[str],
+        notes: Sequence[Dict[str, Any]],
+    ) -> Optional[List[Dict[str, Any]]]:
+        """One last look at the build reviewer's notes over the finished
+        feature (Rich, 3 November 2026, decision 5).
+
+        The same two calls as a task's review, with its time and tool limits:
+        the read-only look-up pass over the feature's whole change since
+        ``base``, given the notes to check again, then the verdict call (asked
+        once more when unreadable). Returns what they reported again, or
+        ``None`` when either gave no answer; raises when the verdict call
+        failed. The caller keeps the notes as they are on ``None`` or an error.
+        """
+        from guardkit.orchestrator import build_review
+        from guardkit.orchestrator.paths import TaskArtifactPaths
+
+        turn = 1
+        effective_timeout = self._calculate_sdk_timeout(feature_id)
+        original_timeout = self.sdk_timeout_seconds
+        self.sdk_timeout_seconds = effective_timeout
+        try:
+            change = build_review.write_change(feature_id, turn, self.worktree_path, base)
+            found = await self._invoke_coach_gather(
+                task_id=feature_id,
+                turn=turn,
+                requirements="",
+                player_report={},
+                evidence_bundle=None,
+                acceptance_criteria=None,
+                gather_timeout=min(
+                    effective_timeout,
+                    max(
+                        _COACH_GATHER_BUDGET_MIN_S,
+                        int(effective_timeout * _COACH_GATHER_BUDGET_FRACTION),
+                    ),
+                ),
+                prompt=build_review.build_last_look_prompt(feature_id, notes, change),
+            )
+            if found is None:
+                return None
+            decision = await self._review_verdict(
+                self._build_coach_prompt(
+                    feature_id, turn, build_review.last_look_requirements(feature_id), {},
+                    gather_findings=found,
+                ),
+                feature_id,
+                turn,
+                TaskArtifactPaths.private_artifact_path(
+                    feature_id, "last_look_verdict.json", self.worktree_path
+                ),
+            )
+            issues = decision.get("issues") if isinstance(decision, dict) else None
+            reported = [
+                *(issues if isinstance(issues, list) else []),
+                *build_review.lookup_findings(found),
+            ]
+            if not reported and "NO FINDINGS" not in found.upper():
+                return None  # neither a finding nor "no findings": no answer
+            return reported
+        finally:
+            self.sdk_timeout_seconds = original_timeout
+
+    async def _review_verdict(
+        self, prompt: str, task_id: str, turn: int, coach_output_path: Path
+    ) -> Dict[str, Any]:
+        """The review's verdict call, asked once more when it answered but gave
+        no readable verdict. Raises when it is still unreadable or the call
+        failed; the caller decides what that means."""
+        from guardkit.orchestrator.coach_output_parser import (
+            extract_and_write as _coach_extract_and_write,
+        )
+
+        # Load the GBNF verdict grammar; degrade to prompt-only (still
+        # toolless) if the packaged grammar can't be read so a
+        # packaging glitch never hard-fails the Coach.
+        # Contract-aware: resolves GUARDKIT_COACH_CONTRACT > config >
+        # default and selects the matching grammar file (TASK-CMIR-003).
+        grammar: Optional[str] = None
+        try:
+            from guardkit.orchestrator.coach_grammar import (
+                load_coach_verdict_grammar,
+            )
+
+            grammar = load_coach_verdict_grammar(
+                contract=None,  # resolve at call site
+            )
+        except Exception as exc:  # noqa: BLE001 — degrade, never hard-fail
+            logger.warning(
+                "TASK-ARCH-COACHSPLIT: failed to load Coach verdict "
+                "grammar (%s); running TOOLLESS synthesis WITHOUT a "
+                "grammar constraint (prompt-only). The verdict schema "
+                "is then only prompt-enforced, not grammar-guaranteed.",
+                exc,
+            )
+
+        # allowed_tools=[] makes the harness toolless on EVERY
+        # substrate (the SDK harness reads its tool surface from the
+        # constructor allowed_tools, which select_harness threads from
+        # here). synthesis=True dispatches through invoke_synthesis.
+        async def _verdict() -> Dict[str, Any]:
+            result_tuple = await self._invoke_with_role(
+                prompt=prompt,
+                agent_type="coach",
+                allowed_tools=[],
+                permission_mode="bypassPermissions",
+                task_id=task_id,
+                turn=turn,
+                return_events=True,
+                synthesis=True,
+                grammar=grammar,
+            )
+            assert result_tuple is not None, (
+                "_invoke_with_role(return_events=True) must return a tuple "
+                "on success; got None"
+            )
+            _, harness_events = result_tuple
+
+            _coach_extract_and_write(
+                harness_events=harness_events,
+                task_id=task_id,
+                turn=turn,
+                output_path=coach_output_path,
+            )
+            return self._load_agent_report_from(
+                task_id, turn, "coach", coach_output_path
+            )
+
+        # One more try when the call answered but gave no readable
+        # verdict: on TypeScript C (3 November 2026) the verdict call
+        # spent its whole output allowance thinking and wrote nothing,
+        # once in about 240. A call that failed is not asked again.
+        try:
+            return await _verdict()
+        except (CoachDecisionNotFoundError, CoachDecisionInvalidError) as exc:
+            logger.warning(
+                "[%s] Turn %s: the reviewer gave no readable verdict "
+                "(%s); asking it once more.",
+                task_id, turn, exc,
+            )
+            return await _verdict()
+
     async def _invoke_coach_gather(
         self,
         *,
@@ -3196,6 +3273,7 @@ class AgentInvoker:
         change: Optional["ReviewChange"] = None,
         sent_back: Sequence[Dict[str, Any]] = (),
         document_paths: Sequence[str] = (),
+        prompt: Optional[str] = None,
     ) -> Optional[str]:
         """The review's look-up pass: read-only, against the change and the code.
 
@@ -3212,14 +3290,15 @@ class AgentInvoker:
         Returns the findings text, or ``None`` on any failure or an empty
         answer: the verdict call then runs without it (a reviewer finding is
         never a refusal). ``asyncio.CancelledError`` is not caught: a real
-        cancellation stops the review.
+        cancellation stops the review. ``prompt``, when given, is used in
+        place of the task's look-up prompt (the feature's last look).
         """
         from guardkit.orchestrator import build_review
 
         prev_timeout = self.sdk_timeout_seconds
         self.sdk_timeout_seconds = gather_timeout
         try:
-            prompt = self._build_coach_gather_prompt(
+            prompt = prompt or self._build_coach_gather_prompt(
                 task_id=task_id,
                 turn=turn,
                 requirements=requirements,

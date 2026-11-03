@@ -24,6 +24,10 @@ documents in full and the builder's own report, and never the change. Now:
 4. What the final review leaves (at most ten findings) is written to the
    feature's build review notes, which Forge shows on the merge card as
    advice.
+5. When every task completed, one last look (the same look-up pass and
+   verdict, over the feature's whole change) checks those notes again
+   against the finished code. Notes it reports again stay on the card; the
+   others are only counted (Rich, 3 November 2026, decision 5).
 
 Everything here is plain code: no model is called from this module.
 """
@@ -38,7 +42,7 @@ import shutil
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Sequence
+from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +82,24 @@ LEFTOVERS_KEY = "review_leftovers"
 #: The feature's build review notes, beside the code-checks summary, in the
 #: folder the runner exports.
 NOTES_RELATIVE_PATH = Path(".guardkit") / "autobuild-private" / "build_review_notes.json"
+
+#: How many notes the last look found no longer apply, and how many stay.
+RECHECKED_KEY = "rechecked"
+
+#: What runs at merge. Only the last look says it for now; the per-task review
+#: may use it later (b1's stage-checks experiment, 3 November 2026).
+MERGE_CHECK_RULE = (
+    "The project's full check (every part, and the root's own lint, format and "
+    "type checks) runs once before the feature merges, not after each task, and "
+    "the feature merges only when it passes: a check that only the full check runs "
+    "is not missing, though an error you can see in the code still is."
+)
+
+#: The look-up pass's instruction for findings it is asked to check again.
+RECHECK_SENTENCE = (
+    "Check each of these first. Report again any that is not fixed, with its place "
+    "in the code now; do not report one that is fixed."
+)
 
 _LOCATION = re.compile(r"\S+:\d+")
 _COACH_TURN_FILE = re.compile(r"^coach_turn_(\d+)\.json$")
@@ -202,14 +224,14 @@ def write_change(task_id: str, turn: int, worktree: Path, base: Optional[str]) -
 # ---------------------------------------------------------------------------
 
 
-def _change_section(change: ReviewChange) -> str:
+def _change_section(change: ReviewChange, whose: str = "task") -> str:
     lines = ["## The change", ""]
     if not change.text:
         if change.note:
             lines.append(change.note)
         else:
             lines.append(
-                f"The builder changed nothing since the task's starting commit "
+                f"The builder changed nothing since the {whose}'s starting commit "
                 f"({(change.base or '')[:12]})."
             )
         lines.append(
@@ -218,7 +240,7 @@ def _change_section(change: ReviewChange) -> str:
         return "\n".join(lines)
     shown = change.text[:DIFF_PROMPT_CHARS]
     lines.append(
-        f"What changed from the task's starting commit ({(change.base or '')[:12]}) to the "
+        f"What changed from the {whose}'s starting commit ({(change.base or '')[:12]}) to the "
         "builder's work now, by git (`git diff --find-renames`): deletions and renames are "
         "included, so a removed or renamed name shows here with its old spelling."
     )
@@ -518,8 +540,7 @@ def build_lookup_prompt(
     if sent_back:
         repair = (
             "\n## Findings the builder was sent back to fix\n\n"
-            "Check each of these first. Report again any that is not fixed, with its place "
-            "in the code now; do not report one that is fixed.\n\n"
+            f"{RECHECK_SENTENCE}\n\n"
             + "\n".join(_finding_line(f) for f in sent_back)
             + "\n"
         )
@@ -606,6 +627,63 @@ PATTERN path/to/file:line: what is wrong, and what the task or the code says ins
 Report each problem once. When the five questions find nothing, write NO FINDINGS. Do not write a \
 JSON verdict: a second step writes it from your lines.
 """
+
+
+def build_last_look_prompt(
+    feature_id: str, notes: Sequence[Dict[str, Any]], change: ReviewChange
+) -> str:
+    """The last look's look-up prompt: the build reviewer's notes, checked
+    again against the finished feature's whole change and code."""
+    listed = "\n".join(_finding_line(note) for note in notes)
+    return f"""You take one last look at a finished feature before it is offered for merge. You do \
+not change anything. While its tasks were built, the build reviewer left the notes below for the \
+person approving the merge. Each was written when its task finished; later tasks may have changed \
+the code since.
+
+Feature: {feature_id}
+
+{_change_section(change, "feature")}
+
+## What runs at merge
+
+{MERGE_CHECK_RULE} So a note that only says a check, lint or type check never ran is fixed.
+
+## The notes to check
+
+{RECHECK_SENTENCE}
+
+{listed}
+
+Check only these notes: a new problem none of them names is not for this look.
+
+## How to look things up
+
+Your tools only read the feature's worktree as it is now (read_file, ls, grep, glob, code_search, \
+code_outline, code_pattern, and code_references when offered). There is no shell.
+
+- Look up only what a note needs. Do not explore.
+- Never make the same call twice. There is a limit on tool calls; when it is reached, answer from \
+what you have found.
+
+## Your answer
+
+Plain text, one line for each note that is still true, with its place in the code now:
+
+PATTERN path/to/file:line: what is still wrong.
+
+When no note is still true, write NO FINDINGS. Do not write a JSON verdict: a second step writes it \
+from your lines.
+"""
+
+
+def last_look_requirements(feature_id: str) -> str:
+    """What the last look's verdict call is told in place of a task."""
+    return (
+        f"This is one last look at the finished feature {feature_id} before it is offered "
+        "for merge, not a builder turn. The look-up pass checked the build reviewer's "
+        "earlier notes against the finished code and reported again only the ones still "
+        f"true. Turn each of those into one finding; add none. {MERGE_CHECK_RULE}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -766,14 +844,60 @@ def latest_review(task_private_dir: Path) -> Optional[Path]:
     return best
 
 
+def _file_of(location: Any) -> str:
+    """The file part of ``path:line`` (the line may have moved)."""
+    text = str(location or "").strip()
+    match = re.match(r"^(.+?):\d", text)
+    return match.group(1) if match else text
+
+
+def _reported_again(note: Dict[str, str], found: Sequence[Any]) -> bool:
+    """A finding of the note's kind at the note's file (at any file when the
+    note has no place)."""
+    for issue in map(_normalised, found):
+        if isinstance(issue, dict) and _pattern_of(issue) == _pattern_of(note) and (
+            not _file_of(note.get("location"))
+            or _file_of(issue.get("location")) == _file_of(note.get("location"))
+        ):
+            return True
+    return False
+
+
+def _last_look(
+    notes: List[Dict[str, str]], last_look: Callable[[List[Dict[str, str]]], Any]
+) -> Optional[List[Dict[str, str]]]:
+    """The notes the last look reported again, or ``None`` when it gave no
+    answer (the notes then stay as they are). Never raises."""
+    why = "it gave no answer"
+    try:
+        found = last_look(notes)
+    except Exception as exc:  # noqa: BLE001 — advice only
+        found, why = None, f"{type(exc).__name__}: {exc}"
+    if found is None:
+        logger.warning(
+            "The last look at the build reviewer's notes did not finish (%s); the "
+            "notes are left as they were.", why,
+        )
+        return None
+    return [note for note in notes if _reported_again(note, list(found))]
+
+
 def write_feature_notes(
-    feature_id: str, task_ids: Sequence[str], root: Path
+    feature_id: str,
+    task_ids: Sequence[str],
+    root: Path,
+    last_look: Optional[Callable[[List[Dict[str, str]]], Any]] = None,
 ) -> Optional[Path]:
     """Write what each task's final review left, at most ten in all. Never raises.
 
     Into ``<root>/.guardkit/autobuild-private/build_review_notes.json``,
     beside the code-checks summary, where the runner exports it for Forge's
     merge card.
+
+    ``last_look`` (when every task completed) is given the notes and returns
+    the findings of one last review of the finished feature, or ``None``.
+    Notes it reports again stay; the others leave the card and are counted
+    under ``rechecked``. With no notes it is not called.
     """
     try:
         from guardkit.orchestrator.paths import TaskArtifactPaths
@@ -797,15 +921,15 @@ def write_feature_notes(
                 total += 1
                 if len(notes) < MAX_LEFTOVERS:
                     notes.append({"task_id": task_id, **{k: str(v) for k, v in item.items()}})
+        record: Dict[str, Any] = {"feature": feature_id, "notes": notes, "total": total}
+        kept = _last_look(notes, last_look) if notes and last_look is not None else None
+        if kept is not None:
+            dropped = len(notes) - len(kept)
+            record.update(notes=kept, total=total - dropped)
+            record[RECHECKED_KEY] = {"still_true": len(kept), "no_longer_apply": dropped}
         path = Path(root) / NOTES_RELATIVE_PATH
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(
-            json.dumps(
-                {"feature": feature_id, "notes": notes, "total": total}, indent=2
-            )
-            + "\n",
-            encoding="utf-8",
-        )
+        path.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
         return path
     except Exception as exc:  # noqa: BLE001 — notes never fail a build
         logger.warning("The build review notes could not be written: %s", exc)
@@ -820,17 +944,22 @@ __all__ = [
     "LATER_TASKS_RULE",
     "LOOKUP_TOOLS",
     "MAX_LEFTOVERS",
+    "MERGE_CHECK_RULE",
     "NOTES_RELATIVE_PATH",
     "OTHER_TASKS_PROMPT_CHARS",
     "OtherTask",
+    "RECHECKED_KEY",
+    "RECHECK_SENTENCE",
     "REPAIR_KEY",
     "REPAIR_TURN_ENV",
     "ReviewChange",
     "VERDICT_LATER_TASKS_RULE",
+    "build_last_look_prompt",
     "build_lookup_prompt",
     "change_since",
     "diff_path",
     "is_located",
+    "last_look_requirements",
     "latest_review",
     "leftovers",
     "located_findings",
