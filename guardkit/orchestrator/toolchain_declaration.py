@@ -161,6 +161,10 @@ that part's tests, in its folder: the first time the part is tested in a
 worktree, and again only when the files directly in its folder have changed
 (31 October 2026). A failed install is "the check could not run". The root
 ``install`` stays the build's own bootstrap (``environment_bootstrap``).
+When parts share one install (one lock file and one dependency folder at the
+root), declare that install once at the root and give the parts none: a part's
+install runs only in its own folder and can undo what the others installed
+(FEAT-FF29, 3 November 2026).
 """
 
 from __future__ import annotations
