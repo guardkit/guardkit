@@ -2965,6 +2965,7 @@ class AgentInvoker:
             coach_output_path = TaskArtifactPaths.private_artifact_path(
                 task_id, f"coach_turn_{turn}.json", self.worktree_path
             )
+            unverified: List[Dict[str, Any]] = []
             try:
                 # The verdict call: toolless and grammar-constrained, so the
                 # GBNF grammar can force the verdict's shape (llama.cpp
@@ -2999,42 +3000,61 @@ class AgentInvoker:
                 # substrate (the SDK harness reads its tool surface from the
                 # constructor allowed_tools, which select_harness threads from
                 # here). synthesis=True dispatches through invoke_synthesis.
-                result_tuple = await self._invoke_with_role(
-                    prompt=prompt,
-                    agent_type="coach",
-                    allowed_tools=[],
-                    permission_mode="bypassPermissions",
-                    task_id=task_id,
-                    turn=turn,
-                    return_events=True,
-                    synthesis=True,
-                    grammar=grammar,
-                )
-                assert result_tuple is not None, (
-                    "_invoke_with_role(return_events=True) must return a tuple "
-                    "on success; got None"
-                )
-                _, harness_events = result_tuple
+                async def _verdict() -> Dict[str, Any]:
+                    result_tuple = await self._invoke_with_role(
+                        prompt=prompt,
+                        agent_type="coach",
+                        allowed_tools=[],
+                        permission_mode="bypassPermissions",
+                        task_id=task_id,
+                        turn=turn,
+                        return_events=True,
+                        synthesis=True,
+                        grammar=grammar,
+                    )
+                    assert result_tuple is not None, (
+                        "_invoke_with_role(return_events=True) must return a tuple "
+                        "on success; got None"
+                    )
+                    _, harness_events = result_tuple
 
-                _coach_extract_and_write(
-                    harness_events=harness_events,
-                    task_id=task_id,
-                    turn=turn,
-                    output_path=coach_output_path,
-                )
-                decision = self._load_agent_report_from(
-                    task_id, turn, "coach", coach_output_path
-                )
+                    _coach_extract_and_write(
+                        harness_events=harness_events,
+                        task_id=task_id,
+                        turn=turn,
+                        output_path=coach_output_path,
+                    )
+                    return self._load_agent_report_from(
+                        task_id, turn, "coach", coach_output_path
+                    )
+
+                # One more try when the call answered but gave no readable
+                # verdict: on TypeScript C (3 November 2026) the verdict call
+                # spent its whole output allowance thinking and wrote nothing,
+                # once in about 240. A call that failed is not asked again.
+                try:
+                    decision = await _verdict()
+                except (CoachDecisionNotFoundError, CoachDecisionInvalidError) as exc:
+                    logger.warning(
+                        "[%s] Turn %s: the reviewer gave no readable verdict "
+                        "(%s); asking it once more.",
+                        task_id, turn, exc,
+                    )
+                    decision = await _verdict()
             except asyncio.CancelledError:
                 raise
             except Exception as exc:  # noqa: BLE001 — the reviewer is advice
                 # The reviewer's verdict is advice (27 October 2026): when its
-                # call fails, or gives no readable verdict, the turn goes on
-                # with no reviewer findings.
+                # call fails, or gives no readable verdict, the turn goes on.
+                # The look-up pass's own findings go to the merge card as what
+                # this review leaves, unchecked by a verdict, so they are not
+                # lost; they never send the turn back.
+                unverified = build_review.lookup_findings(gather_findings)
                 logger.warning(
                     "[%s] Turn %s: the reviewer gave no readable verdict (%s); "
-                    "the turn goes on without its findings.",
-                    task_id, turn, exc,
+                    "the turn goes on, and the look-up pass's %d finding(s) go "
+                    "to the merge card.",
+                    task_id, turn, exc, len(unverified),
                 )
                 decision = {
                     "task_id": task_id,
@@ -3042,6 +3062,7 @@ class AgentInvoker:
                     "decision": "approve",
                     "issues": [],
                     "rationale": f"The reviewer gave no readable verdict: {exc}",
+                    "lookup_findings": gather_findings or "",
                 }
             if not isinstance(decision.get("issues"), list):
                 decision["issues"] = []
@@ -3111,6 +3132,7 @@ class AgentInvoker:
                 turn=turn,
                 turn_left=turn_left,
                 coach_output_path=coach_output_path,
+                unverified=unverified,
             )
 
             duration = time.time() - start_time
@@ -3981,10 +4003,13 @@ The builder's concerns, what it says remains, and the files git saw it create an
         turn: int,
         turn_left: bool,
         coach_output_path: "Path",
+        unverified: Sequence[Dict[str, Any]] = (),
     ) -> None:
         """The one repair turn for the reviewer's located findings, or what
         this review leaves for the merge card (the build reviewer design of
-        29 October 2026).
+        29 October 2026). ``unverified`` is the look-up pass's own findings
+        when the verdict gave nothing readable: they are only ever left for
+        the merge card.
 
         When no ordinary-code rule sent the turn back, the verdict has
         findings of the five kinds with a ``path:line`` place, the task has a
@@ -4021,7 +4046,9 @@ The builder's concerns, what it says remains, and the files git saw it create an
                 task_id, turn, len(located),
             )
         else:
-            decision[build_review.LEFTOVERS_KEY] = build_review.leftovers(reviewer_issues)
+            decision[build_review.LEFTOVERS_KEY] = build_review.leftovers(
+                [*reviewer_issues, *unverified]
+            )
         self._persist_coach_decision(
             decision, coach_output_path, tag="review-repair-turn", kind="annotated"
         )

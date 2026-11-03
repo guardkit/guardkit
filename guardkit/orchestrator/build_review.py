@@ -674,6 +674,22 @@ def leftovers(issues: Iterable[Any]) -> List[Dict[str, str]]:
     return kept[:MAX_LEFTOVERS]
 
 
+_LIST_MARK = re.compile(r"^\s*(?:[-*•]|\d+[.)])\s+")
+
+
+def lookup_findings(text: Optional[str]) -> List[Dict[str, Any]]:
+    """The look-up pass's own ``PATTERN path:line: sentence`` lines, as
+    findings, for the merge card when the verdict gave nothing readable
+    (TypeScript C, 3 November 2026: the verdict call spent its whole output
+    allowance thinking, and the look-up's findings were dropped)."""
+    found = []
+    for line in (text or "").splitlines():
+        issue = _normalised({"description": _LIST_MARK.sub("", line).strip()})
+        if _pattern_of(issue):
+            found.append(issue)
+    return found
+
+
 def repair_issues(findings: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """The located findings as the builder's next-turn feedback issues."""
     issues = []

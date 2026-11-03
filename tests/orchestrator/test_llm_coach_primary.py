@@ -617,7 +617,7 @@ def _reviewer_says(verdict: Optional[Dict[str, Any]]) -> AsyncMock:
 
 
 def _real_turn(
-    tmp_path: Path, root: Path, reviewer: AsyncMock
+    tmp_path: Path, root: Path, reviewer: AsyncMock, calls: int = 2
 ) -> AgentInvocationResult:
     invoker = AgentInvoker(worktree_path=root, sdk_timeout_seconds=600)
     orchestrator = AutoBuildOrchestrator(
@@ -652,8 +652,8 @@ def _real_turn(
             task_type="feature",
         )
     # The look-up pass, then the verdict call (the build reviewer design of
-    # 29 October 2026).
-    assert reviewer.await_count == 2
+    # 29 October 2026), asked once more when it is unreadable.
+    assert reviewer.await_count == calls
     return result
 
 
@@ -726,7 +726,7 @@ class TestTheRealCoachTurn:
     ) -> None:
         root = _project(tmp_path, "5 passed in 0.50s\n", 0)
 
-        result = _real_turn(tmp_path, root, _reviewer_says(None))
+        result = _real_turn(tmp_path, root, _reviewer_says(None), calls=3)
 
         assert result.success is True, result.error
         assert result.report["decision"] == "approve"
