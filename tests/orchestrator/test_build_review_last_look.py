@@ -306,6 +306,59 @@ def test_a_last_look_past_its_time_leaves_the_notes_byte_identical(
     assert path.read_bytes() == today
 
 
+def test_the_lookup_is_shown_the_change_to_the_files_the_notes_name() -> None:
+    """FEAT-FF29's whole change was 307 KB; the prompt showed its first 40,000
+    characters, whatever files they held."""
+    section = "diff --git a/{0} b/{0}\n--- a/{0}\n+++ b/{0}\n@@ -1 +1 @@\n-old\n+new\n"
+    text = section.format("docs/big.md") + section.format("src/b.ts") + section.format("x.ts")
+    change = build_review.ReviewChange(text, Path("/w/change.diff"), "abc")
+    notes = [{"pattern": "STUB", "location": "./src/b.ts:3", "description": "x"}]
+
+    prompt = build_review.build_last_look_prompt(FEATURE, notes, change)
+
+    assert "+++ b/src/b.ts" in prompt
+    assert "+++ b/docs/big.md" not in prompt
+    assert "2 other changed files, not shown: docs/big.md, x.ts" in prompt
+    assert "Only the parts for the files the notes name are shown" in prompt
+
+    unnamed = [{"pattern": "STUB", "location": "lib/c.ts:3", "description": "x"}]
+    prompt = build_review.build_last_look_prompt(FEATURE, unnamed, change)
+    assert "+++ b/docs/big.md" in prompt
+    assert "Only the parts" not in prompt
+
+
+@pytest.mark.parametrize("spelt", ["src/b.ts:7", "./src/b.ts:7", "/work/repo/src/b.ts:7"])
+def test_a_note_reported_again_however_its_path_is_spelt_stays(
+    tmp_path: Path, spelt: str
+) -> None:
+    _seed(tmp_path)
+    look, _calls = _reviewer(tmp_path, f"STUB {spelt}: still a fixed answer\n", [])
+
+    record = json.loads(
+        build_review.write_feature_notes(FEATURE, TASKS, tmp_path, last_look=look).read_text()
+    )
+
+    assert [n["pattern"] for n in record["notes"]] == ["STUB"]
+
+
+def test_the_lookup_gets_its_own_time(tmp_path: Path) -> None:
+    """Most of the last look's time, not a task review's 40% slice."""
+    _seed(tmp_path)
+    look, _calls = _reviewer(tmp_path, "NO FINDINGS", [])
+    seen: List[int] = []
+    original = AgentInvoker._invoke_coach_gather
+
+    async def _spy(self, **kwargs):
+        seen.append(kwargs["gather_timeout"])
+        return await original(self, **kwargs)
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(AgentInvoker, "_invoke_coach_gather", _spy)
+        build_review.write_feature_notes(FEATURE, TASKS, tmp_path, last_look=look)
+
+    assert seen == [build_review.LAST_LOOK_LOOKUP_SECONDS]
+
+
 def test_the_task_lookup_prompt_is_unchanged() -> None:
     """The last look must not change what the per-task review is asked: its
     look-up prompt is pinned to the text before the last look was added (and

@@ -3125,9 +3125,10 @@ class AgentInvoker:
         """One last look at the build reviewer's notes over the finished
         feature (Rich, 3 November 2026, decision 5).
 
-        The same two calls as a task's review, with its time and tool limits:
-        the read-only look-up pass over the feature's whole change since
-        ``base``, given the notes to check again, then the verdict call (asked
+        The same two calls as a task's review, with its tool limits: the
+        read-only look-up pass (``build_review.LAST_LOOK_LOOKUP_SECONDS``)
+        over the feature's change since ``base`` to the files the notes name,
+        given the notes to check again, then the verdict call (asked
         once more when unreadable), skipped when every line of the look-up's
         answer is already a finding or it wrote only NO FINDINGS. Returns what they reported again, or
         ``None`` when either gave no answer; raises when the verdict call
@@ -3149,13 +3150,7 @@ class AgentInvoker:
                 player_report={},
                 evidence_bundle=None,
                 acceptance_criteria=None,
-                gather_timeout=min(
-                    effective_timeout,
-                    max(
-                        _COACH_GATHER_BUDGET_MIN_S,
-                        int(effective_timeout * _COACH_GATHER_BUDGET_FRACTION),
-                    ),
-                ),
+                gather_timeout=build_review.LAST_LOOK_LOOKUP_SECONDS,
                 prompt=build_review.build_last_look_prompt(feature_id, notes, change),
             )
             if found is None:

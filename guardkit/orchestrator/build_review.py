@@ -100,6 +100,12 @@ MERGE_CHECK_RULE = (
 #: runs out the notes stay as they were.
 LAST_LOOK_TIMEOUT_SECONDS = 1200
 
+#: The last look's look-up pass gets most of that time: its answer usually
+#: needs no verdict call. Out of a task review's slice (40% of its limit),
+#: FEAT-FF29's look-up spent 590 s on look-ups and had too little left to
+#: write its answer (replay, 5 November 2026).
+LAST_LOOK_LOOKUP_SECONDS = 900
+
 #: The look-up pass's instruction for findings it is asked to check again.
 RECHECK_SENTENCE = (
     "Check each of these first. Report again any that is not fixed, with its place "
@@ -634,12 +640,53 @@ JSON verdict: a second step writes it from your lines.
 """
 
 
+_DIFF_HEADER = re.compile(r"^diff --git a/(\S+) b/(\S+)")
+
+
+def notes_change(change: ReviewChange, notes: Sequence[Dict[str, Any]]) -> ReviewChange:
+    """The parts of the feature's change for the files the notes name, with
+    the other changed files listed after them. A whole feature's change runs
+    far past what the prompt shows (FEAT-FF29: 307 KB, of which the first
+    40,000 characters were shown, whatever files they held). The whole change
+    stays at ``change.path``. The change as it is when no note names a file
+    in it."""
+    files = {_same_path(_file_of(note.get("location"))) for note in notes} - {""}
+    sections: List[List[str]] = []
+    for line in change.text.splitlines(keepends=True):
+        if line.startswith("diff --git ") or not sections:
+            sections.append([])
+        sections[-1].append(line)
+    kept, others = [], []
+    for section in sections:
+        header = _DIFF_HEADER.match(section[0])
+        names = {_same_path(name) for name in header.groups()} if header else set()
+        if any(_same_file(name, f) for name in names for f in files):
+            kept.append("".join(section))
+        elif header:
+            others.append(header.group(2))
+    if not kept:
+        return change
+    text = "".join(kept)
+    if others:
+        text += (
+            f"\n# {len(others)} other changed files, not shown: " + ", ".join(others) + "\n"
+        )
+    return ReviewChange(text, change.path, change.base, change.note)
+
+
 def build_last_look_prompt(
     feature_id: str, notes: Sequence[Dict[str, Any]], change: ReviewChange
 ) -> str:
     """The last look's look-up prompt: the build reviewer's notes, checked
-    again against the finished feature's whole change and code."""
+    again against the finished feature's change to the files they name."""
     listed = "\n".join(_finding_line(note) for note in notes)
+    focused = notes_change(change, notes)
+    only = (
+        "\n\nOnly the parts for the files the notes name are shown; the whole change is "
+        "in the file named above."
+        if focused is not change
+        else ""
+    )
     return f"""You take one last look at a finished feature before it is offered for merge. You do \
 not change anything. While its tasks were built, the build reviewer left the notes below for the \
 person approving the merge. Each was written when its task finished; later tasks may have changed \
@@ -647,7 +694,7 @@ the code since.
 
 Feature: {feature_id}
 
-{_change_section(change, "feature")}
+{_change_section(focused, "feature")}{only}
 
 ## What runs at merge
 
@@ -868,13 +915,28 @@ def _file_of(location: Any) -> str:
     return match.group(1) if match else text
 
 
+def _same_path(path: str) -> str:
+    """A file's path without a leading ``./`` or ``/``."""
+    path = path.strip().strip("`")
+    while path.startswith("./"):
+        path = path[2:]
+    return path.lstrip("/")
+
+
+def _same_file(a: str, b: str) -> bool:
+    """The same file, however the model spelt its path: relative, ``./``, or
+    from the root of the machine (``/work/repo/src/a.ts`` is ``src/a.ts``)."""
+    a, b = _same_path(a), _same_path(b)
+    return bool(a and b) and (a == b or a.endswith("/" + b) or b.endswith("/" + a))
+
+
 def _reported_again(note: Dict[str, str], found: Sequence[Any]) -> bool:
     """A finding of the note's kind at the note's file (at any file when the
     note has no place)."""
     for issue in map(_normalised, found):
         if isinstance(issue, dict) and _pattern_of(issue) == _pattern_of(note) and (
             not _file_of(note.get("location"))
-            or _file_of(issue.get("location")) == _file_of(note.get("location"))
+            or _same_file(_file_of(issue.get("location")), _file_of(note.get("location")))
         ):
             return True
     return False
@@ -978,6 +1040,7 @@ __all__ = [
     "is_located",
     "last_look_requirements",
     "lookup_answer",
+    "notes_change",
     "latest_review",
     "leftovers",
     "located_findings",
