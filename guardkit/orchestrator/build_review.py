@@ -106,6 +106,12 @@ LAST_LOOK_TIMEOUT_SECONDS = 1200
 #: write its answer (replay, 5 November 2026).
 LAST_LOOK_LOOKUP_SECONDS = 900
 
+#: Whether a build runs the last look. Off until its replay keeps the true
+#: notes: on 5 November 2026 it dropped 26 of 120 true notes across five
+#: recorded cards and two versions, and only 8 of 42 notes that no longer
+#: applied. The replay calls ``FeatureOrchestrator._last_look`` itself.
+LAST_LOOK_IN_BUILDS = False
+
 #: The look-up pass's instruction for findings it is asked to check again.
 RECHECK_SENTENCE = (
     "Check each of these first. Report again any that is not fixed, with its place "
@@ -931,13 +937,17 @@ def _same_file(a: str, b: str) -> bool:
 
 
 def _reported_again(note: Dict[str, str], found: Sequence[Any]) -> bool:
-    """A finding of the note's kind at the note's file (at any file when the
-    note has no place)."""
+    """A finding at the note's file, of any kind (of the note's kind when the
+    note has no place). The look-up names the same fault with another kind:
+    in the replay of 5 November 2026, 20 of the 26 true notes it dropped had
+    been found again at their own file, mostly as NOT_IMPLEMENTED."""
     for issue in map(_normalised, found):
-        if isinstance(issue, dict) and _pattern_of(issue) == _pattern_of(note) and (
-            not _file_of(note.get("location"))
-            or _same_file(_file_of(issue.get("location")), _file_of(note.get("location")))
-        ):
+        if not isinstance(issue, dict):
+            continue
+        if not _file_of(note.get("location")):
+            if _pattern_of(issue) == _pattern_of(note):
+                return True
+        elif _same_file(_file_of(issue.get("location")), _file_of(note.get("location"))):
             return True
     return False
 

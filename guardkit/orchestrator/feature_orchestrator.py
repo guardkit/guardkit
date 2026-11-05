@@ -4410,16 +4410,21 @@ The detailed specifications are in the task markdown file.
         # What each task's final review left (the build reviewer design of 29
         # October 2026), at most ten, beside it for the merge card. When every
         # task completed, one last look checks them against the finished code
-        # first (Rich, 3 November 2026, decision 5). Never raises, and a build
-        # is never failed by it.
-        from guardkit.orchestrator.build_review import write_feature_notes
+        # first (Rich, 3 November 2026, decision 5), once its replay passes
+        # (build_review.LAST_LOOK_IN_BUILDS). Never raises, and a build is
+        # never failed by it.
+        from guardkit.orchestrator.build_review import LAST_LOOK_IN_BUILDS, write_feature_notes
 
         write_feature_notes(
             getattr(feature, "id", ""),
             [str(getattr(task, "id", "") or "") for task in getattr(feature, "tasks", None) or []
              if getattr(task, "id", None)],
             Path(worktree.path),
-            last_look=self._last_look(feature, worktree) if final_status == "completed" else None,
+            last_look=(
+                self._last_look(feature, worktree)
+                if final_status == "completed" and LAST_LOOK_IN_BUILDS
+                else None
+            ),
         )
 
         # When the whole-feature check failed during the wave phase, the

@@ -341,6 +341,22 @@ def test_a_note_reported_again_however_its_path_is_spelt_stays(
     assert [n["pattern"] for n in record["notes"]] == ["STUB"]
 
 
+def test_a_note_found_again_under_another_kind_stays(tmp_path: Path) -> None:
+    """FEAT-689D's replay, 5 November 2026: the look-up called the still-true
+    NOT_TESTED and CALLERS_NOT_UPDATED notes NOT_IMPLEMENTED at their files."""
+    _seed(tmp_path)
+    look, _calls = _reviewer(
+        tmp_path, "NOT_IMPLEMENTED src/a.ts:15: still no test for the empty input\n", []
+    )
+
+    record = json.loads(
+        build_review.write_feature_notes(FEATURE, TASKS, tmp_path, last_look=look).read_text()
+    )
+
+    assert [n["pattern"] for n in record["notes"]] == ["NOT_TESTED"]
+    assert record["rechecked"] == {"still_true": 1, "no_longer_apply": 2}
+
+
 def test_the_lookup_gets_its_own_time(tmp_path: Path) -> None:
     """Most of the last look's time, not a task review's 40% slice."""
     _seed(tmp_path)
