@@ -223,6 +223,27 @@ def test_copy_tasks_to_worktree_idempotency(
     assert (dst_dir / "TASK-001-sample-task.md").read_text() == "# Modified"
 
 
+def test_copy_tasks_skips_files_the_worktree_already_holds(
+    orchestrator: FeatureOrchestrator,
+    mock_feature: Feature,
+    mock_worktree: Worktree,
+) -> None:
+    """A committed plan is already in the worktree, in its feature folder or
+    moved on to a later state: no flat copy is made beside it (FEAT-1D25)."""
+    planned = mock_worktree.path / "tasks" / "backlog" / "test-feature"
+    planned.mkdir(parents=True)
+    (planned / "TASK-002-another-task.md").write_text("# Task 002")
+    (planned / "TASK-003-third-task.md").write_text("# Task 003")
+    moved = mock_worktree.path / "tasks" / "design_approved"
+    moved.mkdir(parents=True)
+    (moved / "TASK-001-sample-task.md").write_text("# Task 001")
+
+    orchestrator._copy_tasks_to_worktree(mock_feature, mock_worktree)
+
+    flat = mock_worktree.path / "tasks" / "backlog"
+    assert sorted(p.name for p in flat.glob("*.md")) == []
+
+
 def test_copy_tasks_to_worktree_no_tasks(
     orchestrator: FeatureOrchestrator,
     mock_worktree: Worktree,

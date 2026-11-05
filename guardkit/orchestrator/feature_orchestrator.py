@@ -1317,8 +1317,13 @@ class FeatureOrchestrator:
             for task_file in matching_files:
                 dst_file = dst_dir / task_file.name
 
-                # Skip if already exists (idempotency)
-                if dst_file.exists():
+                # Skip when the worktree already holds the file anywhere under
+                # tasks/, where TaskStateBridge's search finds it. The plan's
+                # task files are normally committed, so a flat copy beside them
+                # was a second, uncommitted set that the first turn's checkpoint
+                # committed and the reviewer blamed on the builder (FEAT-D8ED,
+                # FEAT-1D25, 4-5 November 2026).
+                if any((worktree.path / "tasks").rglob(task_file.name)):
                     logger.debug(
                         f"Skipping existing file in worktree: {task_file.name}"
                     )
