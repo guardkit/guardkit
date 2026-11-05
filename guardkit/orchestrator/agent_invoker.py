@@ -3128,7 +3128,8 @@ class AgentInvoker:
         The same two calls as a task's review, with its time and tool limits:
         the read-only look-up pass over the feature's whole change since
         ``base``, given the notes to check again, then the verdict call (asked
-        once more when unreadable). Returns what they reported again, or
+        once more when unreadable), skipped when every line of the look-up's
+        answer is already a finding or it wrote only NO FINDINGS. Returns what they reported again, or
         ``None`` when either gave no answer; raises when the verdict call
         failed. The caller keeps the notes as they are on ``None`` or an error.
         """
@@ -3159,6 +3160,9 @@ class AgentInvoker:
             )
             if found is None:
                 return None
+            answered = build_review.lookup_answer(found)
+            if answered is not None:
+                return answered  # every line already readable: no verdict call
             decision = await self._review_verdict(
                 self._build_coach_prompt(
                     feature_id, turn, build_review.last_look_requirements(feature_id), {},

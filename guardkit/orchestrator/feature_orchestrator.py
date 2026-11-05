@@ -4318,10 +4318,12 @@ The detailed specifications are in the task markdown file.
 
     def _last_look(self, feature: Feature, worktree: Worktree):
         """The last look at the build reviewer's notes, for
-        ``write_feature_notes``: the reviewer, with a task review's model and
-        time, over the feature's change since its starting commit."""
+        ``write_feature_notes``: the reviewer, with a task review's model, over
+        the feature's change since its starting commit, within
+        ``build_review.LAST_LOOK_TIMEOUT_SECONDS`` in all."""
 
         def look(notes):
+            from guardkit.orchestrator import build_review
             from guardkit.orchestrator.agent_invoker import AgentInvoker
             from guardkit.orchestrator.seam_checks import resolve_feature_base
 
@@ -4335,10 +4337,13 @@ The detailed specifications are in the task markdown file.
                 evidence_repos=getattr(self, "_evidence_repos_resolved", None),
                 emitter=self._emitter,
             )
-            return asyncio.run(invoker.invoke_last_look(
-                feature_id=feature.id,
-                base=resolve_feature_base(Path(worktree.path), feature.id),
-                notes=notes,
+            return asyncio.run(asyncio.wait_for(
+                invoker.invoke_last_look(
+                    feature_id=feature.id,
+                    base=resolve_feature_base(Path(worktree.path), feature.id),
+                    notes=notes,
+                ),
+                build_review.LAST_LOOK_TIMEOUT_SECONDS,
             ))
 
         return look

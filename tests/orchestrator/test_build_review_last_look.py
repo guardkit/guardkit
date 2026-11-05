@@ -109,7 +109,7 @@ def test_a_note_reported_again_stays_and_the_others_are_counted(tmp_path: Path) 
     _seed(tmp_path)
     look, calls = _reviewer(
         tmp_path,
-        "STUB src/b.ts:7: count() still returns a fixed answer\n",
+        "I checked the three notes.\nSTUB src/b.ts:7: count() still returns a fixed answer\n",
         [_verdict([{"pattern": "STUB", "severity": "major", "location": "src/b.ts:7",
                     "description": "count() still returns a fixed answer"}])],
     )
@@ -138,7 +138,7 @@ def test_a_finding_the_verdict_dropped_still_keeps_its_note(tmp_path: Path) -> N
     not take a true note off the card."""
     _seed(tmp_path)
     look, _calls = _reviewer(
-        tmp_path, "NOT_TESTED src/a.ts:20: still no test\n", [_verdict([])]
+        tmp_path, "Checked.\nNOT_TESTED src/a.ts:20: still no test\n", [_verdict([])]
     )
 
     path = build_review.write_feature_notes(FEATURE, TASKS, tmp_path, last_look=look)
@@ -150,15 +150,35 @@ def test_a_finding_the_verdict_dropped_still_keeps_its_note(tmp_path: Path) -> N
 
 def test_no_findings_means_every_note_no_longer_applies(tmp_path: Path) -> None:
     _seed(tmp_path)
-    look, _calls = _reviewer(tmp_path, "NO FINDINGS", [_verdict([])])
+    look, calls = _reviewer(tmp_path, "NO FINDINGS", [])
 
     record = json.loads(
         build_review.write_feature_notes(FEATURE, TASKS, tmp_path, last_look=look).read_text()
     )
 
+    assert len(calls) == 1  # the look-up already answered: no verdict call
     assert record["notes"] == []
     assert record["total"] == 0
     assert record["rechecked"] == {"still_true": 0, "no_longer_apply": 3}
+
+
+def test_a_lookup_of_only_findings_needs_no_verdict_call(tmp_path: Path) -> None:
+    """b1's suggestion: one model call when the look-up already answers."""
+    _seed(tmp_path)
+    look, calls = _reviewer(
+        tmp_path,
+        "- STUB src/b.ts:7: count() still returns a fixed answer\n\n"
+        "OUTSIDE_TASK scripts/check.sh:9: lint still never runs\n",
+        [],
+    )
+
+    record = json.loads(
+        build_review.write_feature_notes(FEATURE, TASKS, tmp_path, last_look=look).read_text()
+    )
+
+    assert [bool(c.get("synthesis")) for c in calls] == [False]
+    assert [n["pattern"] for n in record["notes"]] == ["STUB", "OUTSIDE_TASK"]
+    assert record["rechecked"] == {"still_true": 2, "no_longer_apply": 1}
 
 
 @pytest.mark.parametrize(
@@ -166,9 +186,10 @@ def test_no_findings_means_every_note_no_longer_applies(tmp_path: Path) -> None:
     [
         pytest.param("", [], 1, id="empty-lookup"),
         pytest.param(RuntimeError("model unreachable"), [], 1, id="lookup-fails"),
-        pytest.param("STUB src/b.ts:7: x", [SDKTimeoutError("timed out")], 2,
+        pytest.param("Checked.\nSTUB src/b.ts:7: x", [SDKTimeoutError("timed out")], 2,
                      id="verdict-times-out"),
-        pytest.param("STUB src/b.ts:7: x", [None, None], 3, id="verdict-unreadable-twice"),
+        pytest.param("Checked.\nSTUB src/b.ts:7: x", [None, None], 3,
+                     id="verdict-unreadable-twice"),
         pytest.param("The notes look fine to me.", [_verdict([])], 2,
                      id="neither-findings-nor-no-findings"),
     ],
@@ -253,6 +274,36 @@ def test_the_feature_hands_the_reviewer_its_starting_commit(
     assert seen["base"] == "c0ffee" * 6
     assert seen["notes"] == notes
     assert seen["invoker"].worktree_path == tmp_path
+
+
+def test_a_last_look_past_its_time_leaves_the_notes_byte_identical(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The whole last look has one fixed time limit; past it the notes stay."""
+    from types import SimpleNamespace
+
+    from guardkit.orchestrator.feature_orchestrator import FeatureOrchestrator
+
+    _seed(tmp_path)
+    today = _today(tmp_path)
+
+    async def _slow(self, **kwargs):
+        await asyncio.sleep(5)
+        return []
+
+    monkeypatch.setattr(AgentInvoker, "invoke_last_look", _slow)
+    monkeypatch.setattr(build_review, "LAST_LOOK_TIMEOUT_SECONDS", 0.05)
+    orchestrator = FeatureOrchestrator.__new__(FeatureOrchestrator)
+    orchestrator.sdk_timeout = None
+    orchestrator.timeout_multiplier = 1.0
+    orchestrator.model = "m"
+    orchestrator.coach_model = "c"
+    orchestrator._emitter = None
+    look = orchestrator._last_look(SimpleNamespace(id=FEATURE), SimpleNamespace(path=tmp_path))
+
+    path = build_review.write_feature_notes(FEATURE, TASKS, tmp_path, last_look=look)
+
+    assert path.read_bytes() == today
 
 
 def test_the_task_lookup_prompt_is_unchanged() -> None:

@@ -95,6 +95,11 @@ MERGE_CHECK_RULE = (
     "is not missing, though an error you can see in the code still is."
 )
 
+#: The whole last look's time, fixed: with a task review's limits its two
+#: calls and the verdict's retry could add over an hour to a feature. When it
+#: runs out the notes stay as they were.
+LAST_LOOK_TIMEOUT_SECONDS = 1200
+
 #: The look-up pass's instruction for findings it is asked to check again.
 RECHECK_SENTENCE = (
     "Check each of these first. Report again any that is not fixed, with its place "
@@ -768,6 +773,18 @@ def lookup_findings(text: Optional[str]) -> List[Dict[str, Any]]:
     return found
 
 
+def lookup_answer(text: Optional[str]) -> Optional[List[Dict[str, Any]]]:
+    """The look-up pass's findings when its answer needs no verdict call: every
+    line it wrote is a ``PATTERN path:line: sentence`` finding, or it wrote only
+    NO FINDINGS (``[]``). ``None`` when anything else is there, which the
+    verdict call then reads (b1's suggestion, 3 November 2026)."""
+    lines = [line for line in (text or "").splitlines() if line.strip()]
+    if [line.strip().upper().rstrip(".") for line in lines] == ["NO FINDINGS"]:
+        return []
+    found = lookup_findings(text)
+    return found if lines and len(found) == len(lines) else None
+
+
 def repair_issues(findings: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """The located findings as the builder's next-turn feedback issues."""
     issues = []
@@ -960,6 +977,7 @@ __all__ = [
     "diff_path",
     "is_located",
     "last_look_requirements",
+    "lookup_answer",
     "latest_review",
     "leftovers",
     "located_findings",
