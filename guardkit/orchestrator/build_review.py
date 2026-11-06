@@ -98,8 +98,9 @@ MERGE_CHECK_RULE = (
 
 #: The whole last look's time, fixed: with a task review's limits its two
 #: calls and the verdict's retry could add over an hour to a feature. When it
-#: runs out the notes stay as they were.
-LAST_LOOK_TIMEOUT_SECONDS = 1200
+#: runs out the notes stay as they were. 1800 s since 6 November 2026: the
+#: look-up's 900 s plus the half again its answer gets (08e6eead) must fit.
+LAST_LOOK_TIMEOUT_SECONDS = 1800
 
 #: The last look's look-up pass gets most of that time: its answer usually
 #: needs no verdict call. Out of a task review's slice (40% of its limit),
