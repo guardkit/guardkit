@@ -1001,6 +1001,15 @@ SDK_MAX_TURNS_FLOOR = 150
 _COACH_GATHER_BUDGET_FRACTION = 0.4
 _COACH_GATHER_BUDGET_MIN_S = 60
 
+# 5 November 2026: tool use in the look-up pass ends before its time is up
+# (guardkitfactory keeps a quarter of it, at most five minutes, for the answer
+# from what was read), but under shared load that answer alone took 507 s and
+# the pass was abandoned with everything it had found (15 live reviews from
+# 29 Oct to 1 Nov, a third of experiment 3's replays). The answer may run on
+# for this fraction of the pass's time again; the looking itself is not
+# lengthened.
+_COACH_GATHER_ANSWER_GRACE_FRACTION = 0.5
+
 # TASK-PERF-COACHSYNTH: each look-up tool result is cut at this many
 # characters (with a visible marker), so a single read of a large file cannot
 # fill the model's window; the reviewer pages with offset and limit. Its
@@ -3318,6 +3327,7 @@ class AgentInvoker:
                 return_events=True,
                 synthesis=False,
                 max_tool_result_chars=_COACH_GATHER_MAX_TOOL_RESULT_CHARS,
+                answer_grace_seconds=int(gather_timeout * _COACH_GATHER_ANSWER_GRACE_FRACTION),
             )
             if result_tuple is None:
                 return None
@@ -4800,6 +4810,7 @@ The builder's concerns, what it says remains, and the files git saw it create an
         event_agent_name: Optional[str] = None,
         tool_counter: Optional[ToolCallCounter] = None,
         shell_role: Optional[str] = None,
+        answer_grace_seconds: int = 0,
     ) -> Optional[Tuple[None, List[HarnessEvent]]]:
         """Low-level SDK invocation with role-based permissions.
 
@@ -4884,6 +4895,12 @@ The builder's concerns, what it says remains, and the files git saw it create an
                 ``"specialist"`` so a specialist running with the Player's or
                 the Coach's permissions gets the specialists' own home and
                 temporary folders. ``None`` (the default) changes nothing.
+            answer_grace_seconds: 5 November 2026. Seconds the invocation may
+                run past ``sdk_timeout_seconds`` before it is abandoned. The
+                harness is still given ``sdk_timeout_seconds``, so tool use
+                ends at the same point; only the answer written after it gets
+                the extra time (the review's look-up pass). ``0`` (the
+                default) changes nothing.
 
         Returns:
             ``None`` by default. ``(None, harness_events)`` when
@@ -5141,7 +5158,9 @@ The builder's concerns, what it says remains, and the files git saw it create an
                 # TASK-INST-005b: Wrap harness call with latency measurement.
                 with measure_latency() as latency:
                     try:
-                        async with asyncio.timeout(self.sdk_timeout_seconds):
+                        async with asyncio.timeout(
+                            self.sdk_timeout_seconds + answer_grace_seconds
+                        ):
                             phase_label = (
                                 heartbeat_label_override
                                 or f"{agent_type.capitalize()} invocation"
@@ -5389,7 +5408,8 @@ The builder's concerns, what it says remains, and the files git saw it create an
 
         except asyncio.TimeoutError:
             raise SDKTimeoutError(
-                f"Agent invocation exceeded {self.sdk_timeout_seconds}s timeout"
+                f"Agent invocation exceeded "
+                f"{self.sdk_timeout_seconds + answer_grace_seconds}s timeout"
             )
         except AgentInvocationError:
             # TASK-FIX-7A03: Already-structured AgentInvocationError must
