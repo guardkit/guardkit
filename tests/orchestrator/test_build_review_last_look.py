@@ -377,8 +377,8 @@ def test_the_lookup_gets_its_own_time(tmp_path: Path) -> None:
 
 def test_the_task_lookup_prompt_is_unchanged() -> None:
     """The last look must not change what the per-task review is asked: its
-    look-up prompt is pinned to the text before the last look was added (and
-    says nothing yet about what runs at merge; b1's experiment decides that)."""
+    look-up prompt is pinned. Since 6 November 2026 it says what runs at merge
+    (b1's stage-checks experiment, which decided it); nothing else changed."""
     prompts = []
     for change in (
         build_review.ReviewChange("diff --git a/x b/x\n+1\n", Path("/r/review.diff"), "a" * 40),
@@ -395,7 +395,7 @@ def test_the_task_lookup_prompt_is_unchanged() -> None:
         ))
 
     assert [hashlib.sha256(p.encode()).hexdigest() for p in prompts] == [
-        "4bd64000ee0a0628f88ff9d7cd3a2a12ffc2fa32f8ccd0a3d4c821e7c43068bb",
-        "2a1a5d53de4c5baa4b6c03186b53165bee0962c1a0106e63273611ca084263c9",
+        "16be44de1a06d3e417d7d509bf712a488ba4bd8bfec495fac24f8b8ebb3eaafc",
+        "26d86605218cd9b5e4ea7ef270139bdc40a9a0b1a60a5c82d3ce5bdb0cc655f6",
     ]
-    assert all(build_review.MERGE_CHECK_RULE not in p for p in prompts)
+    assert all(build_review.MERGE_CHECK_RULE in p for p in prompts)

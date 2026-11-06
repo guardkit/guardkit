@@ -86,8 +86,9 @@ NOTES_RELATIVE_PATH = Path(".guardkit") / "autobuild-private" / "build_review_no
 #: How many notes the last look found no longer apply, and how many stay.
 RECHECKED_KEY = "rechecked"
 
-#: What runs at merge. Only the last look says it for now; the per-task review
-#: may use it later (b1's stage-checks experiment, 3 November 2026).
+#: What runs at merge. The last look says it, and since 6 November 2026 so
+#: does the per-task review's look-up (b1's stage-checks experiment: good turns
+#: wrongly sent back fell from 11 of 12 to 6 of 12, with the same catches).
 MERGE_CHECK_RULE = (
     "The project's full check (every part, and the root's own lint, format and "
     "type checks) runs once before the feature merges, not after each task, and "
@@ -586,8 +587,9 @@ Turn: {turn}
 
 ## The project's check
 
-The project's own check has already run on this turn's code; its result is below. Where its output \
-says "no parts yet", or it ran no test, the check tested nothing.
+After each task the factory runs the declared tests of the parts this task changed; their result \
+is below. Where its output says "no parts yet", or it ran no test, nothing was tested. \
+{MERGE_CHECK_RULE}
 
 {check_section or "No check result was recorded for this turn."}
 
