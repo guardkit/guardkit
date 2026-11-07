@@ -4410,9 +4410,9 @@ The detailed specifications are in the task markdown file.
         # What each task's final review left (the build reviewer design of 29
         # October 2026), at most ten, beside it for the merge card. When every
         # task completed, one last look checks them against the finished code
-        # first (Rich, 3 November 2026, decision 5), once its replay passes
-        # (build_review.LAST_LOOK_IN_BUILDS). Never raises, and a build is
-        # never failed by it.
+        # first (Rich, 3 November 2026, decision 5; on since its replay kept
+        # every true note, build_review.LAST_LOOK_IN_BUILDS). Never raises, and
+        # a build is never failed by it.
         from guardkit.orchestrator.build_review import LAST_LOOK_IN_BUILDS, write_feature_notes
 
         write_feature_notes(
