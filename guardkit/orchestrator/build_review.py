@@ -738,7 +738,11 @@ Plain text, one line for every note, starting with its number, in one of two for
 
 A note is still true while the fault it describes is still in the code, whatever kind you would \
 give it now. It no longer applies when you found the code that settles it, or when it only says a \
-check never ran. When you cannot tell, answer STILL TRUE: a note kept by mistake costs the person \
+check never ran. A CRITERION_CONFLICT note says two instructions disagree (a criterion, the task's \
+notes, a design record, the stack); it stays true while both still say what they said, however \
+sensibly the builder chose between them, because only the person approving can accept that choice. \
+It no longer applies when one of them now says something else, or a later change lets both be \
+followed. When you cannot tell, answer STILL TRUE: a note kept by mistake costs the person \
 approving a minute, a fault dropped by mistake reaches the merge.
 """
 
