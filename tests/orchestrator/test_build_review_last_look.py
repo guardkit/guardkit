@@ -4,10 +4,12 @@
 TypeScript C (FEAT-8AB6) did finished, correct work and was declined at merge
 over four notes written before later tasks changed the code: one untrue, one
 settled by a later task's full check, two minor. Now, when every task
-completed and a note exists, the same look-up pass and verdict review the
-feature's whole change once, given the notes to check again. A note reported
-again stays on the card; the others are only counted. Any failure leaves the
-notes file exactly as before.
+completed and a note exists, a task review's look-up pass reads the
+feature's change once and answers each numbered note STILL TRUE or NO LONGER
+APPLIES (since 7 November 2026; before, it wrote findings that were matched
+back to the notes). A note answered NO LONGER APPLIES leaves the card and is
+counted; every other note stays. Any failure leaves the notes file exactly as
+before.
 
 Async calls use ``asyncio.run`` to stay free of a pytest-asyncio dependency.
 """
@@ -25,7 +27,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from guardkit.orchestrator import build_review
-from guardkit.orchestrator.agent_invoker import AgentInvoker, SDKTimeoutError
+from guardkit.orchestrator.agent_invoker import AgentInvoker
 from guardkit.orchestrator.harness import AssistantMessageEvent, ResultMessageEvent
 from guardkit.orchestrator.paths import TaskArtifactPaths
 
@@ -61,16 +63,9 @@ def _events(text: Optional[str]):
     return (None, [AssistantMessageEvent(text=text), ResultMessageEvent(session_id=None)])
 
 
-def _verdict(issues: List[Dict[str, str]]) -> str:
-    body = {"task_id": FEATURE, "turn": 1, "decision": "feedback", "issues": issues,
-            "rationale": "checked again"}
-    return f"```json\n{json.dumps(body)}\n```"
-
-
-def _reviewer(root: Path, lookup: Any, verdicts: List[Any]):
+def _reviewer(root: Path, lookup: Any):
     """A real AgentInvoker whose model calls are faked: ``lookup`` answers the
-    look-up pass, ``verdicts`` the verdict calls in turn (an exception is
-    raised)."""
+    look-up pass (an exception is raised)."""
     invoker = AgentInvoker.__new__(AgentInvoker)
     invoker.worktree_path = root
     invoker.sdk_timeout_seconds = 600
@@ -79,10 +74,9 @@ def _reviewer(root: Path, lookup: Any, verdicts: List[Any]):
 
     async def _iwr(**kwargs):
         calls.append(kwargs)
-        answer = verdicts.pop(0) if kwargs.get("synthesis") else lookup
-        if isinstance(answer, BaseException):
-            raise answer
-        return _events(answer)
+        if isinstance(lookup, BaseException):
+            raise lookup
+        return _events(lookup)
 
     invoker._invoke_with_role = _iwr  # type: ignore[method-assign]
 
@@ -105,13 +99,14 @@ def _default_contract(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("GUARDKIT_COACH_CONTRACT", raising=False)
 
 
-def test_a_note_reported_again_stays_and_the_others_are_counted(tmp_path: Path) -> None:
+def test_each_note_is_answered_by_its_number(tmp_path: Path) -> None:
     _seed(tmp_path)
     look, calls = _reviewer(
         tmp_path,
-        "I checked the three notes.\nSTUB src/b.ts:7: count() still returns a fixed answer\n",
-        [_verdict([{"pattern": "STUB", "severity": "major", "location": "src/b.ts:7",
-                    "description": "count() still returns a fixed answer"}])],
+        "I checked the three notes.\n"
+        "1 NO LONGER APPLIES: TASK-LL1-003 added the empty-list test\n"
+        "2 STILL TRUE src/b.ts:7: count() still returns a fixed answer\n"
+        "3 NO LONGER APPLIES: only says lint never ran\n",
     )
 
     path = build_review.write_feature_notes(FEATURE, TASKS, tmp_path, last_look=look)
@@ -120,96 +115,80 @@ def test_a_note_reported_again_stays_and_the_others_are_counted(tmp_path: Path) 
     assert record["notes"] == [{"task_id": "TASK-LL1-001", **NOTES["TASK-LL1-001"][1]}]
     assert record["total"] == 1
     assert record["rechecked"] == {"still_true": 1, "no_longer_apply": 2}
-    # One look-up pass (read-only tools) and one verdict call, no more.
-    assert [bool(c.get("synthesis")) for c in calls] == [False, True]
+    # One look-up pass with read-only tools, and no verdict call.
+    assert len(calls) == 1 and not calls[0].get("synthesis")
     assert calls[0]["allowed_tools"] == list(build_review.LOOKUP_TOOLS)
-    assert calls[1]["allowed_tools"] == []
     lookup_prompt = calls[0]["prompt"]
-    assert build_review.RECHECK_SENTENCE in lookup_prompt
     assert build_review.MERGE_CHECK_RULE in lookup_prompt
-    for left in NOTES.values():
-        for note in left:
-            assert f"{note['pattern']} {note['location']}: {note['description']}" in lookup_prompt
-    assert build_review.MERGE_CHECK_RULE in calls[1]["prompt"]
+    numbered = [note for left in NOTES.values() for note in left]
+    for n, note in enumerate(numbered, 1):
+        assert f"{n}. {note['pattern']} {note['location']}: {note['description']}" in lookup_prompt
 
 
-def test_a_finding_the_verdict_dropped_still_keeps_its_note(tmp_path: Path) -> None:
-    """The look-up pass's own lines count too: a verdict that loses one must
-    not take a true note off the card."""
+def test_a_note_left_unanswered_stays(tmp_path: Path) -> None:
+    """Only a note answered NO LONGER APPLIES leaves the card: the replay of
+    5 November 2026 lost 26 of 120 true notes to the old matching."""
     _seed(tmp_path)
-    look, _calls = _reviewer(
-        tmp_path, "Checked.\nNOT_TESTED src/a.ts:20: still no test\n", [_verdict([])]
-    )
-
-    path = build_review.write_feature_notes(FEATURE, TASKS, tmp_path, last_look=look)
-
-    record = json.loads(path.read_text())
-    assert [n["pattern"] for n in record["notes"]] == ["NOT_TESTED"]
-    assert record["rechecked"] == {"still_true": 1, "no_longer_apply": 2}
-
-
-def test_no_findings_means_every_note_no_longer_applies(tmp_path: Path) -> None:
-    _seed(tmp_path)
-    look, calls = _reviewer(tmp_path, "NO FINDINGS", [])
+    look, _calls = _reviewer(tmp_path, "3 NO LONGER APPLIES: lint runs at merge\n")
 
     record = json.loads(
         build_review.write_feature_notes(FEATURE, TASKS, tmp_path, last_look=look).read_text()
     )
 
-    assert len(calls) == 1  # the look-up already answered: no verdict call
+    assert [n["pattern"] for n in record["notes"]] == ["NOT_TESTED", "STUB"]
+    assert record["rechecked"] == {"still_true": 2, "no_longer_apply": 1}
+
+
+def test_every_note_answered_no_longer_applies_empties_the_card(tmp_path: Path) -> None:
+    _seed(tmp_path)
+    look, _calls = _reviewer(
+        tmp_path,
+        "- **1** NO LONGER APPLIES: fixed\n2. no longer applies: fixed\n"
+        "**Note 3** — NO LONGER APPLIES: runs at merge\n",
+    )
+
+    record = json.loads(
+        build_review.write_feature_notes(FEATURE, TASKS, tmp_path, last_look=look).read_text()
+    )
+
     assert record["notes"] == []
     assert record["total"] == 0
     assert record["rechecked"] == {"still_true": 0, "no_longer_apply": 3}
 
 
-def test_a_lookup_of_only_findings_needs_no_verdict_call(tmp_path: Path) -> None:
-    """b1's suggestion: one model call when the look-up already answers."""
-    _seed(tmp_path)
-    look, calls = _reviewer(
-        tmp_path,
-        "- STUB src/b.ts:7: count() still returns a fixed answer\n\n"
-        "OUTSIDE_TASK scripts/check.sh:9: lint still never runs\n",
-        [],
+def test_a_note_answered_both_ways_stays() -> None:
+    answers = build_review.last_look_answers(
+        "2 NO LONGER APPLIES: fixed\n2 STILL TRUE src/b.ts:7: on second look, not\n"
+        "9 NO LONGER APPLIES: no such note\n",
+        3,
     )
 
-    record = json.loads(
-        build_review.write_feature_notes(FEATURE, TASKS, tmp_path, last_look=look).read_text()
-    )
-
-    assert [bool(c.get("synthesis")) for c in calls] == [False]
-    assert [n["pattern"] for n in record["notes"]] == ["STUB", "OUTSIDE_TASK"]
-    assert record["rechecked"] == {"still_true": 2, "no_longer_apply": 1}
+    assert answers == {2: True}
 
 
 @pytest.mark.parametrize(
-    "lookup, verdicts, expected_calls",
+    "lookup",
     [
-        pytest.param("", [], 1, id="empty-lookup"),
-        pytest.param(RuntimeError("model unreachable"), [], 1, id="lookup-fails"),
-        pytest.param("Checked.\nSTUB src/b.ts:7: x", [SDKTimeoutError("timed out")], 2,
-                     id="verdict-times-out"),
-        pytest.param("Checked.\nSTUB src/b.ts:7: x", [None, None], 3,
-                     id="verdict-unreadable-twice"),
-        pytest.param("The notes look fine to me.", [_verdict([])], 2,
-                     id="neither-findings-nor-no-findings"),
+        pytest.param("", id="empty-lookup"),
+        pytest.param(None, id="no-text"),
+        pytest.param(RuntimeError("model unreachable"), id="lookup-fails"),
+        pytest.param("NO FINDINGS", id="old-form-answer"),
+        pytest.param("STUB src/b.ts:7: still a fixed answer", id="findings-not-numbers"),
+        pytest.param("The notes look fine to me.", id="no-note-answered"),
     ],
 )
-def test_a_reviewer_that_gives_no_answer_leaves_the_notes_byte_identical(
-    tmp_path: Path,
-    caplog: pytest.LogCaptureFixture,
-    lookup: Any,
-    verdicts: List[Any],
-    expected_calls: int,
+def test_a_reviewer_that_answers_no_note_leaves_the_notes_byte_identical(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture, lookup: Any
 ) -> None:
     _seed(tmp_path)
     today = _today(tmp_path)
-    look, calls = _reviewer(tmp_path, lookup, verdicts)
+    look, calls = _reviewer(tmp_path, lookup)
 
     with caplog.at_level(logging.WARNING, logger=build_review.logger.name):
         path = build_review.write_feature_notes(FEATURE, TASKS, tmp_path, last_look=look)
 
     assert path.read_bytes() == today
-    assert len(calls) == expected_calls
+    assert len(calls) == 1
     assert len([r for r in caplog.records if r.name == build_review.logger.name]) == 1
 
 
@@ -327,40 +306,10 @@ def test_the_lookup_is_shown_the_change_to_the_files_the_notes_name() -> None:
     assert "Only the parts" not in prompt
 
 
-@pytest.mark.parametrize("spelt", ["src/b.ts:7", "./src/b.ts:7", "/work/repo/src/b.ts:7"])
-def test_a_note_reported_again_however_its_path_is_spelt_stays(
-    tmp_path: Path, spelt: str
-) -> None:
-    _seed(tmp_path)
-    look, _calls = _reviewer(tmp_path, f"STUB {spelt}: still a fixed answer\n", [])
-
-    record = json.loads(
-        build_review.write_feature_notes(FEATURE, TASKS, tmp_path, last_look=look).read_text()
-    )
-
-    assert [n["pattern"] for n in record["notes"]] == ["STUB"]
-
-
-def test_a_note_found_again_under_another_kind_stays(tmp_path: Path) -> None:
-    """FEAT-689D's replay, 5 November 2026: the look-up called the still-true
-    NOT_TESTED and CALLERS_NOT_UPDATED notes NOT_IMPLEMENTED at their files."""
-    _seed(tmp_path)
-    look, _calls = _reviewer(
-        tmp_path, "NOT_IMPLEMENTED src/a.ts:15: still no test for the empty input\n", []
-    )
-
-    record = json.loads(
-        build_review.write_feature_notes(FEATURE, TASKS, tmp_path, last_look=look).read_text()
-    )
-
-    assert [n["pattern"] for n in record["notes"]] == ["NOT_TESTED"]
-    assert record["rechecked"] == {"still_true": 1, "no_longer_apply": 2}
-
-
 def test_the_lookup_gets_its_own_time(tmp_path: Path) -> None:
     """Most of the last look's time, not a task review's 40% slice."""
     _seed(tmp_path)
-    look, _calls = _reviewer(tmp_path, "NO FINDINGS", [])
+    look, _calls = _reviewer(tmp_path, "1 STILL TRUE src/a.ts:14: still untested")
     seen: List[int] = []
     original = AgentInvoker._invoke_coach_gather
 

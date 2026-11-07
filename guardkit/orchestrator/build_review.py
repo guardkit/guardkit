@@ -686,9 +686,14 @@ def notes_change(change: ReviewChange, notes: Sequence[Dict[str, Any]]) -> Revie
 def build_last_look_prompt(
     feature_id: str, notes: Sequence[Dict[str, Any]], change: ReviewChange
 ) -> str:
-    """The last look's look-up prompt: the build reviewer's notes, checked
-    again against the finished feature's change to the files they name."""
-    listed = "\n".join(_finding_line(note) for note in notes)
+    """The last look's look-up prompt: the build reviewer's notes, numbered,
+    each answered against the finished feature's change to the files they
+    name. Since 7 November 2026 it answers each note by its number instead of
+    writing findings that were matched back to the notes: that matching lost
+    26 of 120 true notes in the replay of 5 November."""
+    listed = "\n".join(
+        f"{n}. {_finding_line(note).removeprefix('- ')}" for n, note in enumerate(notes, 1)
+    )
     focused = notes_change(change, notes)
     only = (
         "\n\nOnly the parts for the files the notes name are shown; the whole change is "
@@ -711,8 +716,6 @@ Feature: {feature_id}
 
 ## The notes to check
 
-{RECHECK_SENTENCE}
-
 {listed}
 
 Check only these notes: a new problem none of them names is not for this look.
@@ -728,23 +731,37 @@ what you have found.
 
 ## Your answer
 
-Plain text, one line for each note that is still true, with its place in the code now:
+Plain text, one line for every note, starting with its number, in one of two forms:
 
-PATTERN path/to/file:line: what is still wrong.
+1 STILL TRUE path/to/file:line: what is still wrong
+2 NO LONGER APPLIES: what settles it (the change that fixed it, or why it was never true)
 
-When no note is still true, write NO FINDINGS. Do not write a JSON verdict: a second step writes it \
-from your lines.
+A note is still true while the fault it describes is still in the code, whatever kind you would \
+give it now. It no longer applies when you found the code that settles it, or when it only says a \
+check never ran. When you cannot tell, answer STILL TRUE: a note kept by mistake costs the person \
+approving a minute, a fault dropped by mistake reaches the merge.
 """
 
 
-def last_look_requirements(feature_id: str) -> str:
-    """What the last look's verdict call is told in place of a task."""
-    return (
-        f"This is one last look at the finished feature {feature_id} before it is offered "
-        "for merge, not a builder turn. The look-up pass checked the build reviewer's "
-        "earlier notes against the finished code and reported again only the ones still "
-        f"true. Turn each of those into one finding; add none. {MERGE_CHECK_RULE}"
-    )
+#: One answer of the last look: a note's number, then STILL TRUE or NO
+#: LONGER APPLIES, allowing list marks, bold and dashes around them.
+_LAST_LOOK_ANSWER = re.compile(
+    r"^[\s*>#-]*(?:note\s*)?(\d+)[\s*_.):\u2013\u2014-]*(STILL\s+TRUE|NO\s+LONGER\s+APPLIES)\b",
+    re.I | re.M,
+)
+
+
+def last_look_answers(text: Optional[str], count: int) -> Optional[Dict[int, bool]]:
+    """Each answered note's number (1 to ``count``) and whether it is still
+    true. A note answered both ways is still true. ``None`` when no note was
+    answered by its number."""
+    answers: Dict[int, bool] = {}
+    for match in _LAST_LOOK_ANSWER.finditer(text or ""):
+        number = int(match.group(1))
+        if 1 <= number <= count:
+            still = match.group(2).upper().startswith("STILL")
+            answers[number] = answers.get(number, False) or still
+    return answers or None
 
 
 # ---------------------------------------------------------------------------
@@ -939,39 +956,25 @@ def _same_file(a: str, b: str) -> bool:
     return bool(a and b) and (a == b or a.endswith("/" + b) or b.endswith("/" + a))
 
 
-def _reported_again(note: Dict[str, str], found: Sequence[Any]) -> bool:
-    """A finding at the note's file, of any kind (of the note's kind when the
-    note has no place). The look-up names the same fault with another kind:
-    in the replay of 5 November 2026, 20 of the 26 true notes it dropped had
-    been found again at their own file, mostly as NOT_IMPLEMENTED."""
-    for issue in map(_normalised, found):
-        if not isinstance(issue, dict):
-            continue
-        if not _file_of(note.get("location")):
-            if _pattern_of(issue) == _pattern_of(note):
-                return True
-        elif _same_file(_file_of(issue.get("location")), _file_of(note.get("location"))):
-            return True
-    return False
-
-
 def _last_look(
     notes: List[Dict[str, str]], last_look: Callable[[List[Dict[str, str]]], Any]
 ) -> Optional[List[Dict[str, str]]]:
-    """The notes the last look reported again, or ``None`` when it gave no
-    answer (the notes then stay as they are). Never raises."""
-    why = "it gave no answer"
+    """The notes the last look did not answer NO LONGER APPLIES (a note it
+    left unanswered stays), or ``None`` when it answered no note by its
+    number (the notes then stay as they are). Never raises."""
+    why = "it answered no note by its number"
     try:
         found = last_look(notes)
+        answers = last_look_answers(found, len(notes)) if isinstance(found, str) else None
     except Exception as exc:  # noqa: BLE001 — advice only
-        found, why = None, f"{type(exc).__name__}: {exc}"
-    if found is None:
+        answers, why = None, f"{type(exc).__name__}: {exc}"
+    if answers is None:
         logger.warning(
             "The last look at the build reviewer's notes did not finish (%s); the "
             "notes are left as they were.", why,
         )
         return None
-    return [note for note in notes if _reported_again(note, list(found))]
+    return [note for n, note in enumerate(notes, 1) if answers.get(n, True)]
 
 
 def write_feature_notes(
@@ -987,9 +990,10 @@ def write_feature_notes(
     merge card.
 
     ``last_look`` (when every task completed) is given the notes and returns
-    the findings of one last review of the finished feature, or ``None``.
-    Notes it reports again stay; the others leave the card and are counted
-    under ``rechecked``. With no notes it is not called.
+    the answer of one last look at the finished feature, a line per numbered
+    note, or ``None``. Notes it answers NO LONGER APPLIES leave the card and
+    are counted under ``rechecked``; the others stay. With no notes it is not
+    called.
     """
     try:
         from guardkit.orchestrator.paths import TaskArtifactPaths
@@ -1051,7 +1055,7 @@ __all__ = [
     "change_since",
     "diff_path",
     "is_located",
-    "last_look_requirements",
+    "last_look_answers",
     "lookup_answer",
     "notes_change",
     "latest_review",

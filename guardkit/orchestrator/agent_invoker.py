@@ -3130,21 +3130,20 @@ class AgentInvoker:
         feature_id: str,
         base: Optional[str],
         notes: Sequence[Dict[str, Any]],
-    ) -> Optional[List[Dict[str, Any]]]:
+    ) -> Optional[str]:
         """One last look at the build reviewer's notes over the finished
         feature (Rich, 3 November 2026, decision 5).
 
-        The same two calls as a task's review, with its tool limits: the
-        read-only look-up pass (``build_review.LAST_LOOK_LOOKUP_SECONDS``)
-        over the feature's change since ``base`` to the files the notes name,
-        given the notes to check again, then the verdict call (asked
-        once more when unreadable), skipped when every line of the look-up's
-        answer is already a finding or it wrote only NO FINDINGS. Returns what they reported again, or
-        ``None`` when either gave no answer; raises when the verdict call
-        failed. The caller keeps the notes as they are on ``None`` or an error.
+        A task review's read-only look-up pass, with its tool limits
+        (``build_review.LAST_LOOK_LOOKUP_SECONDS``), over the feature's
+        change since ``base`` to the files the notes name, answering each
+        numbered note. Returns its answer, or ``None`` when it gave none.
+        Since 7 November 2026 there is no verdict call: the answer names each
+        note by its number, so nothing has to be turned into findings and
+        matched back. The caller keeps the notes as they are on ``None``, on
+        an answer that names no note, or on an error.
         """
         from guardkit.orchestrator import build_review
-        from guardkit.orchestrator.paths import TaskArtifactPaths
 
         turn = 1
         effective_timeout = self._calculate_sdk_timeout(feature_id)
@@ -3162,30 +3161,7 @@ class AgentInvoker:
                 gather_timeout=build_review.LAST_LOOK_LOOKUP_SECONDS,
                 prompt=build_review.build_last_look_prompt(feature_id, notes, change),
             )
-            if found is None:
-                return None
-            answered = build_review.lookup_answer(found)
-            if answered is not None:
-                return answered  # every line already readable: no verdict call
-            decision = await self._review_verdict(
-                self._build_coach_prompt(
-                    feature_id, turn, build_review.last_look_requirements(feature_id), {},
-                    gather_findings=found,
-                ),
-                feature_id,
-                turn,
-                TaskArtifactPaths.private_artifact_path(
-                    feature_id, "last_look_verdict.json", self.worktree_path
-                ),
-            )
-            issues = decision.get("issues") if isinstance(decision, dict) else None
-            reported = [
-                *(issues if isinstance(issues, list) else []),
-                *build_review.lookup_findings(found),
-            ]
-            if not reported and "NO FINDINGS" not in found.upper():
-                return None  # neither a finding nor "no findings": no answer
-            return reported
+            return found or None
         finally:
             self.sdk_timeout_seconds = original_timeout
 
