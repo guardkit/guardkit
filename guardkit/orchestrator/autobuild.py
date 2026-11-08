@@ -2924,6 +2924,17 @@ class AutoBuildOrchestrator:
                     return turn_history, "cancelled"
 
                 if turn_record.decision == "error":
+                    if self._another_turn_after_timeout(turn_record, loop_start):
+                        # Build FEAT-E673 (7 November 2026): task 005's first
+                        # attempt ran out of its 4,320 s under shared load with
+                        # 10,076 s of its task budget and four turns left, and
+                        # the task ended here with its next-turn advice unread.
+                        logger.info(
+                            f"[{task_id}] Turn {turn} ran out of time with nothing to recover; "
+                            "the task's budget is not spent, so the next turn starts from its advice."
+                        )
+                        previous_feedback = turn_record.feedback
+                        continue
                     logger.error(f"Critical error on turn {turn}")
                     return turn_history, "error"
 
@@ -6359,6 +6370,22 @@ class AutoBuildOrchestrator:
                 return ""
             issue = player_timed_out_issue(task_id, turn, details)
         return self._extract_feedback({"issues": [issue]})
+
+    def _another_turn_after_timeout(self, turn_record: "TurnRecord", loop_start: float) -> bool:
+        """Whether an error turn was only a coder attempt that ran out of time
+        while the task's own budget still holds another attempt as long.
+
+        Such a turn gets another try from its advice rather than ending the
+        task. An unrecoverable failure, a task with no budget, or a budget
+        with less left than one attempt's limit ends as before.
+        """
+        result = turn_record.player_result
+        if result is None or not _player_result_timeout(result) or not self._task_timeout:
+            return False
+        if (getattr(result, "report", None) or {}).get("unrecoverable"):
+            return False
+        attempt = _applied_sdk_timeout_seconds(getattr(result, "error", None)) or self.sdk_timeout
+        return self._task_timeout - (time.monotonic() - loop_start) >= attempt
 
     def _feedback_after_turn_without_work(
         self,
