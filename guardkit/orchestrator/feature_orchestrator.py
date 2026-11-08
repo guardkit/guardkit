@@ -31,7 +31,7 @@ import resource
 import shutil
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Set, Tuple
@@ -163,6 +163,15 @@ def _path_as_told_from(path: Path, root: Path) -> str:
         return os.path.relpath(str(path), str(root))
     except Exception:  # noqa: BLE001
         return str(path)
+
+
+#: Outcomes of a task that a retry would not help: it was stopped from outside
+#: or never ran.
+_FAILED_TASK_NOT_RETRIED = frozenset({"cancelled", "skipped", "deferred"})
+
+#: Keeps a retried task's ``wave.completed`` event apart from a smoke gate's
+#: re-runs of the wave, which count up from 1.
+_FAILED_TASK_RETRY_ATTEMPT = 100
 
 
 def _estimate_timeout_factor() -> float:
@@ -1796,6 +1805,7 @@ The detailed specifications are in the task markdown file.
             wave_result = self._execute_wave(
                 wave_number, task_ids, feature, worktree
             )
+            wave_result = self._retry_failed_tasks(wave_number, feature, worktree, wave_result)
             wave_results.append(wave_result)
 
             # Display wave completion via progress display
@@ -3673,6 +3683,10 @@ The detailed specifications are in the task markdown file.
                     lease.poison("Task admission cancelled before Player; work preserved")
                     return TaskExecutionResult(task_id=task.id, success=False, total_turns=0,
                         final_decision="cancelled", error="Task admission cancelled before Player")
+                if getattr(task, "status", None) == "failed" and kwargs.get("seed_feedback") is not None:
+                    # The retry writes the same turn file names; a stale last
+                    # turn of the failed attempt would be read as the final one.
+                    self._archive_previous_round(task.id, worktree)
                 if kwargs.get("repair_round") is True:
                     archived = self._archive_previous_round(task.id, worktree)
                     kwargs["repair_round"] = begin_repair_round(
@@ -4127,6 +4141,62 @@ The detailed specifications are in the task markdown file.
                 "[%s] The repair round's approved files could not be kept: %s",
                 task_id, type(exc).__name__,
             )
+
+    def _retry_failed_tasks(
+        self,
+        wave_number: int,
+        feature: Feature,
+        worktree: Worktree,
+        wave_result: WaveExecutionResult,
+    ) -> WaveExecutionResult:
+        """Try each task this wave failed once more, on the same checkout.
+
+        Rich, 8 November 2026. In build FEAT-E673 one task ran out of time and
+        the later tasks that depended on it ran anyway for 277 minutes, on work
+        that could never be offered. Retrying here, before the next wave,
+        means those tasks start after the retry. A task that fails again ends
+        as before: later waves still run, and the build ends with the offer or
+        the repair. A task stopped from outside is not retried.
+        """
+        failed = [
+            result for result in wave_result.results
+            if not result.success
+            and result.final_decision not in _FAILED_TASK_NOT_RETRIED
+        ]
+        if not failed:
+            return wave_result
+
+        latest = {result.task_id: result for result in wave_result.results}
+        for number, result in enumerate(failed):
+            logger.info(
+                "[%s] Failed in wave %s (%s); trying it once more on this checkout.",
+                result.task_id, wave_number, result.final_decision,
+            )
+            if sum(task.status == "failed" for task in feature.tasks) == 1:
+                # The only task not approved so far: if the retry is approved
+                # the approved part may include it.
+                from guardkit.orchestrator.task_work_scope import resume_approval
+
+                resume_approval(worktree.path)
+            feedback = (
+                f"Your earlier attempt at this task did not finish "
+                f"({result.error or result.final_decision}). The working copy holds "
+                f"whatever it left. Start from there and make the smallest change "
+                f"that meets the acceptance criteria."
+            )
+            again = self._execute_wave(
+                wave_number, [result.task_id], feature, worktree,
+                seed_feedback=feedback,
+                attempt=_FAILED_TASK_RETRY_ATTEMPT + number,
+            )
+            latest.update({retried.task_id: retried for retried in again.results})
+
+        results = [latest[result.task_id] for result in wave_result.results]
+        return replace(
+            wave_result,
+            results=results,
+            all_succeeded=all(result.success for result in results),
+        )
 
     def _archive_previous_round(self, task_id: str, worktree: Worktree) -> Optional[int]:
         """Move a re-opened task's turn files into ``round-<N>/`` (18 Oct 2026).

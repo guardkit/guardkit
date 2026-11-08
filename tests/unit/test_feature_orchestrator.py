@@ -1657,6 +1657,8 @@ def test_a_failed_task_does_not_stop_its_wave(temp_repo, sample_feature, mock_wo
         mock_execute_wave.side_effect = [
             WaveExecutionResult(wave_number=1, task_ids=["TASK-T-001"], results=wave1_results, all_succeeded=True),
             WaveExecutionResult(wave_number=2, task_ids=["TASK-T-002", "TASK-T-003"], results=wave2_results, all_succeeded=False),
+            # The one retry a failed task gets (8 November 2026); it fails again.
+            WaveExecutionResult(wave_number=2, task_ids=["TASK-T-002"], results=[wave2_results[0]], all_succeeded=False),
         ]
 
         # Execute waves phase
@@ -1692,6 +1694,8 @@ def test_a_failed_wave_does_not_stop_the_next_wave(temp_repo, sample_feature, mo
 
     with patch.object(orchestrator, '_execute_wave') as mock_execute_wave:
         mock_execute_wave.side_effect = [
+            WaveExecutionResult(wave_number=1, task_ids=["TASK-T-001"], results=wave1_results, all_succeeded=False),
+            # The one retry a failed task gets (8 November 2026); it fails again.
             WaveExecutionResult(wave_number=1, task_ids=["TASK-T-001"], results=wave1_results, all_succeeded=False),
             WaveExecutionResult(wave_number=2, task_ids=["TASK-T-002", "TASK-T-003"], results=wave2_results, all_succeeded=True),
         ]

@@ -452,6 +452,17 @@ def approved_head(root):
     return _approved_heads.get(str(git_dir))
 
 
+def resume_approval(root):
+    """A retry of the only task not approved is about to run in this checkout:
+    if it is approved, the approved part may run past it. If it fails again
+    the approved part stops where it was. Never raises."""
+    try:
+        _, git_dir = identity(root)
+    except Exception:  # noqa: BLE001 — absence, never a failure
+        return
+    _approval_stopped.discard(str(git_dir))
+
+
 def collect_changes(scope):
     if not isinstance(scope, TaskWorkScope):
         raise ScopeUnavailable(
