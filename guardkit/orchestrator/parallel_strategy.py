@@ -463,7 +463,10 @@ def collect_wave_task_paths(
        reader ``preflight_ignore_gate.load_planned_targets`` (the saved
        implementation plan if there is one, otherwise the task frontmatter's
        ``files_to_create`` / ``files_to_modify``);
-    2. failing that, repository-relative paths mentioned in the task
+    2. failing that, the task document's own ``## Files to Create`` /
+       ``## Files to Modify`` lists, via the one parser of those sections
+       (``AgentInvoker.declared_file_sections_in_text``);
+    3. failing that, repository-relative paths mentioned in the task
        document's own text, via the plan-time reader
        ``wave_overlap_detector.infer_task_files``.
 
@@ -523,6 +526,16 @@ def _declared_paths_for_task(
     text = _read_task_document(task_id, worktree_path, task_file)
     if not text:
         return None
+    # The document's own "## Files to Create" / "## Files to Modify" lists come
+    # before every path its text mentions. Build FEAT-E673 (7 November 2026):
+    # two tasks that only cited docs/product files were run one at a time
+    # "because both work on files in docs/product", which cost 290 minutes.
+    from guardkit.orchestrator.agent_invoker import AgentInvoker
+
+    sections = AgentInvoker.declared_file_sections_in_text(text)
+    listed = _declared_set(list(sections["create"] or []) + list(sections["modify"] or []))
+    if listed:
+        return listed
     return _declared_set(_paths_mentioned_in_text(text))
 
 

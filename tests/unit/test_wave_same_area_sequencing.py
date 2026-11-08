@@ -612,6 +612,30 @@ class TestCollectWaveTaskPaths:
         collected = collect_wave_task_paths(["TASK-TS-002"], tmp_path)
         assert collected["TASK-TS-002"] == ["src/users/router.ts"]
 
+    def test_the_documents_file_lists_come_before_the_paths_it_cites(self, tmp_path):
+        """Build FEAT-E673: two tasks that only cited docs/product/ were run one
+        at a time, though one modifies the config and the other creates the
+        settings module."""
+        _write_task(
+            tmp_path,
+            "TASK-E673-002",
+            body="## Files to Create\n\n- `_none_`\n\n## Files to Modify\n\n- `.guardkit/config.yaml`\n\n"
+            "## Implementation Notes\n\n- As `docs/product/scaffold-conventions.md:20-22` and docs/product/ say.\n",
+        )
+        _write_task(
+            tmp_path,
+            "TASK-E673-004",
+            body="## Files to Create\n\n- `packages/career_agent/src/config/settings.ts`\n\n"
+            "## Files to Modify\n\n- `_none_`\n\n"
+            "## Implementation Notes\n\n- The brief (`docs/product/feature-brief.md`) and docs/product/ defer it.\n",
+        )
+        collected = collect_wave_task_paths(["TASK-E673-002", "TASK-E673-004"], tmp_path)
+        assert collected == {
+            "TASK-E673-002": [".guardkit/config.yaml"],
+            "TASK-E673-004": ["packages/career_agent/src/config/settings.ts"],
+        }
+        assert find_same_area_conflict(collected).sequence is False
+
     def test_a_task_that_says_nothing_maps_to_none(self, tmp_path):
         _write_task(tmp_path, "TASK-SILENT", body="Make the statistics work.")
         collected = collect_wave_task_paths(["TASK-SILENT"], tmp_path)
