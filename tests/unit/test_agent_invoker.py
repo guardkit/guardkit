@@ -373,6 +373,12 @@ class TestPlayerInvocation:
 class TestCoachInvocation:
     """Test Coach agent invocation."""
 
+    @pytest.fixture(autouse=True)
+    def _per_task_reviewer_on(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The per-task reviewer: off by default for feature builds since 12
+        November 2026; the way-back setting brings it back for these tests."""
+        monkeypatch.setenv("GUARDKIT_PER_TASK_REVIEW", "1")
+
     @pytest.mark.asyncio
     async def test_invoke_coach_success(
         self, agent_invoker, worktree_path, sample_player_report, sample_coach_approval
@@ -627,6 +633,12 @@ class TestPromptBuilding:
 
 class TestSDKIntegration:
     """Test SDK integration patterns."""
+
+    @pytest.fixture(autouse=True)
+    def _per_task_reviewer_on(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The per-task reviewer: off by default for feature builds since 12
+        November 2026; the way-back setting brings it back for these tests."""
+        monkeypatch.setenv("GUARDKIT_PER_TASK_REVIEW", "1")
 
     @pytest.mark.personal_run
     @pytest.mark.asyncio

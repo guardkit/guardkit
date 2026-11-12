@@ -2925,6 +2925,17 @@ class AgentInvoker:
             # this review's. Any failure gives no findings text and the
             # verdict call still runs (a reviewer finding is never a refusal).
             from guardkit.orchestrator import build_review
+            from guardkit.orchestrator import end_review
+
+            # No per-task reviewer (the default since 12 November 2026; the
+            # finished feature gets one end review instead, end_review.py):
+            # neither the look-up pass nor the verdict call is made, and the
+            # verdict is an empty approval. The guards below still send the
+            # turn back when the project's own tests or declared checks ran
+            # and failed. (The per-task ablation path,
+            # ``AutoBuildOrchestrator(ablation_mode=True)``, would skip those
+            # checks too.) ``GUARDKIT_PER_TASK_REVIEW=1`` brings it back.
+            per_task_review = end_review.per_task_review_on()
 
             change = build_review.write_change(
                 task_id, turn, self.worktree_path, getattr(self, "_baseline_commit", None)
@@ -2948,7 +2959,7 @@ class AgentInvoker:
                 change=change,
                 sent_back=sent_back,
                 document_paths=[str(d.path) for d in documents],
-            )
+            ) if per_task_review else None
 
             # Build prompt for Coach with verification context.
             prompt = self._build_coach_prompt(
@@ -2981,7 +2992,13 @@ class AgentInvoker:
                 # coach_turn_N.json itself, the reviewer never writes.
                 decision = await self._review_verdict(
                     prompt, task_id, turn, coach_output_path
-                )
+                ) if per_task_review else {
+                    "task_id": task_id,
+                    "turn": turn,
+                    "decision": "approve",
+                    "issues": [],
+                    "rationale": "No per-task reviewer: the finished feature gets one end review instead.",
+                }
             except asyncio.CancelledError:
                 raise
             except Exception as exc:  # noqa: BLE001 — the reviewer is advice
@@ -3164,6 +3181,46 @@ class AgentInvoker:
             return found or None
         finally:
             self.sdk_timeout_seconds = original_timeout
+
+    async def invoke_end_review(
+        self, feature_id: str, round_number: int, prompt: str, seconds: int, grace_seconds: int
+    ) -> Optional[str]:
+        """The end review's one model session (``end_review.py``, 12 November 2026).
+
+        The local reviewer seat with a shell, in the throwaway copy this invoker
+        was built on. Returns the answer's text, or ``None`` when it gave none.
+        """
+        from guardkit.orchestrator.coach_output_parser import (
+            _collect_assistant_reasoning,
+            _collect_assistant_text,
+        )
+        from guardkit.orchestrator.end_review import REVIEW_TOOLS
+
+        previous = self.sdk_timeout_seconds
+        self.sdk_timeout_seconds = seconds
+        try:
+            result_tuple = await self._invoke_with_role(
+                prompt=prompt,
+                agent_type="coach",
+                allowed_tools=list(REVIEW_TOOLS),
+                permission_mode="bypassPermissions",
+                task_id=feature_id,
+                turn=round_number,
+                return_events=True,
+                synthesis=False,
+                max_tool_result_chars=_COACH_GATHER_MAX_TOOL_RESULT_CHARS,
+                answer_grace_seconds=grace_seconds,
+                event_role="end_review",
+            )
+            if result_tuple is None:
+                return None
+            _, harness_events = result_tuple
+            text = _collect_assistant_text(harness_events).strip()
+            if not text:
+                text = _collect_assistant_reasoning(harness_events).strip()
+            return text or None
+        finally:
+            self.sdk_timeout_seconds = previous
 
     async def _review_verdict(
         self, prompt: str, task_id: str, turn: int, coach_output_path: Path

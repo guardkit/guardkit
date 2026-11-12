@@ -710,8 +710,20 @@ class FeatureOrchestrator:
                     feature, worktree, specific_task
                 )
             else:
-                # Execute all tasks wave by wave
-                wave_results = self._wave_phase(feature, worktree)
+                # Execute all tasks wave by wave. With the end review (the
+                # default since 12 November 2026) the whole-feature check runs
+                # after it and its repairs instead, so it checks the code that
+                # will merge; with the per-task reviewer back
+                # (GUARDKIT_PER_TASK_REVIEW) it runs after the last wave as before.
+                from guardkit.orchestrator import end_review as _end_review
+
+                end_review_on = _end_review.enabled()
+                wave_results = self._wave_phase(
+                    feature, worktree, feature_check=not end_review_on
+                )
+                if end_review_on:
+                    _end_review.run_end_review(self, feature, worktree, wave_results)
+                    self._run_feature_check(feature, worktree, wave_results)
 
             # Phase 3: Finalize
             result = self._finalize_phase(feature, wave_results, worktree)
@@ -1727,6 +1739,7 @@ The detailed specifications are in the task markdown file.
         self,
         feature: Feature,
         worktree: Worktree,
+        feature_check: bool = True,
     ) -> List[WaveExecutionResult]:
         """
         Phase 2: Execute tasks wave by wave respecting dependencies.
@@ -1737,6 +1750,10 @@ The detailed specifications are in the task markdown file.
             Feature to execute
         worktree : Worktree
             Shared worktree
+        feature_check : bool
+            Run the whole-feature check after the last wave. ``orchestrate``
+            passes ``False`` when the end review runs, and runs the check
+            after the end review's repairs instead.
 
         Returns
         -------
@@ -1866,7 +1883,8 @@ The detailed specifications are in the task markdown file.
         # 2026-09-19). Everything above proves the parts. This proves the
         # FEATURE does what the person asked, at the surface they use, using
         # the one command the project declared for exactly that.
-        self._run_feature_check(feature, worktree, wave_results)
+        if feature_check:
+            self._run_feature_check(feature, worktree, wave_results)
 
         return wave_results
 

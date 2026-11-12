@@ -50,6 +50,14 @@ from guardkit.orchestrator.quality_gates.coach_validator import IndependentTestR
 from guardkit.worktrees.manager import Worktree
 
 
+@pytest.fixture(autouse=True)
+def _per_task_reviewer_on(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These tests are about the per-task reviewer. Feature builds no longer run
+    it by default (12 November 2026: one end review instead); the way-back
+    setting brings it back, and that is the reviewer tested here."""
+    monkeypatch.setenv("GUARDKIT_PER_TASK_REVIEW", "1")
+
+
 def _sha(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 

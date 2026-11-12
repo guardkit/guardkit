@@ -26,6 +26,14 @@ TASK_ID = "TASK-ATTRIBUTION"
 CRITERION = "AC-001: Preserve the reported compatibility evidence"
 
 
+@pytest.fixture(autouse=True)
+def _per_task_reviewer_on(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These tests are about the per-task reviewer. Feature builds no longer run
+    it by default (12 November 2026: one end review instead); the way-back
+    setting brings it back, and that is the reviewer tested here."""
+    monkeypatch.setenv("GUARDKIT_PER_TASK_REVIEW", "1")
+
+
 def _init_worktree(path: Path) -> None:
     subprocess.run(
         ["git", "init", "-q"], cwd=path, check=True, capture_output=True

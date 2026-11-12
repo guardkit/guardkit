@@ -50,6 +50,14 @@ _READ_ONLY = {
 }
 
 
+@pytest.fixture(autouse=True)
+def _per_task_reviewer_on(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These tests are about the per-task reviewer. Feature builds no longer run
+    it by default (12 November 2026: one end review instead); the way-back
+    setting brings it back, and that is the reviewer tested here."""
+    monkeypatch.setenv("GUARDKIT_PER_TASK_REVIEW", "1")
+
+
 def _git(repo: Path, *args: str) -> str:
     env = {
         "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.invalid",

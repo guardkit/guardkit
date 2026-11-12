@@ -45,6 +45,14 @@ _DECLARED_COMMAND = "qa/run-suite.sh"
 # ---------------------------------------------------------------------------
 
 
+@pytest.fixture(autouse=True)
+def _per_task_reviewer_on(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These tests are about the per-task reviewer. Feature builds no longer run
+    it by default (12 November 2026: one end review instead); the way-back
+    setting brings it back, and that is the reviewer tested here."""
+    monkeypatch.setenv("GUARDKIT_PER_TASK_REVIEW", "1")
+
+
 def _executable(path: Path, body: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(body, encoding="utf-8")

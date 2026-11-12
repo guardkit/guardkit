@@ -37,6 +37,14 @@ from guardkit.orchestrator.harness import (
 # ---------------------------------------------------------------------------
 
 
+@pytest.fixture(autouse=True)
+def _per_task_reviewer_on(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These tests are about the per-task reviewer. Feature builds no longer run
+    it by default (12 November 2026: one end review instead); the way-back
+    setting brings it back, and that is the reviewer tested here."""
+    monkeypatch.setenv("GUARDKIT_PER_TASK_REVIEW", "1")
+
+
 def _make_invoker(worktree: Path) -> AgentInvoker:
     """Minimal AgentInvoker for routing tests (mirrors
     test_coach_synthesis_split.py::_make_invoker_for_routing)."""

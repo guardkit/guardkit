@@ -562,6 +562,31 @@ def stamp_normalizer_model_is_never_live(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# The end review fence: no test runs a real end review
+# ---------------------------------------------------------------------------
+# Since 12 November 2026 every feature build whose tasks all completed gets one
+# end review (``guardkit.orchestrator.end_review``): a model session of up to an
+# hour in a copy of the code. A test that drives a whole feature build would
+# start one. Here its model session fails at once instead, which the end review
+# records and the build goes on from, exactly as when a real review fails. The
+# estate's own way-back setting is cleared too, so the default is what is
+# tested. A test whose SUBJECT is the end review replaces ``_review_once`` (or
+# sets the setting) itself with monkeypatch, which overrides this.
+
+
+@pytest.fixture(autouse=True)
+def end_review_never_asks_a_model(monkeypatch):
+    """No test runs a real end review, and the per-task reviewer setting starts unset."""
+    from guardkit.orchestrator import end_review
+
+    def _no_review(*_args, **_kwargs):
+        raise RuntimeError("no test runs a real end review")
+
+    monkeypatch.setattr(end_review, "_review_once", _no_review)
+    monkeypatch.delenv(end_review.PER_TASK_REVIEW_ENV, raising=False)
+
+
+# ---------------------------------------------------------------------------
 # The run-evidence Docker fence: no test reads a real daemon's events
 # ---------------------------------------------------------------------------
 # Every declared command GuardKit runs now records the container events of its

@@ -511,7 +511,7 @@ def test_orchestrate_pins_after_setup_and_before_the_first_wave(
         order.append("setup")
         return MagicMock(id="FEAT-0D7C"), declared
 
-    def _wave(feature_obj, wt):
+    def _wave(feature_obj, wt, feature_check=True):
         order.append(("wave", feature._feature_branch_pinned, feature._feature_branch))
         return []
 
@@ -525,6 +525,8 @@ def test_orchestrate_pins_after_setup_and_before_the_first_wave(
     with patch.object(feature, "_setup_phase", side_effect=_setup), \
             patch.object(feature, "_wave_phase", side_effect=_wave), \
             patch.object(feature, "_finalize_phase", return_value=MagicMock()), \
+            patch.object(feature, "_run_feature_check"), \
+            patch("guardkit.orchestrator.end_review.run_end_review"), \
             patch.object(FeatureOrchestrator, "_pinned_feature_branch", _pin):
         feature.orchestrate("FEAT-0D7C")
 

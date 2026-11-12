@@ -555,6 +555,72 @@ class TestParallelWaveExecution:
 
 
 # ============================================================================
+# The end review after a wave whose tasks ran in parallel (12 November 2026)
+# ============================================================================
+
+
+@pytest.mark.integration
+def test_the_end_review_repairs_after_a_parallel_wave(
+    tmp_repo_root, mock_worktree_manager, monkeypatch
+):
+    """The head-to-head ran with one task at a time; live builds may run more.
+
+    Three tasks share the last wave and may run at once. When all have
+    completed, the end review (its model session faked) finds one fault; the
+    last task of the last wave is re-entered once with the review's words,
+    through the same wave executor, and the build completes.
+    """
+    from guardkit.orchestrator import end_review
+
+    answers = ["FAULT src/gamma/three.py:1 :: wrong answer :: call three()", "NO FAULTS"]
+    monkeypatch.setattr(
+        end_review, "_review_once",
+        lambda *a, **k: {"answer": answers.pop(0), "seconds": 0.0, "prompt_chars": 1},
+    )
+    feature = create_test_feature(
+        feature_id="FEAT-PARALLEL-ER",
+        tasks=[
+            {"id": "TASK-001", "name": "Task 1", "estimated_minutes": 30,
+             "files_to_create": ["src/alpha/one.py"]},
+            {"id": "TASK-002", "name": "Task 2", "estimated_minutes": 30,
+             "files_to_create": ["src/beta/two.py"]},
+            {"id": "TASK-003", "name": "Task 3", "estimated_minutes": 30,
+             "files_to_create": ["src/gamma/three.py"]},
+        ],
+        parallel_groups=[["TASK-001", "TASK-002", "TASK-003"]],
+        tmp_repo_root=tmp_repo_root,
+    )
+    FeatureLoader.save_feature(feature, tmp_repo_root)
+    orchestrator = FeatureOrchestrator(
+        repo_root=tmp_repo_root,
+        worktree_manager=mock_worktree_manager,
+        quiet=True,
+        max_parallel=3,
+    )
+    runs: List[tuple] = []
+    plain = create_mock_orchestrate(delay=0.1, should_fail=False)
+
+    def _recording(self, task_id, *args, **kwargs):
+        runs.append((task_id, self._seed_feedback))
+        return plain(self, task_id, *args, **kwargs)
+
+    with patch.object(AutoBuildOrchestrator, "orchestrate", _recording):
+        result = orchestrator.orchestrate("FEAT-PARALLEL-ER")
+
+    assert result.status == "completed"
+    assert sorted(t for t, _ in runs[:3]) == ["TASK-001", "TASK-002", "TASK-003"]
+    assert len(runs) == 4
+    assert runs[3][0] == "TASK-003"
+    assert "src/gamma/three.py:1: wrong answer" in runs[3][1]
+    record = json.loads(
+        (end_review.record_dir(tmp_repo_root, "FEAT-PARALLEL-ER") / "end_review.json").read_text()
+    )
+    assert record["status"] == "finished"
+    assert [bool(r.get("repair")) for r in record["rounds"]] == [True, False]
+    assert record["rounds"][0]["repair"]["succeeded"] is True
+
+
+# ============================================================================
 # Run Tests
 # ============================================================================
 
