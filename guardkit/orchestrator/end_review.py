@@ -399,6 +399,8 @@ def _run(orchestrator: Any, feature: Any, worktree: Any, wave_results: List[Any]
     _save(out, record)
 
     rounds: List[Dict[str, Any]] = record["rounds"]
+    #: This run's last repair result in ``wave_results``. A later repair of the same task supersedes it.
+    last_repair: Optional[Any] = None
     round_number = len(rounds) if rounds and "repair" not in rounds[-1] and not rounds[-1].get("error") else len(rounds) + 1
     while round_number <= REPAIR_ROUNDS:
         if round_number > len(rounds):
@@ -432,7 +434,13 @@ def _run(orchestrator: Any, feature: Any, worktree: Any, wave_results: List[Any]
         next(task for task in tasks if task.id == repair_task).status = "failed"
         wave_result = orchestrator._execute_wave(wave, [repair_task], feature, worktree, seed_feedback=feedback,
                                                   attempt=REPAIR_ATTEMPT + round_number)
+        # The repair task's latest result stands for it, as its status does: an earlier repair that failed
+        # and was repaired again must not stop the whole-feature check from running on the repaired code.
+        # It stays in this record. No other task's result is touched.
+        if last_repair is not None and not last_repair.all_succeeded and any(r is last_repair for r in wave_results):
+            wave_results[:] = [r for r in wave_results if r is not last_repair]
         wave_results.append(wave_result)
+        last_repair = wave_result
         entry["repair"] = {
             "task": repair_task, "seconds": round(time.time() - started, 1),
             "succeeded": bool(wave_result.all_succeeded),

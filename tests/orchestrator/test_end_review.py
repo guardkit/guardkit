@@ -433,6 +433,48 @@ def test_at_most_two_repair_rounds(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     ]
 
 
+class _Builder2(_Builder):
+    """A builder whose repair turns succeed or fail in the order given."""
+
+    def __init__(self, worktree: Path, outcomes: List[bool]) -> None:
+        super().__init__(worktree)
+        self.outcomes = outcomes
+
+    def __call__(self, *args, **kwargs):
+        self.succeed = self.outcomes.pop(0)
+        return super().__call__(*args, **kwargs)
+
+
+def test_a_failed_repair_repaired_again_leaves_only_the_latest_result(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    worktree = _repo(tmp_path / "wt")
+    builder = _Builder2(worktree, [False, True])
+    _answers(monkeypatch, [FAULT, FAULT])
+    earlier = WaveExecutionResult(wave_number=1, task_ids=["TASK-ER-001", "TASK-ER-002"], results=[],
+                                  all_succeeded=True)
+    wave_results: List[Any] = [earlier]
+
+    end_review.run_end_review(_orchestrator(tmp_path / "main", worktree, builder), _feature(),
+                              SimpleNamespace(path=worktree), wave_results)
+
+    assert len(wave_results) == 2 and wave_results[0] is earlier
+    assert wave_results[1].all_succeeded is True
+    assert [r["repair"]["succeeded"] for r in _record(tmp_path / "main")["rounds"]] == [False, True]
+
+
+def test_a_failed_repair_not_repaired_again_stays(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    worktree = _repo(tmp_path / "wt")
+    builder = _Builder2(worktree, [False])
+    _answers(monkeypatch, [FAULT, "NO FAULTS"])
+    wave_results: List[Any] = []
+
+    end_review.run_end_review(_orchestrator(tmp_path / "main", worktree, builder), _feature(),
+                              SimpleNamespace(path=worktree), wave_results)
+
+    assert [r.all_succeeded for r in wave_results] == [False]
+
+
 def test_a_repair_then_no_faults_stops(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     worktree = _repo(tmp_path / "wt")
     builder = _Builder(worktree)
@@ -597,6 +639,67 @@ def test_with_the_per_task_reviewer_back_the_build_is_as_before(tmp_path: Path, 
 
 def test_a_single_task_run_has_no_end_review(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     assert _orchestrate(tmp_path, monkeypatch, specific_task="TASK-ER-001") == [("one task", "TASK-ER-001"), "finish"]
+
+
+def test_repair_1_fails_repair_2_succeeds_and_the_feature_check_still_runs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Codex, 12 November 2026: a superseded failed repair must not let the build finish
+    without its whole-feature check. Repair 1 fails, repair 2 succeeds but leaves the
+    feature broken: the check runs, fails, and the build does not complete."""
+    from tests.orchestrator.test_feature_check import (
+        _common_patches,
+        _declaration,
+        _make_feature,
+        _make_orchestrator,
+        _make_project,
+        _make_worktree,
+        _receipt,
+        _WaveRecorder,
+    )
+    from guardkit.orchestrator.task_work_scope import register_fresh_checkout
+
+    monkeypatch.setenv("GUARDKIT_FEATURE_CHECK_MAX_RETRIES", "0")
+    repo_root, worktree_path = _make_project(tmp_path, declaration=_declaration("sh qa/feature-check.sh"))
+    _write(worktree_path, "THE_FEATURE_IS_FIXED", "yes\n")
+    _commit(worktree_path, "the finished feature")
+    register_fresh_checkout(worktree_path, "HEAD")
+    feature = _make_feature(worktree_path)
+    feature.feature_files = []
+
+    def _break(_index: int) -> None:
+        (worktree_path / "THE_FEATURE_IS_FIXED").unlink(missing_ok=True)
+
+    recorder = _WaveRecorder(worktree_path, on_reentry=_break)
+    calls = {"n": 0}
+
+    def _builder(wave_number, task_ids, feature_obj, worktree, seed_feedback=None, attempt=0):
+        result = recorder(wave_number, task_ids, feature_obj, worktree, seed_feedback=seed_feedback,
+                          attempt=attempt)
+        calls["n"] += 1
+        if calls["n"] == 2:  # the first repair turn fails
+            for task in feature_obj.tasks:
+                if task.id in task_ids:
+                    task.status = "failed"
+            return result.__class__(wave_number=wave_number, task_ids=list(task_ids),
+                                    results=result.results, all_succeeded=False)
+        return result
+
+    _answers(monkeypatch, [FAULT, FAULT])
+    orchestrator = _make_orchestrator(repo_root)
+    worktree = _make_worktree(worktree_path)
+    with ExitStack() as stack:
+        for cm in _common_patches(orchestrator):
+            stack.enter_context(cm)
+        stack.enter_context(patch.object(orchestrator, "_execute_wave", side_effect=_builder))
+        stack.enter_context(patch.object(orchestrator, "_display_summary"))
+        stack.enter_context(patch.object(orchestrator, "_setup_phase", return_value=(feature, worktree)))
+        result = orchestrator.orchestrate("FEAT-TEST")
+
+    assert calls["n"] == 3, "the wave, then two repair turns"
+    assert feature.tasks[0].status == "completed", "the second repair succeeded"
+    assert _receipt(worktree_path)["status"] == "failed", "the whole-feature check ran on the repaired code"
+    assert result.status == "failed"
 
 
 def test_a_repair_that_breaks_the_feature_check_fails_the_build(
