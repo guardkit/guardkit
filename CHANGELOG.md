@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+#### Feature builds: one end review instead of a model review of each task (12 November 2026)
+
+`guardkit autobuild feature` no longer has a model review each task: each task's own tests and declared
+checks still run and still send a turn back when they fail. When every task has completed, one end review
+reads, builds and runs the finished feature in a throwaway copy, with the whole request, the plan and the
+whole change, and reports concrete faults with a file, a line and how to trigger them. The builder gets at
+most two repair rounds on them; the whole-feature check then runs on the repaired code. The request is found
+from the build's `planning: feature plan <feature id> for <correlation id>` commit
+(`feature_spec_inputs/<correlation id>.md`), or else from the feature file and its `.feature` files. The
+record is in `.guardkit/autobuild/<feature id>/end_review/` and a resumed build carries on from it.
+`GUARDKIT_PER_TASK_REVIEW=1` brings the per-task reviewer back and turns the end review off. Code:
+`guardkit/orchestrator/end_review.py`; tests: `tests/orchestrator/test_end_review.py`.
+
 ### Fixed
 
 #### `guardkit` wrapper delegates unknown commands to guardkit-py

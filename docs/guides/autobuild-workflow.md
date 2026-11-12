@@ -57,6 +57,31 @@ AutoBuild operates on the principle of **adversarial cooperation** - two agents 
 
 This separation ensures independent verification - the same agent that writes the code cannot approve it.
 
+### Feature builds: one end review instead of a review of each task (12 November 2026)
+
+When `guardkit autobuild feature` builds a whole feature, no model reviews each task any more. Each task's own
+tests and the project's declared checks still run after every turn, and still send the turn back when they fail.
+
+When every task has completed, one **end review** looks at the finished feature. It starts fresh in a throwaway
+copy of the code, is given the whole request, the plan and the whole change, may build and run the feature with
+stub endpoints on the same machine, and reports only concrete faults (a file, a line and how to trigger it). If it
+finds faults, the builder gets one repair turn on them and the review looks again: at most two rounds. Then the
+whole-feature check runs on the repaired code, and the build finishes as before. The end review never fails a
+build by itself.
+
+- **The request** comes from the build's own history: the commit `planning: feature plan <feature id> for
+  <correlation id>` names it, and it is `feature_spec_inputs/<correlation id>.md`. Without one, the feature
+  file's name and description and its `.feature` files are used.
+- **What it found and repaired** is kept in `.guardkit/autobuild/<feature id>/end_review/` (`end_review.json`,
+  the review answers and the repair instructions). A resumed build carries on from it.
+- **The way back:** `GUARDKIT_PER_TASK_REVIEW=1` brings the per-task reviewer back and turns the end review off.
+- A single `--task` run, and `guardkit autobuild task`, get no end review; with the default setting they get
+  no model review at all, only the task's own tests and checks.
+
+The change followed a head-to-head test on the same frozen plans (eight builds each): with the per-task reviewer
+5 builds worked; with the end review instead 7 worked (4 before the end review's repairs), using about a third
+less model output and less build time.
+
 ### Why AutoBuild?
 
 | Traditional `/task-work` | AutoBuild `/feature-build` |
