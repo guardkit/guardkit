@@ -77,6 +77,7 @@ SCENARIO_TITLE = "Seeing the daily count of new users"
 CHECK_SCRIPT = f"""#!/bin/sh
 echo "feature=$GUARDKIT_FEATURE_ID worktree=$GUARDKIT_WORKTREE"
 echo "record=$GUARDKIT_FEATURE_RECORD sha=$GUARDKIT_CANDIDATE_SHA"
+echo "model_url=$FACTORY_MODEL_URL model_name=$FACTORY_MODEL_NAME"
 if [ -f THE_FEATURE_IS_FIXED ]; then
   echo '{{"guardkit_feature_check": {{"scenarios_covered": ["{SCENARIO_TITLE}"]}}}}'
   exit 0
@@ -413,6 +414,76 @@ def test_the_check_is_given_the_feature_id_record_worktree_and_sha(
     assert f"worktree={worktree}" in stdout_tail
     assert "FEAT-TEST.yaml" in stdout_tail
     assert head in stdout_tail
+
+
+DOOR = "http://10.0.0.5:8080/v1"
+
+
+def test_the_check_is_told_the_build_s_own_model(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The real-model check (14 November 2026): the address the builder calls
+    and the builder's model reach the check command, and no key does."""
+    monkeypatch.setenv("OPENAI_BASE_URL", DOOR)
+    monkeypatch.setenv("OPENAI_API_KEY", "not-for-the-check")
+    repo_root, worktree = _make_project(
+        tmp_path, declaration=_declaration("sh qa/feature-check.sh")
+    )
+    _write(
+        worktree,
+        "qa/feature-check.sh",
+        CHECK_SCRIPT.replace(
+            "if [ -f", 'echo "key=${OPENAI_API_KEY:-none}"\nif [ -f', 1
+        ),
+    )
+    _write(worktree, "THE_FEATURE_IS_FIXED", "")
+    feature = _make_feature(worktree)
+    _run_build(
+        repo_root, worktree, feature, _WaveRecorder(worktree),
+        orchestrator_kwargs={"model": "flash-next-t06"},
+    )
+
+    stdout_tail = _receipt(worktree)["attempts"][0]["stdout_tail"]
+    assert f"model_url={DOOR} model_name=flash-next-t06" in stdout_tail
+    assert "key=none" in stdout_tail
+
+
+def test_with_no_model_named_the_check_is_told_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("OPENAI_BASE_URL", DOOR)
+    repo_root, worktree = _make_project(
+        tmp_path, declaration=_declaration("sh qa/feature-check.sh")
+    )
+    _write(worktree, "THE_FEATURE_IS_FIXED", "")
+    feature = _make_feature(worktree)
+    _run_build(repo_root, worktree, feature, _WaveRecorder(worktree))
+
+    stdout_tail = _receipt(worktree)["attempts"][0]["stdout_tail"]
+    assert "model_url= model_name=\n" in stdout_tail + "\n"
+
+
+@pytest.mark.parametrize(
+    ("model", "url", "expected"),
+    [
+        ("flash-next-t06", DOOR, {"FACTORY_MODEL_URL": DOOR, "FACTORY_MODEL_NAME": "flash-next-t06"}),
+        ("openai:flash-next-t06", DOOR, {"FACTORY_MODEL_URL": DOOR, "FACTORY_MODEL_NAME": "flash-next-t06"}),
+        ("flash-next-t06", "http://127.0.0.1:4000/v1", {"FACTORY_MODEL_URL": "http://127.0.0.1:4000/v1", "FACTORY_MODEL_NAME": "flash-next-t06"}),
+        ("anthropic:claude", DOOR, {}),
+        (None, DOOR, {}),
+        ("  ", DOOR, {}),
+        ("flash-next-t06", None, {}),
+        ("flash-next-t06", "https://api.openai.com/v1", {}),
+        ("flash-next-t06", "api.openai.com/v1", {}),
+        ("flash-next-t06", "http://user:pw@10.0.0.5:8080/v1", {}),
+    ],
+)
+def test_the_model_settings_are_given_only_for_a_local_model(
+    model: Optional[str], url: Optional[str], expected: dict, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("GUARDKIT_LOCAL_SEAT_HOSTS", raising=False)
+    environ = {} if url is None else {"OPENAI_BASE_URL": url}
+    assert feature_check.factory_model_settings(model, environ) == expected
 
 
 def test_a_failing_check_re_enters_the_last_wave_once_then_fails_the_feature(

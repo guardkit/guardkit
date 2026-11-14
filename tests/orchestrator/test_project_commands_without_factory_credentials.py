@@ -531,6 +531,18 @@ def test_the_install_and_the_checker_share_one_scratch_folder(
     assert install["STANDIN_CACHE"] == checker["STANDIN_CACHE"]
 
 
+def test_ordinary_test_commands_are_not_told_the_model(
+    project: Project, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Only the whole-feature check is pointed at the build's model (14
+    November 2026); a task's tests stay offline even with a local address."""
+    monkeypatch.setenv("OPENAI_BASE_URL", "http://10.0.0.5:8080/v1")
+    checker = _run_checker_test(project)
+    assert "FACTORY_MODEL_URL" not in checker
+    assert "FACTORY_MODEL_NAME" not in checker
+    assert "OPENAI_BASE_URL" not in checker
+
+
 # ---------------------------------------------------------------------------
 # Test 4: positive control — the per-command additions still arrive
 # ---------------------------------------------------------------------------

@@ -30,6 +30,17 @@ THE DECLARATION IS READ FROM THE MAIN CHECKOUT
 ``toolchain.feature_check`` is read from ``self.repo_root`` — the canonical
 tree the build never edits. A build that could rewrite its own final check
 would not be checked.
+
+THE MODEL THE BUILD USED (14 November 2026)
+-------------------------------------------
+Every other check of a build uses a fake model, so a feature could pass them
+all and fail against a real one. The check, and only the check, is also told
+where the build's own model is: ``FACTORY_MODEL_URL`` (the OpenAI-compatible
+address the builder calls, which supplies its own key) and
+``FACTORY_MODEL_NAME`` (the builder's model). No key is passed. Both are set
+only when that address is a local seat; otherwise neither is, and a project
+check that needs them says it could not run. Design:
+``ai-transition/docs/designs/real-model-check-2026-11-13.md``.
 """
 
 from __future__ import annotations
@@ -877,6 +888,45 @@ def _check_environment(
     )
 
 
+#: The two settings that point the check at the build's own model.
+MODEL_URL_SETTING = "FACTORY_MODEL_URL"
+MODEL_NAME_SETTING = "FACTORY_MODEL_NAME"
+
+
+def factory_model_settings(
+    model: Optional[str],
+    environ: Optional[Dict[str, str]] = None,
+) -> Dict[str, str]:
+    """``FACTORY_MODEL_URL`` and ``FACTORY_MODEL_NAME`` for the check, or ``{}``.
+
+    The address is ``OPENAI_BASE_URL`` from GuardKit's own environment, the
+    one the builder calls; the name is the builder's model, a bare alias or
+    ``openai:<alias>``. Nothing is set when either is missing, when the model
+    goes to another client, when the address carries a user name or password,
+    or when its host is not a local seat (``m0_fence.is_local_seat_host``).
+    """
+    from urllib.parse import urlparse
+
+    from guardkit.orchestrator.m0_fence import is_local_seat_host
+
+    source = os.environ if environ is None else environ
+    url = (source.get("OPENAI_BASE_URL") or "").strip()
+    name = (model or "").strip()
+    client, colon, alias = name.partition(":")
+    if colon:
+        if client.strip().lower() != "openai":
+            return {}
+        name = alias.strip()
+    if not url or not name:
+        return {}
+    parsed = urlparse(url)
+    if parsed.username or parsed.password:
+        return {}
+    if not is_local_seat_host((parsed.hostname or "").lower()):
+        return {}
+    return {MODEL_URL_SETTING: url, MODEL_NAME_SETTING: name}
+
+
 def _held_back_note(
     cwd: Path,
     declaration: Any,
@@ -1167,7 +1217,10 @@ __all__ = [
     "FeatureCheckAttempt",
     "FeatureCheckDeclaration",
     "FeatureCheckOutcome",
+    "MODEL_NAME_SETTING",
+    "MODEL_URL_SETTING",
     "build_feature_check_feedback",
+    "factory_model_settings",
     "candidate_sha",
     "feature_request_words",
     "load_feature_check_declaration",

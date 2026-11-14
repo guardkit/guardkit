@@ -71,6 +71,7 @@ from guardkit.orchestrator.feature_check import (
     stopped_because_line,
     build_feature_check_feedback,
     candidate_sha as feature_check_candidate_sha,
+    factory_model_settings,
     feature_request_words,
     load_feature_check_declaration,
     merge_not_checked,
@@ -2200,6 +2201,9 @@ The detailed specifications are in the task markdown file.
             "GUARDKIT_WORKTREE": str(worktree.path),
             "GUARDKIT_CANDIDATE_SHA": sha,
         }
+        # The build's own model, for a check that runs the feature against it
+        # (14 November 2026). Only this command gets them; no key is passed.
+        env_extra.update(factory_model_settings(self.model))
         logger.info(
             "Running the whole-feature check (attempt %d): %s (cwd=%s, "
             "timeout=%ds)",
