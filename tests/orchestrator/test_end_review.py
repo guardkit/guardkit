@@ -746,3 +746,34 @@ def test_a_repair_that_breaks_the_feature_check_fails_the_build(
     assert recorder.feedback[1].startswith("The finished feature was reviewed as a whole")
     assert _receipt(worktree_path)["status"] == "failed"
     assert result.status == "failed"
+
+
+def test_end_review_calls_reach_the_call_record_as_a_named_specialist(tmp_path: Path) -> None:
+    """The end review's model calls are recorded (15 November 2026: they were labelled
+    ``end_review``, which the call record's role list refuses, so each one was dropped with a
+    warning and the review's tokens and time never reached the record)."""
+    invoker = AgentInvoker(worktree_path=tmp_path, max_turns_per_agent=1, sdk_timeout_seconds=10)
+    emitted: List[Any] = []
+
+    class _Emitter:
+        async def emit(self, event: Any) -> None:
+            emitted.append(event)
+
+    invoker._emitter = _Emitter()
+
+    async def _session(**kwargs: Any) -> None:
+        # What _invoke_with_role does with these labels when the call ends.
+        invoker._emit_llm_call_event(
+            agent_type=kwargs["event_role"], model=None, latency_ms=1.0, response_messages=[],
+            status="ok", error=None, task_id=kwargs["task_id"],
+            agent_name=kwargs.get("event_agent_name"),
+        )
+        await asyncio.sleep(0)
+        return None
+
+    with patch.object(invoker, "_invoke_with_role", side_effect=_session):
+        asyncio.run(invoker.invoke_end_review(FEATURE_ID, 1, "review the feature", 60, 5))
+
+    assert [(e.agent_role, e.agent_name, e.task_id) for e in emitted] == [
+        ("specialist", "end_review", FEATURE_ID)
+    ]

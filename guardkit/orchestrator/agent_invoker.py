@@ -3210,7 +3210,11 @@ class AgentInvoker:
                 synthesis=False,
                 max_tool_result_chars=_COACH_GATHER_MAX_TOOL_RESULT_CHARS,
                 answer_grace_seconds=grace_seconds,
-                event_role="end_review",
+                # The record's role list has no "end_review" (15 November 2026: every end
+                # review call was dropped from it with a warning); a reviewer the
+                # orchestrator runs is a named specialist, as the code reviewer is.
+                event_role="specialist",
+                event_agent_name="end_review",
             )
             if result_tuple is None:
                 return None
