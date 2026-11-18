@@ -1207,10 +1207,27 @@ class TestTheSelfTestSeesForItself:
             "its /proc metadata could not be read (Permission denied)"
         )
 
-    def test_processes_refused_by_design_are_told_apart(self) -> None:
-        # This process: could be a command's. PID 1 (another user's): not.
-        assert process_group._could_be_this_commands(os.getpid())
-        assert not process_group._could_be_this_commands(1)
+    def test_processes_refused_by_design_are_told_apart(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # This process: could be a command's. One whose /proc records belong
+        # to another user: not. (PID 1 stood in for "another user's" until 18
+        # November 2026, which is untrue in a container whose first process is
+        # the test's own shell; the other owner is now made, not assumed.)
+        own = os.getpid()
+        assert process_group._could_be_this_commands(own)
+        real_stat = os.stat
+
+        def stat(path, *args, **kwargs):
+            result = real_stat(path, *args, **kwargs)
+            if str(path) != f"/proc/{own}/environ":
+                return result
+            fields = list(result)
+            fields[4] = os.geteuid() + 1  # st_uid
+            return os.stat_result(fields)
+
+        monkeypatch.setattr(os, "stat", stat)
+        assert not process_group._could_be_this_commands(own)
 
     @pytest.mark.personal_run
     def test_another_users_process_is_not_this_commands(
