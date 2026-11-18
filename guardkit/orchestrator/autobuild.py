@@ -1827,7 +1827,9 @@ class AutoBuildOrchestrator:
         Reads ``toolchain:`` from the ``.guardkit/config.yaml`` committed at
         the worktree's HEAD (the ``<repo_root>`` copy only when the worktree is
         not a git checkout), so a feature task runs the tests an earlier task
-        of the feature declared, and writes it into the task-private dir
+        of the feature declared, with what the merge judges with taken from
+        the branch the worktree was made from (``main`` when none is known;
+        18 November 2026), and writes it into the task-private dir
         (outside the shared worktree). ``CoachValidator`` reads only that snapshot, so the
         model can never edit its own test command mid-build (design §B.4 —
         "if the snapshot is cut from scope, the declaration must be cut with
@@ -1854,6 +1856,7 @@ class AutoBuildOrchestrator:
                 task_id=task_id,
                 worktree_path=worktree.path,
                 repo_root=self.repo_root,
+                base_branch=getattr(worktree, "base_branch", None) or "main",
             )
             if pinned is not None:
                 declaration = load_toolchain_snapshot(task_id, worktree.path)

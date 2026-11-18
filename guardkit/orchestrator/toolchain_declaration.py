@@ -687,13 +687,15 @@ def toolchain_snapshot_paths(task_id: str, worktree_path: Path) -> Dict[str, Pat
 
 def load_committed_toolchain_declaration(
     worktree_path: Path,
+    ref: str = "HEAD",
 ) -> Tuple[bool, Optional[ToolchainDeclaration]]:
-    """Read the declaration committed at ``worktree_path``'s HEAD.
+    """Read the declaration committed at ``ref`` (HEAD unless named) in
+    ``worktree_path``'s repository.
 
     Returns ``(True, declaration)`` when the worktree is a git checkout (the
     declaration is ``None`` when that commit has no config file or no
-    ``toolchain:`` block), and ``(False, None)`` when git cannot answer, so
-    the caller can fall back. Never raises.
+    ``toolchain:`` block, or ``ref`` names no commit), and ``(False, None)``
+    when git cannot answer, so the caller can fall back. Never raises.
     """
     try:
         from guardkit.lib.project_git import run_git
@@ -704,7 +706,7 @@ def load_committed_toolchain_declaration(
         if inside.returncode != 0 or inside.stdout.strip() != "true":
             return False, None
         shown = run_git(
-            ["show", f"HEAD:{CONFIG_RELATIVE_PATH.as_posix()}"],
+            ["show", f"{ref}:{CONFIG_RELATIVE_PATH.as_posix()}"],
             cwd=Path(worktree_path), timeout=30,
         )
     except (OSError, subprocess.SubprocessError) as exc:
@@ -714,20 +716,124 @@ def load_committed_toolchain_declaration(
         # A checkout whose HEAD has no config file declares nothing.
         return True, None
     return True, _declaration_from_text(
-        shown.stdout, f"{worktree_path} HEAD:{CONFIG_RELATIVE_PATH.as_posix()}"
+        shown.stdout, f"{worktree_path} {ref}:{CONFIG_RELATIVE_PATH.as_posix()}"
     )
+
+
+# What the merge step judges a folder with (``merge_executor`` reads them from
+# the target branch before the merge; ``completion_verification`` runs them),
+# each limit with its command.
+_MERGE_JUDGED = (("test", "test_timeout"), ("install", "install_timeout"))
+
+
+def _take_main_values(
+    entry: Dict[str, Any], main: _ToolchainCommands, where: str
+) -> None:
+    """Put main's commands and limits into ``entry`` (the branch's, as written)
+    wherever main declares the command; log each value that differed."""
+    for command, limit in _MERGE_JUDGED:
+        if getattr(main, command) is None:
+            continue  # main does not judge with it: the branch's stays
+        for field in (command, limit):
+            ours = getattr(main, field)
+            theirs = entry.get(field, _ToolchainCommands.model_fields[field].default)
+            if theirs != ours:
+                logger.info(
+                    "%s %s: the branch says %s, main says %s; main's is used, "
+                    "as at merge.", where, field, theirs, ours,
+                )
+            if field in main.model_fields_set:
+                entry[field] = ours
+            else:
+                entry.pop(field, None)
+
+
+def _judged_as_on_main(
+    branch: ToolchainDeclaration, main: ToolchainDeclaration, tree: Path
+) -> ToolchainDeclaration:
+    """The branch's declaration, judged as the merge will judge it (18 November
+    2026, FEAT-24BD): for the root and every folder main covers (a named part
+    or a pattern), the test and install commands, their limits and the named
+    parts' folders are main's. Everything else, and every folder main does not
+    cover, is the branch's, so a part an earlier task added keeps its commands.
+    """
+    data = branch.model_dump(exclude_unset=True)
+    _take_main_values(data, main, "root")
+    on_main = {
+        p.cwd: p.toolchain for p in full_check_parts(main, tree) if p.toolchain
+    }
+    named = data.get("components") or {}
+    for name, comp in named.items():
+        same = main.component(name)
+        if same is not None and comp["cwd"] != same.cwd:
+            logger.info(
+                "%s cwd: the branch says %s, main says %s; main's is used, as "
+                "at merge.", name, comp["cwd"], same.cwd,
+            )
+            comp["cwd"] = same.cwd
+        if comp["cwd"] in on_main:
+            _take_main_values(comp, on_main[comp["cwd"]], comp["cwd"])
+    for entry in data.get("parts") or ():
+        for same in main.parts or ():
+            if (same.under, same.marker) == (entry["under"], entry["marker"]):
+                _take_main_values(entry, same, f"{entry['under']}/*")
+    # A folder main covers that the branch reaches only through a pattern of
+    # its own, or not at all, is named with main's values.
+    found = {
+        p.cwd: p.toolchain
+        for p in _pattern_parts(ToolchainDeclaration.model_validate(data), tree)
+    }
+    folders = {comp["cwd"] for comp in named.values()}
+    added: Dict[str, Dict[str, Any]] = {}
+    for folder, ours in on_main.items():
+        if folder in folders:
+            continue
+        entry = (
+            found[folder].model_dump(exclude_unset=True)
+            if folder in found else {"cwd": folder}
+        )
+        before = dict(entry)
+        _take_main_values(entry, ours, folder)
+        if entry != before:
+            added[folder if folder not in named else f"{folder}-main"] = entry
+    if added:
+        data["components"] = {**named, **added}
+    return ToolchainDeclaration.model_validate(data)
+
+
+def _with_main_judging(
+    declaration: ToolchainDeclaration, worktree_path: Path, base_branch: str
+) -> ToolchainDeclaration:
+    """``declaration`` with main's judged values, or unchanged when main (the
+    ``base_branch``) declares nothing or cannot be read. Never raises."""
+    try:
+        _, main = load_committed_toolchain_declaration(worktree_path, base_branch)
+        if main is None:
+            return declaration
+        return _judged_as_on_main(declaration, main, worktree_path)
+    except Exception as exc:  # noqa: BLE001 — the branch's copy is today's behaviour
+        logger.warning(
+            "Could not apply %s's settings to the pinned copy (%s); the "
+            "branch's are used.", base_branch, exc,
+        )
+        return declaration
 
 
 def snapshot_task_toolchain(
     task_id: str,
     worktree_path: Path,
     repo_root: Path,
+    base_branch: str = "main",
 ) -> Optional[Path]:
     """Snapshot the toolchain declaration pre-turn-1.
 
     The source is the declaration committed at the worktree's HEAD, so a
     feature task sees what earlier tasks of the feature declared; the
     ``repo_root`` tree is read only when the worktree is not a git checkout.
+    What the merge judges with is then taken from ``base_branch`` wherever
+    it declares it (:func:`_judged_as_on_main`, 18 November 2026): a branch
+    never chooses the command or limit that judges it, during the build as
+    at the merge.
 
     Returns the snapshot file path when a declaration was captured, else
     ``None`` (no declaration, or an error — both mean the build behaves
@@ -756,6 +862,10 @@ def snapshot_task_toolchain(
         )
         if not committed:
             declaration = load_toolchain_declaration(Path(repo_root))
+        elif declaration is not None:
+            declaration = _with_main_judging(
+                declaration, Path(worktree_path), base_branch
+            )
         if declaration is None:
             # byte-equivalent no-op for every repo that has not opted in
             return None
