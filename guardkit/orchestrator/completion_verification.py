@@ -116,11 +116,12 @@ class VerificationResult:
     # What each FAILED command printed, as lines: a "=== part: command"
     # heading, then the last :data:`FAILING_OUTPUT_LINES` lines of that
     # command's output, for every failed part in order (20 November 2026).
+    # A part that could not run is kept too, its reason first.
     # ``output_tail`` is the end of every part's output joined, so it is
     # always the last part's: FEAT-18FD's merge record held the API part's
     # passing output and nothing of the root check that failed. A list, not
     # one string, because Forge's report writer turns line breaks in a string
-    # into spaces. Empty when nothing failed.
+    # into spaces. Empty when every part passed.
     failing_output: Tuple[str, ...] = ()
 
     @property
@@ -441,13 +442,19 @@ def _failing_lines(
 
     ``=== <part>: <command>`` and then the last :data:`FAILING_OUTPUT_LINES`
     lines of what it printed, for each failed result in order. A command that
-    timed out keeps the standard output it had (:func:`_run_one`).
+    timed out keeps the standard output it had (:func:`_run_one`). A part
+    that could not run (``unverified``) is kept the same way, with its reason
+    as the first line under its heading (20 November 2026): the detail of a
+    failed check names only its failed parts, so a part that could not run
+    beside one that failed was otherwise lost.
     """
     lines: List[str] = []
     for label, result in results:
-        if result.status != "failed":
+        if result.status not in ("failed", "unverified"):
             continue
         lines.append(f"=== {label}: {result.command}")
+        if result.status == "unverified":
+            lines.append(f"could not run: {result.detail}")
         printed = (result.full_output or result.output_tail).rstrip().splitlines()
         lines.extend(printed[-FAILING_OUTPUT_LINES:])
     return tuple(lines)

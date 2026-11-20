@@ -615,3 +615,39 @@ class TestTheFailingPartsOutputIsKept:
 
         assert report.verify_status == "passed", report.verify_detail
         assert report.to_dict()["verify_failing_output"] == []
+
+    def test_a_failed_part_and_a_part_that_could_not_run_are_both_kept(
+        self, tmp_path: Path
+    ):
+        """The check's detail names only the failed parts, so a part that
+        could not run beside one that failed was lost from the record. Both
+        are kept, each under its own heading, the one that could not run with
+        its reason."""
+        missing = "guardkit-test-no-such-program --run"
+        repo = _base_repo(
+            tmp_path,
+            {
+                "test": f'"{sys.executable}" checks/root.py',
+                "components": {"api": {"cwd": "apps/api", "test": missing}},
+            },
+        )
+        (repo / "checks").mkdir()
+        (repo / "checks" / "root.py").write_text(ROOT_FAILS, encoding="utf-8")
+        (repo / "apps" / "api").mkdir(parents=True)
+        (repo / "apps" / "api" / "keep.txt").write_text("api\n", encoding="utf-8")
+        _git(repo, "add", "-A")
+        _git(repo, "commit", "-q", "-m", "a root check and an API part")
+        _branch_adding(repo, "FEAT-MIXED", "apps/api/new.txt", "the API change\n")
+
+        report = execute_merge(repo, "FEAT-MIXED")
+
+        assert report.verify_status == "failed", report.verify_detail
+        assert "api" not in report.verify_detail, "the detail names only the failed part"
+        lines = list(report.to_dict()["verify_failing_output"])
+        root_heading = f'=== root: "{sys.executable}" checks/root.py'
+        api_heading = f"=== api (in apps/api): {missing}"
+        assert lines.index(root_heading) < lines.index(api_heading)
+        assert "FAILED tests/test_contract.py::test_the_api_matches_the_contract" in lines
+        reason = lines[lines.index(api_heading) + 1]
+        assert reason.startswith("could not run: verification command could not start")
+        assert "guardkit-test-no-such-program" in reason

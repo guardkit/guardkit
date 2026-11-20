@@ -145,7 +145,8 @@ class MergeReport:
     verify_output_tail: str = ""
     # What each part of that check that FAILED printed, as lines: a
     # "=== part: command" heading and the last 100 lines of its output
-    # (``VerificationResult.failing_output``, 20 November 2026). The tail
+    # (``VerificationResult.failing_output``, 20 November 2026); a part that
+    # could not run, under its heading with its reason. The tail
     # above is always the last part's, so FEAT-18FD's record kept the API
     # part's passing output and nothing of the root check that failed. A list
     # in the report, because Forge turns line breaks in a string into spaces.
