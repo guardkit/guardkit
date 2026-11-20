@@ -338,6 +338,20 @@ def _earlier_record(out: Path, orchestrator: Any, feature_id: str, worktree_path
     return record
 
 
+def repair_last_task(orchestrator: Any, feature: Any, worktree: Any, feedback: str, attempt: int) -> Any:
+    """Re-open the feature's last task with ``feedback`` and return the repair's wave result.
+
+    The end review's repair route, also taken by a failed root check at the end of the build (20
+    November 2026). Through the failed-task re-entry, not the "re-open" one: that is the
+    whole-feature-check repair, whose guard refuses any file the task document does not name, and
+    each refused turn is another builder turn. Protected files are still refused.
+    """
+    groups = feature.orchestration.parallel_groups
+    wave, repair_task = len(groups), groups[-1][-1]
+    next(task for task in feature.tasks if task.id == repair_task).status = "failed"
+    return orchestrator._execute_wave(wave, [repair_task], feature, worktree, seed_feedback=feedback, attempt=attempt)
+
+
 def run_end_review(orchestrator: Any, feature: Any, worktree: Any, wave_results: List[Any]) -> None:
     """The end review and its repair rounds, between the wave phase and the whole-feature check.
 
@@ -386,8 +400,7 @@ def _run(orchestrator: Any, feature: Any, worktree: Any, wave_results: List[Any]
         record["status"] = "skipped: not every task completed, so there is no finished feature to review"
         logger.info("The end review is skipped: %s", record["status"])
         return
-    groups = feature.orchestration.parallel_groups
-    wave, repair_task = len(groups), groups[-1][-1]
+    repair_task = feature.orchestration.parallel_groups[-1][-1]
     base = resolve_feature_base(worktree_path, feature.id)
     if "request" not in record:
         request, source = find_request(feature, worktree_path)
@@ -429,11 +442,7 @@ def _run(orchestrator: Any, feature: Any, worktree: Any, wave_results: List[Any]
         (out / f"repair-{round_number}-feedback.txt").write_text(feedback, encoding="utf-8")
         logger.info("End review %s found %s fault(s); repair round %s on %s", round_number, len(faults), round_number, repair_task)
         started = time.time()
-        # Through the failed-task re-entry, not the "re-open" one: that is the whole-feature-check repair, whose guard
-        # refuses any file the task document does not name, and each refused turn is another builder turn.
-        next(task for task in tasks if task.id == repair_task).status = "failed"
-        wave_result = orchestrator._execute_wave(wave, [repair_task], feature, worktree, seed_feedback=feedback,
-                                                  attempt=REPAIR_ATTEMPT + round_number)
+        wave_result = repair_last_task(orchestrator, feature, worktree, feedback, REPAIR_ATTEMPT + round_number)
         # The repair task's latest result stands for it, as its status does: an earlier repair that failed
         # and was repaired again must not stop the whole-feature check from running on the repaired code.
         # It stays in this record. No other task's result is touched.

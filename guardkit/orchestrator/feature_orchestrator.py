@@ -174,6 +174,42 @@ _FAILED_TASK_NOT_RETRIED = frozenset({"cancelled", "skipped", "deferred"})
 #: re-runs of the wave, which count up from 1.
 _FAILED_TASK_RETRY_ATTEMPT = 100
 
+#: The root check at the end of the build (20 November 2026): its repairs'
+#: ``wave.completed`` events count up from here, past the end review's (200+).
+_END_ROOT_CHECK_REPAIR_ATTEMPT = 300
+
+#: How a failed root check at the end of the build names itself on the last
+#: wave's gate result, which fails the feature; the finaliser reads it back.
+END_ROOT_CHECK_GATE = (
+    "root check at the end of the build (the merge's full check: "
+    "toolchain.test and every part's test)"
+)
+
+#: Where the root check's record lands: beside the whole-feature check's.
+END_ROOT_CHECK_RECORD = (
+    Path(".guardkit") / "autobuild-private" / "root_check.json"
+)
+
+
+def end_root_check_feedback(result: Any) -> str:
+    """The builder's instructions after the root check failed at the end of
+    the build: the check's own words and the failing parts' last lines."""
+    printed = list(getattr(result, "failing_output", ()) or ())
+    if not printed and getattr(result, "output_tail", ""):
+        printed = str(result.output_tail).splitlines()
+    lines = [
+        "The project's full check failed on the finished feature. It is the "
+        "check the merge runs: the root check and every part's tests, on the "
+        "whole tree. During the build each task ran only the tests of the "
+        "parts it changed. Fix what it reports and keep everything else "
+        "working, then run the project's check. Change any file the fix needs.",
+        "",
+        f"Result: {getattr(result, 'detail', '')}",
+    ]
+    if printed:
+        lines += ["", "What the failing parts printed (the last lines of each):", *printed]
+    return "\n".join(lines)
+
 
 def _estimate_timeout_factor() -> float:
     """Safety factor applied to a task's own ``estimated_minutes`` when
@@ -716,6 +752,8 @@ class FeatureOrchestrator:
                 # after it and its repairs instead, so it checks the code that
                 # will merge; with the per-task reviewer back
                 # (GUARDKIT_PER_TASK_REVIEW) it runs after the last wave as before.
+                # Either way the root check runs first, on the same tree
+                # (20 November 2026; _run_feature_check).
                 from guardkit.orchestrator import end_review as _end_review
 
                 end_review_on = _end_review.enabled()
@@ -1883,7 +1921,8 @@ The detailed specifications are in the task markdown file.
         # The whole-feature check, after the last wave (B9 correction,
         # 2026-09-19). Everything above proves the parts. This proves the
         # FEATURE does what the person asked, at the surface they use, using
-        # the one command the project declared for exactly that.
+        # the one command the project declared for exactly that. The root
+        # check runs first, on the same tree (20 November 2026).
         if feature_check:
             self._run_feature_check(feature, worktree, wave_results)
 
@@ -2015,8 +2054,17 @@ The detailed specifications are in the task markdown file.
         it, so the finaliser records ``failed`` and Forge never offers the
         card.
 
+        The root check runs first (20 November 2026, :meth:`_end_root_check`):
+        the build's final checks are the root check and this one, on the same
+        tree, root first. Any repair, whichever check asked for it, changes
+        the tree, so after every repair the root check runs again and then
+        this one; the build goes on only when both have passed on the same
+        final tree. The repair rounds of the two share one cap,
+        ``end_review.REPAIR_ROUNDS``, beside this check's own budget.
+
         Returns ``None`` when nothing ran: a build that did not finish (it has
-        its own answer already), or a project that declared no check.
+        its own answer already), or a project that declared no check. Also
+        ``None`` when the root check failed the feature.
         """
         skip_reason = self._feature_check_skip_reason(feature, wave_results)
         if skip_reason is not None:
@@ -2025,6 +2073,18 @@ The detailed specifications are in the task markdown file.
                 "its own answer",
                 skip_reason,
             )
+            return None
+
+        from guardkit.orchestrator.end_review import REPAIR_ROUNDS
+
+        # The wave this check's own repairs re-enter, chosen before any root
+        # repair is added to the results, so its route stays as it was.
+        last_wave = wave_results[-1]
+        root_runs: List[Dict[str, Any]] = []
+        root_ok, repairs_left = self._end_root_check(
+            feature, worktree, wave_results, root_runs, REPAIR_ROUNDS
+        )
+        if not root_ok:
             return None
 
         declaration = load_feature_check_declaration(self.repo_root)
@@ -2047,7 +2107,6 @@ The detailed specifications are in the task markdown file.
                 )
             return outcome
 
-        last_wave = wave_results[-1]
         wave_number = last_wave.wave_number
         task_ids = list(last_wave.task_ids)
         titles = feature_scenario_titles(feature)
@@ -2070,7 +2129,7 @@ The detailed specifications are in the task markdown file.
                     declaration,
                     attempt,
                     wave_number,
-                    repair_follows=retries_remaining > 0,
+                    repair_follows=retries_remaining > 0 and repairs_left > 0,
                 )
 
             if attempt.passed:
@@ -2111,13 +2170,14 @@ The detailed specifications are in the task markdown file.
                     status=FEATURE_CHECK_COULD_NOT_RUN,
                 )
 
-            if retries_remaining <= 0:
+            if retries_remaining <= 0 or repairs_left <= 0:
                 return self._finish_feature_check(
                     feature, worktree, declaration, attempts, wave_results,
                     status=FEATURE_CHECK_FAILED,
                 )
 
             retries_remaining -= 1
+            repairs_left -= 1
             feedback = build_feature_check_feedback(
                 attempt, request_words=request_words, titles=titles
             )
@@ -2178,6 +2238,209 @@ The detailed specifications are in the task markdown file.
                     feature, worktree, declaration, attempts, wave_results,
                     status=FEATURE_CHECK_FAILED,
                 )
+            # The repair changed the tree, so the root check runs on it again
+            # before this check does (Codex R1, 20 November 2026): a repair
+            # that touched one part can break the root check.
+            root_ok, repairs_left = self._end_root_check(
+                feature, worktree, wave_results, root_runs, repairs_left
+            )
+            if not root_ok:
+                return None
+
+    # -----------------------------------------------------------------------
+    # The root check at the end of the build (20 November 2026)
+    # -----------------------------------------------------------------------
+
+    def _end_root_check(
+        self,
+        feature: Feature,
+        worktree: Worktree,
+        wave_results: List[WaveExecutionResult],
+        runs: List[Dict[str, Any]],
+        repairs_left: int,
+    ) -> Tuple[bool, int]:
+        """Run the merge's full check on the finished tree, then repair.
+
+        Plain words: during the build each task ran only the tests of the
+        parts it changed, so a build could end without the root check ever
+        running on its finished tree, and the merge, hours later, was the
+        first to run it (FEAT-D5BC: it timed out there, 12 hours after the
+        request was sent). This runs the merge's own check here
+        (``run_completion_verification``, on the working copy, with the last
+        task's pinned settings) as the checkout's only writer. A failure goes
+        back to the last task through the end review's repair route, with the
+        failing output as its feedback, and the check runs again on the
+        repaired tree. Each repair takes one of ``repairs_left``, the cap the
+        whole-feature check's repairs share.
+
+        Returns ``(ok, repairs_left)``. ``ok`` is False only when the check
+        still fails with no round left, or a repair did not pass its own
+        checks: the feature is then failed here, with the check's output, and
+        no merge is offered. A check that could not run, or a build with no
+        pinned settings, is recorded and the build goes on, as before.
+        """
+        from guardkit.orchestrator.end_review import repair_last_task
+        from guardkit.orchestrator.toolchain_declaration import (
+            load_toolchain_snapshot,
+        )
+
+        last_task = feature.orchestration.parallel_groups[-1][-1]
+        while True:
+            declaration = load_toolchain_snapshot(last_task, Path(worktree.path))
+            if declaration is None:
+                logger.info(
+                    "Root check at the end of the build not run: no settings "
+                    "were pinned for %s",
+                    last_task,
+                )
+                return True, repairs_left
+            started = time.monotonic()
+            result = self._checked_writer(
+                worktree, self._end_root_check_owned, declaration, worktree
+            )
+            seconds = round(time.monotonic() - started, 1)
+            logger.info(
+                "Root check at the end of the build %s in %.1f s (run %d): %s",
+                result.status,
+                seconds,
+                len(runs) + 1,
+                result.detail,
+            )
+            failed = result.status == "failed"
+            runs.append({
+                "run": len(runs) + 1,
+                "status": result.status,
+                "command": result.command,
+                "source": result.source,
+                "detail": result.detail,
+                "returncode": result.returncode,
+                "seconds": seconds,
+                "candidate_sha": feature_check_candidate_sha(Path(worktree.path)),
+                "ran_at": datetime.now().isoformat(),
+                "failing_output": list(result.failing_output),
+                "repair_follows": failed and repairs_left > 0,
+            })
+            self._write_end_root_check_record(feature, worktree, runs)
+            if not failed:
+                return True, repairs_left
+            if repairs_left <= 0:
+                self._fail_on_end_root_check(
+                    feature, wave_results, result, declaration,
+                    f"the root check at the end of the build failed "
+                    f"({result.detail}) after {len(runs)} run(s)",
+                )
+                return False, 0
+            repairs_left -= 1
+            if not self.quiet:
+                console.print(
+                    "[yellow]↻ The root check failed on the finished "
+                    f"feature[/yellow] — re-opening {last_task} with its "
+                    "output as Player feedback.",
+                    markup=True,
+                )
+            started = time.monotonic()
+            wave_result = repair_last_task(
+                self, feature, worktree, end_root_check_feedback(result),
+                _END_ROOT_CHECK_REPAIR_ATTEMPT + len(runs),
+            )
+            wave_results.append(wave_result)
+            runs[-1]["repair"] = {
+                "task": last_task,
+                "seconds": round(time.monotonic() - started, 1),
+                "succeeded": bool(wave_result.all_succeeded),
+            }
+            self._write_end_root_check_record(feature, worktree, runs)
+            if not wave_result.all_succeeded:
+                logger.error(
+                    "The repair round for the root check did not pass its "
+                    "own checks, so this feature is failed."
+                )
+                self._fail_on_end_root_check(
+                    feature, wave_results, result, declaration,
+                    f"the root check at the end of the build failed "
+                    f"({result.detail}) and its repair did not pass its own "
+                    f"checks",
+                )
+                return False, repairs_left
+
+    def _end_root_check_owned(self, declaration: Any, worktree: Worktree) -> Any:
+        """One run of the merge's full check on the working copy."""
+        from guardkit.orchestrator.completion_verification import (
+            resolve_verify_command_with_declaration,
+            run_completion_verification,
+        )
+
+        root = Path(worktree.path)
+        command, source, declared = resolve_verify_command_with_declaration(
+            root, declaration
+        )
+        return run_completion_verification(
+            root, command, source, declaration=declared, own_process_group=True
+        )
+
+    def _write_end_root_check_record(
+        self, feature: Feature, worktree: Worktree, runs: List[Dict[str, Any]]
+    ) -> None:
+        """Every run so far, beside the whole-feature check's record. Never
+        raises: a record never fails a build."""
+        try:
+            path = Path(worktree.path) / END_ROOT_CHECK_RECORD
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(
+                json.dumps(
+                    {
+                        "feature_id": feature.id,
+                        "status": runs[-1]["status"] if runs else None,
+                        "runs": runs,
+                    },
+                    indent=2,
+                    default=str,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+        except Exception as exc:  # noqa: BLE001 — a record never fails a build
+            logger.warning(
+                "The root check's record could not be written: %s", exc
+            )
+
+    def _fail_on_end_root_check(
+        self,
+        feature: Feature,
+        wave_results: List[WaveExecutionResult],
+        result: Any,
+        declaration: Any,
+        summary: str,
+    ) -> None:
+        """Fail the feature on the root check, as a failed whole-feature
+        check does: a failed gate result on the last wave, carrying the
+        check's failing output, and that wave un-marked so a resume re-runs it.
+        The finaliser then records ``failed`` and no merge is offered."""
+        last = wave_results[-1] if wave_results else None
+        if last is not None:
+            last.smoke_gate_result = SmokeGateResult(
+                passed=False,
+                # A failed part with no exit code timed out.
+                exit_code=(
+                    result.returncode if result.returncode is not None else -1
+                ),
+                stdout=(
+                    "\n".join(result.failing_output) or result.output_tail
+                ),
+                stderr=summary,
+                timed_out=result.returncode is None,
+                command=END_ROOT_CHECK_GATE,
+                timeout=int(getattr(declaration, "test_timeout", 0) or 0),
+                after_wave=last.wave_number,
+            )
+            self._unmark_wave_completed(feature, last.wave_number)
+        logger.error(
+            "Root check at the end of the build FAILED, so this feature is "
+            "marked failed: %s",
+            summary,
+        )
+        if not self.quiet:
+            console.print(f"[red]✗ {summary}[/red]", markup=True)
 
     def _one_feature_check_attempt(self, attempt_number, declaration, feature, worktree):
         return self._checked_writer(worktree, self._one_feature_check_attempt_owned,
@@ -4531,6 +4794,15 @@ The detailed specifications are in the task markdown file.
                 and str(gate.command).startswith("whole-feature check (")
             ):
                 feature_check_error = gate.stderr or "the whole-feature check failed"
+                break
+            if (
+                gate is not None
+                and not gate.passed
+                and str(gate.command) == END_ROOT_CHECK_GATE
+            ):
+                feature_check_error = (
+                    gate.stderr or "the root check at the end of the build failed"
+                )
                 break
 
         # Update feature
