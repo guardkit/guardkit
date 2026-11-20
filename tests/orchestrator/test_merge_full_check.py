@@ -543,3 +543,75 @@ class TestDeclaredNoTestsRan:
         assert report.verify_ok is False
         assert "no `ran_marker_regex`" in report.verify_detail
         assert not marker.exists(), "the command must not run"
+
+
+# ---------------------------------------------------------------------------
+# The failing parts' output is kept (20 November 2026)
+# ---------------------------------------------------------------------------
+
+#: FEAT-18FD's shape: the root check fails after a long run, the API part
+#: passes with about 2,000 characters of output, and the record kept only the
+#: API part's output (endings row 29). The root prints 250 lines, so the cut
+#: to its last 100 shows.
+ROOT_FAILS = (
+    "import sys\n"
+    "for n in range(1, 251):\n"
+    "    print(f'root line {n}')\n"
+    "print('FAILED tests/test_contract.py::test_the_api_matches_the_contract')\n"
+    "sys.exit(1)\n"
+)
+API_PASSES = (
+    "for n in range(1, 61):\n"
+    "    print(f'apps/api passing test {n:03d} ........ ok')\n"
+)
+
+
+class TestTheFailingPartsOutputIsKept:
+    def test_a_failing_root_beside_a_passing_part_keeps_the_root_lines(
+        self, tmp_path: Path
+    ):
+        repo = _base_repo(
+            tmp_path,
+            {
+                "test": f'"{sys.executable}" checks/root.py',
+                "components": {
+                    "api": {"cwd": "apps/api", "test": f'"{sys.executable}" check.py'}
+                },
+            },
+        )
+        (repo / "checks").mkdir()
+        (repo / "checks" / "root.py").write_text(ROOT_FAILS, encoding="utf-8")
+        (repo / "apps" / "api").mkdir(parents=True)
+        (repo / "apps" / "api" / "check.py").write_text(API_PASSES, encoding="utf-8")
+        _git(repo, "add", "-A")
+        _git(repo, "commit", "-q", "-m", "a root check and an API part")
+        _branch_adding(repo, "FEAT-18FD", "apps/api/new.txt", "the API change\n")
+
+        report = execute_merge(repo, "FEAT-18FD")
+
+        assert report.verify_status == "failed", report.verify_detail
+        # What the record held before: the end of the API part's passing run.
+        assert "test_the_api_matches_the_contract" not in report.verify_output_tail
+        assert "apps/api passing test 060" in report.verify_output_tail
+        lines = list(report.verify_failing_output)
+        assert lines[0] == f'=== root: "{sys.executable}" checks/root.py'
+        assert lines[-1] == (
+            "FAILED tests/test_contract.py::test_the_api_matches_the_contract"
+        )
+        # The last 100 lines of the root's output, and nothing of the API part.
+        assert len(lines) == 1 + 100
+        assert lines[1] == "root line 152"
+        assert not any("apps/api passing" in line for line in lines)
+        # In the report as a list of lines, which survives a writer that turns
+        # line breaks in a string into spaces.
+        written = json.loads(json.dumps(report.to_dict()))
+        assert written["verify_failing_output"] == lines
+
+    def test_a_passing_check_keeps_no_failing_lines(self, tmp_path: Path):
+        repo = _base_repo(tmp_path, {"test": declared_command()})
+        _branch_adding(repo, "FEAT-CLEAN", "tests/test_new_green.py", GREEN)
+
+        report = execute_merge(repo, "FEAT-CLEAN")
+
+        assert report.verify_status == "passed", report.verify_detail
+        assert report.to_dict()["verify_failing_output"] == []

@@ -508,3 +508,70 @@ class TestTheWholeRunOutputIsKept:
             detail="UNVERIFIED: no test runner detected",
         )
         assert result.output_for_parsing == ""
+
+
+# ============================================================================
+# The failing commands' own lines (20 November 2026)
+# ============================================================================
+# ``output_tail`` is the end of every part's output joined, so it is always
+# the last part's. ``failing_output`` keeps each FAILED command's heading and
+# the last 100 lines it printed, as a list (FEAT-18FD, endings row 29).
+# ============================================================================
+
+
+class TestTheFailingCommandsLinesAreKept:
+    def test_every_failed_part_keeps_its_own_lines_in_order(self, tmp_path):
+        from guardkit.orchestrator.toolchain_declaration import parse_toolchain_block
+
+        def printer(name: str, code: int) -> str:
+            script = f"print('{name} says hello'); raise SystemExit({code})"
+            return f'"{sys.executable}" -c "{script}"'
+
+        for folder in ("api", "web"):
+            (tmp_path / folder).mkdir()
+        declaration = parse_toolchain_block({
+            "test": printer("root", 1),
+            "components": {
+                "api": {"cwd": "api", "test": printer("api", 0)},
+                "web": {"cwd": "web", "test": printer("web", 2)},
+            },
+        })
+
+        result = run_completion_verification(
+            tmp_path, "the full check", "repository toolchain declaration",
+            declaration=declaration, timeout=60,
+        )
+
+        assert result.status == "failed", result.detail
+        assert result.failing_output == (
+            f"=== root: {printer('root', 1)}",
+            "root says hello",
+            f"=== web (in web): {printer('web', 2)}",
+            "web says hello",
+        )
+        # The excerpt still means what it meant: the end of everything.
+        assert result.output_tail.rstrip().endswith("web says hello")
+
+    def test_a_command_that_timed_out_keeps_what_it_printed(self, tmp_path):
+        script = "import sys, time; print('started the slow suite'); sys.stdout.flush(); time.sleep(30)"
+        command = f'"{sys.executable}" -c "{script}"'
+
+        result = run_completion_verification(
+            tmp_path, command, "--verify-cmd override", timeout=2,
+            own_process_group=True,
+        )
+
+        assert result.status == "failed"
+        assert "timed out" in result.detail
+        assert result.failing_output == (
+            f"=== check: {command}",
+            "started the slow suite",
+        )
+
+    def test_a_passing_run_has_no_failing_lines(self, tmp_path):
+        result = run_completion_verification(
+            tmp_path, f'"{sys.executable}" -c "print(1)"', "--verify-cmd override",
+            timeout=60,
+        )
+        assert result.status == "passed"
+        assert result.failing_output == ()

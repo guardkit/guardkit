@@ -143,6 +143,13 @@ class MergeReport:
     # 1, no failing tests named" and nothing else, so the cause could not be
     # read without running the check again.
     verify_output_tail: str = ""
+    # What each part of that check that FAILED printed, as lines: a
+    # "=== part: command" heading and the last 100 lines of its output
+    # (``VerificationResult.failing_output``, 20 November 2026). The tail
+    # above is always the last part's, so FEAT-18FD's record kept the API
+    # part's passing output and nothing of the root check that failed. A list
+    # in the report, because Forge turns line breaks in a string into spaces.
+    verify_failing_output: Tuple[str, ...] = ()
 
     @property
     def verify_ok(self) -> bool:
@@ -172,6 +179,7 @@ class MergeReport:
             "judge_files_not_on_target": list(self.judge_files_not_on_target),
             "judged_with_build_copies": list(self.judged_with_build_copies),
             "verify_output_tail": self.verify_output_tail,
+            "verify_failing_output": list(self.verify_failing_output),
         }
 
     def receipt_lines(self) -> List[str]:
@@ -1636,6 +1644,9 @@ def _report_from_the_check(
         verify_source=verify_source,
         verify_output_tail=(
             verification.output_tail if status != "passed" else ""
+        ),
+        verify_failing_output=(
+            verification.failing_output if status != "passed" else ()
         ),
         notes=tuple(list(report.notes) + list(pre_merge_notes) + list(run.notes)),
     )

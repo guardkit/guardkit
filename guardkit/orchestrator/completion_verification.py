@@ -38,7 +38,7 @@ import logging
 import subprocess
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Sequence, Tuple, Union
 
 from guardkit.orchestrator.launch_declaration import load_launch_declaration
 from guardkit.orchestrator.project_command_env import (
@@ -76,6 +76,9 @@ __all__ = [
 # smoke default; 600s matches the smoke-gate schema's upper bound.
 DEFAULT_VERIFY_TIMEOUT = 600
 
+#: How much of each failed command's output ``failing_output`` keeps.
+FAILING_OUTPUT_LINES = 100
+
 #: The source words when a project declares no check at all.
 NOTHING_DECLARED = (
     "nothing declared: .guardkit/config.yaml declares no `toolchain` test "
@@ -110,6 +113,15 @@ class VerificationResult:
     # that reads test names out of a run must read this field instead. Empty
     # only when the caller built the result by hand.
     full_output: str = ""
+    # What each FAILED command printed, as lines: a "=== part: command"
+    # heading, then the last :data:`FAILING_OUTPUT_LINES` lines of that
+    # command's output, for every failed part in order (20 November 2026).
+    # ``output_tail`` is the end of every part's output joined, so it is
+    # always the last part's: FEAT-18FD's merge record held the API part's
+    # passing output and nothing of the root check that failed. A list, not
+    # one string, because Forge's report writer turns line breaks in a string
+    # into spaces. Empty when nothing failed.
+    failing_output: Tuple[str, ...] = ()
 
     @property
     def output_for_parsing(self) -> str:
@@ -298,9 +310,10 @@ def run_completion_verification(
             source=source,
         )
     if declaration is None:
-        return _run_one(
+        alone = _run_one(
             Path(repo_root), command, source, timeout, env, own_process_group
         )
+        return replace(alone, failing_output=_failing_lines([("check", alone)]))
     parts = full_check_parts(declaration, Path(repo_root))
     if not parts:
         return VerificationResult(
@@ -390,8 +403,11 @@ def run_completion_verification(
                 part.name,
             ))
         )
+    failing_output = _failing_lines(results)
     if len(results) == 1:
-        return replace(results[0][1], command=command)
+        return replace(
+            results[0][1], command=command, failing_output=failing_output
+        )
     statuses = [r.status for _, r in results]
     status = (
         "failed" if "failed" in statuses
@@ -414,7 +430,27 @@ def run_completion_verification(
         output_tail=full[-2000:],
         source=source,
         full_output=full,
+        failing_output=failing_output,
     )
+
+
+def _failing_lines(
+    results: Sequence[Tuple[str, VerificationResult]],
+) -> Tuple[str, ...]:
+    """Every failed command's heading and the end of its output, as lines.
+
+    ``=== <part>: <command>`` and then the last :data:`FAILING_OUTPUT_LINES`
+    lines of what it printed, for each failed result in order. A command that
+    timed out keeps the standard output it had (:func:`_run_one`).
+    """
+    lines: List[str] = []
+    for label, result in results:
+        if result.status != "failed":
+            continue
+        lines.append(f"=== {label}: {result.command}")
+        printed = (result.full_output or result.output_tail).rstrip().splitlines()
+        lines.extend(printed[-FAILING_OUTPUT_LINES:])
+    return tuple(lines)
 
 
 def _said_nothing_ran(
