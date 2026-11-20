@@ -88,6 +88,18 @@ TOOLCHAIN = """toolchain:
   feature_check: "sh qa/feature-check.sh"
 """
 
+#: The same project, with an install declared for the API part that fails:
+#: the full check then cannot run its tests (Codex R2).
+TOOLCHAIN_WITH_A_FAILING_INSTALL = TOOLCHAIN.replace(
+    '      test: "sh test.sh"\n',
+    '      test: "sh test.sh"\n      install: "sh install.sh"\n',
+)
+
+API_INSTALL_FAILS = """#!/bin/sh
+echo "apps/api: the package registry could not be reached" >&2
+exit 3
+"""
+
 FIRST, LAST = "TASK-001", "TASK-002"
 
 
@@ -103,12 +115,15 @@ def _git(root: Path, *args: str) -> str:
     ).stdout.strip()
 
 
-def _project(tmp_path: Path, *, feature_works: bool = True) -> tuple[Path, Path]:
+def _project(
+    tmp_path: Path, *, feature_works: bool = True, toolchain: str = TOOLCHAIN
+) -> tuple[Path, Path]:
     """The main checkout (where the whole-feature check is declared) and the
     build's worktree: a root check, an API part, and the feature check."""
     repo_root, worktree = tmp_path / "main", tmp_path / "worktree"
-    _write(repo_root, ".guardkit/config.yaml", TOOLCHAIN)
-    _write(worktree, ".guardkit/config.yaml", TOOLCHAIN)
+    _write(repo_root, ".guardkit/config.yaml", toolchain)
+    _write(worktree, ".guardkit/config.yaml", toolchain)
+    _write(worktree, "apps/api/install.sh", API_INSTALL_FAILS)
     _write(worktree, ".gitignore", ".guardkit/autobuild-private/\n")
     _write(worktree, "checks/root.sh", ROOT_CHECK)
     _write(worktree, "CONTRACT", "v1\n")
@@ -418,3 +433,54 @@ def test_the_two_checks_share_one_cap_of_two_rounds(
     check = _feature_check_record(worktree)
     assert check["status"] == "failed" and len(check["attempts"]) == 2
     assert result.status == "failed"
+
+
+# ---------------------------------------------------------------------------
+# 6. A check that could not run is not a pass (Codex R2)
+# ---------------------------------------------------------------------------
+
+
+def test_a_root_check_that_could_not_run_fails_the_build_before_any_merge_offer(
+    tmp_path: Path, capsys: pytest.CaptureFixture
+) -> None:
+    """A declared part's install fails, so the full check cannot run its
+    tests; the whole-feature check would pass. The build must not complete or
+    offer a merge: it goes through the same repairs under the same cap, then
+    fails with the reason."""
+    repo_root, worktree = _project(tmp_path, toolchain=TOOLCHAIN_WITH_A_FAILING_INSTALL)
+    feature = _feature(worktree)
+    builder = _Builder(worktree, {})
+
+    result = _build(repo_root, worktree, feature, builder, end_review=True)
+
+    repairs = builder.repairs()
+    assert [r["tasks"] for r in repairs] == [[LAST], [LAST]], "the shared cap: two rounds"
+    feedback = repairs[0]["feedback"]
+    assert "The project's full check could not run on the finished feature" in feedback
+    assert "the declared install (`sh install.sh`) for part api (in apps/api)" in feedback
+    assert "the package registry could not be reached" in feedback
+    runs = _root_record(worktree)["runs"]
+    assert [r["status"] for r in runs] == ["unverified"] * 3
+    assert [r["repair_follows"] for r in runs] == [True, True, False]
+
+    assert result.status == "failed" and result.success is False
+    assert result.error.startswith("the root check at the end of the build could not run")
+    assert "the package registry could not be reached" in result.error
+    gate = result.wave_results[-1].smoke_gate_result
+    assert gate is not None and gate.passed is False and gate.timed_out is False
+    assert gate.command == END_ROOT_CHECK_GATE
+    assert _feature_check_record(worktree) is None, "the whole-feature check never ran"
+    assert "GUARDKIT_STOPPED_BECAUSE" not in capsys.readouterr().out
+
+
+def test_a_root_check_that_could_not_run_and_is_repaired_goes_on(tmp_path: Path) -> None:
+    repo_root, worktree = _project(tmp_path, toolchain=TOOLCHAIN_WITH_A_FAILING_INSTALL)
+    feature = _feature(worktree)
+    builder = _Builder(worktree, {2: lambda wt: _write(wt, "apps/api/install.sh", "exit 0\n")})
+
+    result = _build(repo_root, worktree, feature, builder, end_review=True)
+
+    assert len(builder.repairs()) == 1
+    assert [r["status"] for r in _root_record(worktree)["runs"]] == ["unverified", "passed"]
+    assert _feature_check_record(worktree)["status"] == "passed"
+    assert result.status == "completed", result.error

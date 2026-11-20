@@ -192,13 +192,18 @@ END_ROOT_CHECK_RECORD = (
 
 
 def end_root_check_feedback(result: Any) -> str:
-    """The builder's instructions after the root check failed at the end of
-    the build: the check's own words and the failing parts' last lines."""
+    """The builder's instructions after the root check failed, or could not
+    run, at the end of the build: the check's own words and the failing
+    parts' last lines."""
     printed = list(getattr(result, "failing_output", ()) or ())
     if not printed and getattr(result, "output_tail", ""):
         printed = str(result.output_tail).splitlines()
+    what = (
+        "failed" if getattr(result, "status", "") == "failed"
+        else "could not run"
+    )
     lines = [
-        "The project's full check failed on the finished feature. It is the "
+        f"The project's full check {what} on the finished feature. It is the "
         "check the merge runs: the root check and every part's tests, on the "
         "whole tree. During the build each task ran only the tests of the "
         "parts it changed. Fix what it reports and keep everything else "
@@ -2273,11 +2278,17 @@ The detailed specifications are in the task markdown file.
         repaired tree. Each repair takes one of ``repairs_left``, the cap the
         whole-feature check's repairs share.
 
-        Returns ``(ok, repairs_left)``. ``ok`` is False only when the check
-        still fails with no round left, or a repair did not pass its own
-        checks: the feature is then failed here, with the check's output, and
-        no merge is offered. A check that could not run, or a build with no
-        pinned settings, is recorded and the build goes on, as before.
+        Only ``passed`` lets the build go on. A check that could not run
+        (``unverified``: a declared part's install failed, or a declared
+        program is missing) is treated as a failure, with its reason as the
+        feedback (Codex R2, 20 November 2026): the merge would not pass it
+        either.
+
+        Returns ``(ok, repairs_left)``. ``ok`` is False when the check still
+        fails, or still could not run, with no round left, or a repair did not
+        pass its own checks: the feature is then failed here, with the check's
+        output or reason, and no merge is offered. A build with no pinned
+        settings is not checked here and goes on, as before.
         """
         from guardkit.orchestrator.end_review import repair_last_task
         from guardkit.orchestrator.toolchain_declaration import (
@@ -2306,7 +2317,9 @@ The detailed specifications are in the task markdown file.
                 len(runs) + 1,
                 result.detail,
             )
-            failed = result.status == "failed"
+            # Only a pass lets the build go on (Codex R2).
+            failed = result.status != "passed"
+            what = "failed" if result.status == "failed" else "could not run"
             runs.append({
                 "run": len(runs) + 1,
                 "status": result.status,
@@ -2326,14 +2339,14 @@ The detailed specifications are in the task markdown file.
             if repairs_left <= 0:
                 self._fail_on_end_root_check(
                     feature, wave_results, result, declaration,
-                    f"the root check at the end of the build failed "
+                    f"the root check at the end of the build {what} "
                     f"({result.detail}) after {len(runs)} run(s)",
                 )
                 return False, 0
             repairs_left -= 1
             if not self.quiet:
                 console.print(
-                    "[yellow]↻ The root check failed on the finished "
+                    f"[yellow]↻ The root check {what} on the finished "
                     f"feature[/yellow] — re-opening {last_task} with its "
                     "output as Player feedback.",
                     markup=True,
@@ -2357,7 +2370,7 @@ The detailed specifications are in the task markdown file.
                 )
                 self._fail_on_end_root_check(
                     feature, wave_results, result, declaration,
-                    f"the root check at the end of the build failed "
+                    f"the root check at the end of the build {what} "
                     f"({result.detail}) and its repair did not pass its own "
                     f"checks",
                 )
@@ -2414,21 +2427,27 @@ The detailed specifications are in the task markdown file.
     ) -> None:
         """Fail the feature on the root check, as a failed whole-feature
         check does: a failed gate result on the last wave, carrying the
-        check's failing output, and that wave un-marked so a resume re-runs it.
-        The finaliser then records ``failed`` and no merge is offered."""
+        check's failing output (or, when it could not run, its reason), and
+        that wave un-marked so a resume re-runs it. The finaliser then records
+        ``failed`` and no merge is offered."""
+        # A FAILED part with no exit code timed out; a check that could not
+        # run has no exit code either, and did not time out.
+        timed_out = result.status == "failed" and result.returncode is None
         last = wave_results[-1] if wave_results else None
         if last is not None:
             last.smoke_gate_result = SmokeGateResult(
                 passed=False,
-                # A failed part with no exit code timed out.
                 exit_code=(
-                    result.returncode if result.returncode is not None else -1
+                    result.returncode if result.returncode is not None
+                    else (-1 if timed_out else 1)
                 ),
                 stdout=(
-                    "\n".join(result.failing_output) or result.output_tail
+                    "\n".join(result.failing_output)
+                    or result.output_tail
+                    or result.detail
                 ),
                 stderr=summary,
-                timed_out=result.returncode is None,
+                timed_out=timed_out,
                 command=END_ROOT_CHECK_GATE,
                 timeout=int(getattr(declaration, "test_timeout", 0) or 0),
                 after_wave=last.wave_number,
