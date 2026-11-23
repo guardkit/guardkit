@@ -987,6 +987,7 @@ def write_feature_notes(
     task_ids: Sequence[str],
     root: Path,
     last_look: Optional[Callable[[List[Dict[str, str]]], Any]] = None,
+    end_review_not_reviewed: Optional[str] = None,
 ) -> Optional[Path]:
     """Write what each task's final review left, at most ten in all. Never raises.
 
@@ -999,6 +1000,10 @@ def write_feature_notes(
     note, or ``None``. Notes it answers NO LONGER APPLIES leave the card and
     are counted under ``rechecked``; the others stay. With no notes it is not
     called.
+
+    ``end_review_not_reviewed`` (``end_review.not_reviewed``) becomes the first note, after the
+    last look so it is never judged by it: the merge card then says the code was not reviewed as
+    a whole and why (23 November 2026).
     """
     try:
         from guardkit.orchestrator.paths import TaskArtifactPaths
@@ -1028,6 +1033,10 @@ def write_feature_notes(
             dropped = len(notes) - len(kept)
             record.update(notes=kept, total=total - dropped)
             record[RECHECKED_KEY] = {"still_true": len(kept), "no_longer_apply": dropped}
+        if end_review_not_reviewed:
+            first = {"pattern": "end review", "description": end_review_not_reviewed[:1].upper() + end_review_not_reviewed[1:]}
+            record["notes"] = [first] + list(record["notes"])[: MAX_LEFTOVERS - 1]
+            record["total"] = int(record["total"]) + 1
         path = Path(root) / NOTES_RELATIVE_PATH
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")

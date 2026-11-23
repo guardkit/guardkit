@@ -4799,6 +4799,8 @@ The detailed specifications are in the task markdown file.
                 if final_status == "completed" and LAST_LOOK_IN_BUILDS
                 else None
             ),
+            # Set by end_review.run_end_review when the code that merges was not reviewed.
+            end_review_not_reviewed=getattr(self, "_end_review_not_reviewed", None),
         )
 
         # When the whole-feature check failed during the wave phase, the

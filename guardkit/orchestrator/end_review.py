@@ -22,7 +22,9 @@ This is the code that was measured in the head-to-head (its arm 2), with its swi
 - **The record** is kept in ``.guardkit/autobuild/<feature id>/end_review/`` under the repository
   the build runs from: ``end_review.json`` (written after every step, so a resumed build carries
   on from it with the same two-round budget), ``pre_commit.txt`` (the commit before the review),
-  ``review-N-answer.txt`` and ``repair-N-feedback.txt``.
+  ``review-N-answer.txt`` and ``repair-N-feedback.txt``. When the last round could not run, the
+  record's ``not_reviewed`` says why in plain words, and the merge card shows it among the build
+  reviewer's notes (23 November 2026).
 """
 
 from __future__ import annotations
@@ -107,6 +109,36 @@ def repair_feedback(faults: List[Dict[str, Any]]) -> str:
 # ---------------------------------------------------------------------------
 # The request
 # ---------------------------------------------------------------------------
+
+
+def _plain_reason(error: str) -> str:
+    """Why a review could not run, in words for the merge card."""
+    if "Error code: 400" in error or "status_code=400" in error:
+        return "the model server refused one of its calls"
+    if error.startswith(("SDKTimeoutError", "TimeoutError", "CancelledError")) or "timed out" in error.lower():
+        return "it ran out of time"
+    return "it stopped with an error (the build's end review record has the details)"
+
+
+def not_reviewed(record: Dict[str, Any]) -> Optional[str]:
+    """The plain reason the code that will merge was not reviewed, or ``None`` when it was.
+
+    23 November 2026 (ai-transition docs/designs/end-review-refused-call-2026-11-23.md): two
+    reviews refused by the model server left records saying only "finished", and the merge
+    card said nothing. The status stays as it was (a resumed build still does not review
+    again); this reason goes on the merge card through the build reviewer's notes.
+    """
+    rounds = record.get("rounds") or []
+    error = record.get("error") if record.get("status") == "stopped by an error" else None
+    last = rounds[-1] if rounds else None
+    if last is not None and last.get("error") and not last.get("reviewed"):
+        error = last["error"]
+    if not error:
+        return None
+    answered = any(r.get("reviewed") for r in rounds)
+    head = ("the repaired code was not reviewed again" if answered
+            else "the finished feature was not reviewed as a whole")
+    return f"{head}, because {_plain_reason(str(error))}"
 
 
 def _git(worktree: Path, *args: str) -> Optional[str]:
@@ -376,6 +408,16 @@ def run_end_review(orchestrator: Any, feature: Any, worktree: Any, wave_results:
         record["error"] = f"{type(exc).__name__}: {exc}"
         record["status"] = "stopped by an error"
     finally:
+        try:
+            reason = not_reviewed(record)
+            if reason:
+                record["not_reviewed"] = reason
+            else:
+                record.pop("not_reviewed", None)
+            # For the merge card: _finalize_phase hands it to the build reviewer's notes.
+            orchestrator._end_review_not_reviewed = reason
+        except Exception as exc:  # noqa: BLE001 - a record never fails a build
+            logger.warning("The end review's not-reviewed reason could not be worked out: %s", exc)
         try:
             if out is not None:
                 _save(out, record)

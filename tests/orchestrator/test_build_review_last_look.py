@@ -348,3 +348,40 @@ def test_the_task_lookup_prompt_is_unchanged() -> None:
         "26d86605218cd9b5e4ea7ef270139bdc40a9a0b1a60a5c82d3ce5bdb0cc655f6",
     ]
     assert all(build_review.MERGE_CHECK_RULE in p for p in prompts)
+
+
+# --- the end review's not-reviewed reason on the card (23 November 2026) ------------------------
+
+def test_a_not_reviewed_reason_is_the_first_note_and_the_last_look_never_sees_it(tmp_path: Path) -> None:
+    _seed(tmp_path)
+    seen: List[List[Dict[str, str]]] = []
+
+    def look(notes):
+        seen.append(list(notes))
+        return None  # an unusable answer leaves the notes as they were
+
+    reason = "the finished feature was not reviewed as a whole, because the model server refused one of its calls"
+    path = build_review.write_feature_notes(FEATURE, TASKS, tmp_path, last_look=look,
+                                            end_review_not_reviewed=reason)
+    record = json.loads(path.read_text())
+
+    assert record["notes"][0] == {"pattern": "end review", "description": reason[0].upper() + reason[1:]}
+    assert record["notes"][1:] == [{"task_id": t, **n} for t, left in NOTES.items() for n in left]
+    assert record["total"] == 4
+    assert all(n.get("pattern") != "end review" for n in seen[0])
+
+
+def test_without_a_reason_the_notes_are_as_before(tmp_path: Path) -> None:
+    _seed(tmp_path)
+    before = _today(tmp_path)
+    path = build_review.write_feature_notes(FEATURE, TASKS, tmp_path, end_review_not_reviewed=None)
+    assert path.read_bytes() == before
+
+
+def test_a_reason_with_no_task_notes_is_still_written(tmp_path: Path) -> None:
+    path = build_review.write_feature_notes(FEATURE, TASKS, tmp_path,
+                                            end_review_not_reviewed="the finished feature was not reviewed as a whole")
+    record = json.loads(path.read_text())
+    assert record["notes"] == [{"pattern": "end review",
+                                "description": "The finished feature was not reviewed as a whole"}]
+    assert record["total"] == 1

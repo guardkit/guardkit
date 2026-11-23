@@ -777,3 +777,66 @@ def test_end_review_calls_reach_the_call_record_as_a_named_specialist(tmp_path: 
     assert [(e.agent_role, e.agent_name, e.task_id) for e in emitted] == [
         ("specialist", "end_review", FEATURE_ID)
     ]
+
+
+# --- the code that merges was not reviewed (23 November 2026) ------------------------------------
+# ai-transition docs/designs/end-review-refused-call-2026-11-23.md: FEAT-D925 and FEAT-B15C merged
+# after a refused model call stopped their reviews, with records saying only "finished".
+
+REFUSED = RuntimeError(
+    "AgentInvocationError: SDK invocation failed for coach (LangGraphHarnessError): Error code: 400 - "
+    "string argument should contain only ASCII characters"
+)
+
+
+def test_a_refused_review_says_the_feature_was_not_reviewed_and_why(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    worktree = _repo(tmp_path / "wt")
+    orchestrator = _orchestrator(tmp_path / "main", worktree)
+    _answers(monkeypatch, [REFUSED])
+
+    end_review.run_end_review(orchestrator, _feature(), SimpleNamespace(path=worktree), [])
+
+    record = _record(tmp_path / "main")
+    reason = ("the finished feature was not reviewed as a whole, because the model server refused "
+              "one of its calls")
+    assert record["status"] == "finished"  # a resumed build still does not review again
+    assert record["not_reviewed"] == reason
+    assert orchestrator._end_review_not_reviewed == reason
+
+
+def test_a_round_two_that_cannot_run_says_the_repair_was_not_reviewed_again(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    worktree = _repo(tmp_path / "wt")
+    orchestrator = _orchestrator(tmp_path / "main", worktree)
+    _answers(monkeypatch, [FAULT, TimeoutError("out of time")])
+
+    end_review.run_end_review(orchestrator, _feature(), SimpleNamespace(path=worktree), [])
+
+    assert _record(tmp_path / "main")["not_reviewed"] == (
+        "the repaired code was not reviewed again, because it ran out of time"
+    )
+
+
+def test_a_review_that_answers_has_no_not_reviewed_reason(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    worktree = _repo(tmp_path / "wt")
+    orchestrator = _orchestrator(tmp_path / "main", worktree)
+    _answers(monkeypatch, ["NO FAULTS"])
+
+    end_review.run_end_review(orchestrator, _feature(), SimpleNamespace(path=worktree), [])
+
+    assert "not_reviewed" not in _record(tmp_path / "main")
+    assert orchestrator._end_review_not_reviewed is None
+
+
+def test_a_skipped_review_has_no_not_reviewed_reason(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    worktree = _repo(tmp_path / "wt")
+    orchestrator = _orchestrator(tmp_path / "main", worktree)
+    _answers(monkeypatch, [])
+
+    end_review.run_end_review(orchestrator, _feature(statuses=["completed", "failed"]),
+                              SimpleNamespace(path=worktree), [])
+
+    assert "not_reviewed" not in _record(tmp_path / "main")
