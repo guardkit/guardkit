@@ -141,7 +141,7 @@ def not_reviewed(record: Dict[str, Any]) -> Optional[str]:
     if not error:
         if record.get("status") == "finished" and last is not None and last.get("repair"):
             return (f"the last repair was not reviewed again, because the end review stops after "
-                    f"{len(rounds)} rounds (the project's checks still ran on it)")
+                    f"{len(rounds)} rounds (the project's checks run on it next)")
         return None
     answered = any(r.get("reviewed") for r in rounds)
     head = ("the repaired code was not reviewed again" if answered

@@ -833,7 +833,7 @@ def test_a_last_repair_after_the_last_round_says_it_was_not_reviewed_again(
 
     record = _record(tmp_path / "main")
     reason = ("the last repair was not reviewed again, because the end review stops after "
-              f"{end_review.REPAIR_ROUNDS} rounds (the project's checks still ran on it)")
+              f"{end_review.REPAIR_ROUNDS} rounds (the project's checks run on it next)")
     assert len(seen) == end_review.REPAIR_ROUNDS  # no third review was asked for
     assert record["status"] == "finished"
     assert record["not_reviewed"] == reason
