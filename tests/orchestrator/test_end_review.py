@@ -820,6 +820,39 @@ def test_a_round_two_that_cannot_run_says_the_repair_was_not_reviewed_again(
     )
 
 
+def test_a_last_repair_after_the_last_round_says_it_was_not_reviewed_again(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # 24 November 2026: Go FEAT-63E9, TypeScript FEAT-3CCF and Python FEAT-C62E merged with a
+    # second repair no review looked at, and the card said nothing.
+    worktree = _repo(tmp_path / "wt")
+    orchestrator = _orchestrator(tmp_path / "main", worktree)
+    seen = _answers(monkeypatch, [FAULT, FAULT, FAULT])
+
+    end_review.run_end_review(orchestrator, _feature(), SimpleNamespace(path=worktree), [])
+
+    record = _record(tmp_path / "main")
+    reason = ("the last repair was not reviewed again, because the end review stops after "
+              f"{end_review.REPAIR_ROUNDS} rounds (the project's checks still ran on it)")
+    assert len(seen) == end_review.REPAIR_ROUNDS  # no third review was asked for
+    assert record["status"] == "finished"
+    assert record["not_reviewed"] == reason
+    assert orchestrator._end_review_not_reviewed == reason
+
+
+def test_a_repair_that_the_next_round_passes_has_no_not_reviewed_reason(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    worktree = _repo(tmp_path / "wt")
+    orchestrator = _orchestrator(tmp_path / "main", worktree)
+    _answers(monkeypatch, [FAULT, "NO FAULTS"])
+
+    end_review.run_end_review(orchestrator, _feature(), SimpleNamespace(path=worktree), [])
+
+    assert "not_reviewed" not in _record(tmp_path / "main")
+    assert orchestrator._end_review_not_reviewed is None
+
+
 def test_a_review_that_answers_has_no_not_reviewed_reason(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     worktree = _repo(tmp_path / "wt")
     orchestrator = _orchestrator(tmp_path / "main", worktree)

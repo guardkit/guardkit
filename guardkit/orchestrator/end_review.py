@@ -127,6 +127,11 @@ def not_reviewed(record: Dict[str, Any]) -> Optional[str]:
     reviews refused by the model server left records saying only "finished", and the merge
     card said nothing. The status stays as it was (a resumed build still does not review
     again); this reason goes on the merge card through the build reviewer's notes.
+
+    24 November 2026: the same applies when the review ran out of rounds. Its last round found
+    faults and the repair after it was never reviewed (Go FEAT-63E9, TypeScript FEAT-3CCF,
+    Python FEAT-C62E and FEAT-0C0D, endings rows 56 and 65 to 68). Rich: "yes please do all
+    three".
     """
     rounds = record.get("rounds") or []
     error = record.get("error") if record.get("status") == "stopped by an error" else None
@@ -134,6 +139,9 @@ def not_reviewed(record: Dict[str, Any]) -> Optional[str]:
     if last is not None and last.get("error") and not last.get("reviewed"):
         error = last["error"]
     if not error:
+        if record.get("status") == "finished" and last is not None and last.get("repair"):
+            return (f"the last repair was not reviewed again, because the end review stops after "
+                    f"{len(rounds)} rounds (the project's checks still ran on it)")
         return None
     answered = any(r.get("reviewed") for r in rounds)
     head = ("the repaired code was not reviewed again" if answered
