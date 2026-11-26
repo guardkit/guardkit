@@ -1990,6 +1990,70 @@ class TestShellRoleReachesTheBackend:
         assert "shell_role" not in received
 
 
+class TestTheEndReviewsClockReachesTheHarness:
+    """24 November 2026 (ai-transition docs/designs/end-review-time-2026-11-24.md, arm
+    2): ``review_clock`` (the end review's only) reaches ``LangGraphHarness``; an
+    older guardkitfactory that cannot take it still runs, with a warning; it is
+    never passed when not asked for."""
+
+    @_requires_guardkitfactory
+    def test_the_real_harness_receives_it(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        monkeypatch.setenv(_TEST_ENV_VAR, "langgraph")
+        asked = select_harness(
+            env_var=_TEST_ENV_VAR, model=MagicMock(), cwd=tmp_path,
+            harness_role="coach", review_clock=True,
+        )
+        plain = select_harness(
+            env_var=_TEST_ENV_VAR, model=MagicMock(), cwd=tmp_path, harness_role="coach",
+        )
+        assert asked.review_clock is True
+        assert plain.review_clock is False
+
+    def test_an_older_factory_runs_without_it_and_says_so(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        monkeypatch.setenv(_TEST_ENV_VAR, "langgraph")
+        seen: list[dict[str, Any]] = []
+
+        class _Older:
+            def __init__(self, *, model: Any, backend: Any, permissions: Any,
+                         recursion_limit: Any) -> None:
+                seen.append({"model": model})
+
+        _install_fake_guardkitfactory(monkeypatch, lambda worktree, **kwargs: worktree)
+        sys.modules["guardkitfactory.harness"].LangGraphHarness = _Older  # type: ignore[attr-defined]
+        with caplog.at_level(logging.WARNING, logger=selector_module.__name__):
+            select_harness(env_var=_TEST_ENV_VAR, model=MagicMock(), cwd=tmp_path,
+                           harness_role="coach", review_clock=True)
+        assert len(seen) == 1
+        assert any("cannot give the end review its clock" in r.getMessage()
+                   for r in caplog.records)
+
+    def test_not_asked_for_is_not_passed(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        monkeypatch.setenv(_TEST_ENV_VAR, "langgraph")
+        seen: list[dict[str, Any]] = []
+
+        class _Harness:
+            def __init__(self, **kwargs: Any) -> None:
+                seen.append(kwargs)
+
+        _install_fake_guardkitfactory(monkeypatch, lambda worktree, **kwargs: worktree)
+        sys.modules["guardkitfactory.harness"].LangGraphHarness = _Harness  # type: ignore[attr-defined]
+        select_harness(env_var=_TEST_ENV_VAR, model=MagicMock(), cwd=tmp_path,
+                       harness_role="coach")
+        select_harness(env_var=_TEST_ENV_VAR, model=MagicMock(), cwd=tmp_path,
+                       harness_role="coach", review_clock=False)
+        select_harness(env_var=_TEST_ENV_VAR, model=MagicMock(), cwd=tmp_path,
+                       harness_role="coach", review_clock=True)
+        assert ["review_clock" in kwargs for kwargs in seen] == [False, False, True]
+        assert seen[2]["review_clock"] is True
+
+
 class TestLanguageServersReachTheHarness:
     """29 October 2026: the task's pinned ``language_servers`` reach
     ``LangGraphHarness`` (the invoker passes them for the builder's

@@ -24,7 +24,9 @@ This is the code that was measured in the head-to-head (its arm 2), with its swi
   on from it with the same two-round budget), ``pre_commit.txt`` (the commit before the review),
   ``review-N-answer.txt`` and ``repair-N-feedback.txt``. When the last round could not run, the
   record's ``not_reviewed`` says why in plain words, and the merge card shows it among the build
-  reviewer's notes (23 November 2026).
+  reviewer's notes (23 November 2026). A round that ended with no answer, but whose findings
+  file (``.review-scratch/findings.txt`` in its copy) holds fault lines, takes those as its faults;
+  the round then says ``faults_from: findings file`` and why it stopped (24 November 2026).
 """
 
 from __future__ import annotations
@@ -55,6 +57,16 @@ DEFAULT_REVIEW_SECONDS = 3600
 ANSWER_GRACE_SECONDS = 300
 #: The review may read, write scratch files and run commands, in its throwaway copy only.
 REVIEW_TOOLS = ("Read", "Write", "Edit", "Bash", "Grep", "Glob")
+
+#: 24 November 2026 (ai-transition docs/designs/end-review-time-2026-11-24.md, arm 2): the
+#: review's scratch folder, at the top of its copy, where its file tools may write (they may not
+#: write outside the copy, so the earlier ``/tmp`` advice was refused in nearly every review). Git
+#: in the copy ignores it.
+SCRATCH_FOLDER = ".review-scratch"
+#: In the scratch folder: each fault the review has confirmed, appended as it finds it. Used as the
+#: round's faults when the review ends with no answer.
+FINDINGS_FILE = "findings.txt"
+FAULTS_FROM_FINDINGS = "findings file"
 
 #: Where the request is, when Forge planned the feature.
 REQUEST_FOLDER = "feature_spec_inputs"
@@ -262,8 +274,24 @@ declares its check (`toolchain.test`, `toolchain.parts`, and any `install`). Run
 behaviour for real, through its actual entry point or client, not only through its tests. Where the \
 feature needs a model or another service, start a small stub endpoint on 127.0.0.1 yourself, or use a \
 closed local port for a failing dependency; never call a real model, a hosted endpoint or any address \
-outside this machine, except to install the project's declared dependencies. Write your stubs and \
-scratch scripts outside the code, for example under `/tmp`.
+outside this machine, except to install the project's declared dependencies.
+
+Write your stubs and scratch scripts in the folder `{SCRATCH_FOLDER}/` at the top of this copy. Your \
+file tools can write there and nowhere outside this copy; git here ignores that folder, and nothing in \
+it is part of the feature, so never report a fault in it. Your shell stops anything a command leaves \
+running (a server, a stub, a watcher, a background install or test run) as soon as that command \
+returns. So start a stub and the call that uses it in the same command, for example \
+`<start the stub> & sleep 1; <run the call against it>; kill $!`, and do not start anything in the \
+background to use in a later command.
+
+Use the time you have to check the feature thoroughly. In the last ten minutes before your \
+tool use stops, each tool result ends with the minutes left. After that you write your answer and can \
+run nothing more, and a command still running at that point is stopped.
+
+As soon as you confirm a fault, append its line, in exactly the form given under "What to report" \
+below, to the file `{SCRATCH_FOLDER}/{FINDINGS_FILE}` (one line per fault). If your review is stopped \
+before you answer, the lines in that file are taken as your faults. Your final answer must still list \
+every fault.
 
 Ask three questions, in this order, and answer each by running things where you can:
 
@@ -317,8 +345,32 @@ def _copy_of(worktree: Path, copy: Path) -> Path:
     run_git(["init", "-q", f"--initial-branch={branch}", str(code)], cwd=copy, check=True)
     run_git(["-C", str(code), "bundle", "unbundle", str(bundle)], check=True)
     run_git(["-C", str(code), "reset", "-q", "--hard", head], check=True)
+    exclude = code / ".git" / "info" / "exclude"
+    exclude.parent.mkdir(parents=True, exist_ok=True)
+    with exclude.open("a", encoding="utf-8") as fh:
+        fh.write(f"\n/{SCRATCH_FOLDER}/\n")
+    (code / SCRATCH_FOLDER).mkdir(exist_ok=True)
     bundle.unlink(missing_ok=True)
     return code
+
+
+def _from_findings(code: Path, why: str) -> Optional[Dict[str, Any]]:
+    """The faults the review wrote to its findings file, when it ended with no answer.
+
+    ``None`` when the file is missing or holds no fault line in the answer's form. The answer
+    returned is those fault lines, and the record says where they came from and why.
+    """
+    try:
+        text = (code / SCRATCH_FOLDER / FINDINGS_FILE).read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    faults = parse_faults(text)
+    if not faults:
+        return None
+    lines = [f"FAULT {f['file']}:{f['line']} :: {f['what']} :: {f['trigger']}" for f in faults]
+    logger.warning("The end review gave no answer (%s); its findings file has %d fault(s), used as "
+                   "this round's faults.", why, len(faults))
+    return {"answer": "\n".join(lines), "faults_from": FAULTS_FROM_FINDINGS, "stopped_without_answer": why}
 
 
 def _review_once(orchestrator: Any, feature: Any, worktree: Any, base: Optional[str], request: str,
@@ -344,10 +396,21 @@ def _review_once(orchestrator: Any, feature: Any, worktree: Any, base: Optional[
             coach_model_name=orchestrator.coach_model,
             emitter=orchestrator._emitter,
         )
-        answer = asyncio.run(asyncio.wait_for(
-            invoker.invoke_end_review(feature.id, round_number, prompt, seconds, ANSWER_GRACE_SECONDS),
-            seconds + ANSWER_GRACE_SECONDS + 120,
-        ))
+        try:
+            answer = asyncio.run(asyncio.wait_for(
+                invoker.invoke_end_review(feature.id, round_number, prompt, seconds, ANSWER_GRACE_SECONDS),
+                seconds + ANSWER_GRACE_SECONDS + 120,
+            ))
+        except (Exception, asyncio.CancelledError) as exc:
+            # 24 November 2026: a review stopped before it answered keeps the faults it wrote down.
+            kept = _from_findings(code, f"{type(exc).__name__}: {exc}")
+            if kept is None:
+                raise
+            return {**kept, "seconds": round(time.time() - started, 1), "prompt_chars": len(prompt)}
+        if not (answer or "").strip():
+            kept = _from_findings(code, "the review gave no answer")
+            if kept is not None:
+                return {**kept, "seconds": round(time.time() - started, 1), "prompt_chars": len(prompt)}
         return {"answer": answer, "seconds": round(time.time() - started, 1), "prompt_chars": len(prompt)}
     finally:
         shutil.rmtree(copy, ignore_errors=True)
@@ -482,7 +545,8 @@ def _run(orchestrator: Any, feature: Any, worktree: Any, wave_results: List[Any]
             (out / f"review-{round_number}-answer.txt").write_text(str(answer or ""), encoding="utf-8")
             entry.update(reviewed)
             entry["faults"] = parse_faults(answer)
-            entry["answered"] = bool(answer)
+            # Faults taken from the findings file are kept, but the review did not answer.
+            entry["answered"] = bool(answer) and reviewed.get("faults_from") != FAULTS_FROM_FINDINGS
             entry["reviewed"] = True
             _save(out, record)
         faults = entry.get("faults") or []

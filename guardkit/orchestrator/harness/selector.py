@@ -1137,6 +1137,11 @@ def select_harness(
     # own home and temporary folders, never the builder's or the checker's.
     # Popped here like ``harness_role`` so it never reaches a constructor.
     shell_role_override = harness_kwargs.pop("shell_role", None)
+    # 24 November 2026 (ai-transition docs/designs/end-review-time-2026-11-24.md, arm 2): the end
+    # review's clock. LangGraph only: in its last ten minutes its tool results end with the minutes left before tool use
+    # stops, and a command near the cut-off is limited to the time left. Popped here like
+    # ``shell_role``; the SDK harness has no such hook and runs as before.
+    review_clock = bool(harness_kwargs.pop("review_clock", False))
     if shell_role_override is not None and shell_role_override not in SHELL_ROLES:
         raise ValueError(
             f"select_harness: shell_role must be one of {', '.join(SHELL_ROLES)}, "
@@ -1378,6 +1383,16 @@ def select_harness(
                 )
         if player_config is not None:
             langgraph_kwargs["player_config"] = player_config
+        if review_clock:
+            if _factory_accepts_kwarg(LangGraphHarness, "review_clock"):
+                langgraph_kwargs["review_clock"] = True
+            else:
+                logger.warning(
+                    "select_harness(langgraph): the installed guardkitfactory cannot "
+                    "give the end review its clock, so it is not told the time left "
+                    "and a late command is not limited; install the matching Factory "
+                    "revision."
+                )
         if language_servers is not None:
             if _factory_accepts_kwarg(LangGraphHarness, "language_servers"):
                 langgraph_kwargs["language_servers"] = language_servers

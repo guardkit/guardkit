@@ -3215,6 +3215,9 @@ class AgentInvoker:
                 # orchestrator runs is a named specialist, as the code reviewer is.
                 event_role="specialist",
                 event_agent_name="end_review",
+                # 24 November 2026: in its last ten minutes its tool results say the minutes left, and a command
+                # near the cut-off is limited to the time left (guardkitfactory's clock).
+                review_clock=True,
             )
             if result_tuple is None:
                 return None
@@ -4848,6 +4851,7 @@ The builder's concerns, what it says remains, and the files git saw it create an
         tool_counter: Optional[ToolCallCounter] = None,
         shell_role: Optional[str] = None,
         answer_grace_seconds: int = 0,
+        review_clock: bool = False,
     ) -> Optional[Tuple[None, List[HarnessEvent]]]:
         """Low-level SDK invocation with role-based permissions.
 
@@ -4938,6 +4942,11 @@ The builder's concerns, what it says remains, and the files git saw it create an
                 ends at the same point; only the answer written after it gets
                 the extra time (the review's look-up pass). ``0`` (the
                 default) changes nothing.
+            review_clock: 24 November 2026. The end review's clock
+                (``select_harness``'s ``review_clock``, LangGraph only): each
+                tool result in its last ten minutes ends with the minutes left before tool use stops,
+                and a command near the cut-off is limited to the time left.
+                ``False`` (the default) changes nothing.
 
         Returns:
             ``None`` by default. ``(None, harness_events)`` when
@@ -5121,6 +5130,8 @@ The builder's concerns, what it says remains, and the files git saw it create an
                 ),
                 # 19 October 2026: only when a caller names one (a specialist).
                 **({"shell_role": shell_role} if shell_role is not None else {}),
+                # 24 November 2026: only when asked for (the end review).
+                **({"review_clock": True} if review_clock else {}),
             )
 
             if tool_counter is not None:

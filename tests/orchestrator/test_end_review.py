@@ -873,3 +873,189 @@ def test_a_skipped_review_has_no_not_reviewed_reason(tmp_path: Path, monkeypatch
                               SimpleNamespace(path=worktree), [])
 
     assert "not_reviewed" not in _record(tmp_path / "main")
+
+
+# --- the tools match the instructions, and the review knows its time (24 November 2026) ----------
+# ai-transition docs/designs/end-review-time-2026-11-24.md, arm 2: the prompt said to write stubs
+# under /tmp, which the file tool refuses; the shell stops what a command leaves running, which the
+# prompt did not say; the review was never told the time left; and a round stopped by the clock lost
+# every fault it had found.
+
+
+def test_the_copy_has_a_scratch_folder_that_git_there_ignores(tmp_path: Path) -> None:
+    worktree = _repo(tmp_path / "wt")
+    (tmp_path / "copy").mkdir()
+
+    code = end_review._copy_of(worktree, tmp_path / "copy")
+
+    scratch = code / end_review.SCRATCH_FOLDER
+    assert scratch.is_dir()
+    (scratch / "stub.mjs").write_text("// a stub\n")
+    (scratch / end_review.FINDINGS_FILE).write_text(FAULT + "\n")
+    assert _git(code, "status", "--porcelain") == ""
+    # Only the top-level folder is ignored: a project folder of the same name deeper down is not.
+    _write(code, "src/.review-scratch/kept.txt", "x\n")
+    assert _git(code, "status", "--porcelain") == "?? src/"
+
+
+def test_the_prompt_names_the_scratch_folder_the_shell_rule_the_time_and_the_findings_file() -> None:
+    prompt = end_review.build_prompt(_feature(), "Count users per day.", "## The change", 1)
+
+    assert "/tmp" not in prompt
+    assert "in the folder `.review-scratch/` at the top of this copy" in prompt
+    assert "never report a fault in it" in prompt
+    assert "Your shell stops anything a command leaves running" in prompt
+    assert "as soon as that command returns" in prompt
+    assert "start a stub and the call that uses it in the same command" in prompt
+    assert "Use the time you have to check the feature thoroughly" in prompt
+    assert "In the last ten minutes before your tool use stops, each tool result ends with the minutes left" in prompt
+    assert "plan your work to fit the time" not in prompt
+    assert "append its line" in prompt and "`.review-scratch/findings.txt`" in prompt
+    assert "Your final answer must still list every fault" in prompt
+    # The answer's form is unchanged and still last.
+    assert prompt.rstrip().endswith("Do not write any other lines after the list.")
+
+
+def _stopped_review(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, findings: Optional[str],
+                    ends: Any) -> Dict[str, Any]:
+    """One real ``_review_once`` whose model session writes ``findings`` to its findings file
+    (``None`` = writes none), then ends with ``ends``: an exception to raise, or an answer."""
+    worktree = _repo(tmp_path / "wt")
+    base = _git(worktree, "rev-parse", "HEAD")
+    _write(worktree, "src/app.py", "print('built')\n")
+    _commit(worktree, "a task's checkpoint")
+    seen: Dict[str, Any] = {}
+
+    async def _session(self, feature_id, round_number, prompt, seconds, grace_seconds):
+        seen["cwd"] = Path(self.worktree_path)
+        if findings is not None:
+            (seen["cwd"] / end_review.SCRATCH_FOLDER / end_review.FINDINGS_FILE).write_text(findings)
+        if isinstance(ends, BaseException):
+            raise ends
+        return ends
+
+    monkeypatch.setattr(AgentInvoker, "invoke_end_review", _session)
+    orchestrator = SimpleNamespace(sdk_timeout=None, timeout_multiplier=1.0, model=None, coach_model=None,
+                                   _emitter=None)
+    try:
+        return _REAL_REVIEW_ONCE(orchestrator, _feature(), SimpleNamespace(path=worktree), base,
+                                 "Count users per day.", 1, 3600)
+    finally:
+        assert not seen["cwd"].exists(), "the copy is removed afterwards"
+
+
+SECOND = "FAULT src/app.py:9 :: an empty name is accepted :: POST /users with name ''"
+
+
+def test_a_review_stopped_by_the_clock_keeps_the_faults_in_its_findings_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from guardkit.orchestrator.exceptions import SDKTimeoutError
+
+    findings = f"checked the count\n{FAULT}\n  {SECOND}\nnot a fault line\n{FAULT}\n"
+    reviewed = _stopped_review(tmp_path, monkeypatch, findings,
+                               SDKTimeoutError("Agent invocation exceeded 3900s timeout"))
+
+    assert reviewed["answer"].splitlines() == [FAULT, SECOND]  # fault lines only, once each
+    assert reviewed["faults_from"] == "findings file"
+    assert reviewed["stopped_without_answer"].startswith("SDKTimeoutError: Agent invocation exceeded")
+    assert len(end_review.parse_faults(reviewed["answer"])) == 2
+
+
+def test_a_review_with_an_empty_answer_keeps_the_faults_in_its_findings_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    reviewed = _stopped_review(tmp_path, monkeypatch, FAULT + "\n", None)
+
+    assert reviewed["answer"] == FAULT
+    assert reviewed["faults_from"] == "findings file"
+    assert reviewed["stopped_without_answer"] == "the review gave no answer"
+
+
+def test_with_no_fault_in_the_findings_file_a_stopped_review_fails_as_before(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for findings in (None, "nothing confirmed yet\n"):
+        with pytest.raises(TimeoutError):
+            _stopped_review(tmp_path / str(findings is None), monkeypatch, findings, TimeoutError("late"))
+    reviewed = _stopped_review(tmp_path / "empty", monkeypatch, None, None)
+    assert reviewed["answer"] is None and "faults_from" not in reviewed
+
+
+def test_an_answer_wins_over_the_findings_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    reviewed = _stopped_review(tmp_path, monkeypatch, f"{FAULT}\n{SECOND}\n", SECOND)
+
+    assert reviewed["answer"] == SECOND
+    assert "faults_from" not in reviewed
+
+
+def test_faults_from_the_findings_file_are_repaired_and_the_record_says_where_they_came_from(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    worktree = _repo(tmp_path / "wt")
+    builder = _Builder(worktree)
+    rounds = iter([
+        {"answer": FAULT, "faults_from": "findings file", "stopped_without_answer": "SDKTimeoutError: late",
+         "seconds": 3900.0, "prompt_chars": 10},
+        {"answer": "NO FAULTS", "seconds": 1.0, "prompt_chars": 10},
+    ])
+    monkeypatch.setattr(end_review, "_review_once", lambda *args, **kwargs: next(rounds))
+
+    end_review.run_end_review(_orchestrator(tmp_path / "main", worktree, builder), _feature(),
+                              SimpleNamespace(path=worktree), [])
+
+    record = _record(tmp_path / "main")
+    first, second = record["rounds"]
+    assert first["faults"] == end_review.parse_faults(FAULT)
+    assert first["faults_from"] == "findings file"
+    assert first["stopped_without_answer"] == "SDKTimeoutError: late"
+    assert first["answered"] is False and first["reviewed"] is True
+    assert len(builder.calls) == 1 and FAULT.split(" :: ")[1] in builder.calls[0]["feedback"]
+    assert second["answered"] is True and "faults_from" not in second
+    assert record["status"] == "finished" and "not_reviewed" not in record
+
+
+def test_the_end_review_asks_for_the_harness_clock(tmp_path: Path) -> None:
+    invoker = AgentInvoker(worktree_path=tmp_path, max_turns_per_agent=1, sdk_timeout_seconds=10)
+    with patch.object(invoker, "_invoke_with_role", return_value=None) as invoke:
+        asyncio.run(invoker.invoke_end_review(FEATURE_ID, 1, "review the feature", 60, 5))
+    assert invoke.call_args.kwargs["review_clock"] is True
+
+
+def test_the_clock_reaches_the_real_harness_for_the_end_review_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Through the real invoker and selector to guardkitfactory's harness, stopped once it is
+    built: the end review's harness has the clock; another reviewer's call through the same
+    invoker does not."""
+    factory = pytest.importorskip("guardkitfactory.harness")
+    from guardkit.orchestrator.harness import selector
+    from tests.conftest import M0_FLEET_SEAT
+
+    built: List[Any] = []
+
+    class _Stop(Exception):
+        pass
+
+    class _Recording(factory.LangGraphHarness):  # type: ignore[name-defined, misc]
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            super().__init__(*args, **kwargs)
+            built.append(self.review_clock)
+            raise _Stop()
+
+    monkeypatch.setattr(factory, "LangGraphHarness", _Recording)
+    monkeypatch.setattr(selector, "_AUTO_DCODE_PROFILE", None)
+    monkeypatch.setenv("GUARDKIT_HARNESS", "langgraph")
+    monkeypatch.setenv("OPENAI_BASE_URL", "http://127.0.0.1:9/v1")
+    worktree = _repo(tmp_path / "wt")
+    invoker = AgentInvoker(worktree_path=worktree, max_turns_per_agent=1, sdk_timeout_seconds=60,
+                           model_name=M0_FLEET_SEAT)
+
+    with pytest.raises(Exception):  # noqa: B017 - stopped on purpose once the harness is built
+        asyncio.run(invoker.invoke_end_review(FEATURE_ID, 1, "review the feature", 60, 5))
+    with pytest.raises(Exception):  # noqa: B017
+        asyncio.run(invoker._invoke_with_role(
+            prompt="x", agent_type="coach", allowed_tools=["Read", "Write", "Bash"],
+            permission_mode="bypassPermissions", task_id="TASK-ER-001", turn=1))
+
+    assert built == [True, False]
